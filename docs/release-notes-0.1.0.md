@@ -7,7 +7,7 @@ Moongate 第一个公开版本，以预览包形式发布。
 | 项目 | 内容 |
 |---|---|
 | 版本 | 0.1.0 预览版 |
-| 下载 | [GitHub Releases](https://github.com/MinamiChiwa/Moongate/releases) 的 `Moongate-v0.1.0-preview-Windows-x64.zip` |
+| 下载 | 预览版安装包尚未发布；发布后在 [GitHub Releases](https://github.com/MinamiChiwa/Moongate/releases) 提供 `Moongate-v0.1.0-preview-Windows-x64.zip`，目前可按[开发文档](development.md#8-打包)从源码构建 |
 | 形式 | 解压即用，没有安装程序，没有数字签名 |
 | 平台 | Windows 10 / 11 64 位，《瑪奇 Mobile》台服 |
 | 外部需求 | Npcap（自行安装） |

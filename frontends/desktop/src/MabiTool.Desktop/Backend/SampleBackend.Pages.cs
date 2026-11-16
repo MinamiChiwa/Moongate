@@ -185,6 +185,7 @@ public sealed partial class SampleBackend
     public SettingsPageData GetSettings() => new(
         [
             new(Pick("连接", "連接"), Pick("样本数据，未连接后端", "範例資料，未連接後端")),
+            new(Pick("地址", "位址"), Pick("不适用", "不適用")),
             new(Pick("版本", "版本"), "0.4.6"), new("API", "v1")
         ],
         SampleShortcuts(),

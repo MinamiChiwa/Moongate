@@ -42,8 +42,8 @@ public sealed record ClientResourceCatalog(IReadOnlyDictionary<string, string> N
     /// <summary>
     /// 行布局（台服 2026-11 客户端）：MoneyInfo 的主键块每行一个 VarUInt32，是 MoneyType 名称的文本偏移；正文首个 VarUInt32 是 DisplayName 文本偏移。
     /// CurrencyInfo 主键块为 UInt32 编号，正文前两个 VarUInt32 是货币大类与 MoneyType 名称的文本偏移（大类为 Money 的行才是钱包货币）。
-    /// CurrencySupplyConstants 主键块为 CurrencyInfo 编号，正文为 MaxCount、LoadLimitCount（有符号变长整数，见 <see cref="ClientDataReader.Int"/>）、
-    /// RefillTime（float64 秒）、RefillAmount。MaxCount 是自然补充的上限（银币 100、魔族貢品 10），LoadLimitCount 为 999／99。
+    /// CurrencySupplyConstants 主键块为 CurrencyInfo 编号，正文为 MaxCount、LoadLimitCount、RefillTime（float64 秒）、RefillAmount，
+    /// 其中 int 列为有符号变长整数（见 <see cref="ClientDataReader.Int"/>）。MaxCount 是自然补充的上限（银币 100、魔族貢品 10），LoadLimitCount 为 999／99。
     /// MembershipParameter 没有主键块，每行是参数名与参数值两个文本偏移；Membership 主键块为会员编号。
     /// </summary>
     public static ClientResourceCatalog Decode(byte[] meta, byte[] text, byte[] data, CancellationToken cancellationToken = default)
@@ -90,7 +90,7 @@ public sealed record ClientResourceCatalog(IReadOnlyDictionary<string, string> N
             var id = supplyIds.UInt32(); var reader = Row(supply, row, data);
             var maximum = reader.Int(); _ = reader.Int();
             var seconds = BitConverter.Int64BitsToDouble(System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(reader.Take(8)));
-            _ = reader.Var(); reader.EnsureEnd();
+            _ = reader.Int(); reader.EnsureEnd();
             if (!double.IsFinite(seconds) || seconds is <= 0 or > 30 * 86400) throw new InvalidDataException("CurrencySupplyConstants 补充间隔无效");
             if (!currencies.TryGetValue(id, out var type)) continue;
             intervals[type] = TimeSpan.FromSeconds(seconds);

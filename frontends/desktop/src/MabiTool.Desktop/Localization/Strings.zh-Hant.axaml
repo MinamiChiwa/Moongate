@@ -265,9 +265,6 @@
   <sys:String x:Key="T.AutoWindowHint">找到唯一的台服遊戲視窗時自動綁定（啟動時與遊戲啟動後）；有多個視窗時在側欄手動選擇。</sys:String>
   <sys:String x:Key="T.CaptureUnavailable">未連接後端，抓包設定不可用。</sys:String>
   <sys:String x:Key="T.Backend">後端</sys:String>
-  <sys:String x:Key="T.Shutdown">結束 Moongate（含背景服務）</sys:String>
-  <sys:String x:Key="T.ShutdownConfirm">結束後抓包、定時測量、合奏與浮窗資料都會停止，本視窗隨之關閉。</sys:String>
-  <sys:String x:Key="T.ShutdownYes">結束</sys:String>
   <sys:String x:Key="T.Cancel">取消</sys:String>
   <sys:String x:Key="T.About">關於</sys:String>
   <sys:String x:Key="O.Title">浮窗版面</sys:String>

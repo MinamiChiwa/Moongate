@@ -72,6 +72,19 @@ public sealed class RosterRow : MabiTool.Desktop.Infrastructure.ObservableObject
     public string GroupText { get; set; }
     public string OrderText { get; set; }
 
+    /// <summary>
+    /// 输入被拒（越界、非数字、后端拒绝）后把两格文字还原为当前成员数据。提交时输入已经写进
+    /// <see cref="GroupText"/>／<see cref="OrderText"/>，成员数据不变时 <see cref="Update"/> 不改写它们，需要这里还原；
+    /// 只通知这两项，行对象与其余单元格不变。
+    /// </summary>
+    public void ResetInputs()
+    {
+        var group = Member.Group.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var order = Member.Order.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (GroupText != group) { GroupText = group; Raise(nameof(GroupText)); }
+        if (OrderText != order) { OrderText = order; Raise(nameof(OrderText)); }
+    }
+
     public string RoomRole => Member.IsHost ? UiText.Pick("房主", "房主") : UiText.Pick("成员", "成員");
 
     public string State => !Member.Connected ? UiText.Pick("已离线", "已離線")

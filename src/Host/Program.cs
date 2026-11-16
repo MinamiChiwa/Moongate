@@ -32,9 +32,11 @@ try
         return;
     }
     hostMode = true;
-    var mock = args.Contains("--mock", StringComparer.Ordinal);
-    if (args.Count(x => x == "--mock") > 1) throw new ArgumentException("--mock 不能重复");
-    var requested = StorageOptions.FromArguments(args.Where(x => x != "--mock").ToArray());
+    // 目录包前端拉起宿主时传入自己的进程号：前端结束后宿主随之按正常停止流程退出。
+    var (hostArgs, ownerRequested, owner) = OwnerProcess.Extract(args);
+    var mock = hostArgs.Contains("--mock", StringComparer.Ordinal);
+    if (hostArgs.Count(x => x == "--mock") > 1) throw new ArgumentException("--mock 不能重复");
+    var requested = StorageOptions.FromArguments(hostArgs.Where(x => x != "--mock").ToArray());
     // 工具根布局的程序文件夹被搬移、改名、复制或换用户后，先接管当前位置（权限与登记的路径），再打开数据根。
     var adopted = requested.LocatedByToolRoot && !mock ? DataRootLease.AdoptToolRootLayout(requested) : null;
     if (adopted?.PreviousDataRoot is { } previousRoot) Console.WriteLine($"程序文件夹位置已变化：数据从 {previousRoot} 改为在当前位置打开");
@@ -49,6 +51,9 @@ try
     port = options.Port;
     if (mock && storage.PortableRoot is not null)
         options = options with { RuntimeDirectory = Path.Combine(storage.PortableRoot, "runtime") };
+    // 未指定端口时默认端口被其他程序占用或被系统拒绝，改由系统分配空闲端口；占用者是 Moongate 宿主时按端口冲突结束。
+    var (resolved, portFallback) = await HostStartupFailure.ResolveDefaultPortAsync(options);
+    options = resolved;
     do
     {
         started = false;
@@ -60,6 +65,14 @@ try
         {
             await application.StartAsync();
             started = true;
+            if (ownerRequested) _ = OwnerProcess.WatchAsync(owner, application.Lifetime);
+            if (portFallback is not null)
+            {
+                var actual = new Uri(application.Urls.Single()).Port;
+                application.Services.GetRequiredService<DiagnosticTrace>().Emit(DiagnosticEvents.HostPortFallback,
+                    new DiagnosticFields().Value("reason", portFallback.Reason).Count("requestedPort", portFallback.RequestedPort).Count("port", actual));
+                Console.WriteLine($"默认端口 {portFallback.RequestedPort} 不可用（{(portFallback.Reason == "occupied" ? "被其他程序占用" : "系统拒绝监听")}），已改用本机端口 {actual}");
+            }
             if (imported is not null)
             {
                 application.Services.GetRequiredService<DiagnosticTrace>().Emit(DiagnosticEvents.LegacyDataImported,

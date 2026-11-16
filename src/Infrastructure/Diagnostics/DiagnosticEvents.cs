@@ -43,6 +43,10 @@ public static class DiagnosticEvents
     /// <summary>首次以工具根布局启动时从旧位置迁入数据：files 为复制的文件数，bytes 为字节数；旧位置保持原样。</summary>
     public static readonly DiagnosticEventDefinition LegacyDataImported = new("storage.legacy.imported", "core", "storage.legacy", DiagnosticLevel.Info,
         ["files", "bytes"]);
+    /// <summary>未指定端口时默认端口不可用、宿主改用系统分配的端口：reason 为 occupied（其他程序占用）或 refused（系统拒绝监听），
+    /// requestedPort 为默认端口，port 为实际监听端口。</summary>
+    public static readonly DiagnosticEventDefinition HostPortFallback = new("host.port.fallback", "core", "host.port", DiagnosticLevel.Info,
+        ["reason", "requestedPort", "port"]);
     public static readonly DiagnosticEventDefinition FrameRejected = new("observation.frame.rejected", Combat, "observation.capture", DiagnosticLevel.Debug, ["branch"]);
     public static readonly DiagnosticEventDefinition CaptureGap = new("observation.capture.gap", Combat, "observation.capture", DiagnosticLevel.Debug,
         ["reason", "droppedEvents"]);
@@ -61,7 +65,7 @@ public static class DiagnosticEvents
         ["exitCode", "terminatedByHost"]);
 
     public static IReadOnlyList<DiagnosticEventDefinition> All { get; } = [BindingChanged, WorkerStarted, WorkerStopped, WorkerFaulted, CaptureStarted,
-        CaptureEnded, InventorySynced, InventoryFrameState, InventoryFrameRejected, SegmentStarted, SegmentEnded, CombatFrameRejected, HostLog, ColorRunStarted, ColorRunEnded, RoomConnection, DebugCaptureStarted, DebugCaptureEnded, LegacyDataImported,
+        CaptureEnded, InventorySynced, InventoryFrameState, InventoryFrameRejected, SegmentStarted, SegmentEnded, CombatFrameRejected, HostLog, ColorRunStarted, ColorRunEnded, RoomConnection, DebugCaptureStarted, DebugCaptureEnded, LegacyDataImported, HostPortFallback,
         FrameRejected, CaptureGap, InterestsChanged, SubscriptionChanged, ConnectionChanged, InventoryFrame,
         ChannelConnected, ChannelRequest, ChannelFault, ChannelClosed];
     private static readonly Dictionary<string, DiagnosticEventDefinition> ByCode = All.ToDictionary(x => x.Code, StringComparer.Ordinal);

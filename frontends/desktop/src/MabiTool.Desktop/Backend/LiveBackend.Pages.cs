@@ -217,6 +217,8 @@ public sealed partial class LiveBackend
     public SettingsPageData GetSettings()
     {
         var (current, page, _, _) = ReadPages();
+        string? address;
+        lock (gate) address = apiAddress;
         string Chord(ShortcutChordSnapshot chord) => string.Join(" + ", new[]
         {
             chord.Control ? "Ctrl" : null, chord.Alt ? "Alt" : null, chord.Shift ? "Shift" : null,
@@ -225,6 +227,7 @@ public sealed partial class LiveBackend
         return new(
             [
                 new(Pick("连接", "連接"), current.Connected ? Pick("已连接", "已連接") : current.Problem ?? Pick("未连接", "未連接")),
+                new(Pick("地址", "位址"), current.Connected && address is not null ? address : Pick("未知", "未知")),
                 new(Pick("版本", "版本"), (page.System?.Version ?? Pick("未知", "未知")) + (PreviewBuild ? Pick("（预览版）", "（預覽版）") : "")),
                 new("API", page.System?.ApiVersion ?? Pick("未知", "未知")),
                 new(Pick("运行环境", "執行環境"), page.System?.Runtime ?? Pick("未知", "未知")),

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
@@ -237,12 +238,71 @@ public sealed class AuthTests
             // 已开始监听之后的同一异常属于运行期，不按端口或数据目录解释。
             Assert.Equal(HostStartupFailure.UnknownExitCode, (await HostStartupFailure.DescribeAsync(error, port, started: true)).ExitCode);
         }
+        // 未指定端口时占用者是 Moongate 宿主：不改用别的端口，仍按端口冲突以退出码 5 结束。
+        var occupied = await Assert.ThrowsAsync<SocketException>(() => HostStartupFailure.ResolveDefaultPortAsync(
+            new(port, LocalAuthService.NewSecret(), new HashSet<string>(), PortFallback: true)));
+        Assert.Equal(HostStartupFailure.PortInUseExitCode, (await HostStartupFailure.DescribeAsync(occupied, port, started: false)).ExitCode);
 
         // 所有者会话可以退出宿主：回应受理后宿主进入停止流程。
         using var sdk = first.Sdk();
         Assert.Equal("stopping", (await sdk.ShutdownHostAsync()).Status);
         await Task.Delay(Timeout.Infinite, first.Stopping).ContinueWith(_ => { }).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.True(first.Stopping.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task DefaultPortTakenByAnotherProgramFallsBackToASystemPortButAnExplicitPortDoesNot()
+    {
+        // 占用者接受连接后回一行非 HTTP 内容，可确定不是 Moongate 宿主。
+        var occupant = new TcpListener(IPAddress.Loopback, 0);
+        occupant.Start();
+        var port = ((IPEndPoint)occupant.LocalEndpoint).Port;
+        using var stop = new CancellationTokenSource();
+        var serving = Task.Run(async () =>
+        {
+            while (true)
+            {
+                using var connection = await occupant.AcceptTcpClientAsync(stop.Token);
+                var stream = connection.GetStream();
+                _ = await stream.ReadAsync(new byte[4096], stop.Token);
+                await stream.WriteAsync("SSH-2.0-occupant\r\n"u8.ToArray(), stop.Token);
+            }
+        });
+        var directory = Workspace();
+        try
+        {
+            var requested = new LocalApiOptions(port, LocalAuthService.NewSecret(), new HashSet<string>(), Path.Combine(directory, "runtime"),
+                PortFallback: true);
+            var (options, fallback) = await HostStartupFailure.ResolveDefaultPortAsync(requested);
+            Assert.Equal((0, port, "occupied"), (options.Port, fallback?.RequestedPort, fallback?.Reason));
+            await using (var app = BackendApplication.Build(options))
+            {
+                await app.StartAsync();
+                // 前端按发现文件握手，连到系统分配的实际端口。
+                var handshake = await LocalBootstrapClient.ConnectAsync(Path.Combine(directory, "runtime", "instance.json"), "test-desktop");
+                var actual = new Uri(handshake.ApiBaseUri);
+                Assert.NotEqual(port, actual.Port);
+                Assert.Equal(new Uri(app.Urls.Single()).Port, actual.Port);
+                using var sdk = new MabiToolClient(actual, _ => ValueTask.FromResult(handshake.Grant.Token));
+                Assert.True((await sdk.GetAuthSessionAsync()).Owner);
+                await app.StopAsync();
+            }
+
+            // 显式指定的端口：不改用别的端口，绑定失败按其他程序占用以退出码 6 结束。
+            var pinned = requested with { PortFallback = false, RuntimeDirectory = null };
+            Assert.Equal((pinned, (HostStartupFailure.PortFallback?)null), await HostStartupFailure.ResolveDefaultPortAsync(pinned));
+            await using var second = BackendApplication.Build(pinned);
+            var error = await Assert.ThrowsAnyAsync<Exception>(() => second.StartAsync());
+            var failure = await HostStartupFailure.DescribeAsync(error, port, started: false);
+            Assert.Equal(("host.portUnavailable", HostStartupFailure.PortUnavailableExitCode), (failure.Code, failure.ExitCode));
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            occupant.Stop();
+            await serving.ContinueWith(_ => { }, TaskScheduler.Default);
+            if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, true);
+        }
     }
 
     [Fact]

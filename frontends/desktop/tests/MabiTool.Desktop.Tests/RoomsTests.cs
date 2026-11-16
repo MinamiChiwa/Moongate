@@ -1035,7 +1035,7 @@ public sealed class RoomsTests
             Assert.Equal("1", group.Text);
             Assert.Equal(before, backend.UiIntents.Count);
 
-            // 越界：回车进入编辑并全选，输入 25 回车不发送并提示范围。
+            // 越界：回车进入编辑并全选，输入 25 回车不发送并提示范围，格与输入框的文字还原为当前组号。
             PressKey(window, Key.Enter, PhysicalKey.Enter);
             Assert.True(group.IsEditing);
             Assert.Equal(editor.Text!.Length, editor.SelectionEnd - editor.SelectionStart);
@@ -1043,8 +1043,9 @@ public sealed class RoomsTests
             PressKey(window, Key.Enter, PhysicalKey.Enter);
             Assert.Equal(before, backend.UiIntents.Count);
             Assert.True(model.FeedbackError);
+            Assert.Equal(("1", "1"), (group.Text, editor.Text));
 
-            // Tab 与原来每格一个 TextBox 时相同：焦点离开表格（表体列表的 Tab 只停一次），离开的一格按离开提交（仍越界，不发送）。
+            // Tab 与原来每格一个 TextBox 时相同：焦点离开表格（表体列表的 Tab 只停一次），离开的一格按离开提交（文字已还原为当前值，不发送）。
             PressKey(window, Key.Tab, PhysicalKey.Tab);
             Assert.False(group.IsEditing);
             Assert.Null(editor.Parent);

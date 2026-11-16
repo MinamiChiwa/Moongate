@@ -23,6 +23,7 @@ Moongate 以 [MIT 许可](LICENSE)发布。本文件列出 Moongate 移植或并
 | SQLitePCLRaw | 2.1.13 | Apache-2.0 |
 | SQLite | 随 SQLitePCLRaw | Public Domain |
 | Avalonia、Avalonia.Desktop、Avalonia.Themes.Fluent | 12.1.6 | MIT |
+| Avalonia.Angle.Windows.Natives（ANGLE 预编译库） | 2.1.27548.20260419 | BSD-3-Clause（ANGLE Project Authors） |
 
 测试项目另使用 xUnit、xunit.v3、Avalonia.Headless.XUnit 与 Microsoft.NET.Test.Sdk，均不进入发行包。
 

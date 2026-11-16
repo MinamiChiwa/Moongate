@@ -25,7 +25,7 @@ public sealed record ShortcutLine(ShortcutRow Row, bool Recording, bool CanStart
 /// <summary>
 /// 设置页数据。<see cref="Policy"/> 是后端的更新策略，未连接或后端没有提供时为空，此时策略三项停用。
 /// <see cref="AvailableRelease"/> 是后端更新状态里发现的新版本标识，没有新版本或未连接时为空。
-/// <see cref="Connected"/> 表示已连接后端，“退出 Moongate（含后台服务）”只在连接时可用。
+/// <see cref="Connected"/> 表示已连接后端。
 /// </summary>
 public sealed record SettingsPageData(IReadOnlyList<KeyValue> Backend, IReadOnlyList<ShortcutRow> Shortcuts,
     IReadOnlyList<KeyValue> Update, bool CanCheckUpdate, bool CanDownloadUpdate = false, bool CanInstallUpdate = false,
@@ -104,7 +104,6 @@ public sealed partial class SettingsPageModel : BackendPageModel<SettingsPageDat
         shownLimitText = limitText;
         UiTheme.Changed += OnThemeChanged;
         InitializeCapture();
-        InitializeShutdown();
     }
 
     /// <summary>下载限速的“不限速／自定义”。</summary>
@@ -348,7 +347,6 @@ public sealed partial class SettingsPageModel : BackendPageModel<SettingsPageDat
     {
         ResetCapture();
         SyncLimit();
-        RaiseShutdown();
         if (recording is not null && !Data.Shortcuts.Any(row => row.Id == recording && row.CanEdit)) recording = null;
     }
 

@@ -101,6 +101,31 @@ class MinimumUpdaterPublicationTests(unittest.TestCase):
                 self.assertEqual("self-contained", distribution["runtimeMode"])
                 self.assertEqual("10.0.13", distribution["version"])
 
+    def test_inventory_applies_registered_license_override_only_with_matching_evidence(self):
+        self.fixture()
+        (self.package / "components/desktop/MabiTool.Desktop.deps.json").write_text(json.dumps({
+            "libraries": {"Avalonia.Angle.Windows.Natives/2.1.0": {"type": "package"}}}))
+        location = self.root / "nuget/avalonia.angle.windows.natives/2.1.0"
+        location.mkdir(parents=True)
+        (location / "avalonia.angle.windows.natives.nuspec").write_text(
+            '<package><metadata><id>Avalonia.Angle.Windows.Natives</id><license type="file">LICENSE</license></metadata></package>')
+        (location / "LICENSE").write_text("ANGLE three-clause BSD text")
+        override = {"id": "Avalonia.Angle.Windows.Natives", "license": "BSD-3-Clause", "licenseFile": "LICENSE",
+                    "licenseSha256": hashlib.sha256(b"ANGLE three-clause BSD text").hexdigest(), "evidence": "upstream ANGLE"}
+        (self.root / "packaging/licenses/nuget-license-overrides.json").write_text(json.dumps({"schemaVersion": 1, "packages": [override]}))
+        result = self.inventory()
+        self.assertEqual(0, result.returncode, result.stderr)
+        sbom = json.loads((self.package / "sbom.spdx.json").read_text(encoding="utf-8"))
+        angle = next(item for item in sbom["packages"] if item["name"] == "Avalonia.Angle.Windows.Natives")
+        self.assertEqual(("BSD-3-Clause", "BSD-3-Clause", "upstream ANGLE"),
+                         (angle["licenseDeclared"], angle["licenseConcluded"], angle["comment"]))
+        notices = (self.package / "THIRD_PARTY_NOTICES.txt").read_text(encoding="utf-8")
+        self.assertIn("Avalonia.Angle.Windows.Natives 2.1.0\nNOASSERTION\nLicense: BSD-3-Clause\nLicense basis: upstream ANGLE\nANGLE three-clause BSD text", notices)
+        (location / "LICENSE").write_text("changed text")
+        result = self.inventory()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("许可映射的依据文件与登记不符", result.stderr)
+
     def test_inventory_rejects_invalid_or_newer_minimum_before_writes(self):
         for minimum in ("0.4", "0.4.6.0", "-1.0.0", "0.4.6-preview", "0.4.8", "0.10.0", "999999999999999999999.0.0", "", "0.4.6\n"):
             with self.subTest(minimum=minimum):

@@ -13,7 +13,7 @@
 | Npcap | 抓包必需，需自行安装：[npcap.com](https://npcap.com/#download)。安装时保持默认选项即可 |
 | 放置位置 | 你有写入权限的普通文件夹，例如 `D:\Moongate`；不要放在 `C:\Program Files`、OneDrive 同步目录或网络磁盘 |
 
-从 [Releases](https://github.com/MinamiChiwa/Moongate/releases) 下载 `Moongate-v0.1.0-preview-Windows-x64.zip`，完整解压后运行 `Moongate.exe`。包内自带 .NET 运行时、染色引擎所需的 Python 环境与 Tesseract 文字识别，无需另装。
+0.1.0 预览版安装包尚未发布，发布后在 [Releases](https://github.com/MinamiChiwa/Moongate/releases) 提供 `Moongate-v0.1.0-preview-Windows-x64.zip`；目前可按[开发文档](development.md#8-打包)从源码构建并打包。取得压缩包后完整解压，运行 `Moongate.exe`。包内自带 .NET 运行时、染色引擎所需的 Python 环境与 Tesseract 文字识别，无需另装。
 
 预览包没有数字签名。第一次运行时 Windows 可能显示“Windows 已保护你的电脑”，点“更多信息”再点“仍要运行”。
 
@@ -35,7 +35,7 @@
 | 抓包 | 自动抓包开关、网卡列表与检测；缺少 Npcap 时有“查看指引” |
 | 快捷键 | 全局快捷键的查看与修改，见第 5 节 |
 | 更新 | 预览版没有配置更新源，“检查更新”不会取得新版本，请到 Releases 下载 |
-| 后端 | 连接状态与原因、版本；“退出 Moongate（含后台服务）”完全退出（关闭窗口时后台服务继续运行） |
+| 后端 | 连接状态与原因、地址、版本 |
 | 关于 | 版本与后端信息 |
 
 ## 4. 功能
@@ -131,7 +131,7 @@
 | `userdata\desktop` | 界面偏好、浮窗版面、背包备注、效果收藏、素材包 |
 | `userdata\bootstrap`、`userdata\runtime` | 启动配置与运行中的实例信息 |
 
-卸载时先在设置页按“退出 Moongate（含后台服务）”，再删除整个文件夹即可。
+卸载时先关闭 Moongate 窗口，再删除整个文件夹即可。
 
 ## 7. 常见问题
 
@@ -147,9 +147,9 @@
 
 **双击后没有窗口，或提示后台启动失败。** 在工具文件夹打开终端运行 `components\core\launch-backend.cmd -Wait`，窗口会显示后台的启动输出与失败原因。从压缩包查看器里直接运行时工具会提示先完整解压。
 
-**底部显示“未连接后端”。** 底部状态与设置页“后端”卡片的“连接”一行写有原因。写着“本机端口 19998 已被占用”时，是另一个文件夹里的 Moongate 仍在运行（解压了两份，或旧的一份没退出就打开了新的一份）：到那一份的设置页按“退出 Moongate（含后台服务）”，或在任务管理器的“详细信息”里结束命令行含 MabiTool.Host 的 dotnet.exe，然后重新打开。其他原因按提示处理，或运行上一条的 `launch-backend.cmd -Wait` 查看。
+**底部显示“未连接后端”。** 底部状态与设置页“后端”卡片的“连接”一行写有原因。写着“本机端口 19998 已被占用”时，是另一个文件夹里的 Moongate 仍在运行（解压了两份，或旧的一份没退出就打开了新的一份）：关闭那一份的 Moongate 窗口，或在任务管理器的“详细信息”里结束命令行含 MabiTool.Host 的 dotnet.exe，然后重新打开。19998 被其他软件占用或被系统保留时 Moongate 会自动改用空闲端口，不需要处理，设置页“后端”卡片的“地址”一行显示实际端口。其他原因按提示处理，或运行上一条的 `launch-backend.cmd -Wait` 查看。
 
-**关闭窗口后 Moongate 仍在后台运行。** 关闭窗口时后台服务继续运行，抓包、定时测量与浮窗不会中断，再次双击 `Moongate.exe` 回到窗口。要完全退出，到设置页“后端”卡片按“退出 Moongate（含后台服务）”并确认。
+**怎样完全退出。** 关闭 Moongate 窗口即可：后台服务随窗口一起退出，正在进行的合奏演奏、染色与定时测量会停止并释放游戏操作，不留后台进程。窗口开着时再次双击 `Moongate.exe` 只会把窗口提到前台。后台服务意外停止时底部状态写“后端已停止”，Moongate 会自动重新启动它一次；再次停止时请关闭并重新打开 Moongate。
 
 **工具点不动游戏。** 游戏以管理员身份运行时，Moongate 也需要以管理员身份运行。
 

@@ -29,8 +29,9 @@ public sealed class App : Application
         {
             // 先按命令行确定工具根，之后的偏好、版面、备注与发现文件都在它下面。
             DesktopFiles.Configure(desktop.Args ?? []);
-            // 目录包里宿主未运行时由前端启动它（首次运行自动初始化数据），前端关闭后宿主继续运行。
-            PackagedHost.StartIfNeeded(desktop.Args ?? []);
+            // 目录包里前端与宿主一起启动、一起退出：宿主未运行时由前端启动它（首次运行自动初始化数据），前端结束后宿主随之退出。
+            PackagedHost.Start(desktop.Args ?? []);
+            desktop.Exit += (_, _) => PackagedHost.Stop();
             new DesktopPreferenceStore(DesktopPreferenceStore.DefaultPath).ApplyAndTrack(this);
             UiMotion.ReadSystemPreference();
             Pages.Inventory.InventoryNoteStore.Shared = new(Pages.Inventory.InventoryNoteStore.DefaultPath);
@@ -39,6 +40,13 @@ public sealed class App : Application
             LoadAssetPack(args);
             var backend = CreateBackend(args);
             desktop.MainWindow = CreateMainWindow(backend, new OverlayLayoutStore(OverlayLayoutStore.DefaultPath));
+            PackagedHost.ActivationRequested += () => Dispatcher.UIThread.Post(() =>
+            {
+                if (desktop.MainWindow is not { } main) return;
+                main.Show();
+                if (main.WindowState == WindowState.Minimized) main.WindowState = WindowState.Normal;
+                main.Activate();
+            });
             if (backend is LiveBackend live)
             {
                 var window = desktop.MainWindow;

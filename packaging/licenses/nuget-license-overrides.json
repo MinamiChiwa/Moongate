@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    {
+      "id": "Avalonia.Angle.Windows.Natives",
+      "license": "BSD-3-Clause",
+      "licenseFile": "LICENSE",
+      "licenseSha256": "54aff7276217df9f6b5181613999d208c9e40d2b1d51bf55217837e6871a4a63",
+      "evidence": "nuspec declares only <license type=\"file\">LICENSE</license>; the package contains prebuilt ANGLE libraries built from https://github.com/AvaloniaUI/angle (nuspec commit 1c89805903c1482166356d3b950d474973180e61), and the bundled LICENSE is the ANGLE Project Authors three-clause BSD text (upstream ANGLE license: BSD-3-Clause)."
+    }
+  ]
+}

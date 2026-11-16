@@ -19,7 +19,7 @@
                                                         └───────────────────┘ └──────────────────┘
 ```
 
-- **Host** 是唯一的业务权威：模块状态机、队列、计划、停止条件与持久化都在后端，关闭前端不会丢失任务状态。只监听 `127.0.0.1`，默认端口 19998。
+- **Host** 是唯一的业务权威：模块状态机、队列、计划、停止条件与持久化都在后端。目录包里前端带 `--owner-process` 启动宿主，前端结束后宿主按正常停止流程退出；单独启动的宿主不随前端退出。只监听 `127.0.0.1`，默认端口 19998；该端口被其他软件占用或被系统保留时改用系统分配的端口，前端从 `runtime/instance.json` 取实际地址。
 - **模块**在同一进程内运行，通过公开应用接口协作，不读写其他模块的私有表。内置模块：core、game-access、music-library、performance、rooms、synchronization、color、environment、presentation、combat-observation、inventory。performance（游戏内演奏）与 environment（游戏内时间、天气等）当前返回 `module.notImplemented`。
 - **Provider** 把具体数据源（台服抓包、回放、GitHub Releases、隧道）适配为统一的观测、能力与操作接口。
 - **Worker** 隔离原生依赖和重计算：观察 Worker 负责 Npcap 共享抓包，绑定游戏窗口并确定网卡后常驻；染色 Worker 按任务启动。
@@ -117,7 +117,7 @@ node .\scripts\build\replay-demo.mjs artifacts\tmp\mock-dev\runtime\instance.jso
 
 | 变量 | 作用 |
 |---|---|
-| `MABITOOL_API_PORT` | Host 端口，默认 19998；`0` 由系统分配（测试使用） |
+| `MABITOOL_API_PORT` | Host 端口，默认 19998（被其他软件占用或被系统保留时自动改用空闲端口）；`0` 由系统分配（测试使用）；显式指定的端口不可用时不自动更换，以退出码 6 结束 |
 | `MABITOOL_ALLOWED_ORIGINS` | 浏览器前端的精确 Origin 白名单，默认空 |
 | `MABITOOL_COLOR_PYTHON` | 染色引擎使用的 Python 3.12 解释器（已安装 `workers/color-engine/requirements.txt`） |
 | `MABITOOL_COLOR_WORKER_DIRECTORY` | 染色引擎源码目录，开发时指向 `workers\color-engine` |

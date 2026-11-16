@@ -16,7 +16,7 @@
 
 ## 1. 下載與安裝
 
-1. 從 [GitHub Releases](https://github.com/MinamiChiwa/Moongate/releases) 下載 **`Moongate-v0.1.0-preview-Windows-x64.zip`**。
+1. 0.1.0 預覽版安裝包尚未發布，發布後在 [GitHub Releases](https://github.com/MinamiChiwa/Moongate/releases) 提供 **`Moongate-v0.1.0-preview-Windows-x64.zip`**。目前可依[開發文件](docs/development.md#8-打包)從原始碼建置並打包出相同的壓縮檔。
 2. 把壓縮檔**完整解壓縮**到一個你有寫入權限的資料夾，例如 `D:\Moongate`。不要放在 `C:\Program Files`、OneDrive 同步資料夾或網路磁碟裡。
 3. 按兩下資料夾裡的 **`Moongate.exe`**。第一次啟動會自動完成初始化。在壓縮檔檢視器裡直接按兩下無法執行，工具會提示先完整解壓縮。
 
@@ -81,8 +81,8 @@
 - **左上角寫「未抓包：未安裝 Npcap」**：依跳出的指引安裝 Npcap，裝好後不需重新啟動工具。
 - **用了 VPN 或加速器後抓不到資料**：到設定頁的抓包部分重新偵測或手動選擇網路卡。
 - **按兩下後沒有出現視窗，或提示背景服務啟動失敗**：在工具資料夾開啟終端機執行 `components\core\launch-backend.cmd -Wait`，視窗會顯示背景服務的啟動輸出與失敗原因，回報問題時一併附上。
-- **底部顯示「未連接後端」**：看底部狀態寫的原因。寫著「本機連接埠 19998 已被佔用」時，是另一個資料夾裡的 Moongate 仍在執行（例如解壓縮了兩份），到那一份的設定頁按「結束 Moongate（含背景服務）」，或在工作管理員「詳細資料」裡結束命令列含 MabiTool.Host 的 dotnet.exe，再重新開啟。
-- **關閉視窗後背景服務仍在執行**：這是正常的，抓包、定時測量與浮窗不會因關閉視窗中斷。要完全結束，到設定頁「後端」卡片按「結束 Moongate（含背景服務）」。
+- **底部顯示「未連接後端」**：看底部狀態寫的原因。寫著「本機連接埠 19998 已被佔用」時，是另一個資料夾裡的 Moongate 仍在執行（例如解壓縮了兩份），關閉那一份的 Moongate 視窗，或在工作管理員「詳細資料」裡結束命令列含 MabiTool.Host 的 dotnet.exe，再重新開啟。19998 被其他軟體佔用或被系統保留時會自動改用空閒連接埠，不需要處理。
+- **怎樣完全結束**：關閉 Moongate 視窗即可，背景服務隨之結束，不留背景程序；進行中的合奏、染色與定時測量會停止並釋放遊戲操作。
 - **工具無法對遊戲送出輸入**：如果遊戲以系統管理員身分執行，Moongate 也需要以系統管理員身分執行。
 - **回報問題**：在「診斷」頁匯出排查包，連同問題描述一起提交到 [Issues](https://github.com/MinamiChiwa/Moongate/issues)。
 

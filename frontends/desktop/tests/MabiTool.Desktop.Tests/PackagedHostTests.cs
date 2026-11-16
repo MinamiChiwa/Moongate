@@ -29,7 +29,10 @@ public sealed class PackagedHostTests
             Assert.True(first.InitializeData);
             var start = PackagedHost.StartInfo(first);
             Assert.Equal(Path.Combine(components, "dotnet-runtime", "dotnet.exe"), start.FileName);
-            Assert.Equal(new[] { Path.Combine(components, "core", "MabiTool.Host.dll"), "--initialize-data" }, start.ArgumentList);
+            // 宿主跟随本前端进程：前端结束后宿主随之退出。
+            var owner = Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Equal(new[] { Path.Combine(components, "core", "MabiTool.Host.dll"), "--initialize-data", "--owner-process", owner },
+                start.ArgumentList);
             Assert.Equal(root, start.WorkingDirectory);
             Assert.Equal(Path.Combine(components, "dotnet-runtime"), start.Environment["DOTNET_ROOT"]);
             Assert.Equal(new[] { "components" }, Directory.EnumerateFileSystemEntries(root).Select(path => Path.GetFileName(path)));
@@ -41,14 +44,16 @@ public sealed class PackagedHostTests
             File.WriteAllBytes(hostLock, []);
             var later = PackagedHost.Plan([], toolRoot, desktop);
             Assert.False(later!.InitializeData);
-            Assert.Equal(new[] { Path.Combine(components, "core", "MabiTool.Host.dll") }, PackagedHost.StartInfo(later).ArgumentList);
+            Assert.Equal(new[] { Path.Combine(components, "core", "MabiTool.Host.dll"), "--owner-process", owner },
+                PackagedHost.StartInfo(later).ArgumentList);
 
-            // 宿主运行期间独占 host.lock：只打开前端。显式指定工具根或发现文件时同样不启动宿主。
+            // 宿主运行期间独占 host.lock：只打开前端。显式指定工具根或发现文件（开发与复验方式）时不启动宿主，也不照看它。
             using (new FileStream(hostLock, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
                 Assert.Null(PackagedHost.Plan([], toolRoot, desktop));
             Assert.Null(PackagedHost.Plan([ToolRoot.Argument, root], toolRoot, desktop));
             Assert.Null(PackagedHost.Plan(["--instance", hostLock], toolRoot, desktop));
             Assert.Null(PackagedHost.Plan([], toolRoot, Path.Combine(root, "elsewhere")));
+            Assert.Null(PackagedHost.PackageOf([ToolRoot.Argument, root], toolRoot, desktop));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
@@ -63,5 +68,23 @@ public sealed class PackagedHostTests
         Assert.Contains("MabiTool.Host", message);
         Assert.DoesNotContain("数据目录", message);
         Assert.DoesNotContain("資料目錄", message);
+    }
+
+    [Fact]
+    public void HostStoppingWhileTheFrontendIsOpenIsRestartedOnceAndStartupFailuresAreNotRetried()
+    {
+        // 启动阶段失败：写明原因，不自动重试，避免反复崩溃。
+        var startup = PackagedHost.AfterExit(3, TimeSpan.FromSeconds(2), relaunched: false);
+        Assert.False(startup.Relaunch);
+        Assert.Equal(PackagedHost.FailureMessage(3), startup.Problem);
+        // 运行中停止（崩溃或被结束）：自动重新启动一次，连接状态写明后端已停止。
+        var first = PackagedHost.AfterExit(-1, TimeSpan.FromMinutes(5), relaunched: false);
+        Assert.True(first.Relaunch);
+        Assert.Contains("-1", first.Problem);
+        Assert.DoesNotContain("Moongate", first.Problem);
+        // 重新启动后再次停止：不再重试，请用户重新打开。
+        var second = PackagedHost.AfterExit(-1, TimeSpan.FromMinutes(5), relaunched: true);
+        Assert.False(second.Relaunch);
+        Assert.Contains("Moongate", second.Problem);
     }
 }

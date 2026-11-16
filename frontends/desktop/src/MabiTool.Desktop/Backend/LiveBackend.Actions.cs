@@ -172,11 +172,4 @@ public sealed partial class LiveBackend
         try { return (await api.QueryMusicTimelineAsync(new(scoreId, null), token)).FullCycleMs; }
         catch (MabiToolApiException) { return null; }
     }
-
-    public Task<BackendReply> ShutdownHostAsync(CancellationToken cancellationToken) =>
-        ReplyAsync(async (api, token) =>
-        {
-            await api.ShutdownHostAsync(token);
-            return string.Empty;
-        }, cancellationToken, remember: false);
 }

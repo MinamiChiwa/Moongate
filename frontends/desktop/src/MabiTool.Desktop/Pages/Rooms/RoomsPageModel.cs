@@ -544,10 +544,15 @@ public sealed class RoomsPageModel : BackendPageModel<RoomsPageData>, IPageLifec
             {
                 ShowLocal(new(field == "group" ? Pick("合奏组请输入 1–24。", "合奏組請輸入 1–24。")
                     : Pick("顺序请输入 1–24；组内会自动连续排列。", "順序請輸入 1–24；組內會自動連續排列。"), RoomTone.Error));
-                Reload();
+                row.ResetInputs();
                 return;
             }
-            if (number == (field == "group" ? row.Member.Group : row.Member.Order)) return;
+            if (number == (field == "group" ? row.Member.Group : row.Member.Order))
+            {
+                // “02”“ 2”等与当前值相同的写法不发送，格里改回规范写法。
+                row.ResetInputs();
+                return;
+            }
             value = number.ToString(CultureInfo.InvariantCulture);
         }
         Send("rooms.roster", $"{row.Id}\n{field}\n{value}");
@@ -810,13 +815,17 @@ public sealed class RoomsPageModel : BackendPageModel<RoomsPageData>, IPageLifec
         status = null;
         liveTiming = Data.Timing;
         AbsorbKnown();
+        var rejected = false;
         if (!ReferenceEquals(Data.Feedback, seenFeedback) && Data.Feedback != seenFeedback)
         {
             seenFeedback = Data.Feedback;
             localFeedback = null;
+            rejected = Data.Feedback?.Tone == RoomTone.Error;
         }
         if (!Status.CanEditLocal) recording = null;
         RebuildRows();
+        // 后端拒绝时成员数据不变，已提交的组号与顺序文字还原为当前值。
+        if (rejected) foreach (var row in Rows) row.ResetInputs();
     }
 
     private void RebuildRows()

@@ -310,6 +310,8 @@ internal sealed class TableInputEditor
         writing = true;
         try { target.Commit(text); }
         finally { writing = false; }
+        // 提交处理把文字改回（输入被拒后还原为当前值）时，仍在编辑的输入框随之改写。
+        if (owner == target && box.Text != (target.Text ?? string.Empty)) box.Text = target.Text ?? string.Empty;
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)

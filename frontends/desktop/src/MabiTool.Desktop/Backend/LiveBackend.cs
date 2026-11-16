@@ -41,6 +41,8 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
     private readonly SemaphoreSlim wake = new(0, 1);
     private readonly Lock gate = new();
     private State state = new(false, null, null, null, null, null, [], null, [], false);
+    /// <summary>本次握手得到的宿主实际监听地址（发现文件里的地址，可能是系统分配的端口）；未连接时为空。</summary>
+    private string? apiAddress;
     private MabiToolClient? client;
     private string? notice;
     // DPS检测页是否显示；切走后不读取只供页面使用的首击时间线。显示时下一轮刷新必定通知页面（清除“更新中”）。
@@ -386,7 +388,11 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                 var handshake = await LocalBootstrapClient.ConnectAsync(discoveryPath, "moongate-desktop", token);
                 using var api = new MabiToolClient(new(handshake.ApiBaseUri), _ => ValueTask.FromResult(handshake.Grant.Token), Handler?.Invoke());
                 client = api;
-                lock (gate) diagnosticAccess = DiagnosticAccessOf(handshake.Grant.Session);
+                lock (gate)
+                {
+                    diagnosticAccess = DiagnosticAccessOf(handshake.Grant.Session);
+                    apiAddress = handshake.ApiBaseUri;
+                }
                 var simulation = (await api.GetCombatCapabilitiesAsync(token)).Simulation;
                 try { await RegisterFrontendShortcutsAsync(api, token); }
                 catch (MabiToolApiException error) { Remember(Problem(error)); }
@@ -423,14 +429,15 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                                               or UnauthorizedAccessException or System.Text.Json.JsonException
                                               or OperationCanceledException)
             {
-                // 工具根不可写或参数错误时宿主也无法在此启动，连接状态直接写明原因。
-                var reason = Infrastructure.DesktopFiles.Problem ??
+                // 工具根不可写或参数错误时宿主也无法在此启动；目录包里宿主停止或未能启动时写明宿主的情况。
+                var reason = Infrastructure.DesktopFiles.Problem ?? Infrastructure.PackagedHost.Problem ??
                     (error is MabiToolApiException api ? api.Problem?.Code ?? $"http.{api.Status}" : error.Message);
                 client = null;
                 lock (gate)
                 {
                     state = state with { Connected = false, Problem = reason };
                     diagnosticAccess = diagnosticAccess with { Connected = false };
+                    apiAddress = null;
                 }
                 Notify();
             }

@@ -19,7 +19,7 @@ public sealed record CombatNameTables(string Id, IReadOnlyDictionary<uint, strin
 /// <summary>
 /// 从客户端 Sheetdata 读取 Monster、Skill、Buff 三张表的 DisplayName。列顺序以 global-metadata 中对应 SheetData 的字段声明核对；
 /// Skill 的 DisplayName 位于第 49 列，之前各列按客户端表编码逐列跳过：枚举与字符串为文本偏移 VarUInt32，TimeSpan 为 8 字节，
-/// int32 为 VarUInt32，bool 为 1 字节，SheetId 为 4 字节，float 为 1 字节标记加其低 3 位给出的字节数，数组为 VarUInt32 个数加元素。
+/// int32 为有符号变长整数（<see cref="ClientDataReader.Int"/>），bool 为 1 字节，SheetId 为 4 字节，float 为 1 字节标记加其低 3 位给出的字节数，数组为 VarUInt32 个数加元素。
 /// </summary>
 public static partial class ClientCombatNameCatalog
 {
@@ -118,7 +118,8 @@ public static partial class ClientCombatNameCatalog
     {
         switch (codec)
         {
-            case "V" or "I": row.Var(); break;
+            case "V": row.Var(); break;
+            case "I": row.Int(); break;
             case "T": row.Take(8); break;
             case "B": row.Take(1); break;
             case "U": row.Take(4); break;

@@ -21,10 +21,12 @@ public static class DesktopFiles
     /// <summary>
     /// 保存到偏好里的路径：位于工具根内时存为相对工具根的路径，程序文件夹整体搬移或改名后仍指向同一位置；工具根外的路径原样保存。
     /// </summary>
-    public static string ToToolRoot(string path)
+    public static string ToToolRoot(string path) => Relative(Root, path);
+
+    private static string Relative(string toolRoot, string path)
     {
         if (!Path.IsPathFullyQualified(path)) return path;
-        var relative = Path.GetRelativePath(Root, path);
+        var relative = Path.GetRelativePath(toolRoot, path);
         return relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) || Path.IsPathRooted(relative)
             ? path : relative;
     }
@@ -54,17 +56,21 @@ public static class DesktopFiles
         }
         // 与宿主一致：只有未显式指定工具根时才迁入旧默认位置。迁入失败保留旧目录，前端使用默认偏好照常启动。
         if (!args.Contains(ToolRoot.Argument))
-            try { ImportLegacy(LegacyDirectory, Directory); }
+            try { ImportLegacy(LegacyDirectory, Root); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
         Problem = Writable(Directory) ? null : ToolRoot.NotWritableMessage(Root);
     }
 
     /// <summary>
     /// 目标目录不存在且旧目录存在时，把旧目录的文件逐个复制并校验 SHA-256，全部一致后改名发布为目标目录；旧目录保持原样。
-    /// 偏好中指向旧目录内的素材包路径改到新目录。返回迁入的文件数，未迁入时返回 0。
+    /// 偏好中指向旧目录内的素材包路径改到新目录，并按 <see cref="ToToolRoot"/> 的规则写成相对工具根的路径，
+    /// 迁入后即使未再保存偏好就搬移程序文件夹，素材包选择仍然有效。返回迁入的文件数，未迁入时返回 0。
     /// </summary>
-    internal static int ImportLegacy(string legacy, string target)
+    /// <param name="legacy">旧目录。</param>
+    /// <param name="toolRoot">工具根；迁入目标为其下的 <c>desktop</c> 目录。</param>
+    internal static int ImportLegacy(string legacy, string toolRoot)
     {
+        var target = ToolRoot.Desktop(toolRoot);
         if (System.IO.Directory.Exists(target) || !System.IO.Directory.Exists(legacy)) return 0;
         // 不跟随联接与符号链接，只复制旧目录内的实际文件。
         var files = System.IO.Directory.EnumerateFiles(legacy, "*", new EnumerationOptions
@@ -84,14 +90,14 @@ public static class DesktopFiles
                     throw new IOException("迁入的前端文件校验不一致");
             }
             System.IO.Directory.CreateDirectory(staging);
-            RebaseAssetPack(Path.Combine(staging, "preferences.json"), legacy, target);
+            RebaseAssetPack(Path.Combine(staging, "preferences.json"), legacy, target, toolRoot);
             System.IO.Directory.Move(staging, target);
         }
         catch { if (System.IO.Directory.Exists(staging)) System.IO.Directory.Delete(staging, true); throw; }
         return files.Length;
     }
 
-    private static void RebaseAssetPack(string preferences, string legacy, string target)
+    private static void RebaseAssetPack(string preferences, string legacy, string target, string toolRoot)
     {
         if (!System.IO.File.Exists(preferences) || JsonNode.Parse(System.IO.File.ReadAllBytes(preferences)) is not JsonObject document) return;
         var key = document.Select(pair => pair.Key).FirstOrDefault(name => name.Equals("AssetPack", StringComparison.OrdinalIgnoreCase));
@@ -99,7 +105,7 @@ public static class DesktopFiles
         var pack = document[key]!.GetValue<string>();
         var relative = Path.IsPathFullyQualified(pack) ? Path.GetRelativePath(legacy, pack) : null;
         if (relative is null || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) || Path.IsPathRooted(relative)) return;
-        document[key] = Path.Combine(target, relative);
+        document[key] = Relative(toolRoot, Path.Combine(target, relative));
         System.IO.File.WriteAllText(preferences, document.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     }
 

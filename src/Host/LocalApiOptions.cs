@@ -1,8 +1,15 @@
 namespace MabiTool.Host;
 
-public sealed record LocalApiOptions(int Port, string Token, IReadOnlySet<string> AllowedOrigins, string? RuntimeDirectory = null)
+/// <param name="PortFallback">端口取的是默认值、未经显式指定：默认端口被非 Moongate 程序占用或被系统拒绝时改用系统分配的空闲端口
+/// （<see cref="HostStartupFailure.ResolveDefaultPortAsync"/>）。显式指定的端口绑定失败时照常报错，不改用别的端口。</param>
+public sealed record LocalApiOptions(int Port, string Token, IReadOnlySet<string> AllowedOrigins, string? RuntimeDirectory = null,
+    bool PortFallback = false)
 {
-    public override string ToString() => $"LocalApiOptions {{ Port = {Port}, Token = [redacted], RuntimeDirectory = {RuntimeDirectory} }}";
+    /// <summary>未设置 MABITOOL_API_PORT 时首先尝试的本机端口。</summary>
+    public const int DefaultPort = 19998;
+
+    public override string ToString() =>
+        $"LocalApiOptions {{ Port = {Port}, PortFallback = {PortFallback}, Token = [redacted], RuntimeDirectory = {RuntimeDirectory} }}";
 
     public void Validate()
     {
@@ -23,12 +30,13 @@ public sealed record LocalApiOptions(int Port, string Token, IReadOnlySet<string
     public static LocalApiOptions FromEnvironment(string? toolRoot = null)
     {
         var rawPort = Environment.GetEnvironmentVariable("MABITOOL_API_PORT");
-        var port = string.IsNullOrEmpty(rawPort) ? 19998 :
+        var port = string.IsNullOrEmpty(rawPort) ? DefaultPort :
             int.TryParse(rawPort, out var parsed) ? parsed : throw new ArgumentException("MABITOOL_API_PORT 无效");
         return new(port, Environment.GetEnvironmentVariable("MABITOOL_API_TOKEN") ?? LocalAuthService.NewSecret(),
             (Environment.GetEnvironmentVariable("MABITOOL_ALLOWED_ORIGINS") ?? "")
                 .Split(';', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal),
             Environment.GetEnvironmentVariable("MABITOOL_RUNTIME_DIRECTORY") ??
-                MabiTool.ModuleSdk.ToolRoot.Runtime(toolRoot ?? MabiTool.ModuleSdk.ToolRoot.FromProgramDirectory(AppContext.BaseDirectory)));
+                MabiTool.ModuleSdk.ToolRoot.Runtime(toolRoot ?? MabiTool.ModuleSdk.ToolRoot.FromProgramDirectory(AppContext.BaseDirectory)),
+            PortFallback: string.IsNullOrEmpty(rawPort));
     }
 }

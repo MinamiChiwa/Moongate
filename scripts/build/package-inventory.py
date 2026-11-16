@@ -250,6 +250,9 @@ def inventory(repository, package, arguments):
     relationships.append(dict(spdxElementId=own_ref, relationshipType="DEPENDS_ON", relatedSpdxElement=updater_runtime_ref))
     notices.append(updater_runtime_text)
 
+    # nuspec 没有许可表达式的包按登记的人工映射标注，映射同时固定包内许可文件的哈希作为依据。
+    overrides_path = repository / "packaging/licenses/nuget-license-overrides.json"
+    license_overrides = {entry["id"].lower(): entry for entry in read(overrides_path)["packages"]} if overrides_path.is_file() else {}
     dependencies = {}
     for component in component_ids:
         for deps in (components_root / component).glob("*.deps.json"):
@@ -268,6 +271,12 @@ def inventory(repository, package, arguments):
         license_node, copyright_node = field("license"), field("copyright")
         declared = license_node.text if license_node is not None and license_node.get("type") == "expression" else "NOASSERTION"
         copyright = copyright_node.text if copyright_node is not None else "NOASSERTION"
+        override = license_overrides.get(normalized) if declared == "NOASSERTION" else None
+        if override:
+            evidence = location / override["licenseFile"]
+            if not evidence.is_file() or digest(evidence) != override["licenseSha256"]:
+                raise ValueError(f"许可映射的依据文件与登记不符，请重新核对：{name}/{version} {override['licenseFile']}")
+            declared = override["license"]
         destination = licenses / "nuget" / f"{name}-{version}"
         destination.mkdir(parents=True, exist_ok=True)
         shutil.copy2(nuspec, destination / nuspec.name)
@@ -282,9 +291,11 @@ def inventory(repository, package, arguments):
             actual_texts.append("Apache-2.0 完整授权文字见 dotnet-runtime/ThirdPartyNotices.txt。")
         nupkg = location / f"{normalized}.{version}.nupkg"
         reference = add_package(name, version, declared, location=f"https://www.nuget.org/packages/{name}/{version}", copyright=copyright,
+                                comment=override["evidence"] if override else None,
                                 checksums=[dict(algorithm="SHA256", checksumValue=digest(nupkg))] if nupkg.is_file() else None)
         relationships.append(dict(spdxElementId=own_ref, relationshipType="DEPENDS_ON", relatedSpdxElement=reference))
-        license_text = f"{name} {version}\n{copyright}\nLicense: {declared}\n" + "\n".join(actual_texts)
+        basis = f"License basis: {override['evidence']}\n" if override else ""
+        license_text = f"{name} {version}\n{copyright}\nLicense: {declared}\n{basis}" + "\n".join(actual_texts)
         (destination / "NOTICE.txt").write_text(license_text, encoding="utf-8")
         notices.append(license_text)
 

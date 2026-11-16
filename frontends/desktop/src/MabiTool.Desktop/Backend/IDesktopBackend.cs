@@ -99,12 +99,6 @@ public partial interface IDesktopBackend
     TopicNotice? GetPresentationNotice(string topic);
     Task RequestEmergencyStopAsync(CancellationToken cancellationToken);
 
-    /// <summary>
-    /// 请求后端退出（含后台服务：抓包、定时测量、浮窗数据）。受理后后端按正常停止流程退出，本前端随后关闭；
-    /// 未连接或后端不支持时回执说明原因。
-    /// </summary>
-    Task<BackendReply> ShutdownHostAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(new BackendReply(false, Localization.UiText.Pick("当前后端不支持退出", "目前後端不支援結束")));
     Task SendCombatIntentAsync(CombatIntent intent, string? targetId, CancellationToken cancellationToken);
 
     /// <summary>
