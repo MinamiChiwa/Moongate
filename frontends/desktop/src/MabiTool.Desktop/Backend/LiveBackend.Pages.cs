@@ -244,7 +244,7 @@ public sealed partial class LiveBackend
             current.Connected && page.Policy?.Policy is { } policy
                 ? new UpdatePolicyView(policy.AutomaticChecks, policy.CheckIntervalHours, policy.DownloadConcurrency, policy.MaximumBytesPerSecond)
                 : null,
-            current.Connected ? page.Update?.Available?.ReleaseId : null);
+            current.Connected ? page.Update?.Available?.ReleaseId : null, current.Connected);
     }
 
     // 快捷键行：后端注册清单与可修改的动作合并；紧急停止始终列出，后端没有报告时显示未知。

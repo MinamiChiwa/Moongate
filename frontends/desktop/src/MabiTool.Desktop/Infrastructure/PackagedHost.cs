@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using MabiTool.Desktop.Localization;
 using MabiTool.ModuleSdk;
 
 namespace MabiTool.Desktop.Infrastructure;
@@ -101,14 +102,29 @@ internal static class PackagedHost
         }
     }
 
+    /// <summary>宿主退出码到连接状态说明；退出码的分类见宿主 <c>HostStartupFailure</c>。</summary>
     internal static string FailureMessage(int exitCode) => exitCode switch
     {
-        3 => "后端未能启动（退出码 3）：数据目录无法使用，可能是程序文件夹不可写、数据正被占用、需要恢复或配置冲突。" + Diagnose,
-        4 => "后端未能启动（退出码 4）：上次更新尚未完成恢复。" + Diagnose,
-        _ => $"后端未能启动（退出码 {exitCode}）。" + Diagnose
+        3 => UiText.Pick("后端未能启动（退出码 3）：数据目录无法使用，可能是程序文件夹不可写、数据正被占用、需要恢复或配置冲突。",
+            "後端未能啟動（結束代碼 3）：資料目錄無法使用，可能是程式資料夾不可寫入、資料正被佔用、需要復原或設定衝突。") + Diagnose,
+        4 => UiText.Pick("后端未能启动（退出码 4）：上次更新尚未完成恢复。", "後端未能啟動（結束代碼 4）：上次更新尚未完成復原。") + Diagnose,
+        5 => UiText.Pick(
+            $"后端未能启动（退出码 5）：本机端口 {Port} 已被占用，通常是另一个文件夹里的 Moongate 仍在运行。" +
+            "请先退出那一份：在它的设置页按“退出 Moongate（含后台服务）”，或在任务管理器的“详细信息”里结束命令行含 MabiTool.Host 的 dotnet.exe；然后重新打开本程序。",
+            $"後端未能啟動（結束代碼 5）：本機連接埠 {Port} 已被佔用，通常是另一個資料夾裡的 Moongate 仍在執行。" +
+            "請先結束那一份：在它的設定頁按「結束 Moongate（含背景服務）」，或在工作管理員的「詳細資料」裡結束命令列含 MabiTool.Host 的 dotnet.exe；然後重新開啟本程式。"),
+        6 => UiText.Pick(
+            $"后端未能启动（退出码 6）：本机端口 {Port} 被其他程序占用或被系统保留，请关闭占用该端口的程序后重新打开。",
+            $"後端未能啟動（結束代碼 6）：本機連接埠 {Port} 被其他程式佔用或被系統保留，請關閉佔用該連接埠的程式後重新開啟。") + Diagnose,
+        7 => UiText.Pick("后端未能启动（退出码 7）：未知启动错误。", "後端未能啟動（結束代碼 7）：未知啟動錯誤。") + Diagnose,
+        _ => UiText.Pick($"后端未能启动（退出码 {exitCode}）。", $"後端未能啟動（結束代碼 {exitCode}）。") + Diagnose
     };
 
-    private const string Diagnose = @"在程序文件夹运行 components\core\launch-backend.cmd -Wait 可查看具体原因。";
+    private static string Diagnose => UiText.Pick(@"在程序文件夹运行 components\core\launch-backend.cmd -Wait 可查看具体原因。",
+        @"在程式資料夾執行 components\core\launch-backend.cmd -Wait 可查看具體原因。");
+
+    /// <summary>宿主监听的本机端口：与宿主相同，取 MABITOOL_API_PORT，未设置时为 19998。</summary>
+    private static string Port => System.Environment.GetEnvironmentVariable("MABITOOL_API_PORT") is { Length: > 0 } port ? port : "19998";
 
     private static string? Configured(string variable) =>
         System.Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value ? Path.GetFullPath(value) : null;

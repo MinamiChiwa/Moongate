@@ -3,6 +3,10 @@ using MabiTool.Infrastructure;
 using MabiTool.Host.Updates;
 using MabiTool.Host.Color;
 
+// 常规宿主模式下记录监听端口与是否已开始监听：启动失败按端口、数据目录与未知错误分别给出原因与退出码（HostStartupFailure）。
+var hostMode = false;
+var started = false;
+var port = 0;
 try
 {
     if (args.Length > 0 && args[0] == "--initial-install-health")
@@ -27,6 +31,7 @@ try
         Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(BackendApplication.InstallationTarget(args[1]), MabiTool.Contracts.ContractJson.Options));
         return;
     }
+    hostMode = true;
     var mock = args.Contains("--mock", StringComparer.Ordinal);
     if (args.Count(x => x == "--mock") > 1) throw new ArgumentException("--mock 不能重复");
     var requested = StorageOptions.FromArguments(args.Where(x => x != "--mock").ToArray());
@@ -41,10 +46,12 @@ try
     var updateGate = MabiTool.Infrastructure.Updates.UpdateInstallGate.Find(storage);
     if (updateGate is not null) await MabiTool.Infrastructure.Updates.UpdateLaunchSupport.RecoverAsync(updateGate.InstallationRoot);
     var options = LocalApiOptions.FromEnvironment(storage.PortableRoot);
+    port = options.Port;
     if (mock && storage.PortableRoot is not null)
         options = options with { RuntimeDirectory = Path.Combine(storage.PortableRoot, "runtime") };
     do
     {
+        started = false;
         await StorageMaintenanceCoordinator.RecoverAsync(storage, BackendApplication.DatabaseMigrations, BackendApplication.StorageData);
         await using (var application = BackendApplication.Build(options, storage: storage, mock: mock,
             updateInstallation: UpdateInstallationOptions.FromEnvironment(), colorPreviewOptions: mock ? null : ColorPreviewService.FromEnvironment,
@@ -52,6 +59,7 @@ try
             gameAutomation: !mock))
         {
             await application.StartAsync();
+            started = true;
             if (imported is not null)
             {
                 application.Services.GetRequiredService<DiagnosticTrace>().Emit(DiagnosticEvents.LegacyDataImported,
@@ -73,12 +81,6 @@ catch (ArgumentException error)
     Console.Error.WriteLine(error.Message);
     Environment.ExitCode = 2;
 }
-catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-{
-    // 启动阶段的文件访问与权限失败（例如数据目录的所有者或权限不符）同样按数据目录不可用结束，给出中文原因。
-    Console.Error.WriteLine($"storage.unavailable: 程序文件夹里的数据无法访问：{error.Message}");
-    Environment.ExitCode = 3;
-}
 catch (MabiTool.Infrastructure.Updates.UpdatePlanException error)
 {
     Console.Error.WriteLine(error.Code);
@@ -88,4 +90,18 @@ catch (UpdateHostHealthException error)
 {
     Console.Error.WriteLine(error.Code);
     Environment.ExitCode = 4;
+}
+catch (Exception error) when (!hostMode && error is IOException or UnauthorizedAccessException)
+{
+    // 安装与更新检查模式：文件访问与权限失败按数据目录不可用结束。
+    Console.Error.WriteLine($"storage.unavailable: 程序文件夹里的数据无法访问：{error.Message}");
+    Environment.ExitCode = HostStartupFailure.StorageExitCode;
+}
+catch (Exception error) when (hostMode)
+{
+    // 启动阶段：端口被占用或不可用、文件访问与权限失败各有原因码与退出码；分不清的写出原始异常类型与消息。
+    var failure = await HostStartupFailure.DescribeAsync(error, port, started);
+    Console.Error.WriteLine($"{failure.Code}: {failure.Message}");
+    if (failure.ExitCode == HostStartupFailure.UnknownExitCode) Console.Error.WriteLine(error);
+    Environment.ExitCode = failure.ExitCode;
 }

@@ -52,4 +52,16 @@ public sealed class PackagedHostTests
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
+
+    [Fact]
+    public void PortConflictExitCodeIsExplainedWithoutTheDataDirectoryReason()
+    {
+        // 宿主绑定端口失败以退出码 5 结束（HostStartupFailure.PortInUseExitCode）；连接状态说明端口与另一份 Moongate，不提数据目录。
+        var message = PackagedHost.FailureMessage(5);
+        Assert.Contains("19998", message);
+        Assert.Contains("Moongate", message);
+        Assert.Contains("MabiTool.Host", message);
+        Assert.DoesNotContain("数据目录", message);
+        Assert.DoesNotContain("資料目錄", message);
+    }
 }

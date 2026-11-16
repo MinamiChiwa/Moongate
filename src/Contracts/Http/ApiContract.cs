@@ -182,6 +182,9 @@ public static class ApiContract
         Method: "POST", RequestType: typeof(ColorRetryRequest), Permission: ApiPermissions.ColorControl);
     public static EndpointDefinition Health { get; } = new("/api/v1/health", "getHealth", typeof(HealthInfo));
     public static EndpointDefinition Ready { get; } = new("/api/v1/ready", "getReady", typeof(HealthInfo));
+    /// <summary>退出宿主（含后台服务）：只接受本机桌面所有者会话，回应后宿主按正常停止流程退出。</summary>
+    public static EndpointDefinition ShutdownHost { get; } = new("/api/v1/system/shutdown", "shutdownHost", typeof(HealthInfo),
+        Method: "POST", Permission: ApiPermissions.AuthManage, SuccessStatus: 202);
     public static EndpointDefinition OpenApi { get; } = new("/api/v1/openapi.json", "getOpenApi", typeof(JsonElement));
     public static EndpointDefinition AuthSession { get; } = new("/api/v1/auth/session", "getAuthSession", typeof(AuthSession));
     public static EndpointDefinition AuthClients { get; } = new("/api/v1/auth/clients", "getAuthClients", typeof(ApiList<AuthSession>), Permission: ApiPermissions.AuthManage);
@@ -332,7 +335,7 @@ public static class ApiContract
     public static IReadOnlyList<EndpointDefinition> Endpoints { get; } = Array.AsReadOnly([
         SystemInfo, GameWindows, GameBinding, SelectGameBinding, GameObservationRuntime, GameObservation, QueryObservationChannels, StartGameObservation, ReleaseGameObservation,
         GameCaptureSettings, SaveGameCaptureSettings, StartChannelDetection, ChannelDetection, CancelChannelDetection,
-        GameInputOwnership, ActivateGameWindow, GameEmergencyStop, Shortcuts, ShortcutSettings, ChangeShortcutSettings, Modules, ModuleSettingsSchema, Capabilities, Health, Ready, OpenApi,
+        GameInputOwnership, ActivateGameWindow, GameEmergencyStop, Shortcuts, ShortcutSettings, ChangeShortcutSettings, Modules, ModuleSettingsSchema, Capabilities, Health, Ready, ShutdownHost, OpenApi,
         FileCapabilities, CreateUpload, Upload, UploadContent, FileSelection, UploadSelection, Asset, AssetContent,
         UpdateState, UpdatePolicy, SaveUpdatePolicy, CreateUpdateCheck, UpdatePlan, DownloadUpdatePlan, ApplyUpdatePlan,
         StorageUsage, PreviewStorageCleanup, StorageCleanupPlan, ExecuteStorageCleanup, StorageCleanupResult,

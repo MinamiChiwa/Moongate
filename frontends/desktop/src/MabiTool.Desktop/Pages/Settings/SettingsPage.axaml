@@ -296,6 +296,17 @@
         <controls:Card x:Name="BackendPanel" CardId="backend" Title="{DynamicResource T.Backend}" Size="HalfByAuto" AllowedSizes="FullWidth">
           <StackPanel Spacing="8">
             <ItemsControl controls:StableItems.Source="{Binding Data.Backend}" />
+            <!-- 完全退出：关闭窗口时后端继续在后台运行，这里退出后端并关闭本窗口；先在卡片里确认。 -->
+            <Button x:Name="ShutdownButton" HorizontalAlignment="Left" Margin="0,4,0,0" Content="{DynamicResource T.Shutdown}"
+                    Command="{Binding ShutdownCommand}" IsEnabled="{Binding CanShutdown}" IsVisible="{Binding !ShutdownConfirming}" />
+            <WrapPanel x:Name="ShutdownConfirm" IsVisible="{Binding ShutdownConfirming}">
+              <TextBlock Classes="note" VerticalAlignment="Center" Margin="0,0,10,0" TextWrapping="Wrap"
+                         Text="{DynamicResource T.ShutdownConfirm}" />
+              <Button x:Name="ConfirmShutdownButton" Classes="primary" Margin="0,0,8,0" Content="{DynamicResource T.ShutdownYes}"
+                      Command="{Binding ConfirmShutdownCommand}" />
+              <Button Content="{DynamicResource T.Cancel}" Command="{Binding CancelShutdownCommand}" />
+            </WrapPanel>
+            <TextBlock x:Name="ShutdownNote" Classes="note" TextWrapping="Wrap" Text="{Binding ShutdownNote}" />
           </StackPanel>
         </controls:Card>
 

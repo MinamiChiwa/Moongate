@@ -436,4 +436,22 @@ public sealed class DiagnosticsTests
         Assert.Contains(VisibleTexts(page), text => text == "observation.worker.faulted");
         window.Close();
     }
+
+    [AvaloniaFact]
+    public void ExportAndCaptureCardsAreShownDisabledWhileTheBackendIsNotConnected()
+    {
+        var backend = new SampleBackend { Offline = true };
+        var window = LayoutProbe.Open(backend, 1280, 860, "shell.diagnostics");
+        try
+        {
+            foreach (var name in new[] { "ExportPanel", "CapturePanel" })
+            {
+                var card = Named<Card>(window, name);
+                Assert.True(card.IsEffectivelyVisible);
+                Assert.False(card.IsEffectivelyEnabled);
+            }
+            Assert.Empty(backend.CaptureStarts);
+        }
+        finally { window.Close(); }
+    }
 }

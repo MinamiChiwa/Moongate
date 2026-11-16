@@ -218,6 +218,34 @@ public sealed class AuthTests
     }
 
     [Fact]
+    public async Task OccupiedPortIsReportedWithItsOwnReasonAndTheOwnerCanShutDownTheHost()
+    {
+        await using var first = await TestHost.Start();
+        var port = first.BaseUri.Port;
+        await using (var second = BackendApplication.Build(new(port, LocalAuthService.NewSecret(), new HashSet<string>())))
+        {
+            var error = await Assert.ThrowsAnyAsync<Exception>(() => second.StartAsync());
+            // 占用者是 Moongate 宿主：不带凭据的健康请求得到 auth.required，辨认为另一份 Moongate。
+            var failure = await HostStartupFailure.DescribeAsync(error, port, started: false);
+            Assert.Equal(("host.portInUse", HostStartupFailure.PortInUseExitCode), (failure.Code, failure.ExitCode));
+            Assert.Contains($"本机端口 {port} 已被另一个正在运行的 Moongate 后端占用", failure.Message);
+            Assert.DoesNotContain("数据", failure.Message);
+            // 占用者回了其他 HTTP 响应：按其他程序占用给出单独的退出码。
+            var other = await HostStartupFailure.DescribeAsync(error, port, false,
+                (_, _) => Task.FromResult(HostStartupFailure.Occupant.Other));
+            Assert.Equal(("host.portUnavailable", HostStartupFailure.PortUnavailableExitCode), (other.Code, other.ExitCode));
+            // 已开始监听之后的同一异常属于运行期，不按端口或数据目录解释。
+            Assert.Equal(HostStartupFailure.UnknownExitCode, (await HostStartupFailure.DescribeAsync(error, port, started: true)).ExitCode);
+        }
+
+        // 所有者会话可以退出宿主：回应受理后宿主进入停止流程。
+        using var sdk = first.Sdk();
+        Assert.Equal("stopping", (await sdk.ShutdownHostAsync()).Status);
+        await Task.Delay(Timeout.Infinite, first.Stopping).ContinueWith(_ => { }).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(first.Stopping.IsCancellationRequested);
+    }
+
+    [Fact]
     public async Task ProtectedDiscoveryBootstrapsNativeClientAndPreventsSecondHost()
     {
         await using var host = await TestHost.Start(discovery: true);
@@ -453,6 +481,7 @@ public sealed class AuthTests
         public string Token { get; }
         public Uri BaseUri { get; }
         public string? Directory { get; }
+        public CancellationToken Stopping => app.Lifetime.ApplicationStopping;
         private TestHost(Microsoft.AspNetCore.Builder.WebApplication app, string token, string? directory)
         {
             this.app = app; Token = token; Directory = directory;

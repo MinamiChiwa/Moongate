@@ -72,6 +72,9 @@ public sealed record ColorMark(string State)
 {
     public const string Met = "met", Unmet = "unmet", NotStarted = "not-started", Excluded = "excluded", Disabled = "disabled";
 
+    /// <summary>前端占位卡片的判定：没有读到后端草稿，不知道该区域的状态。</summary>
+    public const string Unread = "unread";
+
     public static ColorMark Waiting { get; } = new(NotStarted);
 
     public string Text => State switch
@@ -81,6 +84,7 @@ public sealed record ColorMark(string State)
         NotStarted => UiText.Pick("未开始", "未開始"),
         Excluded => UiText.Pick("未参与", "未參與"),
         Disabled => UiText.Pick("未启用", "未啟用"),
+        Unread => UiText.Pick("未读取", "未讀取"),
         _ => State
     };
 

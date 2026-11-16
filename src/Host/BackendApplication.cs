@@ -652,6 +652,18 @@ public static class BackendApplication
         }).WithMetadata(ApiContract.StartReplay);
         app.MapGet(ApiContract.Health.Path, () => new HealthInfo("healthy", info.InstanceId)).WithMetadata(ApiContract.Health);
         app.MapGet(ApiContract.Ready.Path, () => new HealthInfo("ready", info.InstanceId)).WithMetadata(ApiContract.Ready);
+        // 退出宿主只接受所有者会话（本机桌面前端经命名管道取得的凭据）；回应写完后再停止，前端能收到受理结果。
+        app.MapPost(ApiContract.ShutdownHost.Path, (HttpContext context, IHostApplicationLifetime lifetime) =>
+        {
+            if (!LocalApiMiddleware.Session(context).Owner)
+                throw new LocalApiException("permission.denied", "只有本机桌面前端可以退出后端");
+            context.Response.OnCompleted(() =>
+            {
+                lifetime.StopApplication();
+                return Task.CompletedTask;
+            });
+            return Results.Accepted(value: new HealthInfo("stopping", info.InstanceId));
+        }).WithMetadata(ApiContract.ShutdownHost);
         var openApi = new Lazy<string>(static () => OpenApiDocument.Create().ToJsonString());
         app.MapGet(ApiContract.OpenApi.Path, () => Results.Text(openApi.Value, "application/json")).WithMetadata(ApiContract.OpenApi);
         app.MapGet(ApiContract.AuthSession.Path, (HttpContext context) => LocalApiMiddleware.Session(context)).WithMetadata(ApiContract.AuthSession);

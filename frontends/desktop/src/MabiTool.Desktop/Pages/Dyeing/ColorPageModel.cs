@@ -110,7 +110,9 @@ public sealed class ColorPageModel : BackendPageModel<ColorPageData>, IPageLifec
 
     public bool HasDraft => Data.Draft is not null;
     public bool NoDraft => Data.Draft is null;
-    public string NoDraftText => Data.Notice.Length > 0 ? Data.Notice : Data.Status;
+    /// <summary>没有草稿时卡片上方的说明：原因，以及区域设置未读取、卡片暂不能编辑。</summary>
+    public string NoDraftText => (Data.Notice.Length > 0 ? Data.Notice : Data.Status) +
+        UiText.Pick("：区域设置未读取，读到后端的染色草稿后才能编辑。", "：區域設定未讀取，讀到後端的染色草稿後才能編輯。");
 
     /// <summary>草稿可以编辑：后端提供了草稿且没有寻色在进行。</summary>
     public bool CanEdit => Data.Actions.CanEdit && Data.Draft is not null;
@@ -422,11 +424,18 @@ public sealed class ColorPageModel : BackendPageModel<ColorPageData>, IPageLifec
         }
     }
 
+    /// <summary>染色界面固定三个区域（原工具三张 RegionCard）；没有读到草稿时按这个数目排占位卡片。</summary>
+    internal const int RegionCount = 3;
+
     // 后端草稿只在没有待保存、保存中或被拒绝后保留的本地改动时写回卡片。
+    // 从未读到草稿（未连接后端、后端没有提供草稿）时排三张停用的占位卡片，页面结构与布局编辑照常；
+    // 读到过草稿后再失去连接时保留最后读到的卡片，由 CanEdit 停用。
     private void Adopt()
     {
+        if (Data.Draft is null && Cards.Count == 0)
+            for (var index = 0; index < RegionCount; index++) Cards.Add(RegionCardModel.Unread(this, index));
         if (Data.Draft is not { } draft || dirty || saving || held) return;
-        if (!Cards.Select(card => card.Id).SequenceEqual(draft.Regions.Select(region => region.Id)))
+        if (Cards.Any(card => card.IsUnread) || !Cards.Select(card => card.Id).SequenceEqual(draft.Regions.Select(region => region.Id)))
         {
             ClosePicker();
             AtlasCard = null;

@@ -265,6 +265,10 @@
   <sys:String x:Key="T.AutoWindowHint">找到唯一的台服游戏窗口时自动绑定（启动时与游戏启动后）；有多个窗口时在侧栏手动选择。</sys:String>
   <sys:String x:Key="T.CaptureUnavailable">未连接后端，抓包设置不可用。</sys:String>
   <sys:String x:Key="T.Backend">后端</sys:String>
+  <sys:String x:Key="T.Shutdown">退出 Moongate（含后台服务）</sys:String>
+  <sys:String x:Key="T.ShutdownConfirm">退出后抓包、定时测量、合奏与浮窗数据都会停止，本窗口随之关闭。</sys:String>
+  <sys:String x:Key="T.ShutdownYes">退出</sys:String>
+  <sys:String x:Key="T.Cancel">取消</sys:String>
   <sys:String x:Key="T.About">关于</sys:String>
   <sys:String x:Key="O.Title">浮窗版面</sys:String>
   <sys:String x:Key="O.Status">把元件放到游戏画面上，自由摆放、缩放与换外观</sys:String>
@@ -473,6 +477,7 @@
   <sys:String x:Key="G.LiveTitle">实时记录</sys:String>
   <sys:String x:Key="G.LiveHint">采集进行中实时显示，最多保留最近 500 条；记录同时写入采集文件。</sys:String>
   <sys:String x:Key="G.ExportTitle">导出排查包</sys:String>
+  <sys:String x:Key="G.Offline">未连接后端，连接后按权限可用</sys:String>
   <sys:String x:Key="G.ExportHint">导出所选会话的记录与采集信息；保存位置在保存对话框里选择，选定后才写出文件。</sys:String>
   <sys:String x:Key="G.ExportLatest">最近一次调试采集</sys:String>
   <sys:String x:Key="G.ExportAll">全部会话</sys:String>

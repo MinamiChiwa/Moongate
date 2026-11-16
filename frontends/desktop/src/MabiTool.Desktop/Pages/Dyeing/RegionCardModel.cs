@@ -38,11 +38,31 @@ public sealed class RegionCardModel : ObservableObject
     private CancellationTokenSource? atlasRequest;
     private ColorAtlasView atlas = ColorAtlasView.Computing(null);
 
-    public RegionCardModel(ColorPageModel owner, int index, ColorRegionView region)
+    public RegionCardModel(ColorPageModel owner, int index, ColorRegionView region) : this(owner, index, region.Id)
+    {
+        Load(region);
+    }
+
+    /// <summary>
+    /// 没有读到后端草稿时的占位卡片：卡片照常排进网格，区域设置与读数显示“未读取”，不读取目标色集合；
+    /// 卡片由页面停用，读到草稿后整组换成真实卡片。
+    /// </summary>
+    public static RegionCardModel Unread(ColorPageModel owner, int index)
+    {
+        var card = new RegionCardModel(owner, index, $"region-{index + 1}") { IsUnread = true };
+        card.matchMode = string.Empty;
+        card.targetText = UnreadText;
+        card.atlas = ColorAtlasView.Waiting(UnreadText);
+        return card;
+    }
+
+    private static string UnreadText => UiText.Pick("未读取", "未讀取");
+
+    private RegionCardModel(ColorPageModel owner, int index, string id)
     {
         this.owner = owner;
         Index = index;
-        Id = region.Id;
+        Id = id;
         Picker = new ColorPickerModel(() => targetHex, SetTarget);
         ToggleCommand = new RelayCommand(_ =>
         {
@@ -86,8 +106,10 @@ public sealed class RegionCardModel : ObservableObject
             if (atlas.CanOpen) owner.ToggleAtlas(this);
         });
         EyedropperCommand = new RelayCommand(_ => _ = owner.PickFromScreenAsync(this));
-        Load(region);
     }
+
+    /// <summary>占位卡片（见 <see cref="Unread"/>）。</summary>
+    public bool IsUnread { get; private init; }
 
     public int Index { get; }
     public string Id { get; }
@@ -112,7 +134,7 @@ public sealed class RegionCardModel : ObservableObject
     // ---- 身份与开关 ----
     public bool Enabled => enabled;
     public bool Available => available;
-    public string StatusText => !available ? UiText.Pick("本局不可用", "本局不可用")
+    public string StatusText => IsUnread ? UnreadText : !available ? UiText.Pick("本局不可用", "本局不可用")
         : enabled ? UiText.Pick("已启用", "已啟用") : UiText.Pick("未启用", "未啟用");
 
     /// <summary>原工具的整卡透明度：本局不可用 0.45，未启用 0.6。</summary>
@@ -125,7 +147,7 @@ public sealed class RegionCardModel : ObservableObject
 
     // ---- 目标色 ----
     public string TargetHex => targetHex;
-    public IBrush TargetBrush => new SolidColorBrush(Color.Parse(targetHex));
+    public IBrush TargetBrush => IsUnread ? Brushes.Transparent : new SolidColorBrush(Color.Parse(targetHex));
 
     /// <summary>HEX 输入框的文字；格式正确时立即成为目标色，否则标红、目标色保持原值。</summary>
     public string TargetText
@@ -188,7 +210,7 @@ public sealed class RegionCardModel : ObservableObject
     public string MeasuredDelta => reading.MeasuredDelta is { } delta ? ColorStages.Delta(delta) : "ΔE —";
 
     /// <summary>读数旁的徽标：后端对最佳实测的分区判定；还没有实测时为“未开始”（原工具 RegionCard badge）。</summary>
-    public ColorMark Mark => reading.Mark ?? ColorMark.Waiting;
+    public ColorMark Mark => IsUnread ? new ColorMark(ColorMark.Unread) : reading.Mark ?? ColorMark.Waiting;
 
     public ColorRegionDraft ToDraft() => new(Id, targetHex, Alternatives.ToList(), matchMode, tolerance, priority, enabled);
 

@@ -72,14 +72,17 @@
         <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
 
           <!--
-            四张卡片依次为导出排查包、调试采集、运行状态、最近记录；没有权限而不显示的不占位。
+            四张卡片依次为导出排查包、调试采集、运行状态、最近记录；连接后没有权限而不显示的不占位，未连接时整张停用。
             都用统一的卡片外壳（Card）：标题行整行可点，折叠或展开，状态存入前端偏好。
             卡片网格里缺省都是全宽随内容；顺序与尺寸档在“编辑布局”里调整。
           -->
 
-          <!-- 导出排查包：仅拥有 diagnostics.export 时显示 -->
+          <!-- 导出排查包：连接后仅拥有 diagnostics.export 时显示 -->
           <controls:Card x:Name="ExportPanel" CardId="export" Title="{DynamicResource G.ExportTitle}" IsVisible="{Binding ShowExport}"
-                         AllowedSizes="HalfByAuto">
+                         AllowedSizes="HalfByAuto" IsEnabled="{Binding Connected}">
+            <controls:Card.Status>
+              <TextBlock Classes="label" Text="{DynamicResource G.Offline}" IsVisible="{Binding !Connected}" />
+            </controls:Card.Status>
             <StackPanel Spacing="10" DataContext="{Binding Export}" x:DataType="diag:DiagnosticsExportSection">
               <TextBlock Classes="note" Text="{DynamicResource G.ExportHint}" />
               <controls:SelectionBorder Classes="segmented" HorizontalAlignment="Left">
@@ -104,8 +107,12 @@
             </StackPanel>
           </controls:Card>
 
-          <!-- 调试采集：仅拥有 diagnostics.debug 时显示 -->
-          <controls:Card x:Name="CapturePanel" CardId="capture" Title="{DynamicResource G.CaptureTitle}" IsVisible="{Binding ShowCapture}">
+          <!-- 调试采集：连接后仅拥有 diagnostics.debug 时显示 -->
+          <controls:Card x:Name="CapturePanel" CardId="capture" Title="{DynamicResource G.CaptureTitle}" IsVisible="{Binding ShowCapture}"
+                         IsEnabled="{Binding Connected}">
+            <controls:Card.Status>
+              <TextBlock Classes="label" Text="{DynamicResource G.Offline}" IsVisible="{Binding !Connected}" />
+            </controls:Card.Status>
             <StackPanel Spacing="10" DataContext="{Binding Capture}" x:DataType="diag:DiagnosticsCaptureSection">
               <TextBlock Classes="note" Text="{DynamicResource G.CaptureHint}" />
               <StackPanel x:Name="CaptureForm" Spacing="10" IsVisible="{Binding ShowForm}">

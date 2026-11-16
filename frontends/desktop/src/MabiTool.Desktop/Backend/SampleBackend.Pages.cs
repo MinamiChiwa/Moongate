@@ -199,7 +199,7 @@ public sealed partial class SampleBackend
                 new(Pick("当前版本", "目前版本"), "0.4.6"), new(Pick("状态", "狀態"), Pick("已是最新", "已是最新"))
             ],
         !Offline, AvailableRelease is not null, Policy: Offline ? null : samplePolicy,
-        AvailableRelease: Offline ? null : AvailableRelease);
+        AvailableRelease: Offline ? null : AvailableRelease, Connected: !Offline);
 
     /// <summary>测试用：后端更新状态里发现的新版本标识；为空表示已是最新。</summary>
     internal string? AvailableRelease { get; set; }

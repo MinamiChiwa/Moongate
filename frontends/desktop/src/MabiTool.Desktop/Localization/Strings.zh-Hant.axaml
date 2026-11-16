@@ -265,6 +265,10 @@
   <sys:String x:Key="T.AutoWindowHint">找到唯一的台服遊戲視窗時自動綁定（啟動時與遊戲啟動後）；有多個視窗時在側欄手動選擇。</sys:String>
   <sys:String x:Key="T.CaptureUnavailable">未連接後端，抓包設定不可用。</sys:String>
   <sys:String x:Key="T.Backend">後端</sys:String>
+  <sys:String x:Key="T.Shutdown">結束 Moongate（含背景服務）</sys:String>
+  <sys:String x:Key="T.ShutdownConfirm">結束後抓包、定時測量、合奏與浮窗資料都會停止，本視窗隨之關閉。</sys:String>
+  <sys:String x:Key="T.ShutdownYes">結束</sys:String>
+  <sys:String x:Key="T.Cancel">取消</sys:String>
   <sys:String x:Key="T.About">關於</sys:String>
   <sys:String x:Key="O.Title">浮窗版面</sys:String>
   <sys:String x:Key="O.Status">把元件放到遊戲畫面上，自由擺放、縮放與換外觀</sys:String>
@@ -473,6 +477,7 @@
   <sys:String x:Key="G.LiveTitle">即時記錄</sys:String>
   <sys:String x:Key="G.LiveHint">採集進行中即時顯示，最多保留最近 500 筆；記錄同時寫入採集檔案。</sys:String>
   <sys:String x:Key="G.ExportTitle">匯出排查包</sys:String>
+  <sys:String x:Key="G.Offline">未連接後端，連接後依權限可用</sys:String>
   <sys:String x:Key="G.ExportHint">匯出所選工作階段的記錄與採集資訊；儲存位置在儲存對話方塊裡選擇，選定後才寫出檔案。</sys:String>
   <sys:String x:Key="G.ExportLatest">最近一次除錯採集</sys:String>
   <sys:String x:Key="G.ExportAll">全部工作階段</sys:String>

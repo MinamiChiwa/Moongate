@@ -5,6 +5,7 @@ using Avalonia.VisualTree;
 using MabiTool.Contracts;
 using MabiTool.Desktop.Backend;
 using MabiTool.Desktop.Controls;
+using MabiTool.Desktop.Infrastructure;
 using MabiTool.Desktop.Localization;
 using MabiTool.Desktop.Pages.Dyeing;
 using Xunit;
@@ -934,5 +935,30 @@ public sealed class DyeingTests
         Assert.Equal("妥协方案", cards[1].Summary);
         Assert.Equal("ΔE 1.50", cards[1].Regions[0].Delta);
         Assert.Equal(["未达标", "达标"], cards[0].Regions.Select(region => region.Badge.Text));
+    }
+
+    [AvaloniaFact]
+    public void RegionCardsStayInTheGridAndAreDisabledWhileTheBackendIsNotConnected()
+    {
+        // 首次运行没有保存的卡片布局，后端也没有连接（发现文件不存在，不启动连接循环）。
+        CardStateStore.Restore(null);
+        var backend = new LiveBackend(Path.Combine(Path.GetTempPath(), "moongate-missing-" + Guid.NewGuid().ToString("N"), "runtime", "instance.json"),
+            action => action());
+        var window = LayoutProbe.Open(backend, 1280, 860, "color");
+        try
+        {
+            var model = (ColorPageModel)Page<ColorPage>(window).DataContext!;
+            var cards = window.GetVisualDescendants().OfType<Card>().Where(card => card.IsEffectivelyVisible).ToList();
+            Assert.Equal(["region-1", "region-2", "region-3"], cards.Select(card => card.CardId));
+            Assert.All(cards, card =>
+            {
+                Assert.False(card.IsEffectivelyEnabled);
+                Assert.True(card.Bounds.Height > 100);
+            });
+            Assert.All(model.Cards, card => Assert.Equal("未读取", card.StatusText));
+            Assert.Contains("未连接后端", Named<TextBlock>(window, "NoDraftNote").Text);
+            Assert.False(Named<Button>(window, "StartButton").IsEffectivelyEnabled);
+        }
+        finally { window.Close(); }
     }
 }
