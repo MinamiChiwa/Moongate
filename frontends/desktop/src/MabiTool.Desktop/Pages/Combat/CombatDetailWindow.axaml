@@ -1,0 +1,231 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:combat="using:MabiTool.Desktop.Pages.Combat"
+        xmlns:controls="using:MabiTool.Desktop.Controls"
+        xmlns:tables="using:MabiTool.Desktop.Controls.Tables"
+        x:Class="MabiTool.Desktop.Pages.Combat.CombatDetailWindow"
+        x:DataType="combat:CombatPageModel"
+        Title="Moongate"
+        Width="1200" Height="820" MinWidth="560" MinHeight="420"
+        WindowDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        WindowStartupLocation="CenterScreen">
+  <Window.Resources>
+    <!-- 一条排行：名称、数值与占比条；与表格选中的同一项高亮。按下高亮或取消高亮。 -->
+    <DataTemplate x:Key="BarTemplate" DataType="combat:BarItem">
+      <Button Classes="bar" Classes.highlight="{Binding Highlighted}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+              Background="Transparent" BorderThickness="0" Padding="8,4" Margin="0,0,0,2" ToolTip.Tip="{Binding Hint}"
+              Command="{Binding $parent[Window].((combat:CombatPageModel)DataContext).HighlightCommand}" CommandParameter="{Binding}">
+        <StackPanel Spacing="3">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Right" Classes="muted" FontSize="12" Margin="8,0,0,0" Text="{Binding Value}" />
+            <TextBlock Classes="name" FontSize="13" Text="{Binding Label}" />
+          </DockPanel>
+          <controls:MeterBar Value="{Binding Ratio}" Fill="{StaticResource CombatBrush}" Track="{DynamicResource TrackBrush}" />
+        </StackPanel>
+      </Button>
+    </DataTemplate>
+    <DataTemplate x:Key="TagTemplate" DataType="combat:BarItem">
+      <StackPanel Spacing="3" Margin="0,0,0,6" ToolTip.Tip="{Binding Hint}">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Right" Classes="strong" FontSize="13" Margin="8,0,0,0" Text="{Binding Value}" />
+          <TextBlock Classes="name" FontSize="13" Text="{Binding Label}" />
+        </DockPanel>
+        <controls:MeterBar Value="{Binding Ratio}" Fill="{StaticResource CombatBrush}" Track="{DynamicResource TrackBrush}" />
+      </StackPanel>
+    </DataTemplate>
+  </Window.Resources>
+  <Window.Styles>
+    <Style Selector="Button.segment.active">
+      <Setter Property="Background" Value="{StaticResource CombatBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.bar.highlight">
+      <Setter Property="Background" Value="{DynamicResource SelectedBrush}" />
+    </Style>
+    <Style Selector="Button.rangetarget">
+      <Setter Property="MaxWidth" Value="260" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="CornerRadius" Value="15" />
+      <Setter Property="Margin" Value="0,0,6,6" />
+    </Style>
+    <Style Selector="Button.rangetarget.active">
+      <Setter Property="Background" Value="{StaticResource CombatBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+  </Window.Styles>
+  <Panel>
+    <Border x:Name="Frame" CornerRadius="26" ClipToBounds="True" Background="{DynamicResource CanvasBrush}">
+      <Panel>
+        <Border Background="{DynamicResource AmberHaloBrush}" />
+        <Border Background="{DynamicResource BlueHaloBrush}" />
+
+        <DockPanel Margin="12">
+          <!-- 顶部：标题、范围、目标与窗口按钮；空白处拖动窗口，双击最大化或还原。范围与目标与主页面是同一个选择。 -->
+          <Border DockPanel.Dock="Top" x:Name="TopPanel" Classes="panel" Padding="16,12" Margin="0,0,0,10">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8,0,0,0">
+                <Button x:Name="MinimizeButton" Classes="window" Click="OnMinimizeClick" ToolTip.Tip="{DynamicResource S.Minimize}"
+                        AutomationProperties.Name="{DynamicResource S.Minimize}">
+                  <Path Data="M0,0 H10" Stroke="{DynamicResource InkBrush}" StrokeThickness="1.2" />
+                </Button>
+                <Button x:Name="MaximizeButton" Classes="window" Click="OnMaximizeClick">
+                  <Panel>
+                    <Path x:Name="MaximizeIcon" Data="M0,0 H9 V9 H0 Z" Stroke="{DynamicResource InkBrush}" StrokeThickness="1.2" />
+                    <Path x:Name="RestoreIcon" Data="M2.5,2.5 V0 H10 V7.5 H7.5 M0,2.5 H7.5 V10 H0 Z" Stroke="{DynamicResource InkBrush}"
+                          StrokeThickness="1.2" StrokeJoin="Round" IsVisible="False" />
+                  </Panel>
+                </Button>
+                <Button x:Name="CloseButton" Classes="window close" Click="OnCloseClick" ToolTip.Tip="{DynamicResource I.CloseWindow}"
+                        AutomationProperties.Name="{DynamicResource I.CloseWindow}">
+                  <Path Data="M0,0 L9,9 M9,0 L0,9" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.2" />
+                </Button>
+              </StackPanel>
+              <StackPanel Spacing="8">
+                <WrapPanel>
+                  <TextBlock Classes="name" FontSize="22" FontWeight="Black" Margin="0,0,16,4" VerticalAlignment="Center" Text="{DynamicResource C.DetailTitle}" />
+                  <controls:SelectionBorder Classes="segmented" Margin="0,0,12,4">
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="segment" Classes.active="{Binding ScopeWhole}" Command="{Binding SelectScopeCommand}"
+                              CommandParameter="observation" Content="{DynamicResource C.ScopeWhole}" />
+                      <Button Classes="segment" Classes.active="{Binding ScopeSegment}" Command="{Binding SelectScopeCommand}"
+                              CommandParameter="segment" Content="{DynamicResource C.ScopeSegment}" />
+                      <Button Classes="segment" Classes.active="{Binding ScopeMeasurement}" Command="{Binding SelectScopeCommand}"
+                              CommandParameter="measurement" Content="{DynamicResource C.ScopeMeasurement}" />
+                    </StackPanel>
+                  </controls:SelectionBorder>
+                  <controls:SelectionBorder Classes="segmented" Margin="0,0,12,4">
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="segment" Classes.active="{Binding BySkill}" Command="{Binding ShowSkillsCommand}" Content="{DynamicResource C.BySkill}" />
+                      <Button Classes="segment" Classes.active="{Binding ByTarget}" Command="{Binding ShowTargetsCommand}" Content="{DynamicResource C.ByTarget}" />
+                    </StackPanel>
+                  </controls:SelectionBorder>
+                  <TextBlock Classes="note" VerticalAlignment="Center" Margin="0,0,0,4" Text="{Binding Scope.Title}" IsVisible="{Binding HasScopeTitle}" />
+                </WrapPanel>
+                <ItemsControl x:Name="DetailTargets" ItemsSource="{Binding RangeTargetItems}" IsVisible="{Binding HasRangeTargets}">
+                  <ItemsControl.Styles>
+                    <Style Selector="ItemsControl#DetailTargets > ContentPresenter">
+                      <Setter Property="controls:OverflowRow.IsPinned" Value="{ReflectionBinding Pinned}" />
+                    </Style>
+                  </ItemsControl.Styles>
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <controls:OverflowRow IsExpanded="{Binding $parent[Window].((combat:CombatPageModel)DataContext).TargetsExpanded}" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.DataTemplates>
+                    <DataTemplate DataType="combat:RangeTargetChip">
+                      <Button Classes="tile rangetarget" Classes.active="{Binding Current}" ToolTip.Tip="{Binding Tip}"
+                              Command="{Binding $parent[Window].((combat:CombatPageModel)DataContext).SelectRangeTargetCommand}" CommandParameter="{Binding}">
+                        <DockPanel>
+                          <TextBlock DockPanel.Dock="Right" Classes="muted" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center">
+                            <Run Text="{Binding Damage}" /><Run Text=" · " /><Run Text="{Binding Share}" />
+                          </TextBlock>
+                          <TextBlock Classes="name strong" FontSize="13" MaxWidth="140" VerticalAlignment="Center" Text="{Binding Name}" />
+                        </DockPanel>
+                      </Button>
+                    </DataTemplate>
+                    <DataTemplate DataType="combat:RangeTargetMore">
+                      <Button Classes="chip" Margin="0,0,6,6"
+                              Command="{Binding $parent[Window].((combat:CombatPageModel)DataContext).ToggleTargetsCommand}"
+                              ToolTip.Tip="{Binding $parent[Window].((combat:CombatPageModel)DataContext).TargetsToggleTip}">
+                        <Panel>
+                          <TextBlock VerticalAlignment="Center" IsVisible="{Binding !$parent[Window].((combat:CombatPageModel)DataContext).TargetsExpanded}"
+                                     Text="{Binding $parent[ContentPresenter].(controls:OverflowRow.OverflowCount), StringFormat='+{0}'}" />
+                          <TextBlock VerticalAlignment="Center" IsVisible="{Binding $parent[Window].((combat:CombatPageModel)DataContext).TargetsExpanded}"
+                                     Text="{DynamicResource C.CollapseTargets}" />
+                        </Panel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.DataTemplates>
+                </ItemsControl>
+                <TextBlock Classes="note" Text="{Binding Scope.Problem}" IsVisible="{Binding Scope.HasProblem}" />
+              </StackPanel>
+            </DockPanel>
+          </Border>
+
+          <ScrollViewer x:Name="DetailScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                        VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="12" Margin="14,0,14,12">
+              <controls:ReflowPanel MinItemWidth="360" Spacing="12">
+                <!-- DPS 随时间：后端时间线分桶；整场或读取中写明原因。 -->
+                <Border Classes="panel" x:Name="DpsChartPanel" Padding="16,12">
+                  <StackPanel Spacing="6">
+                    <DockPanel>
+                      <TextBlock DockPanel.Dock="Right" Classes="muted" FontSize="12" VerticalAlignment="Center" Text="{Binding TimelinePeak}" />
+                      <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource C.ChartDps}" />
+                    </DockPanel>
+                    <controls:LineChart x:Name="DpsChart" Values="{Binding Timeline.Dps}" Stroke="{StaticResource CombatBrush}"
+                                        Grid="{DynamicResource HairlineBrush}" IsVisible="{Binding TimelineAvailable}" />
+                    <TextBlock Classes="muted" FontSize="12" Text="{Binding TimelineSpan}" IsVisible="{Binding TimelineAvailable}" />
+                    <TextBlock x:Name="TimelineNoteText" Classes="note" TextWrapping="Wrap" Text="{Binding TimelineNote}" IsVisible="{Binding HasTimelineNote}" />
+                    <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding HealingCurveNote}" />
+                  </StackPanel>
+                </Border>
+                <Border Classes="panel" x:Name="TagChartPanel" Padding="16,12">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource C.ChartTags}" />
+                    <ItemsControl x:Name="TagBarsList" ItemsSource="{Binding TagBars}" ItemTemplate="{StaticResource TagTemplate}" />
+                  </StackPanel>
+                </Border>
+                <Border Classes="panel" x:Name="SkillChartPanel" Padding="16,12">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource C.ChartSkills}" />
+                    <ItemsControl x:Name="SkillBarsList" ItemsSource="{Binding SkillBars}" ItemTemplate="{StaticResource BarTemplate}" />
+                  </StackPanel>
+                </Border>
+                <Border Classes="panel" x:Name="TargetChartPanel" Padding="16,12">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource C.ChartTargets}" />
+                    <ItemsControl x:Name="TargetBarsList" ItemsSource="{Binding TargetBars}" ItemTemplate="{StaticResource BarTemplate}" />
+                  </StackPanel>
+                </Border>
+                <Border Classes="panel" x:Name="ElementChartPanel" Padding="16,12" IsVisible="{Binding HasElements}">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource C.ChartElements}" />
+                    <controls:SegmentBar Segments="{Binding ElementSegments}" IsVisible="{Binding HasElementParts}" />
+                    <ItemsControl ItemsSource="{Binding ElementParts}" IsVisible="{Binding HasElementParts}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="combat:ElementPart">
+                          <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                            <Border Width="10" Height="10" CornerRadius="5" Margin="0,0,6,0" VerticalAlignment="Center" Background="{Binding Segment.Fill}" />
+                            <TextBlock FontSize="13" Text="{Binding Label}" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock FontSize="13" Text="{DynamicResource C.NoElements}" IsVisible="{Binding NoElements}" />
+                  </StackPanel>
+                </Border>
+              </controls:ReflowPanel>
+
+              <!-- 完整总表：全部列（含各标签的次数与伤害），与主页面同一套列设置。 -->
+              <Border Classes="panel" x:Name="DetailTablePanel">
+                <StackPanel Spacing="8">
+                  <TextBlock Classes="note" TextWrapping="Wrap" Text="{x:Static combat:CombatPageModel.TagTip}" />
+                  <tables:DataTable x:Name="DetailTable" TableId="{Binding DamageTableId}" ColumnsSource="{Binding DamageColumns}"
+                                    ItemsSource="{Binding Rows}" EmptyText="{DynamicResource C.Empty}" BodyMaxHeight="560" CanExport="True" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+      </Panel>
+    </Border>
+
+    <!-- 四边与四角拖动缩放；系统贴靠由 SnapFrame 补回。 -->
+    <Border Tag="North" Height="6" VerticalAlignment="Top" Margin="12,0" Background="Transparent" Cursor="SizeNorthSouth" PointerPressed="OnResizePressed" />
+    <Border Tag="South" Height="6" VerticalAlignment="Bottom" Margin="12,0" Background="Transparent" Cursor="SizeNorthSouth" PointerPressed="OnResizePressed" />
+    <Border Tag="West" Width="6" HorizontalAlignment="Left" Margin="0,12" Background="Transparent" Cursor="SizeWestEast" PointerPressed="OnResizePressed" />
+    <Border Tag="East" Width="6" HorizontalAlignment="Right" Margin="0,12" Background="Transparent" Cursor="SizeWestEast" PointerPressed="OnResizePressed" />
+    <Border Tag="NorthWest" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Top" Background="Transparent" Cursor="TopLeftCorner" PointerPressed="OnResizePressed" />
+    <Border Tag="NorthEast" Width="12" Height="12" HorizontalAlignment="Right" VerticalAlignment="Top" Background="Transparent" Cursor="TopRightCorner" PointerPressed="OnResizePressed" />
+    <Border Tag="SouthWest" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomLeftCorner" PointerPressed="OnResizePressed" />
+    <Border Tag="SouthEast" Width="12" Height="12" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomRightCorner" PointerPressed="OnResizePressed" />
+  </Panel>
+</Window>

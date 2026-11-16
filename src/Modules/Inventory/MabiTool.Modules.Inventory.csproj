@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../Contracts/MabiTool.Contracts.csproj" />
+    <ProjectReference Include="../../ModuleSdk/MabiTool.ModuleSdk.csproj" />
+    <ProjectReference Include="../../Infrastructure/MabiTool.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

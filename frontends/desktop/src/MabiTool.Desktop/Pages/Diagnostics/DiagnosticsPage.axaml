@@ -1,0 +1,284 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:diag="using:MabiTool.Desktop.Pages.Diagnostics"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             xmlns:tables="using:MabiTool.Desktop.Controls.Tables"
+             xmlns:infra="using:MabiTool.Desktop.Infrastructure"
+             x:Class="MabiTool.Desktop.Pages.Diagnostics.DiagnosticsPage"
+             x:DataType="diag:DiagnosticsPageModel"
+             controls:Card.PageId="diagnostics">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.mono">
+      <Setter Property="FontFamily" Value="Consolas, Cascadia Mono, Courier New, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </UserControl.Styles>
+  <UserControl.Resources>
+    <!-- 记录行：时间、级别、模块、事件码、component；fields 一行；有文字详情时可展开，详情在容器内滚动。 -->
+    <DataTemplate x:Key="RecordTemplate" DataType="diag:RecordRow">
+      <Border Classes="tablerow" Padding="0,8">
+        <StackPanel Spacing="3">
+          <WrapPanel>
+            <TextBlock Classes="name muted" FontSize="12" Margin="0,0,12,0" VerticalAlignment="Center" Text="{Binding Time}" />
+            <TextBlock Classes="name" FontSize="12" FontWeight="Bold" Margin="0,0,12,0" VerticalAlignment="Center" Text="{Binding Level}"
+                       Classes.unconfirmed="{Binding Warn}" />
+            <TextBlock Classes="name muted" FontSize="12" Margin="0,0,12,0" VerticalAlignment="Center" Text="{Binding Module}" />
+            <TextBlock Classes="name strong" Margin="0,0,12,0" VerticalAlignment="Center" Text="{Binding EventText}" />
+            <TextBlock Classes="name muted" FontSize="12" VerticalAlignment="Center" Text="{Binding Component}" IsVisible="{Binding HasComponent}" />
+          </WrapPanel>
+          <TextBlock Classes="note" Text="{Binding FieldsText}" IsVisible="{Binding HasFields}" />
+          <Button Classes="chip" HorizontalAlignment="Left" IsVisible="{Binding HasDetail}"
+                  Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" />
+          <controls:ExpandPanel IsExpanded="{Binding Expanded, Mode=OneWay}">
+          <Border Classes="inset" Padding="10,8">
+            <ScrollViewer MaxHeight="220" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <TextBlock Classes="mono" Text="{Binding Detail}" />
+            </ScrollViewer>
+          </Border>
+          </controls:ExpandPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+    <!-- 键值行：键与值都自动换行，超长键名在面板内折行。 -->
+    <DataTemplate x:Key="KeyValueTemplate" DataType="infra:KeyValue">
+      <controls:PairRow Margin="0,3">
+        <TextBlock Classes="body muted" Text="{Binding Label}" />
+        <TextBlock Classes="body" Text="{Binding Value}" />
+      </controls:PairRow>
+    </DataTemplate>
+    <DataTemplate x:Key="ChipTemplate" DataType="diag:ChoiceChip">
+      <Button Classes="chip" Classes.active="{Binding Selected}" Margin="0,0,6,6" Content="{Binding Label}"
+              Command="{Binding ToggleCommand}" />
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Panel>
+    <DockPanel>
+      <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
+        <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+        <DockPanel Margin="{DynamicResource TitleReserve}">
+          <controls:CardGridEditBar DockPanel.Dock="Right" Target="{Binding #CardsGrid}" VerticalAlignment="Center" Margin="12,0,8,0" />
+          <TextBlock Classes="h1" Margin="0" Text="{DynamicResource G.Title}" />
+        </DockPanel>
+        <DockPanel Margin="0,4,0,0">
+          <Button x:Name="RefreshButton" DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Center"
+                  Content="{DynamicResource G.Refresh}" Command="{Binding RefreshCommand}" />
+          <TextBlock Classes="body muted" VerticalAlignment="Center" Text="{DynamicResource G.Hint}" />
+        </DockPanel>
+      </StackPanel>
+
+      <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                    VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
+
+          <!--
+            四张卡片依次为导出排查包、调试采集、运行状态、最近记录；没有权限而不显示的不占位。
+            都用统一的卡片外壳（Card）：标题行整行可点，折叠或展开，状态存入前端偏好。
+            卡片网格里缺省都是全宽随内容；顺序与尺寸档在“编辑布局”里调整。
+          -->
+
+          <!-- 导出排查包：仅拥有 diagnostics.export 时显示 -->
+          <controls:Card x:Name="ExportPanel" CardId="export" Title="{DynamicResource G.ExportTitle}" IsVisible="{Binding ShowExport}"
+                         AllowedSizes="HalfByAuto">
+            <StackPanel Spacing="10" DataContext="{Binding Export}" x:DataType="diag:DiagnosticsExportSection">
+              <TextBlock Classes="note" Text="{DynamicResource G.ExportHint}" />
+              <controls:SelectionBorder Classes="segmented" HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal">
+                  <Button x:Name="ExportLatestButton" Classes="segment" Classes.active="{Binding UseLatest}"
+                          Command="{Binding SelectLatestCommand}" IsEnabled="{Binding LatestAvailable}"
+                          Content="{DynamicResource G.ExportLatest}" />
+                  <Button x:Name="ExportAllButton" Classes="segment" Classes.active="{Binding UseAll}"
+                          Command="{Binding SelectAllCommand}" Content="{DynamicResource G.ExportAll}" />
+                </StackPanel>
+              </controls:SelectionBorder>
+              <TextBlock x:Name="ExportNoLatestNote" Classes="note" Text="{DynamicResource G.ExportNoLatest}"
+                         IsVisible="{Binding !LatestAvailable}" />
+              <Button x:Name="ExportButton" Classes="primary" HorizontalAlignment="Left"
+                      Content="{DynamicResource G.Export}" Command="{Binding ExportCommand}" />
+              <StackPanel x:Name="ExportProgress" Spacing="4" IsVisible="{Binding Busy}">
+                <controls:MeterBar Value="{Binding Progress}" Fill="{StaticResource ShellBrush}" Track="{DynamicResource TrackBrush}" />
+                <TextBlock Classes="note" Text="{Binding ProgressText}" />
+              </StackPanel>
+              <TextBlock x:Name="ExportMessage" Classes="body" Text="{Binding Message}" IsVisible="{Binding HasMessage}"
+                         Classes.unconfirmed="{Binding Failed}" />
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 调试采集：仅拥有 diagnostics.debug 时显示 -->
+          <controls:Card x:Name="CapturePanel" CardId="capture" Title="{DynamicResource G.CaptureTitle}" IsVisible="{Binding ShowCapture}">
+            <StackPanel Spacing="10" DataContext="{Binding Capture}" x:DataType="diag:DiagnosticsCaptureSection">
+              <TextBlock Classes="note" Text="{DynamicResource G.CaptureHint}" />
+              <StackPanel x:Name="CaptureForm" Spacing="10" IsVisible="{Binding ShowForm}">
+                <TextBlock Classes="note muted" FontWeight="Bold" Text="{DynamicResource G.CaptureModules}" />
+                <ItemsControl x:Name="CaptureModuleChips" controls:StableItems.Source="{Binding ModuleChoices}" ItemTemplate="{StaticResource ChipTemplate}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                </ItemsControl>
+                <TextBlock x:Name="NoModuleNote" Classes="note unconfirmed" Text="{DynamicResource G.CaptureNoModule}"
+                           IsVisible="{Binding NoModuleSelected}" />
+                <controls:PairRow>
+                  <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource G.CaptureLevel}" />
+                  <controls:SelectionBorder Classes="segmented">
+                    <StackPanel Orientation="Horizontal">
+                      <Button x:Name="LevelDebugButton" Classes="segment" Classes.active="{Binding IsDebug}"
+                              Command="{Binding SetLevelCommand}" CommandParameter="debug" Content="debug" />
+                      <Button x:Name="LevelTraceButton" Classes="segment" Classes.active="{Binding IsTrace}"
+                              Command="{Binding SetLevelCommand}" CommandParameter="trace" Content="trace" />
+                    </StackPanel>
+                  </controls:SelectionBorder>
+                </controls:PairRow>
+                <controls:PairRow>
+                  <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource G.CaptureDuration}" />
+                  <TextBox x:Name="DurationBox" Classes="field" Width="110" Text="{Binding Duration}"
+                           AutomationProperties.Name="{DynamicResource G.CaptureDuration}" />
+                </controls:PairRow>
+                <TextBlock x:Name="DurationNote" Classes="note unconfirmed" Text="{DynamicResource G.DurationRange}"
+                           IsVisible="{Binding DurationInvalid}" />
+                <Button x:Name="IncludeDetailButton" Classes="chip" Classes.active="{Binding IncludeDetail}" HorizontalAlignment="Left"
+                        Content="{DynamicResource G.IncludeDetail}" Command="{Binding ToggleDetailCommand}" />
+                <TextBlock x:Name="DetailPrivacyNote" Classes="note" Text="{DynamicResource G.DetailPrivacy}" />
+                <Button x:Name="StartCaptureButton" Classes="primary" HorizontalAlignment="Left"
+                        Content="{DynamicResource G.Start}" Command="{Binding StartCommand}" />
+              </StackPanel>
+              <TextBlock x:Name="CaptureMessage" Classes="body unconfirmed" Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
+              <Border x:Name="CaptureStatus" Classes="inset" IsVisible="{Binding HasCapture}">
+                <StackPanel Spacing="6">
+                  <DockPanel>
+                    <Button x:Name="StopCaptureButton" DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Center"
+                            Content="{DynamicResource G.StopCapture}" Command="{Binding StopCommand}" IsVisible="{Binding Active}" />
+                    <controls:ReflowPanel MinItemWidth="120" Spacing="12">
+                      <TextBlock x:Name="CaptureState" Classes="name strong" Text="{Binding StateText}" />
+                      <TextBlock x:Name="CaptureRemaining" Classes="name" Text="{Binding RemainingText}" />
+                    </controls:ReflowPanel>
+                  </DockPanel>
+                  <ItemsControl controls:StableItems.Source="{Binding StatusRows}" ItemTemplate="{StaticResource KeyValueTemplate}" />
+                  <TextBlock x:Name="DetailTruncatedNote" Classes="note unconfirmed" Text="{DynamicResource G.DetailTruncated}"
+                             IsVisible="{Binding DetailTruncated}" />
+                </StackPanel>
+              </Border>
+              <StackPanel x:Name="LiveBlock" Spacing="6" IsVisible="{Binding HasLive}">
+                <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource G.LiveTitle}" />
+                <TextBlock Classes="note" Text="{DynamicResource G.LiveHint}" />
+                <Border Classes="inset">
+                  <ScrollViewer x:Name="LiveScroller" MaxHeight="320" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl x:Name="LiveList" ItemsSource="{Binding LiveRows}" ItemTemplate="{StaticResource RecordTemplate}" />
+                  </ScrollViewer>
+                </Border>
+              </StackPanel>
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 运行状态 -->
+          <controls:Card x:Name="RuntimePanel" CardId="runtime" Title="{DynamicResource G.RuntimeTitle}">
+            <controls:Card.Actions>
+              <StackPanel Orientation="Horizontal" DataContext="{Binding Runtime}" x:DataType="diag:DiagnosticsRuntimeSection">
+                <TextBlock x:Name="CopiedNote" Classes="note confirmed" FontWeight="Bold" VerticalAlignment="Center"
+                           Text="{DynamicResource G.Copied}" IsVisible="{Binding Copied}" />
+                <Button x:Name="CopyAllButton" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
+                        Content="{DynamicResource G.CopyAll}" Command="{Binding CopyAllCommand}" IsEnabled="{Binding HasData}"
+                        ToolTip.Tip="{DynamicResource G.CopyAllHint}" />
+              </StackPanel>
+            </controls:Card.Actions>
+            <StackPanel Spacing="8" DataContext="{Binding Runtime}" x:DataType="diag:DiagnosticsRuntimeSection">
+              <TextBlock x:Name="RuntimeHeader" Classes="note" Text="{Binding Header}" IsVisible="{Binding HasData}" />
+              <TextBlock x:Name="RuntimeNotice" Classes="note unconfirmed" Text="{Binding Notice}" IsVisible="{Binding HasNotice}" />
+              <TextBlock x:Name="RuntimeError" Classes="body unconfirmed" Text="{Binding Error}" IsVisible="{Binding HasError}" />
+              <TextBlock Classes="note" Text="{DynamicResource G.NoRuntime}" IsVisible="{Binding NoData}" />
+              <ItemsControl x:Name="ProbeList" controls:StableItems.Source="{Binding Blocks}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="340" Spacing="10" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="diag:ProbeBlock">
+                    <Border Classes="inset">
+                      <StackPanel Spacing="4">
+                        <DockPanel>
+                          <TextBlock DockPanel.Dock="Right" Classes="name" FontSize="12" FontWeight="Bold" Margin="8,0,0,0"
+                                     VerticalAlignment="Center" Text="{Binding State}"
+                                     Classes.unconfirmed="{Binding Unavailable}" Classes.confirmed="{Binding !Unavailable}" />
+                          <TextBlock Classes="name strong" Text="{Binding Id}" ToolTip.Tip="{Binding Id}" />
+                        </DockPanel>
+                        <TextBlock Classes="name muted" FontSize="12" Text="{Binding Module}" />
+                        <TextBlock Classes="body unconfirmed" Text="{Binding ReasonLine}" IsVisible="{Binding HasReason}" />
+                        <ItemsControl controls:StableItems.Source="{Binding Rows}" ItemTemplate="{StaticResource KeyValueTemplate}" />
+                        <TextBlock Classes="note" Text="{DynamicResource G.NoValues}" IsVisible="{Binding NoRows}" />
+                        <TextBlock Classes="note unconfirmed" Text="{Binding Notice}" IsVisible="{Binding HasNotice}" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 最近记录：从新到旧，“更多”继续往旧的读 -->
+          <controls:Card x:Name="RecordsPanel" CardId="records" Title="{DynamicResource G.RecordsTitle}">
+            <StackPanel Spacing="8" DataContext="{Binding Records}" x:DataType="diag:DiagnosticsRecordsSection">
+              <TextBlock Classes="note" Text="{DynamicResource G.RecordsHint}" />
+              <TextBlock Classes="note muted" FontWeight="Bold" Text="{DynamicResource G.FilterModule}" />
+              <ItemsControl x:Name="RecordModuleChips" controls:StableItems.Source="{Binding ModuleChoices}" ItemTemplate="{StaticResource ChipTemplate}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+              </ItemsControl>
+              <TextBlock Classes="note muted" FontWeight="Bold" Text="{DynamicResource G.FilterLevel}" />
+              <ItemsControl x:Name="RecordLevelChips" controls:StableItems.Source="{Binding LevelChoices}" ItemTemplate="{StaticResource ChipTemplate}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+              </ItemsControl>
+              <TextBlock x:Name="RecordsError" Classes="body unconfirmed" Text="{Binding Error}" IsVisible="{Binding HasError}" />
+              <TextBlock Classes="note" Text="{DynamicResource G.NoRecords}" IsVisible="{Binding Empty}" />
+              <!-- 通用表格：按后端返回的顺序（从新到旧）；有文字详情的记录在行下方展开。 -->
+              <tables:DataTable x:Name="RecordList" TableId="diagnostics.records" ItemsSource="{Binding Rows}" BodyMaxHeight="520">
+                <tables:DataTable.RowDetailTemplate>
+                  <DataTemplate DataType="diag:RecordRow">
+                    <StackPanel Spacing="4" Margin="10,0,10,8" IsVisible="{Binding HasDetail}">
+                      <Button Classes="chip" HorizontalAlignment="Left" Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" />
+                      <controls:ExpandPanel IsExpanded="{Binding Expanded, Mode=OneWay}">
+                      <Border Classes="inset" Padding="10,8">
+                        <ScrollViewer MaxHeight="220" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                          <TextBlock Classes="mono" Text="{Binding Detail}" />
+                        </ScrollViewer>
+                      </Border>
+                      </controls:ExpandPanel>
+                    </StackPanel>
+                  </DataTemplate>
+                </tables:DataTable.RowDetailTemplate>
+                <tables:TableColumn Id="time" HeaderKey="G.ColTime" Path="Time" Width="110" />
+                <tables:TableColumn Id="level" HeaderKey="G.ColLevel" Path="Level" Width="90" CellClasses="strong" />
+                <tables:TableColumn Id="module" HeaderKey="G.ColModule" Path="Module" Width="150" />
+                <tables:TableColumn Id="event" HeaderKey="G.ColEvent" Path="EventText" Width="240" Fill="True" CellClasses="strong" ToolTipPath="EventText" />
+                <tables:TableColumn Id="component" HeaderKey="G.ColComponent" Path="Component" Width="140" ToolTipPath="Component" />
+                <tables:TableColumn Id="fields" HeaderKey="G.ColFields" Path="FieldsText" Width="260" ToolTipPath="FieldsText" />
+              </tables:DataTable>
+              <TextBlock Classes="note" Text="{DynamicResource G.Loading}" IsVisible="{Binding Loading}" />
+              <Button x:Name="MoreButton" HorizontalAlignment="Left" Content="{DynamicResource G.More}"
+                      Command="{Binding MoreCommand}" IsVisible="{Binding HasMore}" />
+            </StackPanel>
+          </controls:Card>
+        </controls:CardGrid>
+      </ScrollViewer>
+    </DockPanel>
+
+    <!-- 含文字详情的导出确认：Esc 或“取消”放弃，确认后才继续。 -->
+    <Panel x:Name="ConfirmLayer" IsVisible="{Binding Export.ConfirmOpen}" KeyDown="OnConfirmKeyDown">
+      <Border Background="Transparent" />
+      <Border x:Name="ConfirmPanel" Classes="panel popup" Classes.open="{Binding Export.ConfirmOpen}" MaxWidth="460"
+              HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14" KeyboardNavigation.TabNavigation="Cycle">
+        <StackPanel Spacing="12" DataContext="{Binding Export}" x:DataType="diag:DiagnosticsExportSection">
+          <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource G.ConfirmTitle}" />
+          <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <TextBlock x:Name="ConfirmText" Classes="body" Text="{Binding ConfirmText}" />
+          </ScrollViewer>
+          <WrapPanel>
+            <Button x:Name="ConfirmExportButton" Classes="primary" Margin="0,0,8,0" Content="{DynamicResource G.ConfirmExport}"
+                    Command="{Binding ConfirmCommand}" />
+            <Button x:Name="ConfirmCancelButton" Content="{DynamicResource G.ConfirmCancel}" Command="{Binding CancelConfirmCommand}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+    </Panel>
+  </Panel>
+</UserControl>

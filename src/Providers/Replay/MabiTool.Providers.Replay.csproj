@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../Contracts/MabiTool.Contracts.csproj" />
+    <ProjectReference Include="../../Modules/CombatObservation/MabiTool.Modules.CombatObservation.csproj" />
+  </ItemGroup>
+</Project>

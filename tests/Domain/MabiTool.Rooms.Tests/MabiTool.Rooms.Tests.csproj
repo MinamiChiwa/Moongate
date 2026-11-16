@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <ProjectReference Include="../../../src/Modules/Rooms/MabiTool.Modules.Rooms.csproj" />
+    <ProjectReference Include="../../../src/ModuleSdk/MabiTool.ModuleSdk.csproj" />
+    <ProjectReference Include="../../../src/Contracts/MabiTool.Contracts.csproj" />
+    <ProjectReference Include="../../../src/RoomServer/MabiTool.RoomServer.csproj" />
+    <None Include="../../../contracts/fixtures/room-protocol.v1.json" Link="Fixtures/room-protocol.v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../../contracts/fixtures/room-observation.v1.json" Link="Fixtures/room-observation.v1.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Host/MabiTool.Host.csproj" />
+    <ProjectReference Include="../../../src/Modules/CombatObservation/MabiTool.Modules.CombatObservation.csproj" />
+  </ItemGroup>
+</Project>

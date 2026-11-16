@@ -1,0 +1,8 @@
+numpy==2.5.2
+opencv-python==4.14.0.94
+scipy==1.18.1
+Pillow==11.3.0
+pytesseract==0.3.13
+packaging==26.3
+pefile==2024.8.26
+capstone==5.0.9

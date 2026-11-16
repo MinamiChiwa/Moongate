@@ -1,0 +1,675 @@
+{
+  "Shared.Protocols.Replications.GroupReplicatedDatas.ChannelGlobalReplicatedData": {
+    "parent": "Shared.Protocols.Replications.GroupReplicatedDatas.BaseGlobalReplicatedData",
+    "fields": [
+      {
+        "name": "ChannelIdentity",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.ChannelIdentityReplicatedData"
+      },
+      {
+        "name": "Weather",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.WeatherReplicatedData"
+      },
+      {
+        "name": "Fishery",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.FisheryReplicatedData"
+      },
+      {
+        "name": "Housing",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.HousingReplicatedData"
+      },
+      {
+        "name": "PlacementSystem",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.PlacementSystemReplicatedData"
+      },
+      {
+        "name": "HousingBackground",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.HousingBackgroundReplicatedData"
+      },
+      {
+        "name": "HousingPlacements",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.HousingPlacementsReplicatedData"
+      },
+      {
+        "name": "GuildStorage",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.GuildStorageReplicatedData"
+      },
+      {
+        "name": "HousingRooms",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.HousingRoomsReplicatedData"
+      },
+      {
+        "name": "Concerts",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.ConcertsReplicatedData"
+      },
+      {
+        "name": "WorldCinematic",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.WorldCinematicReplicatedData"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.GroupReplicatedDatas.BaseGlobalReplicatedData": {
+    "parent": "object",
+    "fields": []
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.ChannelIdentityReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "ChannelId",
+        "type": "Shared.Channels.ChannelId"
+      }
+    ]
+  },
+  "Shared.Channels.ChannelId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "sheetId",
+        "type": "Shared.Symbols.ChannelSheetId"
+      },
+      {
+        "name": "uniqueNumber",
+        "type": "int64"
+      },
+      {
+        "name": "serviceGameServerId",
+        "type": "Shared.ServerIds.GameServerId"
+      }
+    ]
+  },
+  "Shared.Symbols.ChannelSheetId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "Id",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.ServerIds.GameServerId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "int16Value",
+        "type": "int16"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.WeatherReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "Weather",
+        "type": "Shared.WorldDatas.GeoData.Weather"
+      },
+      {
+        "name": "TransitionTime",
+        "type": "float32"
+      }
+    ]
+  },
+  "Shared.WorldDatas.GeoData.Weather": {
+    "parent": "System.Enum",
+    "fields": [
+      {
+        "name": "value__",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.FisheryReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "FisheryStateList",
+        "type": "Shared.WorldDatas.GeoData.FisheryStateList"
+      }
+    ]
+  },
+  "Shared.WorldDatas.GeoData.FisheryStateList": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "FisheryStateDatas",
+        "type": "Silvervine.ManualMemory.MMList`1<Shared.WorldDatas.GeoData.FisheryStateData>"
+      }
+    ]
+  },
+  "Shared.WorldDatas.GeoData.FisheryStateData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "FisheryName",
+        "type": "string"
+      },
+      {
+        "name": "Stock",
+        "type": "Shared.WorldDatas.GeoData.FisheryStock"
+      }
+    ]
+  },
+  "Shared.WorldDatas.GeoData.FisheryStock": {
+    "parent": "System.Enum",
+    "fields": [
+      {
+        "name": "value__",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.HousingReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "HousingId",
+        "type": "Shared.GameLogic.Housing.HousingId"
+      },
+      {
+        "name": "HousingSheetId",
+        "type": "Shared.Symbols.HousingSheetId"
+      },
+      {
+        "name": "OwnerAccountId",
+        "type": "Shared.Accounts.AccountId"
+      },
+      {
+        "name": "RealmId",
+        "type": "Shared.Realms.RealmId"
+      },
+      {
+        "name": "OwnerGuildId",
+        "type": "Shared.GameLogic.Guilds.GuildId"
+      },
+      {
+        "name": "HousingName",
+        "type": "string"
+      },
+      {
+        "name": "HousingDescription",
+        "type": "string"
+      },
+      {
+        "name": "IsAllowAll",
+        "type": "bool"
+      },
+      {
+        "name": "IsAllowFriends",
+        "type": "bool"
+      },
+      {
+        "name": "IsAllowPartyMembers",
+        "type": "bool"
+      },
+      {
+        "name": "IsAllowGuildMembers",
+        "type": "bool"
+      },
+      {
+        "name": "IsGuestBookAllowAll",
+        "type": "bool"
+      },
+      {
+        "name": "IsGuestBookAllowFriends",
+        "type": "bool"
+      },
+      {
+        "name": "IsGuestBookAllowGuildMembers",
+        "type": "bool"
+      },
+      {
+        "name": "IsAllowCoOwnerJoinRequest",
+        "type": "bool"
+      }
+    ]
+  },
+  "Shared.GameLogic.Housing.HousingId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "rawValue",
+        "type": "int64"
+      }
+    ]
+  },
+  "Shared.Symbols.HousingSheetId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "Id",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Accounts.AccountId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "int64Value",
+        "type": "int64"
+      }
+    ]
+  },
+  "Shared.Realms.RealmId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "rawValue",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.GameLogic.Guilds.GuildId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "int64Value",
+        "type": "int64"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.PlacementSystemReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "IsEnabled",
+        "type": "bool"
+      },
+      {
+        "name": "UseGeoData",
+        "type": "bool"
+      },
+      {
+        "name": "CellStart",
+        "type": "Shared.Grid.GridPos2"
+      },
+      {
+        "name": "CellSize",
+        "type": "Shared.Grid.GridPos2"
+      }
+    ]
+  },
+  "Shared.Grid.GridPos2": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "x",
+        "type": "int32"
+      },
+      {
+        "name": "z",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.HousingBackgroundReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "BackgroundSheetId",
+        "type": "Shared.Symbols.HousingPropSheetId"
+      }
+    ]
+  },
+  "Shared.Symbols.HousingPropSheetId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "Id",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.HousingPlacementsReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "HousingPlacements",
+        "type": "System.Collections.Generic.Dictionary`2<Shared.GameLogic.Housing.HousingPlacementId,Shared.Protocols.ProtocolDatas.ReplicatedDatas.HousingPlacementReplicatedData>"
+      }
+    ]
+  },
+  "Shared.GameLogic.Housing.HousingPlacementId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "rawValue",
+        "type": "int64"
+      }
+    ]
+  },
+  "Shared.Protocols.ProtocolDatas.ReplicatedDatas.HousingPlacementReplicatedData": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "HousingPropSheetId",
+        "type": "Shared.Symbols.HousingPropSheetId"
+      },
+      {
+        "name": "PlacementPosition",
+        "type": "Shared.Grid.GridPos2"
+      },
+      {
+        "name": "PlacementDirection",
+        "type": "Shared.GameLogic.Housing.HousingGridSystem.HousingPlacementDirectionType"
+      },
+      {
+        "name": "ParentId",
+        "type": "Shared.GameLogic.Housing.HousingPlacementId"
+      },
+      {
+        "name": "IndexInParent",
+        "type": "int32"
+      },
+      {
+        "name": "OwnerCharacterId",
+        "type": "Shared.Characters.CharacterId"
+      },
+      {
+        "name": "OwnerRealmId",
+        "type": "Shared.Realms.RealmId"
+      },
+      {
+        "name": "PlacedAt",
+        "type": "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime"
+      },
+      {
+        "name": "WallBias",
+        "type": "Shared.GameLogic.Housing.HousingGridSystem.WallBias"
+      }
+    ]
+  },
+  "Shared.GameLogic.Housing.HousingGridSystem.HousingPlacementDirectionType": {
+    "parent": "System.Enum",
+    "fields": [
+      {
+        "name": "value__",
+        "type": "uint8"
+      }
+    ]
+  },
+  "Shared.Characters.CharacterId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "int64Value",
+        "type": "int64"
+      }
+    ]
+  },
+  "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "channelTime",
+        "type": "Shared.Channels.ChannelTime"
+      },
+      {
+        "name": "offsetInSeconds",
+        "type": "float32"
+      }
+    ]
+  },
+  "Shared.Channels.ChannelTime": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "rawValue",
+        "type": "int64"
+      }
+    ]
+  },
+  "Shared.GameLogic.Housing.HousingGridSystem.WallBias": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "H",
+        "type": "int32"
+      },
+      {
+        "name": "V",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.GuildStorageReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "HousingPropsInGuildStorage",
+        "type": "System.Collections.Generic.Dictionary`2<Shared.GameLogic.ChannelObjects.Characters.Items.HousingPropStackKey,Shared.Protocols.ProtocolDatas.ReplicatedDatas.HousingPropReplicatedData>"
+      }
+    ]
+  },
+  "Shared.GameLogic.ChannelObjects.Characters.Items.HousingPropStackKey": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "sheetId",
+        "type": "Shared.Symbols.HousingPropSheetId"
+      },
+      {
+        "name": "canTrade",
+        "type": "bool"
+      },
+      {
+        "name": "canTradeCount",
+        "type": "int32"
+      },
+      {
+        "name": "socialPlantFirstPlacedAt",
+        "type": "Core.Times.RealTime"
+      },
+      {
+        "name": "socialPlantVisitorCount",
+        "type": "int32"
+      },
+      {
+        "name": "tradeAvailableAt",
+        "type": "Core.Times.RealTime"
+      }
+    ]
+  },
+  "Core.Times.RealTime": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "rawValue",
+        "type": "int64"
+      }
+    ]
+  },
+  "Shared.Protocols.ProtocolDatas.ReplicatedDatas.HousingPropReplicatedData": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "Id",
+        "type": "Shared.GameLogic.ChannelObjects.Characters.Items.StackableId"
+      },
+      {
+        "name": "Key",
+        "type": "Shared.GameLogic.ChannelObjects.Characters.Items.HousingPropStackKey"
+      },
+      {
+        "name": "AcquiredTime",
+        "type": "Core.Times.RealTime"
+      },
+      {
+        "name": "Count",
+        "type": "int64"
+      },
+      {
+        "name": "IsJunked",
+        "type": "bool"
+      },
+      {
+        "name": "IsLocked",
+        "type": "bool"
+      },
+      {
+        "name": "IsFavorite",
+        "type": "bool"
+      }
+    ]
+  },
+  "Shared.GameLogic.ChannelObjects.Characters.Items.StackableId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "rawValue",
+        "type": "int64"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.HousingRoomsReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "HousingRooms",
+        "type": "System.Collections.Generic.Dictionary`2<Shared.GameLogic.Housing.HousingGridSystem.HousingRoomId,Shared.Protocols.ProtocolDatas.ReplicatedDatas.HousingRoomReplicatedData>"
+      }
+    ]
+  },
+  "Shared.GameLogic.Housing.HousingGridSystem.HousingRoomId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "rawValue",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Protocols.ProtocolDatas.ReplicatedDatas.HousingRoomReplicatedData": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "RoomId",
+        "type": "Shared.GameLogic.Housing.HousingGridSystem.HousingRoomId"
+      },
+      {
+        "name": "WallPaperId",
+        "type": "Shared.Symbols.HousingPropSheetId"
+      },
+      {
+        "name": "WallPaperOwnerId",
+        "type": "Shared.GameLogic.Housing.HousingGridSystem.HousingPlacementOwnerId"
+      },
+      {
+        "name": "FloorPatternId",
+        "type": "Shared.Symbols.HousingPropSheetId"
+      },
+      {
+        "name": "FloorPatternOwnerId",
+        "type": "Shared.GameLogic.Housing.HousingGridSystem.HousingPlacementOwnerId"
+      }
+    ]
+  },
+  "Shared.GameLogic.Housing.HousingGridSystem.HousingPlacementOwnerId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "<placedByCharacterId>k__BackingField",
+        "type": "Shared.Characters.CharacterId"
+      },
+      {
+        "name": "<ownerRealmId>k__BackingField",
+        "type": "Shared.Realms.RealmId"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.ConcertsReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "Concerts",
+        "type": "System.Collections.Generic.Dictionary`2<Shared.GameLogic.Concerts.ConcertId,Shared.Protocols.ProtocolDatas.ReplicatedDatas.ConcertReplicatedData>"
+      }
+    ]
+  },
+  "Shared.GameLogic.Concerts.ConcertId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "uint64Value",
+        "type": "uint64"
+      }
+    ]
+  },
+  "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ConcertReplicatedData": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "HostCharacterId",
+        "type": "Shared.Characters.CharacterId"
+      },
+      {
+        "name": "Title",
+        "type": "string"
+      },
+      {
+        "name": "Composer",
+        "type": "string"
+      },
+      {
+        "name": "CompressedMML",
+        "type": "Shared.MML.CompressedMML"
+      },
+      {
+        "name": "IsCopyingAllowed",
+        "type": "bool"
+      },
+      {
+        "name": "IsLoop",
+        "type": "bool"
+      },
+      {
+        "name": "StartAt",
+        "type": "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime"
+      }
+    ]
+  },
+  "Shared.MML.CompressedMML": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "RawValue",
+        "type": "uint8[]"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.WorldCinematicReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "WorldCinematics",
+        "type": "System.Collections.Generic.Dictionary`2<Shared.Symbols.WorldCinematicSheetId,Shared.Protocols.ProtocolDatas.ReplicatedDatas.WorldCinematicInstanceReplicatedData>"
+      }
+    ]
+  },
+  "Shared.Symbols.WorldCinematicSheetId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "Id",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Protocols.ProtocolDatas.ReplicatedDatas.WorldCinematicInstanceReplicatedData": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "SheetId",
+        "type": "Shared.Symbols.WorldCinematicSheetId"
+      },
+      {
+        "name": "TimelineStarted",
+        "type": "bool"
+      },
+      {
+        "name": "TimelineStartAt",
+        "type": "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime"
+      }
+    ]
+  }
+}

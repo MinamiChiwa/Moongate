@@ -1,0 +1,826 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:combat="using:MabiTool.Desktop.Pages.Combat"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             xmlns:tables="using:MabiTool.Desktop.Controls.Tables"
+             x:Class="MabiTool.Desktop.Pages.Combat.CombatPage"
+             x:DataType="combat:CombatPageModel"
+             controls:Card.PageId="combat">
+  <UserControl.Resources>
+    <!-- 效果列表的一行：自绘的 EffectLine（色标、星标、名称、层数、剩余时间与倒计时进度）；素材包有该效果的图片时盖在色标位置。 -->
+    <DataTemplate x:Key="EffectItemTemplate" DataType="combat:EffectItem">
+      <Panel>
+        <combat:EffectLine Row="{Binding Row}" />
+        <controls:PackImage Kind="Effect" Key="{Binding Row.EffectId}" Radius="3" Width="14" Height="14" Margin="3,0,0,0"
+                            HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False" />
+      </Panel>
+    </DataTemplate>
+    <!-- 效果卡片里的一区：极性标题与数量，其下单列排列这一区的条目；“无”时只占标题一行。 -->
+    <DataTemplate x:Key="EffectStripTemplate" DataType="combat:EffectStrip">
+      <StackPanel Spacing="2" Margin="0,0,0,6">
+        <StackPanel Orientation="Horizontal" Spacing="4" Height="22" ToolTip.Tip="{Binding TitleTip}">
+          <Path Width="10" Height="11" VerticalAlignment="Center" Stretch="Fill" Data="M10,0 L19,5 L17,22 L3,22 L1,5 Z" Fill="{Binding Fill}"
+                RenderTransformOrigin="50%,50%">
+            <Path.RenderTransform><RotateTransform Angle="{Binding Angle}" /></Path.RenderTransform>
+          </Path>
+          <TextBlock Classes="strong" FontSize="12" VerticalAlignment="Center" Text="{Binding Title}" />
+          <TextBlock Classes="muted" FontSize="12" VerticalAlignment="Center" Text="{Binding CountText}" IsVisible="{Binding !Empty}" />
+          <TextBlock Classes="muted" FontSize="12" VerticalAlignment="Center" Text="{DynamicResource C.EffectsNone}" IsVisible="{Binding Empty}" />
+        </StackPanel>
+        <ItemsControl ItemsSource="{Binding All}" ItemTemplate="{StaticResource EffectItemTemplate}" />
+      </StackPanel>
+    </DataTemplate>
+    <!-- 效果收藏层：按名称或编号搜索已提取到的效果，逐项收藏或取消；收藏与“只显示收藏”对主页面与浮窗同时生效。 -->
+    <Flyout x:Key="FavoritesFlyout" Placement="BottomEdgeAlignedRight">
+      <StackPanel x:DataType="combat:CombatPageModel" Width="360" Spacing="8">
+        <TextBlock Classes="h2" FontSize="15" Text="{DynamicResource C.FavoritesTitle}" />
+        <TextBox x:Name="FavoriteSearchBox" Classes="field" Text="{Binding FavoriteQuery}" PlaceholderText="{DynamicResource C.FavoritesSearch}"
+                 AutomationProperties.Name="{DynamicResource C.FavoritesSearch}" />
+        <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding FavoriteCatalogNote}" />
+        <TextBlock Classes="note" TextWrapping="Wrap" Text="{DynamicResource C.FavoritesEmptyCatalog}" IsVisible="{Binding NoFavoriteCatalog}" />
+        <ScrollViewer MaxHeight="300" HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding FavoriteCatalog}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="combat:FavoriteEntryView">
+                <DockPanel Margin="0,0,0,4">
+                  <Button DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" Classes.active="{Binding Favorite}"
+                          Content="{Binding StarText}" Command="{Binding ToggleCommand}" ToolTip.Tip="{Binding StarTip}" />
+                  <Path DockPanel.Dock="Left" Width="12" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" Stretch="Fill"
+                        Data="M10,0 L19,5 L17,22 L3,22 L1,5 Z" Fill="{Binding Fill}" RenderTransformOrigin="50%,50%">
+                    <Path.RenderTransform><RotateTransform Angle="{Binding Angle}" /></Path.RenderTransform>
+                  </Path>
+                  <TextBlock Classes="name" FontSize="13" VerticalAlignment="Center" Text="{Binding Label}" ToolTip.Tip="{Binding Label}" />
+                </DockPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </StackPanel>
+    </Flyout>
+    <!-- 比率块：名称与百分比、占比条、分子与分母。攻击特性、覆盖率与伤害分类共用。 -->
+    <DataTemplate x:Key="RatioTemplate" DataType="combat:CoverageTile">
+      <Border Classes="inset" Padding="12,10">
+        <StackPanel Spacing="4">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Right" FontSize="18" FontWeight="Black" Margin="8,0,0,0" Text="{Binding Percent}" />
+            <TextBlock Classes="name" VerticalAlignment="Bottom" Text="{Binding Name}" />
+          </DockPanel>
+          <controls:MeterBar Value="{Binding Ratio}" Fill="{StaticResource CombatBrush}" Track="{DynamicResource TrackBrush}" />
+          <TextBlock Classes="name muted" FontSize="12" Text="{Binding Note}" />
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Button.segment.active">
+      <Setter Property="Background" Value="{StaticResource CombatBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <!-- 效果行里的一个效果：内嵌底色的小块，高度固定，名称在自己的宽度内截断。 -->
+    <Style Selector="Border.effectchip">
+      <Setter Property="Background" Value="{DynamicResource InsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource InsetEdgeBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="6,3,8,3" />
+      <Setter Property="Height" Value="36" />
+    </Style>
+    <!-- 工具栏右侧的状态标签：圆点表示状态，战斗中用模块色调、切图中用待处理色，其余为次要色。 -->
+    <Style Selector="Border.tag">
+      <Setter Property="Background" Value="{DynamicResource InsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource InsetEdgeBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="Margin" Value="0,0,6,6" />
+      <Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="Ellipse.dot">
+      <Setter Property="Width" Value="8" />
+      <Setter Property="Height" Value="8" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Fill" Value="{DynamicResource MutedBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.fighting">
+      <Setter Property="Fill" Value="{StaticResource CombatBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.switching">
+      <Setter Property="Fill" Value="{DynamicResource UnknownBrush}" />
+    </Style>
+    <!-- 定时测量组合按钮：左半边是设定时长，右半边是开始；两半共用一个外框。 -->
+    <Style Selector="Border.timer">
+      <Setter Property="Background" Value="{DynamicResource InsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource InsetEdgeBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="Padding" Value="3" />
+      <Setter Property="Margin" Value="0,0,8,6" />
+    </Style>
+    <Style Selector="Border.timer Button">
+      <Setter Property="CornerRadius" Value="15" />
+      <Setter Property="MinHeight" Value="30" />
+    </Style>
+    <Style Selector="TextBlock.clock">
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="FontWeight" Value="Black" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <!-- 目标标签：名称与“伤害 · 占比”同一行，高度与小按钮相同；选中项用模块色调、白字。 -->
+    <Style Selector="Button.rangetarget">
+      <Setter Property="MaxWidth" Value="280" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="CornerRadius" Value="15" />
+      <Setter Property="Margin" Value="0,0,6,6" />
+    </Style>
+    <Style Selector="Button.rangemore">
+      <Setter Property="Margin" Value="0,0,6,6" />
+    </Style>
+    <Style Selector="Button.rangetarget.active">
+      <Setter Property="Background" Value="{StaticResource CombatBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.rangetarget.active TextBlock.muted">
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel x:Name="Root">
+  <DockPanel>
+    <!-- 页面标题固定在顶部，下方内容滚动。 -->
+    <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
+      <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+      <DockPanel Margin="{DynamicResource TitleReserve}">
+        <controls:CardGridEditBar DockPanel.Dock="Right" Target="{Binding #CardsGrid}" VerticalAlignment="Center" Margin="12,0,8,0" />
+        <TextBlock Classes="h1" Margin="0" Text="{DynamicResource C.Title}" />
+      </DockPanel>
+      <DockPanel Margin="0,4,0,0">
+        <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0">
+          <Button x:Name="AutoButton" Classes="chip" Margin="0,0,8,0" Content="{Binding AutoToggleText}" Classes.active="{Binding AutoEnabled}"
+                  Command="{Binding ToggleAutoCommand}" IsVisible="{Binding HasAuto}" ToolTip.Tip="{DynamicResource C.AutoTip}" />
+          <Button x:Name="StartButton" Classes="primary" Margin="0,0,8,0" Content="{DynamicResource C.Start}"
+                  Command="{Binding StartCommand}" IsVisible="{Binding Data.Actions.CanStart}" />
+          <Button x:Name="StopButton" Margin="0,0,8,0" Content="{Binding StopText}"
+                  Command="{Binding StopCommand}" IsVisible="{Binding Data.Actions.CanStop}" />
+          <Button x:Name="EndButton" Margin="0,0,8,0" Content="{DynamicResource C.EndEncounter}"
+                  Command="{Binding EndCommand}" IsEnabled="{Binding Data.Actions.CanEnd}" />
+          <Button x:Name="SplitButton" Content="{DynamicResource C.Split}"
+                  Command="{Binding SplitCommand}" IsEnabled="{Binding Data.Actions.CanSplit}" />
+        </WrapPanel>
+        <!-- 长文本规则：按钮与“更新中”完整显示，状态文字最后声明、占剩余宽度，单行省略，全文在悬停提示里。 -->
+        <TextBlock x:Name="RefreshingTag" DockPanel.Dock="Left" Classes="note unconfirmed" VerticalAlignment="Center" Margin="0,0,8,0"
+                   Text="{DynamicResource C.Refreshing}" IsVisible="{Binding Refreshing}" />
+        <TextBlock x:Name="StatusText" Classes="name muted" VerticalAlignment="Center" Text="{Binding Data.Status}" ToolTip.Tip="{Binding Data.Status}" />
+      </DockPanel>
+      <!-- 观测状态：等待识别角色或开始失败时写明原因；等待中可取消。 -->
+      <Border x:Name="StartBanner" Classes="banner" Classes.warning="{Binding StartWaiting}" Classes.error="{Binding StartFailed}"
+              Margin="0,8,0,0" IsVisible="{Binding Starting, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" x:Name="CancelStartButton" Classes="chip" Margin="10,0,0,0" VerticalAlignment="Center"
+                  Content="{DynamicResource C.Cancel}" Command="{Binding CancelObservationCommand}" IsVisible="{Binding StartWaiting}" />
+          <TextBlock x:Name="StartText" Classes="body" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding StartText}" />
+        </DockPanel>
+      </Border>
+      <Border x:Name="AutoBanner" Classes="banner" Classes.warning="{Binding AutoProblem}" Margin="0,8,0,0" IsVisible="{Binding HasAutoText}">
+        <TextBlock x:Name="AutoText" Classes="body" TextWrapping="Wrap" Text="{Binding AutoText}" />
+      </Border>
+    </StackPanel>
+
+  <!-- 滚动区向两侧和下方各让出 14，面板阴影不被裁掉；上下边缘在还有内容时淡出。 -->
+  <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Spacing="14" Margin="14,0,14,18">
+
+      <!-- 1. 工具栏（操作条，不是卡片，不折叠）：定时测量、保存记录、重设；右侧是战斗状态（地图、频道与抓包状态在主窗口侧栏）。窄时上下排。 -->
+      <Border Classes="panel" x:Name="ToolbarPanel" Padding="16,12,16,8">
+        <controls:SplitPanel SideWidth="300" Threshold="760" Spacing="10">
+          <StackPanel Spacing="2">
+            <WrapPanel x:Name="ToolbarActions">
+              <!-- 空闲：设定时长 | 开始计时 -->
+              <Border Classes="timer" x:Name="TimerIdle" IsVisible="{Binding MeasureIdle}">
+                <StackPanel Orientation="Horizontal" Spacing="2">
+                  <Button x:Name="TimerSettingsButton" Background="Transparent" BorderThickness="0" Padding="12,3"
+                          Command="{Binding OpenTimerCommand}" ToolTip.Tip="{Binding TimerSettingsText}"
+                          AutomationProperties.Name="{DynamicResource C.TimerSettings}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Classes="strong" VerticalAlignment="Center" Text="{Binding TimerLabel}" />
+                      <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" Text="▾" />
+                    </StackPanel>
+                  </Button>
+                  <Button x:Name="StartTimerButton" Classes="primary" Padding="14,3" Content="{DynamicResource C.StartTimer}"
+                          Command="{Binding StartMeasureCommand}" IsEnabled="{Binding CanStartMeasure}" />
+                </StackPanel>
+              </Border>
+              <!-- 等待首次伤害：设定时长与“等待首次伤害” | 取消；从本机第一次有效伤害起按设定时长计时。 -->
+              <Border Classes="timer" x:Name="TimerWaiting" IsVisible="{Binding MeasureWaiting}">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <StackPanel Orientation="Horizontal" Spacing="8" Margin="12,0,4,0">
+                    <TextBlock Classes="strong" VerticalAlignment="Center" Text="{Binding TimerLabel}" />
+                    <TextBlock x:Name="WaitingText" Classes="strong" FontSize="13" VerticalAlignment="Center" Foreground="{DynamicResource UnknownBrush}"
+                               Text="{DynamicResource C.WaitFirstHit}" />
+                  </StackPanel>
+                  <Button x:Name="CancelWaitingButton" Classes="stop" Padding="14,3" Content="{DynamicResource C.Cancel}"
+                          Command="{Binding CancelMeasureCommand}" IsEnabled="{Binding CanCancelMeasure}" />
+                </StackPanel>
+              </Border>
+              <!-- 计时：剩余时间与进度 | 取消 -->
+              <Border Classes="timer" x:Name="TimerRunning" IsVisible="{Binding MeasureRunning}">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <StackPanel Margin="12,0,4,0" VerticalAlignment="Center" Width="96">
+                    <TextBlock x:Name="RunningClock" Classes="clock" Text="{Binding RunningText}" />
+                    <controls:MeterBar Value="{Binding RunningProgress}" Fill="{StaticResource CombatBrush}" Track="{DynamicResource TrackBrush}" />
+                  </StackPanel>
+                  <Button x:Name="CancelRunningButton" Classes="stop" Padding="14,3" Content="{DynamicResource C.Cancel}"
+                          Command="{Binding CancelMeasureCommand}" IsEnabled="{Binding CanCancelMeasure}" />
+                </StackPanel>
+              </Border>
+              <Button x:Name="SaveRecordButton" Margin="0,0,8,6" MinHeight="38" Content="{DynamicResource C.SaveRecord}"
+                      Command="{Binding OpenSaveCommand}" IsEnabled="{Binding CanSave}" />
+              <Button x:Name="ResetButton" Margin="0,0,8,6" MinHeight="38" Content="{DynamicResource C.Reset}"
+                      Command="{Binding OpenResetCommand}" IsEnabled="{Binding Data.Actions.CanReset}" />
+            </WrapPanel>
+            <TextBlock x:Name="MeasureHintText" Classes="note" Text="{Binding MeasureHint}" IsVisible="{Binding HasMeasureHint}" />
+            <TextBlock x:Name="RunningDetailText" Classes="note" Text="{Binding RunningDetail}" IsVisible="{Binding MeasureRunning}" />
+          </StackPanel>
+          <WrapPanel x:Name="LocationTags" HorizontalAlignment="Right" VerticalAlignment="Top">
+            <Border Classes="tag">
+              <StackPanel Orientation="Horizontal">
+                <Ellipse Classes="dot" Classes.fighting="{Binding Fighting}" Classes.switching="{Binding Switching}" />
+                <TextBlock x:Name="ActivityTag" Classes="strong" FontSize="13" VerticalAlignment="Center" Text="{Binding Location.Activity}" />
+              </StackPanel>
+            </Border>
+          </WrapPanel>
+        </controls:SplitPanel>
+      </Border>
+
+      <!--
+        卡片网格（三列，窄时两列、一列）：顺序与尺寸档在“编辑布局”里调整并按列数保存，这里写的是缺省布局。
+        统计范围、伤害、治疗、破防期间、明细、战斗记录全宽（高度随内容）；自身效果与怪物效果各半宽×2，等宽并排。
+      -->
+      <controls:CardGrid x:Name="CardsGrid">
+
+      <!-- 2. 范围与 3. 选择目标 -->
+      <controls:Card x:Name="ScopePanel" CardId="scope" Title="{DynamicResource C.Scope}">
+        <StackPanel Spacing="10">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" x:Name="BackToLiveButton" Classes="chip" Margin="10,0,0,0" VerticalAlignment="Center"
+                    Content="{DynamicResource C.BackToLive}" Command="{Binding BackToLiveCommand}" IsVisible="{Binding ScopeMeasurement}" />
+            <WrapPanel>
+              <controls:SelectionBorder Classes="segmented" Margin="0,0,12,4" HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal">
+                  <Button x:Name="ScopeWholeButton" Classes="segment" Classes.active="{Binding ScopeWhole}" Command="{Binding SelectScopeCommand}"
+                          CommandParameter="observation" Content="{DynamicResource C.ScopeWhole}" ToolTip.Tip="{DynamicResource C.ScopeWholeTip}" />
+                  <Button x:Name="ScopeSegmentButton" Classes="segment" Classes.active="{Binding ScopeSegment}" Command="{Binding SelectScopeCommand}"
+                          CommandParameter="segment" Content="{DynamicResource C.ScopeSegment}" />
+                  <Button x:Name="ScopeMeasurementButton" Classes="segment" Classes.active="{Binding ScopeMeasurement}" Command="{Binding SelectScopeCommand}"
+                          CommandParameter="measurement" Content="{DynamicResource C.ScopeMeasurement}" />
+                </StackPanel>
+              </controls:SelectionBorder>
+              <TextBlock x:Name="ScopeTitle" Classes="h2" FontSize="17" VerticalAlignment="Center" Margin="0,0,0,4"
+                         TextWrapping="Wrap" Text="{Binding Scope.Title}" IsVisible="{Binding HasScopeTitle}" />
+            </WrapPanel>
+          </DockPanel>
+          <!-- 定时测量结果：最近一次与历史里保存的测量。 -->
+          <controls:SelectionBorder IsVisible="{Binding HasMeasurementOptions}">
+            <ItemsControl x:Name="MeasurementOptions" ItemsSource="{Binding MeasurementOptions}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="combat:MeasurementOption">
+                  <Button Classes="chip" Margin="0,0,6,6" MaxWidth="260" Classes.active="{Binding Current}"
+                          Command="{Binding $parent[UserControl].((combat:CombatPageModel)DataContext).SelectMeasurementCommand}" CommandParameter="{Binding}">
+                    <TextBlock Classes="name" Text="{Binding Label}" ToolTip.Tip="{Binding Label}" />
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </controls:SelectionBorder>
+          <Border x:Name="IncompleteBanner" Classes="banner warning" IsVisible="{Binding Scope.IsIncomplete}">
+            <TextBlock Classes="body" TextWrapping="Wrap" Text="{Binding Scope.Incomplete}" />
+          </Border>
+          <TextBlock x:Name="ScopeProblem" Classes="note" Text="{Binding Scope.Problem}" IsVisible="{Binding Scope.HasProblem}" />
+          <!-- 选择目标：默认折叠成一行（全部、选中的目标与能放下的前几个，按伤害从高到低），其余收进“+N”，可展开查看全部。 -->
+          <StackPanel Spacing="6" IsVisible="{Binding HasRangeTargets}">
+            <TextBlock Classes="note" Text="{DynamicResource C.SelectTarget}" />
+            <controls:SelectionBorder>
+              <ItemsControl x:Name="RangeTargetChips" ItemsSource="{Binding RangeTargetItems}">
+                <ItemsControl.Styles>
+                  <Style Selector="ItemsControl#RangeTargetChips > ContentPresenter">
+                    <Setter Property="controls:OverflowRow.IsPinned" Value="{ReflectionBinding Pinned}" />
+                  </Style>
+                </ItemsControl.Styles>
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <controls:OverflowRow IsExpanded="{Binding $parent[UserControl].((combat:CombatPageModel)DataContext).TargetsExpanded}" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.DataTemplates>
+                  <DataTemplate DataType="combat:RangeTargetChip">
+                    <Button Classes="tile rangetarget" Classes.active="{Binding Current}" ToolTip.Tip="{Binding Tip}"
+                            Command="{Binding $parent[UserControl].((combat:CombatPageModel)DataContext).SelectRangeTargetCommand}" CommandParameter="{Binding}">
+                      <!-- 伤害与占比完整显示，名称在剩余宽度内截断。 -->
+                      <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Classes="muted" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center">
+                          <Run Text="{Binding Damage}" /><Run Text=" · " /><Run Text="{Binding Share}" />
+                        </TextBlock>
+                        <TextBlock Classes="name strong" FontSize="13" MaxWidth="150" VerticalAlignment="Center" Text="{Binding Name}" />
+                      </DockPanel>
+                    </Button>
+                  </DataTemplate>
+                  <DataTemplate DataType="combat:RangeTargetMore">
+                    <Button Classes="chip rangemore"
+                            Command="{Binding $parent[UserControl].((combat:CombatPageModel)DataContext).ToggleTargetsCommand}"
+                            ToolTip.Tip="{Binding $parent[UserControl].((combat:CombatPageModel)DataContext).TargetsToggleTip}">
+                      <Panel>
+                        <TextBlock VerticalAlignment="Center" IsVisible="{Binding !$parent[UserControl].((combat:CombatPageModel)DataContext).TargetsExpanded}"
+                                   Text="{Binding $parent[ContentPresenter].(controls:OverflowRow.OverflowCount), StringFormat='+{0}'}" />
+                        <TextBlock VerticalAlignment="Center" IsVisible="{Binding $parent[UserControl].((combat:CombatPageModel)DataContext).TargetsExpanded}"
+                                   Text="{DynamicResource C.CollapseTargets}" />
+                      </Panel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.DataTemplates>
+              </ItemsControl>
+            </controls:SelectionBorder>
+          </StackPanel>
+        </StackPanel>
+      </controls:Card>
+
+      <!-- 4. 主数据、5. 目标详情、6. 攻击特性 -->
+      <controls:Card x:Name="DamagePanel" CardId="damage" Title="{DynamicResource C.Damage}" AllowedSizes="ThreeByTwo,TwoByTwo">
+        <controls:Card.Icon>
+          <controls:IconTile Slot="panel.combat.damage" Fallback="{DynamicResource C.DamageGlyph}" Accent="{StaticResource CombatBrush}" />
+        </controls:Card.Icon>
+        <controls:Card.Status>
+          <TextBlock Classes="note" TextAlignment="Right" Text="{DynamicResource C.LiveNote}" />
+        </controls:Card.Status>
+        <StackPanel Spacing="14">
+          <ItemsControl x:Name="KpiTiles" ItemsSource="{Binding Kpis}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="170" Spacing="10" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="combat:KpiTile">
+                <Border Classes="inset" CornerRadius="18" Padding="16,12">
+                  <StackPanel>
+                    <TextBlock Classes="name muted" FontSize="12" Text="{Binding Label}" />
+                    <!-- 数值不截断：放不下时整体缩小。 -->
+                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                      <TextBlock Classes="kpi" Classes.primary="{Binding Primary}" Text="{Binding Value}" />
+                    </Viewbox>
+                    <!-- 说明行始终占位：出现或消失时数值块高度不变。 -->
+                    <TextBlock Classes="name muted" FontSize="12" MinHeight="16" Text="{Binding Note}" ToolTip.Tip="{Binding Note}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- 选中单个目标：目标名与我的贡献。 -->
+          <Border x:Name="TargetDetailCard" Classes="inset" Padding="16,12" IsVisible="{Binding HasTargetDetail}">
+            <StackPanel Spacing="6">
+              <DockPanel>
+                <TextBlock DockPanel.Dock="Right" FontSize="22" FontWeight="Black" Margin="12,0,0,0" VerticalAlignment="Center"
+                           Text="{Binding TargetDetail.Contribution, FallbackValue=''}" />
+                <StackPanel>
+                  <TextBlock Classes="name muted" FontSize="12" Text="{DynamicResource C.TargetDetail}" />
+                  <TextBlock x:Name="TargetDetailName" Classes="name strong" FontSize="17" Text="{Binding TargetDetail.Name, FallbackValue=''}"
+                             ToolTip.Tip="{Binding TargetDetail.Tip, FallbackValue=''}" />
+                </StackPanel>
+              </DockPanel>
+              <controls:MeterBar Value="{Binding TargetDetail.Ratio, FallbackValue=0}" Fill="{StaticResource CombatBrush}" Track="{DynamicResource TrackBrush}" />
+              <TextBlock Classes="name muted" FontSize="12">
+                <Run Text="{DynamicResource C.MyContribution}" /><Run Text=" " /><Run Text="{Binding TargetDetail.Damage, FallbackValue=''}" />
+              </TextBlock>
+            </StackPanel>
+          </Border>
+
+          <!-- 攻击特性：暴击、强击、连击、追击；无防备、破防、普攻、多重打击；间接与持续伤害占比。 -->
+          <StackPanel x:Name="TraitsGroup" Spacing="8">
+            <controls:ReflowPanel MinItemWidth="200" Spacing="12">
+              <TextBlock Classes="strong" Text="{DynamicResource C.Traits}" />
+              <TextBlock Classes="note" Text="{DynamicResource C.TraitsNote}" />
+            </controls:ReflowPanel>
+            <ItemsControl x:Name="CoverageTiles" ItemsSource="{Binding Coverage}" ItemTemplate="{StaticResource RatioTemplate}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="150" Spacing="10" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+            <ItemsControl x:Name="TraitTiles" ItemsSource="{Binding Traits}" ItemTemplate="{StaticResource RatioTemplate}" IsVisible="{Binding HasTraits}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="150" Spacing="10" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+            <ItemsControl x:Name="ClassTiles" ItemsSource="{Binding Classes}" ItemTemplate="{StaticResource RatioTemplate}" IsVisible="{Binding HasClasses}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="150" Spacing="10" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+            <TextBlock Classes="note" Text="{DynamicResource C.CoverageNote}" />
+          </StackPanel>
+
+          <!-- 首击不算比例：只显示本场最近的一次（技能、伤害与目标）；事件未知、查不到或没有首击时整组不显示。 -->
+          <StackPanel x:Name="FirstAttackGroup" Spacing="6" IsVisible="{Binding HasFirstAttack}">
+            <controls:ReflowPanel MinItemWidth="200" Spacing="12">
+              <TextBlock Classes="strong" Text="{DynamicResource C.FirstAttack}" />
+              <TextBlock Classes="note" Text="{DynamicResource C.FirstAttackNote}" />
+            </controls:ReflowPanel>
+            <Border x:Name="FirstAttackRow" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,1,0,0" Padding="8,6">
+              <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Classes="strong" Margin="12,0,0,0" VerticalAlignment="Center"
+                           Text="{Binding FirstAttack.Damage, FallbackValue=''}" />
+                <controls:ReflowPanel MinItemWidth="160" Spacing="12" VerticalAlignment="Center">
+                  <TextBlock Classes="name strong" Text="{Binding FirstAttack.Skill, FallbackValue=''}"
+                             ToolTip.Tip="{Binding FirstAttack.SkillHint, FallbackValue=''}" />
+                  <TextBlock Classes="name muted" Text="{Binding FirstAttack.Target, FallbackValue=''}"
+                             ToolTip.Tip="{Binding FirstAttack.TargetHint, FallbackValue=''}" IsVisible="{Binding HasFirstAttackTarget}" />
+                </controls:ReflowPanel>
+              </DockPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- 元素构成：未知时不显示；已知但没有元素时只显示一行“无元素”。 -->
+          <StackPanel x:Name="ElementsGroup" Spacing="6" IsVisible="{Binding HasElements}">
+            <controls:ReflowPanel MinItemWidth="200" Spacing="12">
+              <TextBlock Classes="note" Text="{DynamicResource C.Elements}" />
+              <TextBlock Classes="note" Text="{DynamicResource C.ElementsNote}" />
+            </controls:ReflowPanel>
+            <controls:SegmentBar x:Name="ElementBar" Segments="{Binding ElementSegments}" IsVisible="{Binding HasElementParts}" />
+            <ItemsControl x:Name="ElementLegend" ItemsSource="{Binding ElementParts}" IsVisible="{Binding HasElementParts}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="combat:ElementPart">
+                  <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                    <Border Width="10" Height="10" CornerRadius="5" Margin="0,0,6,0" VerticalAlignment="Center"
+                            Background="{Binding Segment.Fill}" />
+                    <TextBlock FontSize="13" Text="{Binding Label}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock x:Name="NoElementsText" FontSize="13" Text="{DynamicResource C.NoElements}" IsVisible="{Binding NoElements}" />
+          </StackPanel>
+
+          <StackPanel Spacing="6" IsVisible="{Binding HasAttribution}">
+            <TextBlock Classes="note" Text="{DynamicResource C.Attribution}" />
+            <controls:SegmentBar Segments="{Binding AttributionSegments}" />
+            <ItemsControl ItemsSource="{Binding AttributionParts}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="combat:AttributionPart">
+                  <TextBlock FontSize="13" Margin="0,0,16,4" Text="{Binding Label}" Classes.muted="{Binding !Counted}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Classes="note" FontSize="13" Text="{Binding Data.AttributionNote}" />
+          </StackPanel>
+        </StackPanel>
+      </controls:Card>
+
+      <!-- 7. 治疗：全宽随内容的紧凑卡片（标题行里是 HPS、总治疗量、受到治疗，内容区是口径）；治疗目标明细在下方的明细表里。后端未提供治疗块时只显示一行说明，不显示 0。 -->
+      <controls:Card x:Name="HealingPanel" CardId="healing" Title="{DynamicResource C.Healing}" TitleTip="{DynamicResource C.HealingNote}"
+                     Padding="16,10" IsVisible="{Binding HasHealing}" AllowedSizes="TwoByAuto,HalfByAuto">
+        <!-- 数值在标题行里，折叠后仍显示；内容区是口径说明。 -->
+        <controls:Card.Status>
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <TextBlock x:Name="NoHealingText" Classes="note" VerticalAlignment="Center" Text="{DynamicResource C.NoHealing}" IsVisible="{Binding NoHealing}" />
+            <ItemsControl x:Name="HealingTiles" ItemsSource="{Binding HealingTiles}" IsVisible="{Binding HealingAvailable}" VerticalAlignment="Center">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="16" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="combat:HealingTile">
+                  <StackPanel Orientation="Horizontal" Spacing="6" ToolTip.Tip="{Binding Note}">
+                    <TextBlock Classes="name muted" FontSize="12" VerticalAlignment="Center" Text="{Binding Label}" />
+                    <TextBlock FontSize="16" FontWeight="Black" VerticalAlignment="Center" Text="{Binding Value}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </controls:Card.Status>
+        <WrapPanel x:Name="HealingGroup" Orientation="Horizontal" ItemSpacing="14" LineSpacing="4">
+          <!-- 口径：本人施放的治疗与 HPS 的分母；选中怪物时写明治疗与目标无关。单行截断，全文在悬停提示里。 -->
+          <TextBlock x:Name="HealingHeaderText" Classes="note" VerticalAlignment="Center" MaxWidth="520" TextTrimming="CharacterEllipsis"
+                     Text="{Binding HealingHeader}" ToolTip.Tip="{Binding HealingHeader}" IsVisible="{Binding HasHealingHeader}" />
+          <TextBlock x:Name="HealingTargetNote" Classes="note unconfirmed" VerticalAlignment="Center" MaxWidth="360" TextTrimming="CharacterEllipsis"
+                     Text="{Binding HealingNote}" ToolTip.Tip="{Binding HealingNote}" IsVisible="{Binding HasHealingNote}" />
+        </WrapPanel>
+      </controls:Card>
+
+      <!--
+        8. 自身效果与怪物效果（等宽并排，各半宽×2）：效果按正面、负面、未分类三区单列排列（收藏在前，按首次出现）；卡片高度由尺寸档决定，
+        说明文字各占固定的一行（过长截断，全文在悬停提示里），其下的列表占满剩余高度，效果多时在列表里滚动。效果增减与数值刷新不改变卡片尺寸。
+        内容较重，延后建立：卡片外壳先按尺寸档占好位置，挂上窗口后的下一个调度帧再建立内容。
+      -->
+      <controls:Card x:Name="SelfEffectsPanel" CardId="self-effects" Title="{DynamicResource C.SelfEffects}"
+                     Size="HalfByTwo" AllowedSizes="HalfByThree,HalfByFour,TwoByTwo,ThreeByTwo" ScrollsBody="False">
+        <controls:Card.Icon>
+          <controls:IconTile Slot="panel.combat.self" Fallback="{DynamicResource C.SelfGlyph}" Accent="{StaticResource SelfEffectBrush}" />
+        </controls:Card.Icon>
+        <controls:Card.Actions>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button x:Name="SelfFavoritesOnlyButton" Classes="chip" Classes.active="{Binding SelfFavoritesOnly}"
+                    Content="{DynamicResource C.EffectFavoritesOnly}" ToolTip.Tip="{DynamicResource C.EffectFavoritesOnlyTip}"
+                    Command="{Binding ToggleSelfFavoritesOnlyCommand}" />
+            <Button x:Name="SelfFavoritesButton" Classes="chip" Content="{DynamicResource C.ManageFavorites}"
+                    ToolTip.Tip="{DynamicResource C.ManageFavoritesTip}" Flyout="{StaticResource FavoritesFlyout}" />
+          </StackPanel>
+        </controls:Card.Actions>
+        <controls:DeferredContent><DataTemplate x:DataType="combat:CombatPageModel">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Classes="name muted" FontSize="12" Margin="0,0,0,6" Text="{DynamicResource C.SelfNote}"
+                       ToolTip.Tip="{DynamicResource C.SelfNote}" />
+            <Panel DockPanel.Dock="Top" Height="18" Margin="0,0,0,6">
+              <TextBlock Classes="name muted" FontSize="12" Text="{DynamicResource C.Empty}" IsVisible="{Binding NoSelfEffects}" />
+              <TextBlock Classes="name unconfirmed" FontSize="12" Text="{DynamicResource C.NoFavoriteEffects}" IsVisible="{Binding SelfFavoritesEmpty}" />
+            </Panel>
+            <ScrollViewer x:Name="SelfEffectsBody" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel>
+                <ContentControl x:Name="SelfPositiveRow" Content="{Binding SelfPositive}" ContentTemplate="{StaticResource EffectStripTemplate}" />
+                <ContentControl x:Name="SelfNegativeRow" Content="{Binding SelfNegative}" ContentTemplate="{StaticResource EffectStripTemplate}" />
+                <ContentControl x:Name="SelfOtherRow" Content="{Binding SelfOther}" ContentTemplate="{StaticResource EffectStripTemplate}" />
+              </StackPanel>
+            </ScrollViewer>
+          </DockPanel>
+        </DataTemplate></controls:DeferredContent>
+      </controls:Card>
+
+      <controls:Card x:Name="TargetEffectsPanel" CardId="target-effects" Title="{DynamicResource C.TargetEffects}"
+                     Size="HalfByTwo" AllowedSizes="HalfByThree,HalfByFour,TwoByTwo,ThreeByTwo" ScrollsBody="False">
+        <controls:Card.Icon>
+          <controls:IconTile Slot="panel.combat.target" Fallback="{DynamicResource C.TargetGlyph}" Accent="{StaticResource TargetEffectBrush}" />
+        </controls:Card.Icon>
+        <controls:Card.Actions>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button x:Name="TargetFavoritesOnlyButton" Classes="chip" Classes.active="{Binding TargetFavoritesOnly}"
+                    Content="{DynamicResource C.EffectFavoritesOnly}" ToolTip.Tip="{DynamicResource C.EffectFavoritesOnlyTip}"
+                    Command="{Binding ToggleTargetFavoritesOnlyCommand}" />
+            <Button x:Name="TargetFavoritesButton" Classes="chip" Content="{DynamicResource C.ManageFavorites}"
+                    ToolTip.Tip="{DynamicResource C.ManageFavoritesTip}" Flyout="{StaticResource FavoritesFlyout}" />
+          </StackPanel>
+        </controls:Card.Actions>
+        <controls:DeferredContent><DataTemplate x:DataType="combat:CombatPageModel">
+          <DockPanel>
+            <!-- 目标行与“选择目标”同一顺序与同一个选择：始终只占一行，当前效果目标钉住，其余收进“+N”浮层。 -->
+            <Panel DockPanel.Dock="Top" Height="36" Margin="0,0,0,6">
+              <controls:SelectionBorder IsVisible="{Binding HasTargets}">
+                <ItemsControl x:Name="EffectTargetChips" ItemsSource="{Binding TargetChipItems}">
+                  <ItemsControl.Styles>
+                    <Style Selector="ItemsControl#EffectTargetChips > ContentPresenter">
+                      <Setter Property="controls:OverflowRow.IsPinned" Value="{ReflectionBinding Pinned}" />
+                    </Style>
+                  </ItemsControl.Styles>
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><controls:OverflowRow /></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.DataTemplates>
+                    <DataTemplate DataType="combat:TargetChip">
+                      <Button Classes="chip target" Margin="0,0,6,6" MaxWidth="220" ToolTip.Tip="{Binding Hint}"
+                              Command="{Binding $parent[UserControl].((combat:CombatPageModel)DataContext).SelectTargetCommand}" CommandParameter="{Binding}"
+                              Classes.active="{Binding Current}" Classes.away="{Binding !InScope}">
+                        <TextBlock Classes="name" Text="{Binding Label}" />
+                      </Button>
+                    </DataTemplate>
+                    <DataTemplate DataType="combat:EffectTargetMore">
+                      <Button x:Name="EffectTargetMoreButton" Classes="chip rangemore" ToolTip.Tip="{DynamicResource C.AllTargets}"
+                              Content="{Binding $parent[ContentPresenter].(controls:OverflowRow.OverflowCount), StringFormat='+{0}'}">
+                        <Button.Flyout>
+                          <Flyout Placement="BottomEdgeAlignedLeft">
+                            <ScrollViewer MaxHeight="280" Width="360" HorizontalScrollBarVisibility="Disabled">
+                              <ItemsControl x:DataType="combat:CombatPageModel" ItemsSource="{Binding TargetChipList}">
+                                <ItemsControl.ItemsPanel>
+                                  <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate DataType="combat:TargetChip">
+                                    <Button Classes="chip target" Margin="0,0,6,6" MaxWidth="220" ToolTip.Tip="{Binding Hint}"
+                                            Command="{Binding $parent[ItemsControl].((combat:CombatPageModel)DataContext).SelectTargetCommand}" CommandParameter="{Binding}"
+                                            Classes.active="{Binding Current}" Classes.away="{Binding !InScope}">
+                                      <TextBlock Classes="name" Text="{Binding Label}" />
+                                    </Button>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                            </ScrollViewer>
+                          </Flyout>
+                        </Button.Flyout>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.DataTemplates>
+                </ItemsControl>
+              </controls:SelectionBorder>
+            </Panel>
+            <Panel DockPanel.Dock="Top" Height="18" Margin="0,0,0,6">
+              <TextBlock x:Name="TargetEffectsNoteText" Classes="name muted" FontSize="12" Text="{Binding TargetEffectsNote}"
+                         ToolTip.Tip="{Binding TargetEffectsNote}" IsVisible="{Binding HasTargetEffectsNote}" />
+              <TextBlock Classes="name unconfirmed" FontSize="12" Text="{DynamicResource C.NoFavoriteEffects}" IsVisible="{Binding TargetFavoritesEmpty}" />
+            </Panel>
+            <ScrollViewer x:Name="TargetEffectsBody" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel>
+                <ContentControl x:Name="TargetPositiveRow" Content="{Binding TargetPositive}" ContentTemplate="{StaticResource EffectStripTemplate}" />
+                <ContentControl x:Name="TargetNegativeRow" Content="{Binding TargetNegative}" ContentTemplate="{StaticResource EffectStripTemplate}" />
+                <ContentControl x:Name="TargetOtherRow" Content="{Binding TargetOther}" ContentTemplate="{StaticResource EffectStripTemplate}" />
+              </StackPanel>
+            </ScrollViewer>
+          </DockPanel>
+        </DataTemplate></controls:DeferredContent>
+      </controls:Card>
+
+      <!-- 9. 破防期间 -->
+      <controls:Card x:Name="BreakPanel" CardId="break" Title="{DynamicResource C.BreakTitle}" IsVisible="{Binding HasBreak}"
+                     AllowedSizes="ThreeByTwo,TwoByTwo,HalfByTwo">
+        <StackPanel Spacing="10">
+          <controls:ReflowPanel MinItemWidth="120" Spacing="10">
+            <Border Classes="inset" Padding="12,10">
+              <StackPanel>
+                <TextBlock Classes="name muted" FontSize="12" Text="{DynamicResource C.BreakDamage}" />
+                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                  <TextBlock x:Name="BreakDamageText" FontSize="22" FontWeight="Black" Text="{Binding Break.Damage, FallbackValue=''}" />
+                </Viewbox>
+              </StackPanel>
+            </Border>
+            <Border Classes="inset" Padding="12,10">
+              <StackPanel>
+                <TextBlock Classes="name muted" FontSize="12" Text="{DynamicResource C.BreakCount}" />
+                <TextBlock FontSize="22" FontWeight="Black" Text="{Binding Break.Count, FallbackValue=''}" />
+              </StackPanel>
+            </Border>
+            <Border Classes="inset" Padding="12,10">
+              <StackPanel>
+                <TextBlock Classes="name muted" FontSize="12" Text="{DynamicResource C.BreakAverage}" />
+                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                  <TextBlock FontSize="22" FontWeight="Black" Text="{Binding Break.Average, FallbackValue=''}" />
+                </Viewbox>
+              </StackPanel>
+            </Border>
+          </controls:ReflowPanel>
+          <controls:ReflowPanel MinItemWidth="120" Spacing="10">
+            <controls:PairRow>
+              <TextBlock Classes="muted" FontSize="13" Text="{DynamicResource C.BreakDps}" />
+              <TextBlock x:Name="BreakDpsText" Classes="unconfirmed" FontSize="13" Text="{Binding Break.Dps, FallbackValue=''}" />
+            </controls:PairRow>
+            <controls:PairRow>
+              <TextBlock Classes="muted" FontSize="13" Text="{DynamicResource C.BreakDuration}" />
+              <TextBlock Classes="unconfirmed" FontSize="13" Text="{Binding Break.Duration, FallbackValue=''}" />
+            </controls:PairRow>
+            <controls:PairRow>
+              <TextBlock Classes="muted" FontSize="13" Text="{DynamicResource C.BreakIntervals}" />
+              <TextBlock Classes="unconfirmed" FontSize="13" Text="{Binding Break.Intervals, FallbackValue=''}" />
+            </controls:PairRow>
+            <controls:PairRow>
+              <TextBlock Classes="muted" FontSize="13" Text="{DynamicResource C.BreakShare}" />
+              <TextBlock Classes="unconfirmed" FontSize="13" Text="{Binding Break.Share, FallbackValue=''}" />
+            </controls:PairRow>
+          </controls:ReflowPanel>
+          <TextBlock Classes="note" Text="{Binding Break.Note, FallbackValue=''}" />
+        </StackPanel>
+      </controls:Card>
+
+      <!-- 10. 明细：技能／目标表与治疗目标表，在战斗记录上方。 -->
+      <controls:Card x:Name="DetailPanel" CardId="details" Title="{DynamicResource C.Details}">
+        <controls:Card.Actions>
+          <StackPanel Orientation="Horizontal">
+            <Button x:Name="OpenDetailButton" Classes="chip" Margin="0,0,10,0" VerticalAlignment="Center"
+                    Content="{DynamicResource C.OpenDetail}" Click="OnOpenDetailClick" />
+            <controls:SelectionBorder Classes="segmented">
+              <StackPanel Orientation="Horizontal">
+                <Button Classes="segment" Classes.active="{Binding BySkill}" Command="{Binding ShowSkillsCommand}"
+                        Content="{DynamicResource C.BySkill}" />
+                <Button Classes="segment" Classes.active="{Binding ByTarget}" x:Name="ByTargetButton" Command="{Binding ShowTargetsCommand}"
+                        Content="{DynamicResource C.ByTarget}" />
+              </StackPanel>
+            </controls:SelectionBorder>
+          </StackPanel>
+        </controls:Card.Actions>
+        <StackPanel Spacing="10">
+          <!-- 通用表格：列宽、排序、筛选、检索、复制与列顺序；攻击特性与元素五列只在本场有任一项已知时出现。 -->
+          <TextBlock x:Name="TagNote" Classes="note" TextWrapping="Wrap" Text="{x:Static combat:CombatPageModel.TagTip}" />
+          <tables:DataTable x:Name="DamageTable" TableId="{Binding DamageTableId}" ColumnsSource="{Binding DamageColumns}"
+                            ItemsSource="{Binding Rows}" EmptyText="{DynamicResource C.Empty}" BodyMaxHeight="420" />
+          <StackPanel x:Name="HealingTargetsGroup" Spacing="6" IsVisible="{Binding HasHealing}">
+            <TextBlock Classes="strong" Text="{DynamicResource C.HealingTargets}" />
+            <tables:DataTable x:Name="HealingTable" TableId="combat.healingTargets" ColumnsSource="{Binding HealingColumns}"
+                              ItemsSource="{Binding HealingTargets}" EmptyText="{DynamicResource C.Empty}" BodyMaxHeight="240" />
+          </StackPanel>
+        </StackPanel>
+      </controls:Card>
+
+      <!-- 11. 战斗记录（页面最下方）。内容较重，延后建立：先按占位高度排出位置，挂上窗口后的下一个调度帧再建立。 -->
+      <controls:Card x:Name="HistoryPanel" CardId="history" Title="{DynamicResource C.History}" AllowedSizes="ThreeByTwo,HalfByTwo">
+        <controls:Card.Icon>
+          <controls:IconTile Slot="panel.combat.history" Fallback="{DynamicResource C.HistoryGlyph}" Accent="{StaticResource RecordBrush}" />
+        </controls:Card.Icon>
+        <controls:Card.Actions>
+          <WrapPanel>
+            <Button x:Name="FavoritesOnlyButton" Classes="chip" Classes.active="{Binding FavoritesOnly}" Margin="0,0,6,0"
+                    Content="{DynamicResource C.OnlyFavorites}" Command="{Binding ToggleFavoritesOnlyCommand}" />
+            <Button Classes="chip" Content="{DynamicResource C.CleanOld}"
+                    Command="{Binding CleanCommand}" IsEnabled="{Binding Data.Actions.CanClean}" />
+          </WrapPanel>
+        </controls:Card.Actions>
+        <controls:DeferredContent PlaceholderHeight="170"><DataTemplate x:DataType="combat:CombatPageModel">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="note" Text="{DynamicResource C.Empty}" IsVisible="{Binding NoHistory}" />
+          <ItemsControl ItemsSource="{Binding History}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="combat:EncounterRow">
+                <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,1,0,0" Padding="4,8">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Classes="chip" Margin="12,0,0,0" VerticalAlignment="Center"
+                            Content="{Binding FavoriteLabel}" Classes.active="{Binding Favorite}"
+                            Command="{Binding $parent[UserControl].((combat:CombatPageModel)DataContext).FavoriteCommand}" CommandParameter="{Binding}" />
+                    <controls:ReflowPanel MinItemWidth="150" Spacing="12" VerticalAlignment="Center">
+                      <TextBlock Classes="name strong" Text="{Binding When}" />
+                      <TextBlock Classes="name strong" Text="{Binding Record}" ToolTip.Tip="{Binding Record}" IsVisible="{Binding HasRecord}" />
+                      <TextBlock Classes="name" Text="{Binding Target}" />
+                      <TextBlock Classes="name" Text="{Binding Segment}" IsVisible="{Binding HasSegment}" />
+                      <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Margin="0,0,16,0" Text="{Binding Length}" />
+                        <TextBlock Classes="name" Text="{Binding Dps}" />
+                      </DockPanel>
+                      <TextBlock Classes="body strong" Text="{Binding Quality}" />
+                    </controls:ReflowPanel>
+                  </DockPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+        </DataTemplate></controls:DeferredContent>
+      </controls:Card>
+
+      </controls:CardGrid>
+    </StackPanel>
+  </ScrollViewer>
+  </DockPanel>
+
+  <!-- 定时测量设定层：分与秒（测量从首次伤害开始，没有预备）。 -->
+  <Panel x:Name="TimerLayer" IsVisible="{Binding IsTimerOpen}" KeyDown="OnLayerKeyDown">
+    <Border Background="Transparent" PointerPressed="OnLayerOutsidePressed" />
+    <Border x:Name="TimerPanel" Classes="panel popup" Classes.open="{Binding IsTimerOpen}" MaxWidth="380" Padding="16"
+            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14,150,14,14" KeyboardNavigation.TabNavigation="Cycle">
+      <StackPanel Spacing="10">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" x:Name="TimerClose" Classes="chip" Content="{DynamicResource C.Close}" Command="{Binding CloseTimerCommand}" />
+          <TextBlock Classes="h2" FontSize="17" VerticalAlignment="Center" Text="{DynamicResource C.TimerSettings}" />
+        </DockPanel>
+        <TextBlock Classes="note" Text="{DynamicResource C.TimerSettingsNote}" />
+        <controls:ReflowPanel MinItemWidth="96" Spacing="8">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="muted" FontSize="12" Text="{DynamicResource C.Minutes}" />
+            <TextBox x:Name="TimerMinutesBox" Classes="field" Text="{Binding TimerMinutes}" MaxLength="2" AutomationProperties.Name="{DynamicResource C.Minutes}" />
+          </StackPanel>
+          <StackPanel Spacing="4">
+            <TextBlock Classes="muted" FontSize="12" Text="{DynamicResource C.Seconds}" />
+            <TextBox x:Name="TimerSecondsBox" Classes="field" Text="{Binding TimerSeconds}" MaxLength="2" AutomationProperties.Name="{DynamicResource C.Seconds}" />
+          </StackPanel>
+        </controls:ReflowPanel>
+        <TextBlock x:Name="TimerErrorText" Classes="note error" TextWrapping="Wrap" Text="{Binding TimerError}" IsVisible="{Binding HasTimerError}" />
+        <Button x:Name="ApplyTimerButton" Classes="primary" HorizontalAlignment="Right" Content="{DynamicResource C.Apply}" Command="{Binding ApplyTimerCommand}" />
+      </StackPanel>
+    </Border>
+  </Panel>
+
+  <!-- 保存记录层：把当前范围存入战斗历史，可起名。 -->
+  <Panel x:Name="SaveLayer" IsVisible="{Binding IsSaveOpen}" KeyDown="OnLayerKeyDown">
+    <Border Background="Transparent" PointerPressed="OnLayerOutsidePressed" />
+    <Border x:Name="SavePanel" Classes="panel popup" Classes.open="{Binding IsSaveOpen}" MaxWidth="420" Padding="16"
+            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14,150,14,14" KeyboardNavigation.TabNavigation="Cycle">
+      <StackPanel Spacing="10">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" x:Name="SaveClose" Classes="chip" Content="{DynamicResource C.Close}" Command="{Binding CloseSaveCommand}" />
+          <TextBlock Classes="h2" FontSize="17" VerticalAlignment="Center" Text="{DynamicResource C.SaveRecord}" />
+        </DockPanel>
+        <TextBlock Classes="note" TextWrapping="Wrap" Text="{DynamicResource C.SaveRecordNote}" />
+        <TextBox x:Name="RecordNameBox" Classes="field" Text="{Binding RecordName}" MaxLength="60"
+                 PlaceholderText="{DynamicResource C.RecordName}" AutomationProperties.Name="{DynamicResource C.RecordName}" />
+        <Button x:Name="SaveRecordConfirm" Classes="primary" HorizontalAlignment="Right" Content="{DynamicResource C.Save}"
+                Command="{Binding SaveRecordCommand}" IsEnabled="{Binding CanSaveRecord}" />
+      </StackPanel>
+    </Border>
+  </Panel>
+
+  <!-- 重设确认层。 -->
+  <Panel x:Name="ResetLayer" IsVisible="{Binding IsResetOpen}" KeyDown="OnLayerKeyDown">
+    <Border Background="Transparent" PointerPressed="OnLayerOutsidePressed" />
+    <Border x:Name="ResetPanel" Classes="panel popup" Classes.open="{Binding IsResetOpen}" MaxWidth="400" Padding="16"
+            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14,150,14,14" KeyboardNavigation.TabNavigation="Cycle">
+      <StackPanel Spacing="10">
+        <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource C.ResetConfirmTitle}" />
+        <TextBlock Classes="body" TextWrapping="Wrap" Text="{DynamicResource C.ResetConfirmNote}" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+          <Button x:Name="ResetCancel" Content="{DynamicResource C.Cancel}" Command="{Binding CloseResetCommand}" />
+          <Button x:Name="ResetConfirm" Classes="stop" Content="{DynamicResource C.Reset}" Command="{Binding ConfirmResetCommand}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+  </Panel>
+  </Panel>
+</UserControl>

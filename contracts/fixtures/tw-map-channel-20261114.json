@@ -1,0 +1,254 @@
+{
+  "schemaVersion": 1,
+  "region": "TW",
+  "inspectedOn": "2026-11-14",
+  "evidenceKind": "offline-client-tables-and-retained-capture",
+  "provenance": {
+    "client": {
+      "gameAssemblySha256": "4304456511f58cb543169434908f46726845d2ab2ec33668170b47a4de02a549",
+      "metadataSha256": "2d98c3b1f8adc6d3e5455ac24b10a3374dc2401dc1d0a6749b336f44d841f6b4",
+      "starterIndexSha256": "390908c033150a91ea0cf7ae1e62e2e84c6d63ccc9512357341cb2427932feb3"
+    },
+    "resources": [
+      {
+        "path": "Sheetdata_Client/client.sheetmeta.bin",
+        "packageKey": 36012047,
+        "offset": 11666015,
+        "packedBytes": 1066422,
+        "packedSha256": "e84255e7b69bcacbc8cf6d1a78362a951141e157515bda070d5ae6215c96c157",
+        "decodedSha256": "b852ef7f63afb80ce1aaa03625860055129b417cdd508d3993540b45da275d35"
+      },
+      {
+        "path": "Sheetdata_Client/client.sheettext.bin",
+        "packageKey": 36143119,
+        "offset": 13803531,
+        "packedBytes": 2549646,
+        "packedSha256": "874aa02cb59e6d1997eea9ce4f2748d23d459a4808d7391903af7cdda257faad",
+        "decodedSha256": "2cf0ea3bbff1c56ecdd771b327c79eb0d6913e770f875c1ccf7a30fd1df8dfdf"
+      },
+      {
+        "path": "Sheetdata_Client/client.sheetdata.bin",
+        "packageKey": 32473103,
+        "offset": 6754354,
+        "packedBytes": 2368229,
+        "packedSha256": "6611bc7c6ddf1e2cbf553839fb9a7da7995a01cc6c8a0350e94cccb5e4d4f0b9",
+        "decodedSha256": "bec799c1664684fe981f4a8531da4b0f6d36294676d912050b9fac5d9cdd7a79"
+      }
+    ],
+    "capture": {
+      "input": "combat-evidence-20261110-confirmed-04-data/packets.jsonl",
+      "inputSha256": "83fb25e9b51af682effbedf176b265544fe7eb0f7ff9e2784e0e6f5a1d49668b",
+      "sanitizedAnalysis": "combat-evidence-20261110-confirmed-04-data/analysis.current-protocols.sanitized.json",
+      "sanitizedAnalysisSha256": "a2954fa7fbca7982a5f06064497a2e1b55547655d64ac8db189de7a031536770"
+    },
+    "generatedMetadata": {
+      "methods": "current-combat-schema/gc-methods.json",
+      "methodsSha256": "6dceccc8e9b8391fd33ee7b671a2aab98478d51b08bcc4ff00b1202878d1b3f4",
+      "dataSchema": "current-combat-schema/data-schema.json",
+      "dataSchemaSha256": "f7069de1f32c9109a908492e54671564fc92bec54e09a81a8286d5b2be406437"
+    }
+  },
+  "protocol": {
+    "entering": {
+      "code": 20344,
+      "name": "CHANNEL_EnteringChannel_NTF",
+      "verifiedPrefixBytes": 22,
+      "fields": [
+        {
+          "path": "ChannelId.sheetId.Id",
+          "offset": 0,
+          "bytes": 4,
+          "type": "Int32"
+        },
+        {
+          "path": "ChannelId.uniqueNumber",
+          "offset": 4,
+          "bytes": 8,
+          "type": "Int64"
+        },
+        {
+          "path": "ChannelId.serviceGameServerId.int16Value",
+          "offset": 12,
+          "bytes": 2,
+          "type": "Int16"
+        },
+        {
+          "path": "Weather",
+          "offset": 14,
+          "bytes": 4,
+          "type": "Int32"
+        },
+        {
+          "path": "TransitionTime",
+          "offset": 18,
+          "bytes": 4
+        }
+      ],
+      "samples": [
+        {
+          "inputLine": 429,
+          "channelSheetId": 497513297
+        },
+        {
+          "inputLine": 594,
+          "channelSheetId": 497513297
+        }
+      ]
+    },
+    "changeServer": {
+      "code": 20192,
+      "name": "CHANNEL_ChangeGameServer_NTF",
+      "parameterOrder": [
+        "gameServerEndPoint",
+        "characterId",
+        "realmId",
+        "enterSecret",
+        "channelSheetId"
+      ],
+      "sample": {
+        "inputLine": 372,
+        "payloadBytes": 94,
+        "channelSheetIdOffset": 90,
+        "channelSheetIdBytes": 4,
+        "channelSheetId": 497513297
+      },
+      "currentMapSemantics": "destination only; wait for an entering notification to confirm the current map"
+    }
+  },
+  "mapTables": {
+    "rowCounts": {
+      "Channel": 733,
+      "GameSpace": 878,
+      "ChannelRule": 32
+    },
+    "primaryKeys": {
+      "Channel": "unique signed Int32",
+      "GameSpace": "unique signed Int32"
+    },
+    "gameSpaceReference": {
+      "encoding": "VarUInt32",
+      "meaning": "zero-based GameSpace row index"
+    },
+    "channelRowsFullyConsumed": 733,
+    "invalidGameSpaceReferences": 0,
+    "invalidRuleReferences": 0,
+    "referencedGameSpaceRows": 442,
+    "multiplyReferencedGameSpaceRows": 108,
+    "emptyReferencedDisplayNames": 0,
+    "emptyGameSpaceDisplayNames": 0,
+    "distinctGameSpaceDisplayNames": 632,
+    "canonicalMapping": {
+      "tuple": [
+        "signedChannelSheetId",
+        "signedGameSpaceSheetId",
+        "rawDisplayName"
+      ],
+      "order": "signedChannelSheetId ascending",
+      "encoding": "UTF-8 compact JSON",
+      "sha256": "691805d350911f848b1366a974eebbd195285ea628cd62247e18accf941764f8"
+    },
+    "examples": [
+      {
+        "channelSheetId": 497513297,
+        "channelRow": 361,
+        "gameSpaceRow": 257,
+        "gameSpaceSheetId": 1015388881,
+        "displayName": "巴里2礦區地下城2層3區",
+        "type": "InstanceDungeon",
+        "ruleRow": 2,
+        "ruleSheetId": 131211543,
+        "isPermanentChannel": false
+      },
+      {
+        "channelSheetId": 975984897,
+        "channelRow": 1,
+        "gameSpaceRow": 3,
+        "gameSpaceSheetId": 975984897,
+        "displayName": "杜巴頓",
+        "type": "Field",
+        "ruleRow": 0,
+        "ruleSheetId": 123398545,
+        "isPermanentChannel": true
+      },
+      {
+        "channelSheetId": 702127204,
+        "channelRow": 65,
+        "gameSpaceRow": 25,
+        "gameSpaceSheetId": 702127204,
+        "displayName": "班克爾",
+        "type": "Field",
+        "ruleRow": 0,
+        "ruleSheetId": 123398545,
+        "isPermanentChannel": true
+      },
+      {
+        "channelSheetId": 1753081454,
+        "channelRow": 0,
+        "gameSpaceRow": 1,
+        "gameSpaceSheetId": 1753081454,
+        "displayName": "堤爾克那",
+        "type": "Field",
+        "ruleRow": 0,
+        "ruleSheetId": 123398545,
+        "isPermanentChannel": true
+      }
+    ],
+    "capturedMapOffsets": {
+      "channelData": 3078027,
+      "gameSpaceData": 9965456,
+      "displayNameText": 2895572
+    }
+  },
+  "permanentChannel": {
+    "ruleField": "ChannelRule.IsPermanentChannel",
+    "nativeRuleFieldOffset": "0x14",
+    "nativeMethods": [
+      {
+        "name": "ChannelId.GenerateUniqueNumberForPermanentChannel",
+        "token": "0x600f004",
+        "rva": "0xbda9ec0",
+        "formula": "realmId * 10000 + index",
+        "result": "sign-extended Int64"
+      },
+      {
+        "name": "ChannelSheetDataHolder.GetPermanentChannels",
+        "rva": "0x90e1450",
+        "gate": "ChannelRule.IsPermanentChannel"
+      },
+      {
+        "name": "ChannelSheetDataHolder.TryGetPermanentChannel",
+        "rva": "0x90e1900",
+        "gate": "ChannelRule.IsPermanentChannel"
+      }
+    ],
+    "capturedUniqueNumbers": {
+      "kind": "non-permanent dungeon instances",
+      "positiveInt64": true,
+      "decimalDigits": 18,
+      "exceedInt32": true,
+      "distinctValues": 2
+    },
+    "displayNumberVerified": false,
+    "requiredEvidence": "永久公共地图进图与更换频道，并记录游戏界面实际频道号"
+  },
+  "inspection": {
+    "resourceReader": "src/Providers/TwObservation/ItemCatalog/ClientItemCatalogExtractor.Package.cs",
+    "tableReader": "src/Providers/TwObservation/ItemCatalog/ClientItemCatalogExtractor.Reader.cs",
+    "reproduction": [
+      "按 Starter/index 定位三项资源，依资源包偏移解密并 Deflate 解压，核对压缩与解码 SHA-256。",
+      "按表元数据读取 Channel、GameSpace、ChannelRule 的逐行 Int32 主键索引和数据偏移。",
+      "Channel 行依次读取五个 VarUInt32（名称、类型、Rule 行、GameSpace 行、Fallback）、一个 bool，再读取 VarUInt32 个数及对应 UInt32 Monologue ID；检查每行完整消费。",
+      "GameSpace 行首个 VarUInt32 为 DisplayName 文本偏移，以有界 UTF-8 文本读取器解码。",
+      "以 GameSpace 和 Rule 的零基行引用关联，按 signed ChannelSheetId 排序并对紧凑 JSON 三元组计算规范化映射哈希。",
+      "按记录行号核对 20344 前缀及 20192 末位 ChannelSheetId，保留实例编号属性，不写入角色身份、凭据或原始包负载。"
+    ]
+  },
+  "status": {
+    "mapSourceVerifiedOffline": true,
+    "channelDisplayVerified": false,
+    "locationProjectionImplemented": true,
+    "pending": [
+      "永久公共地图与换频道样本对照显示编号"
+    ]
+  }
+}

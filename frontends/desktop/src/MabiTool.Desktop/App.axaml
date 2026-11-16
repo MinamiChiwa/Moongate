@@ -1,0 +1,30 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:infra="using:MabiTool.Desktop.Infrastructure"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.App">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="/Theme/Tokens.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.DataTemplates>
+    <!-- 标签与数值的一行：放不下时数值换到标签下方。 -->
+    <DataTemplate DataType="infra:KeyValue">
+      <controls:PairRow Margin="0,3">
+        <TextBlock Classes="muted" Text="{Binding Label}" />
+        <TextBlock Classes="body" Text="{Binding Value}" />
+      </controls:PairRow>
+    </DataTemplate>
+  </Application.DataTemplates>
+  <Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="/Theme/Controls.axaml" />
+    <!-- 所有窗口的标题栏与任务栏使用程序图标：与 Moongate.exe、MabiTool.Desktop.exe 是同一份 packaging/Moongate.ico。 -->
+    <Style Selector=":is(Window)">
+      <Setter Property="Window.Icon" Value="/Assets/Moongate.ico" />
+    </Style>
+  </Application.Styles>
+</Application>

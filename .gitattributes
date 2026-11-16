@@ -1,0 +1,2 @@
+*.cmd text eol=crlf
+scripts/hooks/* text eol=lf

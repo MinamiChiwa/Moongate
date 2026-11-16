@@ -1,0 +1,34 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Version>0.1.0</Version>
+    <Product>Moongate</Product>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <Deterministic>true</Deterministic>
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+    <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts/build</ArtifactsPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts/**;**/artifacts/**</DefaultItemExcludes>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'MabiTool.Contracts' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Host' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Updater' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Infrastructure' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Modules.Color' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Modules.CombatObservation' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Modules.Inventory' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Modules.MusicLibrary' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Modules.Rooms' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.ModuleSdk' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Platform.Windows' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Providers.GitHubReleases' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Providers.Replay' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Providers.Tunnels' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Providers.TwObservation' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.RoomServer'">
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+</Project>

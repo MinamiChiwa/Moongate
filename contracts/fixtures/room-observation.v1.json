@@ -1,0 +1,3665 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "2cb69b5ddec8de4fe9d20ec98bbb410ac015e671",
+  "sourcePath": "server/ensemble-observation.js",
+  "sourceSha256": "23b2af762f9627d94d7ae7c4eba2f0383b05f9034d99d65003df7cb28fa302b0",
+  "cases": [
+    {
+      "name": "bounded-score-summary",
+      "steps": [
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "music": {
+                "concertId": "7",
+                "performerCharacterId": "101",
+                "hostCharacterId": "101",
+                "title": "Fixture",
+                "isLoop": true,
+                "selectedChannels": [
+                  0,
+                  1
+                ],
+                "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "wholeScoreDurationSeconds": 34,
+                "selectedDurationSeconds": 30,
+                "issue": "起点待核对",
+                "automaticStopAvailable": true,
+                "gameStartLocalMs": 1,
+                "mml": "PRIVATE"
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": {
+                  "concertId": "7",
+                  "performerCharacterId": "101",
+                  "hostCharacterId": "101",
+                  "title": "Fixture",
+                  "isLoop": true,
+                  "selectedChannels": [
+                    0,
+                    1
+                  ],
+                  "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "wholeScoreDurationSeconds": 34,
+                  "selectedDurationSeconds": 30,
+                  "issue": "起点待核对",
+                  "estimatedStartServerMs": null,
+                  "timingSource": null,
+                  "automaticStopAvailable": false,
+                  "gameStartLocalMs": null
+                }
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 3,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "music": {
+                "concertId": "7",
+                "performerCharacterId": "102",
+                "hostCharacterId": "101",
+                "title": "Fixture",
+                "isLoop": true,
+                "selectedChannels": [
+                  0,
+                  1
+                ],
+                "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "wholeScoreDurationSeconds": 34,
+                "selectedDurationSeconds": 30,
+                "issue": "起点待核对",
+                "automaticStopAvailable": true,
+                "gameStartLocalMs": 1,
+                "mml": "PRIVATE"
+              }
+            }
+          },
+          "expected": {
+            "error": "BAD_OBSERVATION",
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": {
+                  "concertId": "7",
+                  "performerCharacterId": "101",
+                  "hostCharacterId": "101",
+                  "title": "Fixture",
+                  "isLoop": true,
+                  "selectedChannels": [
+                    0,
+                    1
+                  ],
+                  "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "wholeScoreDurationSeconds": 34,
+                  "selectedDurationSeconds": 30,
+                  "issue": "起点待核对",
+                  "estimatedStartServerMs": null,
+                  "timingSource": null,
+                  "automaticStopAvailable": false,
+                  "gameStartLocalMs": null
+                }
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 3,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "music": {
+                "concertId": "7",
+                "performerCharacterId": "101",
+                "hostCharacterId": "101",
+                "title": "Fixture",
+                "isLoop": true,
+                "selectedChannels": [
+                  0,
+                  0
+                ],
+                "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "wholeScoreDurationSeconds": 34,
+                "selectedDurationSeconds": 30,
+                "issue": "起点待核对",
+                "automaticStopAvailable": true,
+                "gameStartLocalMs": 1,
+                "mml": "PRIVATE"
+              }
+            }
+          },
+          "expected": {
+            "error": "BAD_OBSERVATION",
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": {
+                  "concertId": "7",
+                  "performerCharacterId": "101",
+                  "hostCharacterId": "101",
+                  "title": "Fixture",
+                  "isLoop": true,
+                  "selectedChannels": [
+                    0,
+                    1
+                  ],
+                  "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "wholeScoreDurationSeconds": 34,
+                  "selectedDurationSeconds": 30,
+                  "issue": "起点待核对",
+                  "estimatedStartServerMs": null,
+                  "timingSource": null,
+                  "automaticStopAvailable": false,
+                  "gameStartLocalMs": null
+                }
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 3,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "music": {
+                "concertId": "7",
+                "performerCharacterId": "101",
+                "hostCharacterId": "101",
+                "title": "Fixture",
+                "isLoop": true,
+                "selectedChannels": [
+                  0,
+                  1
+                ],
+                "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "wholeScoreDurationSeconds": "Infinity",
+                "selectedDurationSeconds": 30,
+                "issue": "起点待核对",
+                "automaticStopAvailable": true,
+                "gameStartLocalMs": 1,
+                "mml": "PRIVATE"
+              }
+            }
+          },
+          "expected": {
+            "error": "BAD_OBSERVATION",
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": {
+                  "concertId": "7",
+                  "performerCharacterId": "101",
+                  "hostCharacterId": "101",
+                  "title": "Fixture",
+                  "isLoop": true,
+                  "selectedChannels": [
+                    0,
+                    1
+                  ],
+                  "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "wholeScoreDurationSeconds": 34,
+                  "selectedDurationSeconds": 30,
+                  "issue": "起点待核对",
+                  "estimatedStartServerMs": null,
+                  "timingSource": null,
+                  "automaticStopAvailable": false,
+                  "gameStartLocalMs": null
+                }
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 3,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "music": {
+                "concertId": "7",
+                "performerCharacterId": "101",
+                "hostCharacterId": "101",
+                "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "isLoop": true,
+                "selectedChannels": [
+                  0,
+                  1
+                ],
+                "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "wholeScoreDurationSeconds": 34,
+                "selectedDurationSeconds": 30,
+                "issue": "起点待核对",
+                "automaticStopAvailable": true,
+                "gameStartLocalMs": 1,
+                "mml": "PRIVATE"
+              }
+            }
+          },
+          "expected": {
+            "error": "BAD_OBSERVATION",
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": {
+                  "concertId": "7",
+                  "performerCharacterId": "101",
+                  "hostCharacterId": "101",
+                  "title": "Fixture",
+                  "isLoop": true,
+                  "selectedChannels": [
+                    0,
+                    1
+                  ],
+                  "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "wholeScoreDurationSeconds": 34,
+                  "selectedDurationSeconds": 30,
+                  "issue": "起点待核对",
+                  "estimatedStartServerMs": null,
+                  "timingSource": null,
+                  "automaticStopAvailable": false,
+                  "gameStartLocalMs": null
+                }
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "snapshot",
+            "now": 15101
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": null,
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 3,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "music": null
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 3,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "long-score-duration",
+      "steps": [
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "music": {
+                "concertId": "7",
+                "performerCharacterId": "101",
+                "hostCharacterId": "101",
+                "title": "Fixture",
+                "isLoop": true,
+                "selectedChannels": [
+                  0,
+                  1
+                ],
+                "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "wholeScoreDurationSeconds": 601.25,
+                "selectedDurationSeconds": 200.5,
+                "issue": "起点待核对",
+                "automaticStopAvailable": true,
+                "gameStartLocalMs": 1,
+                "mml": "PRIVATE",
+                "estimatedStartServerMs": 100,
+                "timingSource": "tw-receive-offset-v1"
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": {
+                  "concertId": "7",
+                  "performerCharacterId": "101",
+                  "hostCharacterId": "101",
+                  "title": "Fixture",
+                  "isLoop": true,
+                  "selectedChannels": [
+                    0,
+                    1
+                  ],
+                  "scoreSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "wholeScoreDurationSeconds": 601.25,
+                  "selectedDurationSeconds": 200.5,
+                  "issue": "起点待核对",
+                  "estimatedStartServerMs": 100,
+                  "timingSource": "tw-receive-offset-v1",
+                  "automaticStopAvailable": true,
+                  "gameStartLocalMs": null
+                }
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "identity-owned-readiness",
+      "steps": [
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": "BAD_OBSERVATION",
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "prefix-and-wrong-order",
+      "steps": [
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "pending",
+                "text": "尚未加入"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 3,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "103",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "wrong",
+                "text": "加入顺序不符",
+                "actualOrder": 3
+              },
+              "c": {
+                "state": "wrong",
+                "text": "加入顺序不符",
+                "actualOrder": 2
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 3,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "conflicting-and-duplicate-identities",
+      "steps": [
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "pending",
+                "text": "尚未加入"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "b",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "102",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "103",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "b",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 3,
+              "status": "identified",
+              "identity": {
+                "characterId": "102",
+                "realmId": 3,
+                "nickname": "SameName"
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "pending",
+                "text": "尚未加入"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 3,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 3,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "999",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 3,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 3,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 4,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "pending",
+                "text": "尚未加入"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 4,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 3,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "c",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "102",
+                "realmId": 3,
+                "nickname": "SameName"
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 4,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 3,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "generation-and-disconnect",
+      "steps": [
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "new",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "pending",
+                "text": "尚未加入"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "new",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 1,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": "STALE_OBSERVATION",
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "pending",
+                "text": "尚未加入"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "new",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 99,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": "STALE_OBSERVATION",
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "pending",
+                "text": "尚未加入"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "new",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "generation": "new",
+              "sequence": 3,
+              "status": "unavailable"
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 3,
+                "generation": "new",
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "new",
+              "sequence": 4,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "pending",
+                "text": "尚未加入"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 4,
+                "generation": "new",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "clear",
+            "member": "a"
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "old-concert-baseline",
+      "steps": [
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "pending",
+                "text": "尚未加入"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "round",
+            "mode": "ensemble",
+            "phase": "performing",
+            "baseline": [
+              "3:7:101"
+            ]
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "frozen-roster-and-expiry",
+      "steps": [
+        {
+          "command": {
+            "action": "round",
+            "mode": "ensemble",
+            "phase": "performing"
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "103",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "wrong",
+                "text": "加入顺序不符",
+                "actualOrder": 3
+              },
+              "c": {
+                "state": "wrong",
+                "text": "加入顺序不符",
+                "actualOrder": 2
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "roster",
+            "roster": [
+              {
+                "memberId": "a",
+                "group": 1,
+                "role": "initiator",
+                "order": 3
+              },
+              {
+                "memberId": "b",
+                "group": 1,
+                "role": "joiner",
+                "order": 2
+              },
+              {
+                "memberId": "c",
+                "group": 1,
+                "role": "joiner",
+                "order": 1
+              }
+            ]
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "wrong",
+                "text": "加入顺序不符",
+                "actualOrder": 3
+              },
+              "c": {
+                "state": "wrong",
+                "text": "加入顺序不符",
+                "actualOrder": 2
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "expire",
+            "now": 15101
+          },
+          "expected": {
+            "error": null,
+            "expired": true,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": null,
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "separate-groups-and-emote",
+      "steps": [
+        {
+          "command": {
+            "action": "roster",
+            "roster": [
+              {
+                "memberId": "a",
+                "group": 1,
+                "role": "initiator",
+                "order": 1
+              },
+              {
+                "memberId": "b",
+                "group": 1,
+                "role": "joiner",
+                "order": 2
+              },
+              {
+                "memberId": "c",
+                "group": 2,
+                "role": "initiator",
+                "order": 1
+              }
+            ]
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "SameName"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "round",
+            "mode": "emote",
+            "phase": "committed"
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "explicit-character-binding",
+      "steps": [
+        {
+          "command": {
+            "action": "clear",
+            "member": "b"
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "clear",
+            "member": "c"
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "Local"
+              },
+              "concert": {
+                "id": "7",
+                "hostCharacterId": "101",
+                "orderedCharacterIds": [
+                  "101",
+                  "102"
+                ],
+                "members": [
+                  {
+                    "characterId": "101",
+                    "realmId": 3,
+                    "nickname": "Local"
+                  },
+                  {
+                    "characterId": "102",
+                    "realmId": 3,
+                    "nickname": "Other"
+                  }
+                ]
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [
+              {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "Local"
+              },
+              {
+                "characterId": "102",
+                "realmId": 3,
+                "nickname": "Other"
+              }
+            ],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "Local",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "Local"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "roster",
+            "roster": [
+              {
+                "memberId": "a",
+                "group": 1,
+                "role": "initiator",
+                "order": 1
+              },
+              {
+                "memberId": "b",
+                "group": 1,
+                "role": "joiner",
+                "order": 2
+              }
+            ]
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [
+              {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "Local"
+              },
+              {
+                "characterId": "102",
+                "realmId": 3,
+                "nickname": "Other"
+              }
+            ],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "Local",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "Local"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "bind",
+            "member": "b",
+            "characterId": "102",
+            "realmId": 3
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [
+              {
+                "characterId": "101",
+                "realmId": 3,
+                "nickname": "Local"
+              },
+              {
+                "characterId": "102",
+                "realmId": 3,
+                "nickname": "Other"
+              }
+            ],
+            "feedback": {
+              "a": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 1
+              },
+              "b": {
+                "state": "correct",
+                "text": "加入顺序正确",
+                "actualOrder": 2
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "Local",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "101",
+                  "realmId": 3,
+                  "nickname": "Local"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "Other",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": {
+                  "characterId": "102",
+                  "realmId": 3
+                },
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "Other"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "clear",
+            "member": "a"
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "Local",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "Other",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": {
+                  "characterId": "102",
+                  "realmId": 3
+                },
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "bind",
+            "member": "c",
+            "characterId": "999",
+            "realmId": 3
+          },
+          "expected": {
+            "error": "CHARACTER_NOT_OBSERVED",
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "Local",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "Other",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": {
+                  "characterId": "102",
+                  "realmId": 3
+                },
+                "identity": null,
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 0,
+                "generation": null,
+                "binding": null,
+                "identity": null,
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "full-uint64-identity",
+      "steps": [
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 2,
+              "status": "identified",
+              "identity": {
+                "characterId": "18446744073709551615",
+                "realmId": 3,
+                "nickname": "SameName"
+              }
+            }
+          },
+          "expected": {
+            "error": null,
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "18446744073709551615",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 3,
+              "status": "identified",
+              "identity": {
+                "characterId": "18446744073709551616",
+                "realmId": 3,
+                "nickname": "SameName"
+              }
+            }
+          },
+          "expected": {
+            "error": "BAD_OBSERVATION",
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "18446744073709551615",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        },
+        {
+          "command": {
+            "action": "accept",
+            "member": "a",
+            "message": {
+              "type": "game-observation",
+              "generation": "g",
+              "sequence": 3,
+              "status": "identified",
+              "identity": {
+                "characterId": "0101",
+                "realmId": 3,
+                "nickname": "SameName"
+              }
+            }
+          },
+          "expected": {
+            "error": "BAD_OBSERVATION",
+            "expired": null,
+            "observedCharacters": [],
+            "feedback": {
+              "a": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "b": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              },
+              "c": {
+                "state": "unconfirmed",
+                "text": "等待识别加入顺序"
+              }
+            },
+            "members": [
+              {
+                "id": "a",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 2,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "18446744073709551615",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "b",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "102",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              },
+              {
+                "id": "c",
+                "nickname": "SameName",
+                "ready": true,
+                "sequence": 1,
+                "generation": "g",
+                "binding": null,
+                "identity": {
+                  "characterId": "103",
+                  "realmId": 3,
+                  "nickname": "SameName"
+                },
+                "music": null
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

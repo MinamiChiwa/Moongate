@@ -1,0 +1,1333 @@
+{
+  "schemaVersion": 1,
+  "source": "Mobi-Lan/MobiFolio",
+  "commit": "78d2b2a836ee9931500f72a9af7280018e26d26c",
+  "sourceFile": "library.py",
+  "sourceSha256": "5266c8fb1d1cfa96a1ded8de59fb53afa15faf941502da82a6a28bcafa8830ae",
+  "license": "MIT; Copyright (c) 2026 란님; root LICENSE",
+  "sampleKind": "synthetic-no-personal-data",
+  "algorithm": "mobifolio-78d2b2a",
+  "state": {
+    "artists": [
+      {
+        "id": "iu",
+        "name": "아이유",
+        "aliases": [
+          "IU"
+        ]
+      },
+      {
+        "id": "taylor",
+        "name": "Taylor Swift",
+        "aliases": [
+          "T.S."
+        ]
+      }
+    ],
+    "assign": {
+      "수동 곡": "iu",
+      "IU 밤편지": "iu"
+    },
+    "noise": [
+      "사용자잡음"
+    ]
+  },
+  "cases": [
+    {
+      "title": "아이유 - 밤편지",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "밤편지 by 아이유",
+      "cleaned": "밤편지 by 아이유",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "아이유 밤편지",
+      "cleaned": "아이유 밤편지",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "IU 밤편지",
+      "cleaned": "IU 밤편지",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "manual",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "수동 곡",
+      "cleaned": "수동 곡",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "수동 곡",
+      "rule": "manual",
+      "initial": "ㅅ"
+    },
+    {
+      "title": "수동곡",
+      "cleaned": "수동곡",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "수동곡",
+      "rule": "manual",
+      "initial": "ㅅ"
+    },
+    {
+      "title": "Aquarium",
+      "cleaned": "Aquarium",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "Aquarium",
+      "rule": "none",
+      "initial": "A"
+    },
+    {
+      "title": "0310 - 백예린",
+      "cleaned": "0310 - 백예린",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "백예린",
+      "artistKey": "auto:백예린",
+      "song": "0310",
+      "rule": "split",
+      "initial": "#"
+    },
+    {
+      "title": "백예린 - 0310",
+      "cleaned": "백예린 - 0310",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "백예린",
+      "artistKey": "auto:백예린",
+      "song": "0310",
+      "rule": "split",
+      "initial": "#"
+    },
+    {
+      "title": "Taylor Swift - 22",
+      "cleaned": "Taylor Swift - 22",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "Taylor Swift",
+      "artistKey": "taylor",
+      "song": "22",
+      "rule": "dict",
+      "initial": "#"
+    },
+    {
+      "title": "Route 66",
+      "cleaned": "Route 66",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "Route 66",
+      "rule": "none",
+      "initial": "R"
+    },
+    {
+      "title": "0018 - 봄",
+      "cleaned": "0018 - 봄",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "0018",
+      "artistKey": "auto:0018",
+      "song": "봄",
+      "rule": "split",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "0018 - 여름",
+      "cleaned": "0018 - 여름",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "0018",
+      "artistKey": "auto:0018",
+      "song": "여름",
+      "rule": "split",
+      "initial": "ㅇ"
+    },
+    {
+      "title": "123 - 456",
+      "cleaned": "123 - 456",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "123 - 456",
+      "rule": "none",
+      "initial": "#"
+    },
+    {
+      "title": "0019 - 노래",
+      "cleaned": "0019 - 노래",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "노래",
+      "artistKey": "auto:노래",
+      "song": "0019",
+      "rule": "split",
+      "initial": "#"
+    },
+    {
+      "title": "악보: A_아이유 - 밤편지-1",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "악보: ",
+        "A_"
+      ],
+      "tags": [],
+      "variant": "1",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "아이유 - 밤편지 - 2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [],
+      "variant": "2",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "아이유 - 밤편지 cover",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "cover"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "밤편지 사용자잡음",
+      "cleaned": "밤편지",
+      "removed": [
+        "사용자잡음"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "밤편지",
+      "rule": "none",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "라퓨타OST",
+      "cleaned": "라퓨타",
+      "removed": [],
+      "tags": [
+        "OST"
+      ],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "라퓨타",
+      "rule": "none",
+      "initial": "ㄹ"
+    },
+    {
+      "title": "Ghost",
+      "cleaned": "Ghost",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "Ghost",
+      "rule": "none",
+      "initial": "G"
+    },
+    {
+      "title": "(밤편지)",
+      "cleaned": "(밤편지)",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "(밤편지)",
+      "rule": "none",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "【밤편지】",
+      "cleaned": "【밤편지】",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "【밤편지】",
+      "rule": "none",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "「밤편지」",
+      "cleaned": "「밤편지」",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "「밤편지」",
+      "rule": "none",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "",
+      "cleaned": "",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "",
+      "rule": "none",
+      "initial": "#"
+    },
+    {
+      "title": "",
+      "cleaned": "",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "",
+      "rule": "none",
+      "initial": "#"
+    },
+    {
+      "title": "Mr. Brightside",
+      "cleaned": "Mr. Brightside",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "Mr. Brightside",
+      "rule": "none",
+      "initial": "M"
+    },
+    {
+      "title": "Easy On Me",
+      "cleaned": "Easy On Me",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "Easy On Me",
+      "rule": "none",
+      "initial": "E"
+    },
+    {
+      "title": "★아이유 - 밤편지♫",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "ＡＢＣ - Ｓｏｎｇ",
+      "cleaned": "ABC - Song",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "ABC",
+      "artistKey": "auto:abc",
+      "song": "Song",
+      "rule": "split",
+      "initial": "S"
+    },
+    {
+      "title": "내나이50에다시배우는악기 - 곡",
+      "cleaned": "내나이50에다시배우는악기 - 곡",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "곡",
+      "rule": "none",
+      "initial": "ㄱ"
+    },
+    {
+      "title": "아이유 - 밤편지",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "아이유 - 밤편지 cover",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "cover"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "아이유 - 밤편지 ver.2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "ver.2"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "아이유 - 밤편지 [완성본]",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "[완성본]"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "아이유 - 밤편지-2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [],
+      "variant": "2",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "아이유 - 밤편지 - 6합",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [],
+      "variant": "6합",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "아이유 - 밤편지 ost",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "OST"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "악보: 아이유 - 밤편지",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "악보: "
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "악보: 아이유 - 밤편지 cover",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "악보: ",
+        "cover"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "악보: 아이유 - 밤편지 ver.2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "악보: ",
+        "ver.2"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "악보: 아이유 - 밤편지 [완성본]",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "악보: ",
+        "[완성본]"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "악보: 아이유 - 밤편지-2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "악보: "
+      ],
+      "tags": [],
+      "variant": "2",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "악보: 아이유 - 밤편지 - 6합",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "악보: "
+      ],
+      "tags": [],
+      "variant": "6합",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "악보: 아이유 - 밤편지 ost",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "악보: "
+      ],
+      "tags": [
+        "OST"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "동요_아이유 - 밤편지",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "동요"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "동요_아이유 - 밤편지 cover",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "cover"
+      ],
+      "tags": [
+        "동요"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "동요_아이유 - 밤편지 ver.2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "ver.2"
+      ],
+      "tags": [
+        "동요"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "동요_아이유 - 밤편지 [완성본]",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "[완성본]"
+      ],
+      "tags": [
+        "동요"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "동요_아이유 - 밤편지-2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "동요"
+      ],
+      "variant": "2",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "동요_아이유 - 밤편지 - 6합",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "동요"
+      ],
+      "variant": "6합",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "동요_아이유 - 밤편지 ost",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "동요",
+        "OST"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "영화: 아이유 - 밤편지",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "영화"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "영화: 아이유 - 밤편지 cover",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "cover"
+      ],
+      "tags": [
+        "영화"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "영화: 아이유 - 밤편지 ver.2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "ver.2"
+      ],
+      "tags": [
+        "영화"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "영화: 아이유 - 밤편지 [완성본]",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "[완성본]"
+      ],
+      "tags": [
+        "영화"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "영화: 아이유 - 밤편지-2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "영화"
+      ],
+      "variant": "2",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "영화: 아이유 - 밤편지 - 6합",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "영화"
+      ],
+      "variant": "6합",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "영화: 아이유 - 밤편지 ost",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "영화",
+        "OST"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "게임_아이유 - 밤편지",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "게임"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "게임_아이유 - 밤편지 cover",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "cover"
+      ],
+      "tags": [
+        "게임"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "게임_아이유 - 밤편지 ver.2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "ver.2"
+      ],
+      "tags": [
+        "게임"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "게임_아이유 - 밤편지 [완성본]",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "[완성본]"
+      ],
+      "tags": [
+        "게임"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "게임_아이유 - 밤편지-2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "게임"
+      ],
+      "variant": "2",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "게임_아이유 - 밤편지 - 6합",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "게임"
+      ],
+      "variant": "6합",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "게임_아이유 - 밤편지 ost",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [],
+      "tags": [
+        "게임",
+        "OST"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "1. 아이유 - 밤편지",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "1. "
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "1. 아이유 - 밤편지 cover",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "1. ",
+        "cover"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "1. 아이유 - 밤편지 ver.2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "1. ",
+        "ver.2"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "1. 아이유 - 밤편지 [완성본]",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "1. ",
+        "[완성본]"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "1. 아이유 - 밤편지-2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "1. "
+      ],
+      "tags": [],
+      "variant": "2",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "1. 아이유 - 밤편지 - 6합",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "1. "
+      ],
+      "tags": [],
+      "variant": "6합",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "1. 아이유 - 밤편지 ost",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "1. "
+      ],
+      "tags": [
+        "OST"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "!_아이유 - 밤편지",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "!"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "!_아이유 - 밤편지 cover",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "!",
+        "cover"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "!_아이유 - 밤편지 ver.2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "!",
+        "ver.2"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "!_아이유 - 밤편지 [완성본]",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "!",
+        "[완성본]"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "!_아이유 - 밤편지-2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "!"
+      ],
+      "tags": [],
+      "variant": "2",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "!_아이유 - 밤편지 - 6합",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "!"
+      ],
+      "tags": [],
+      "variant": "6합",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "!_아이유 - 밤편지 ost",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "!"
+      ],
+      "tags": [
+        "OST"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "A_아이유 - 밤편지",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "A_"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "A_아이유 - 밤편지 cover",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "A_",
+        "cover"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "A_아이유 - 밤편지 ver.2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "A_",
+        "ver.2"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "A_아이유 - 밤편지 [완성본]",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "A_",
+        "[완성본]"
+      ],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "A_아이유 - 밤편지-2",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "A_"
+      ],
+      "tags": [],
+      "variant": "2",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "A_아이유 - 밤편지 - 6합",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "A_"
+      ],
+      "tags": [],
+      "variant": "6합",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "A_아이유 - 밤편지 ost",
+      "cleaned": "아이유 - 밤편지",
+      "removed": [
+        "A_"
+      ],
+      "tags": [
+        "OST"
+      ],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "밤편지",
+      "rule": "dict",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "가수 - 노래",
+      "cleaned": "가수 - 노래",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "가수",
+      "artistKey": "auto:가수",
+      "song": "노래",
+      "rule": "split",
+      "initial": "ㄴ"
+    },
+    {
+      "title": "가수 다른노래",
+      "cleaned": "가수 다른노래",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "가수",
+      "artistKey": "auto:가수",
+      "song": "다른노래",
+      "rule": "auto",
+      "initial": "ㄷ"
+    },
+    {
+      "title": "Taylor Swift Love Story",
+      "cleaned": "Taylor Swift Love Story",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "Taylor Swift",
+      "artistKey": "taylor",
+      "song": "Love Story",
+      "rule": "dict",
+      "initial": "L"
+    },
+    {
+      "title": "T.S. - 22",
+      "cleaned": "T.S. - 22",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "Taylor Swift",
+      "artistKey": "taylor",
+      "song": "22",
+      "rule": "dict",
+      "initial": "#"
+    },
+    {
+      "title": "노래 - IU",
+      "cleaned": "노래 - IU",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "노래",
+      "rule": "dict",
+      "initial": "ㄴ"
+    },
+    {
+      "title": "노래 IU",
+      "cleaned": "노래 IU",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "아이유",
+      "artistKey": "iu",
+      "song": "노래",
+      "rule": "dict",
+      "initial": "ㄴ"
+    },
+    {
+      "title": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀밤편지",
+      "cleaned": "밤",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "밤",
+      "rule": "none",
+      "initial": "ㅂ"
+    },
+    {
+      "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "cleaned": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "removed": [],
+      "tags": [],
+      "variant": "",
+      "artist": "",
+      "artistKey": "",
+      "song": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rule": "none",
+      "initial": "A"
+    }
+  ]
+}

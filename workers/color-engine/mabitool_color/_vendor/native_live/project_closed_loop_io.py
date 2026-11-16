@@ -1,0 +1,199 @@
+"""Narrow extension of existing project IO for the known-target protocol."""
+import copy,json,re,time
+from pathlib import Path
+import numpy as np
+from .project_probe_io import ProjectProbeIO
+from .dye_action_checkpoint import _binding
+from mabitool_color._vendor.input_gestures import PointerGesture
+from .read_dye_input_backend import read_input_backend, input_backend_binding
+from .dye_visual_readiness import VisualNotReady, INITIAL_LAYOUT_ERRORS
+from .dye_hex_glyphs import read_card_glyphs, prepare_hex_assets
+from .session_status import SessionStatusError
+
+
+class InputNotStarted(TimeoutError):
+    """A protected phase expired while its input attempt count was unchanged."""
+
+
+def validate_research_gesture(record,board):
+    points=record.get('points');kind=record.get('kind');l,t,r,b=board
+    if kind not in ('drag','wheel','rotate') or not isinstance(points,(list,tuple)) or not 1<=len(points)<=128:
+        raise ValueError('Only bounded standard pointer candidates supported')
+    if any(not isinstance(p,(list,tuple)) or len(p)!=2 or any(type(v) is not int for v in p)
+           or not l+12<p[0]<r-12 or not t+12<p[1]<b-12 for p in points):
+        raise ValueError('Candidate outside safe physical board')
+    if kind=='drag':
+        array=np.asarray(points,dtype=int)
+        if len(points)<2 or np.max(np.abs(np.diff(array,axis=0)))>max(1,(r-l)*.04,(b-t)*.04):
+            raise ValueError('Smooth visible drag samples required')
+        gesture=PointerGesture('drag',tuple(tuple(p) for p in points),absolute=record.get('absolute',True))
+    elif kind=='wheel':
+        if len(points)!=1 or type(record.get('wheel_steps')) is not int or not 1<=abs(record['wheel_steps'])<=32:
+            raise ValueError('One to32 signed wheel steps required')
+        gesture=PointerGesture('wheel',tuple(tuple(p) for p in points),wheel_steps=record['wheel_steps'])
+    else:
+        if record.get('right') is not True or type(record.get('arc_start')) is not int or not 0<=record['arc_start']<len(points)-1:
+            raise ValueError('Explicit standard right rotation required')
+        gesture=PointerGesture('rotate',tuple(tuple(p) for p in points),right=True,
+            absolute=record.get('absolute',True),requested_angle=record.get('requested_angle'),arc_start=record['arc_start'])
+    if not gesture.has_effect or json.dumps(gesture.record(),sort_keys=True)!=json.dumps(record,sort_keys=True):
+        raise ValueError('Candidate schema/timing/right-button descriptor differs')
+    return gesture
+
+
+def validate_retry_reset_route(route,board):
+    """Only coalesce bounded downward wheels at the safe board centre.
+
+    The model keeps its <=32-notch records. Windows still receives individual
+    -120 events at the established cadence, with a single settle at the end.
+    This exception never broadens ordinary search gesture validation.
+    """
+    if not isinstance(route,(list,tuple)) or not 1<=len(route)<=64:
+        raise ValueError('Bounded retry wheel route required')
+    l,t,r,b=board;anchor=(round((l+r)/2),round((t+b)/2))
+    gestures=[validate_research_gesture(record,board) for record in route]
+    if any(g.kind!='wheel' or g.wheel_steps>=0 or g.anchor!=anchor for g in gestures):
+        raise ValueError('Retry requires downward wheels at the board centre')
+    return PointerGesture('wheel',(anchor,),wheel_steps=sum(g.wheel_steps for g in gestures))
+
+
+class ProjectClosedLoopIO(ProjectProbeIO):
+    def __init__(self,*args,**kwargs):
+        from .build_adapters import require_input_capability
+        backend=args[0] if args else kwargs['backend']
+        from .adaptive_build import is_adaptive
+        if not is_adaptive(getattr(backend,'adapter',None)):require_input_capability(backend)
+        else:backend._adaptive_input_session=None
+        prepare_hex_assets()
+        super().__init__(*args,**kwargs);self.input_reference=None;self.input_attempts=0;self.hex_fallback=read_card_glyphs
+        self._planning_probe_at=None
+    def planning_check(self,deadline):
+        self.deadline=min(deadline,getattr(self,'accepted_session_deadline',self.reference['session_deadline_monotonic']))
+        self._input_guard()
+        now=time.monotonic()
+        if self._planning_probe_at is None or now-self._planning_probe_at>=.25 or now<self._planning_probe_at:
+            self.check(deadline)
+            # The throttle starts when the expensive read finishes. Starting
+            # it before a >250ms probe makes every next planning callback pay
+            # for another complete read, starving the actual route search.
+            self._planning_probe_at=time.monotonic()
+    def input_backend(self,deadline):
+        self.check(deadline)
+        record=read_input_backend(self.backend,deadline,check=self._input_guard)
+        if self.input_reference is None:self.input_reference=record
+        elif input_backend_binding(record)!=input_backend_binding(self.input_reference):
+            raise ValueError('Input backend/calibration changed')
+        return record
+    def planning_frames(self,label,deadline):
+        """Fresh visible geometry for planning; no independent HEX claim."""
+        from .adaptive_build import is_adaptive,session_input_allowed
+        needs_proof=is_adaptive(getattr(self.backend,'adapter',None)) and not session_input_allowed(self.backend)
+        return self.frames(label,deadline,read_colors=needs_proof)
+    def frames(self,label,deadline,*,read_colors=True):
+        try:
+            frames=super().frames(label,deadline,read_colors=read_colors)
+            from .adaptive_build import is_adaptive,enable_session_input,session_input_allowed
+            if is_adaptive(getattr(self.backend,'adapter',None)) and not session_input_allowed(self.backend):
+                if any(frame.get('screenshot_hex_verified') is not True
+                       or frame.get('hex_source')!=['screenshot']*len(self.last_client_hex or []) for frame in frames):
+                    raise VisualNotReady('Adaptive build requires complete independent screenshot HEX')
+                enable_session_input(self.backend,self.reference,
+                    dict(self.last_observation,client_hex=self.last_client_hex),frames)
+                self.backend.build_diagnostic['session_capability']='model_verified'
+                (self.folder/'adaptive-session.json').write_text(json.dumps(dict(
+                    build=self.backend.adapter.diagnostic(),capability='model_verified',
+                    process_identity=self.last_observation['process_identity'],
+                    session_token=self.last_observation['session_token'],
+                    screenshot_hex_verified=True,inputs_sent=self.input_attempts,
+                    input_response_verified=False),indent=2),encoding='utf-8')
+            return frames
+        except SessionStatusError:raise
+        except ValueError as exc:
+            retryable=isinstance(exc,VisualNotReady) or str(exc) in (*INITIAL_LAYOUT_ERRORS,'Screenshot and checkpoint HEX disagree')
+            (self.folder/(label+'.visual_failure.json')).write_text(json.dumps(dict(
+                error=type(exc).__name__+': '+str(exc),retryable_observation=bool(retryable),
+                layout_diagnostic=getattr(exc,'layout_diagnostic',None),
+                observed_monotonic=time.monotonic(),inputs_sent=self.input_attempts),indent=2),encoding='utf-8')
+            if isinstance(exc,VisualNotReady):raise
+            if retryable:raise VisualNotReady(str(exc)) from exc
+            raise
+    def perform_candidate(self,record,label,deadline):
+        # The controller admits actual preparation/readback and complete routes
+        # against the already protected session deadline. An extra idle footer
+        # here would deduct the game's end allowance a second time.
+        return self._perform_candidate(record,label,deadline,feedback_reserve_seconds=0.)
+    def perform_retry_reset(self,route,label,deadline):
+        route=copy.deepcopy(route)
+        gesture=validate_retry_reset_route(route,self.last_observation['window_mapping_candidate']['client_board_candidate'])
+        return self._perform_candidate(gesture.record(),label,deadline,feedback_reserve_seconds=0.,retry_route=route)
+    def perform_protected_candidate(self,record,label,deadline):
+        # The controller has already reserved complete return/verification
+        # phases outside this deadline; do not reserve the same eight twice.
+        before=self.input_attempts
+        try:return self._perform_candidate(record,label,deadline,feedback_reserve_seconds=0.)
+        except TimeoutError as exc:
+            if self.input_attempts==before:raise InputNotStarted(str(exc)) from exc
+            raise
+    def _perform_candidate(self,record,label,deadline,*,feedback_reserve_seconds,retry_route=None):
+        from .retry import RetryRequested
+        before=self.input_attempts
+        try:return self._perform_candidate_checked(record,label,deadline,feedback_reserve_seconds=feedback_reserve_seconds,
+            retry_route=retry_route)
+        except RetryRequested as exc:
+            if self.input_attempts==before:exc.input_not_started=True
+            raise
+    def _perform_candidate_checked(self,record,label,deadline,*,feedback_reserve_seconds,retry_route=None):
+        from .build_adapters import require_input_capability
+        require_input_capability(self.backend)
+        if not isinstance(label,str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,47}',label):raise ValueError('Bad input label')
+        self.session_status_label=label
+        self.check(deadline)
+        if self.input_attempts>=64:raise ValueError('Maximum input attempt accounting reached')
+        board=self.last_observation['window_mapping_candidate']['client_board_candidate']
+        gesture=(validate_research_gesture(record,board) if retry_route is None else validate_retry_reset_route(retry_route,board))
+        if json.dumps(gesture.record(),sort_keys=True)!=json.dumps(record,sort_keys=True):
+            raise ValueError('Retry route and actual gesture differ')
+        if time.monotonic()+gesture.duration+feedback_reserve_seconds>=self.deadline:raise TimeoutError('Input/feedback reserve insufficient')
+        first=self.input_backend(self.deadline)
+        fresh=self.backend.observe_motion(self.reference['instance_address'],self.deadline,self._input_guard,
+            include_geometry=True,include_window=True)
+        fresh=self._check_observed_session(fresh,'pre_input',expected=self.last_observation,full_binding=True)
+        from .adaptive_build import require_session_input
+        require_session_input(self.backend,fresh)
+        if (fresh.get('active') is not True or _binding(fresh)!=_binding(self.last_observation)
+            or fresh['motion']['pose']!=self.last_observation['motion']['pose']
+            or fresh['geometry_diagnostic']!=self.last_observation['geometry_diagnostic']
+            or fresh['window_mapping_candidate']!=self.last_observation['window_mapping_candidate']
+            or fresh['motion']['animators_done'] is not True):
+            raise ValueError('Pre-input pose/geometry binding changed')
+        self.input_backend(self.deadline);self._input_guard()
+        if time.monotonic()+gesture.duration+feedback_reserve_seconds>=self.deadline:
+            raise TimeoutError('Input preparation consumed phase allowance')
+        started=time.monotonic();self.sent_any=True;self.input_attempts+=1
+        receipt=dict(input_source=getattr(self.game,'input_source','project_windows_sendinput'),gesture=gesture.record(),started_monotonic=started,
+            input_backend_before=first,completed=False)
+        if retry_route is not None:receipt['model_route']=retry_route
+        try:
+            self._performing_input=True
+            receipt['completed']=bool(self.game.perform_gesture(gesture))
+            return receipt
+        except Exception as exc:
+            from .retry import RetryRequested
+            if isinstance(exc,RetryRequested):
+                receipt['interrupted']=True
+                exc.receipt=receipt
+            raise
+        finally:
+            self._performing_input=False
+            # The controller may start a retry only after both buttons have
+            # actually been released, including a partially emitted gesture.
+            release_errors=[]
+            releases=(self.game.release,) if getattr(self.game,'central_stop',False) else tuple(
+                lambda flag=flag:self.game.send(flag) for flag in (4,16))
+            for release in releases:
+                try:release()
+                except Exception as exc:release_errors.append(str(exc))
+            receipt['released']=not release_errors
+            if release_errors:receipt['release_error']='; '.join(release_errors)
+            receipt.update(finished_monotonic=time.monotonic(),actual_trace=self.game.last_input_trace)
+            (self.folder/(label+'.input.json')).write_text(json.dumps(receipt,indent=2),encoding='utf-8')

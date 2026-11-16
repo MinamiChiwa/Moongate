@@ -1,0 +1,22 @@
+/data/
+/fixtures/
+__pycache__/
+*.pyc
+/build/
+/dist/
+*.log
+/release/
+/artifacts/
+**/artifacts/
+**/TestResults/
+**/bin/
+**/obj/
+**/node_modules/
+**/.venv/
+.vs/
+*.user
+.env
+.env.*
+
+# 并行 agent 的临时工作树
+.claude/worktrees/

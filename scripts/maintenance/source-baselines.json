@@ -1,0 +1,1871 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "mobifolio",
+      "repository": "Mobi-Lan/MobiFolio",
+      "commit": "78d2b2a836ee9931500f72a9af7280018e26d26c",
+      "licenseStatus": "MIT",
+      "licenseEvidence": [
+        "LICENSE"
+      ],
+      "rootLicensePresent": true,
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "beb435598a91aefa946060d966ba81d34fd2cedf24c3aace9302d76156972ccd"
+        },
+        {
+          "path": "app/main.js",
+          "sha256": "2386854b2f2cc3ac8f1fc8bf8191148b19e222eb9758a003ee87be4e4a9c103c"
+        },
+        {
+          "path": "app/package-lock.json",
+          "sha256": "ccb82360d1f27060b8bda91389932672b18c3660e3bcdeeef3ea5cc837131602"
+        },
+        {
+          "path": "app/package.json",
+          "sha256": "a618cba43ad20cac7a2541bd6ae5959f3a4e97a3fbb8e4a202bb40bc64db2f66"
+        },
+        {
+          "path": "app/preload.js",
+          "sha256": "2ad7e6d69bfdd23234d9f214698cb460226860ae8bc31b72dd635b2923799d55"
+        },
+        {
+          "path": "cli_transport.py",
+          "sha256": "24ec7de35f8e274d1ec441d99a4763e89f5b006cbd5ddfaba4ea0b445cf94a92"
+        },
+        {
+          "path": "library.py",
+          "sha256": "5266c8fb1d1cfa96a1ded8de59fb53afa15faf941502da82a6a28bcafa8830ae"
+        },
+        {
+          "path": "server.py",
+          "sha256": "5c1c81a72e3c8be106b6a16895036fd8d8379bcc309339fdfe0ee25041bd28d5"
+        },
+        {
+          "path": "store.py",
+          "sha256": "f2b6da36edc63eadec1ed6a7de90ffa721399233061899e26294619a7c31a6d0"
+        },
+        {
+          "path": "ui/index.html",
+          "sha256": "96b32ef32b6647f72851481a9a25f90fa743cfffd90d91ba846ff11b648cfe10"
+        },
+        {
+          "path": "ui/overlay.html",
+          "sha256": "135ec1bab18a0192ddbebca68ccee09bc3cf442256c807cebfd330dcf305322a"
+        }
+      ]
+    },
+    {
+      "id": "mabisync",
+      "repository": "MinamiChiwa/MabiSync",
+      "commit": "2cb69b5ddec8de4fe9d20ec98bbb410ac015e671",
+      "licenseStatus": "author-granted-MIT",
+      "authors": [
+        "MinamiChiwa（南千和）"
+      ],
+      "licenseEvidence": [
+        "THIRD_PARTY_NOTICES.md"
+      ],
+      "rootLicensePresent": false,
+      "files": [
+        {
+          "path": "THIRD_PARTY_NOTICES.md",
+          "sha256": "300c86acc37baa11a6f6d761e6ec5c3378a24b07724bbf97ba2cc61f211d01bd"
+        },
+        {
+          "path": "adapters/tw-20261003-gc-map.json",
+          "sha256": "6abbc66957a7e3fb9c52072932869eb23ea8332058bca69073c11f50e78a8f14",
+          "localPath": "src/Providers/TwObservation/Resources/tw-20261003-gc-map.json",
+          "adaptation": "固定 MabiSync 脱敏资源；内容保持。"
+        },
+        {
+          "path": "adapters/tw-20261015-identity-schema.json",
+          "sha256": "1ee717a0c25f23f55b81711dbfa794424725981c7e5acfd4fd8dbd176ca61613",
+          "localPath": "src/Providers/TwObservation/Resources/tw-20261015-identity-schema.json",
+          "adaptation": "固定 MabiSync 脱敏资源；内容保持。"
+        },
+        {
+          "path": "package-lock.json",
+          "sha256": "723a65f9e3c53600e06e5925ded99355b2f46c293c3dcc3a51f3d9cf395bb2c1"
+        },
+        {
+          "path": "package.json",
+          "sha256": "561146b738d85b2f877ac4e76a695817e54dca6acb9ae6f8a7142c5cc59c24ac"
+        },
+        {
+          "path": "server/ensemble-observation.js",
+          "sha256": "23b2af762f9627d94d7ae7c4eba2f0383b05f9034d99d65003df7cb28fa302b0",
+          "localEntries": [
+            "src/RoomServer/Domain/RoomObservationRules.cs",
+            "src/RoomServer/Protocol/RoomProtocol.cs"
+          ],
+          "adaptation": "身份、时效、代次及顺序冲突规则迁入 C#；原规则导出 11 组 42 步固定对照样本。"
+        },
+        {
+          "path": "server/room-server.js",
+          "sha256": "4e1b127a31f0931d9b57a98c77e26edbee868933a9038cf79c364918d2f0afb9",
+          "localEntries": [
+            "src/RoomServer/Domain/RoomKernel.cs",
+            "src/RoomServer/Domain/RoomKernel.Rounds.cs",
+            "src/RoomServer/Domain/RoomKernel.Roster.cs",
+            "src/RoomServer/Domain/RoomState.cs"
+          ],
+          "adaptation": "协议 v1 状态机迁入 C#，ASP.NET Core WebSocket 使用连接及全局有界发送预算和单调时钟；保留原消息字段及准备、提交、回执和恢复语义。"
+        },
+        {
+          "path": "src/MabiSync.App/MabiSync.App.csproj",
+          "sha256": "74d97ac53c84dd5945532ba71fa4d0f7cd1e0d1030d5800e0a5dbff497bdb50e"
+        },
+        {
+          "path": "src/MabiSync.App/MainWindow.Input.cs",
+          "sha256": "963ebaa512d9f9d84fe101409c3b8d8e0672fd3302f68f6a56d0dab90c5501d0"
+        },
+        {
+          "path": "src/MabiSync.App/MainWindow.Overlay.cs",
+          "sha256": "cf335c03ffdf76a96c07a984b46f1df906053c1ad04fd34b76a4ea9e6b77a3ae"
+        },
+        {
+          "path": "src/MabiSync.App/MainWindow.xaml.cs",
+          "sha256": "77188b5d043b6d3b8283d58dd59b7e22ad7013c2b751d71e631cb82c0cb6d9fe"
+        },
+        {
+          "path": "src/MabiSync.Client/GitHubUpdates.cs",
+          "sha256": "3eacd3d0b6aaee5f5e7f9ae58201f3e1f5d15f15f8c4f89ec656c55ac5ede480"
+        },
+        {
+          "path": "src/MabiSync.Client/MabiSync.Client.csproj",
+          "sha256": "0521fde1998afa8ac7a00939c7ea4471627ed6238e2d5fb53c253b2904889c53"
+        },
+        {
+          "path": "src/MabiSync.Client/QuickTunnel.cs",
+          "sha256": "eb40456ebdeb59851f3b887d12e2af5d73713b21beee64eb95f1fba6553a371f"
+        },
+        {
+          "path": "src/MabiSync.Client/RoomClient.Preparation.cs",
+          "sha256": "d1f4fe814f4c733ab7da08db494a0ed9158bc2f398c03013424cc7cbaf673f3f"
+        },
+        {
+          "path": "src/MabiSync.Client/RoomClient.cs",
+          "sha256": "2d30f2eae592100e85ef709a034c11a5fda47063f51550822c5d90d14a288a29"
+        },
+        {
+          "path": "src/MabiSync.Core/ActionScheduler.cs",
+          "sha256": "70f7a3898d77cf00dc85c289ed37e851813ce5b5e4f815c862a4a4c09d25a94d"
+        },
+        {
+          "path": "src/MabiSync.Core/Actions.cs",
+          "sha256": "e9013e5fe2a74b11ccdc615c30a1f9ce89098672417a70d4699bdb31ff076f3b"
+        },
+        {
+          "path": "src/MabiSync.Core/DeadlineWaiter.cs",
+          "sha256": "938672ad0c9267fceed80e6320de1ba406f4a198336d7d05befa6b43f99a2c6a"
+        },
+        {
+          "path": "src/MabiSync.Core/GameInput.cs",
+          "sha256": "be5142208d22a13b0fe3c21a72ced693237be699fdb6b47f5beb80b48670820d"
+        },
+        {
+          "path": "src/MabiSync.Core/GameTcpStream.cs",
+          "sha256": "beddfaec61d89399caefbb82ff76113392ec5e0be6436a9c40f46e6159fd2f3e",
+          "localPath": "src/Providers/TwObservation/GameTcpStream.cs",
+          "adaptation": "固定 MabiSync 来源；namespace 与嵌入资源名称改为 MabiTool，解析规则和原断言保持。"
+        },
+        {
+          "path": "src/MabiSync.Core/InputRouter.cs",
+          "sha256": "43691c6c7611cc831db2ac845720b649bb05bbbb676d3510d613707cae91712c"
+        },
+        {
+          "path": "src/MabiSync.Core/InstrumentCatalog.cs",
+          "sha256": "04b375fb1c9d35baadb2665303e8e94a4d5847cf8b17a9e8f18ef521d383be12"
+        },
+        {
+          "path": "src/MabiSync.Core/MabiSync.Core.csproj",
+          "sha256": "7d26b2637821f2f09bc77e22820c29d6a210a4b6f59b490c3804079786be4783"
+        },
+        {
+          "path": "src/MabiSync.Core/MmlTimeline.cs",
+          "sha256": "bbf21ff587a129e0aa7672724a87280dd6b03b525152a532d942425b71616ada",
+          "localPath": "src/Providers/TwObservation/MmlTimeline.cs",
+          "adaptation": "固定 MabiSync 来源；namespace 与嵌入资源名称改为 MabiTool，解析规则和原断言保持。"
+        },
+        {
+          "path": "src/MabiSync.Core/MusicWorkflow.cs",
+          "sha256": "87f75e57c544434339d0b89f5819008044b10db351d0d20f8e5fbe80cb3ea1c0"
+        },
+        {
+          "path": "src/MabiSync.Core/RoomClock.cs",
+          "sha256": "40d43ae8316b2905830b8d5d53d5e92704761a3020f63e2b6dde2617e4faadc5"
+        },
+        {
+          "path": "src/MabiSync.Core/RoomSetup.cs",
+          "sha256": "ba0b8e981343431f5960e4b56f94a9d8fd07edad1efc7fd61b139a86b9066313"
+        },
+        {
+          "path": "src/MabiSync.Core/ShortcutText.cs",
+          "sha256": "da8d058b84b955537dbed96f7315fd9c74d357caf956b3e5c2e629c2d3d2cd66"
+        },
+        {
+          "path": "src/MabiSync.Core/TwGameObserver.cs",
+          "sha256": "fbb4fc032ec97507dad468d92a33d22e0f02b1d8ceab17f47b418a32ab41f3ad",
+          "localPath": "src/Providers/TwObservation/TwGameObserver.cs",
+          "adaptation": "固定 MabiSync 来源；namespace 与嵌入资源名称改为 MabiTool，解析规则和原断言保持。"
+        },
+        {
+          "path": "src/MabiSync.Core/TwGameProtocol.cs",
+          "sha256": "1bcff5896532d49cd310e778eda18c6c7ea1bd07639fbb9862d6abbdb552fefc",
+          "localPath": "src/Providers/TwObservation/TwGameProtocol.cs",
+          "adaptation": "固定 MabiSync 来源；namespace 与嵌入资源名称改为 MabiTool，解析规则和原断言保持。"
+        },
+        {
+          "path": "src/MabiSync.Core/TwScoreTimeline.cs",
+          "sha256": "2279c0107d47a1aa43a572e2ca1c04edf169bc732a42bb5c328dcf1364983bab",
+          "localPath": "src/Providers/TwObservation/TwScoreTimeline.cs",
+          "adaptation": "固定 MabiSync 来源；namespace 与嵌入资源名称改为 MabiTool，解析规则和原断言保持。"
+        },
+        {
+          "path": "src/MabiSync.Core/WindowActivation.cs",
+          "sha256": "f84b5d42e684aeb611896033b993b2f741074d78251a242177528e92205622c0"
+        },
+        {
+          "path": "src/MabiSync.Windows/DesktopCoordinates.cs",
+          "sha256": "07582db9d587ee85ef50c956786ad7bd1d37b483f1f2c821e92c199d9f6107d7"
+        },
+        {
+          "path": "src/MabiSync.Windows/GameObservationCapture.cs",
+          "sha256": "b8a604c70a0543a4e73a0e804f1afcd0789c55b62da9594511235965a87cc50f",
+          "localPath": "workers/game-observation/GameObservationCapture.cs",
+          "adaptation": "将原窗口宿主移除，仅保留固定进程身份的被动捕获；Npcap 留在可选 Worker。"
+        },
+        {
+          "path": "src/MabiSync.Windows/LocalStopHotkey.cs",
+          "sha256": "a65db55f9beb0cf42e572136f70cfef2f2d8bd4201b21901676f05bbb8ec3270"
+        },
+        {
+          "path": "src/MabiSync.Windows/MabiSync.Windows.csproj",
+          "sha256": "00b992b1f6686d4113023cced68fa077c5c6689ad9ec3cd6e95b5cf9ab508fce"
+        },
+        {
+          "path": "src/MabiSync.Windows/WindowsGamePlatform.cs",
+          "sha256": "ab9b34940195a318d2ded64b334b5c67babd5adf16d8a98a96f6d03adc356670"
+        },
+        {
+          "path": "tests/server.test.mjs",
+          "sha256": "7e1b224df94d7bb6d9f97c0791867cfea76de66cc895931fab68c5625a915d58"
+        },
+        {
+          "path": "tests/ensemble-server.test.mjs",
+          "sha256": "ef521b348141457e84e4a8aa67f333ecf7fa97a45bc787d767fb5ea978b029b7"
+        },
+        {
+          "path": "src/MabiSync.Core/GamePacket.cs",
+          "sha256": "93e57f0c2f023e89329e6f3481928647821a1024443c2fabfc9b1d250cf5687e",
+          "localPath": "src/Providers/TwObservation/GamePacket.cs",
+          "adaptation": "固定 MabiSync 来源；namespace 与嵌入资源名称改为 MabiTool，解析规则和原断言保持。"
+        },
+        {
+          "path": "tests/MabiSync.Observation.Tests/Program.cs",
+          "sha256": "307e8d0ed0fb58eea28f9e152eb80e95814693751344c3dd6cdeae2901c68ef2",
+          "localPath": "tests/EndToEnd/TwObservationReference/Program.cs",
+          "adaptation": "固定 MabiSync 来源；namespace 与嵌入资源名称改为 MabiTool，解析规则和原断言保持。"
+        },
+        {
+          "path": "tests/fixtures/tw-character-synthetic.bin",
+          "sha256": "0a62415d3a27de78584a65872738b1eb09c4f7d38c1573992932e69db30bd0a4",
+          "localPath": "contracts/fixtures/tw-character-synthetic.bin",
+          "adaptation": "固定 MabiSync 脱敏资源；内容保持。"
+        },
+        {
+          "path": "src/MabiSync.Windows/CaptureChannels.cs",
+          "sha256": "85547f400f5daedc115ad8d9b770374bed8de3f8c1d847e09fefd9ef70734644",
+          "localPath": "workers/game-observation/CaptureChannels.cs",
+          "adaptation": "将原窗口宿主移除，仅保留固定进程身份的被动捕获；Npcap 留在可选 Worker。"
+        }
+      ],
+      "distributionLicense": {
+        "id": "MIT",
+        "copyright": "Copyright (c) 2026 MinamiChiwa（南千和）",
+        "path": "packaging/licenses/MinamiChiwa-MIT.txt",
+        "sha256": "0387f86fdf0f7009445dfeaa0f054af29e78704ed74fb603c777f61588083ee0",
+        "authorizationDate": "2026-11-17",
+        "authorizationSource": "user"
+      }
+    },
+    {
+      "id": "color-studio",
+      "repository": "MinamiChiwa/mabinogi-mobile-color-studio",
+      "commit": "5e53ec8481857563c6718b282c8990ea3830931d",
+      "licenseStatus": "author-granted-MIT",
+      "authors": [
+        "MinamiChiwa（南千和）"
+      ],
+      "licenseEvidence": [],
+      "rootLicensePresent": false,
+      "files": [
+        {
+          "path": "requirements-build.txt",
+          "sha256": "0034505000aac956e6f095380f6185f33810103e5ec63f09e4602bf50b6bc731"
+        },
+        {
+          "path": "requirements.txt",
+          "sha256": "765474189d8f581e87600d186fc3324ffff434369486a38c1b5209b233f6daa2"
+        },
+        {
+          "path": "work/studio/best_result.py",
+          "sha256": "6cda73e3fe4a187e53236cbb14877bfe661832f6b0adcf3ca025c81fbaa53255",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/best_result.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/business.py",
+          "sha256": "fe3b95cdaf6d8373c8e8d1d15de0dd8d9ffd4a5764b936484b1bc000cbca8620"
+        },
+        {
+          "path": "work/studio/candidate_ranking.py",
+          "sha256": "2f3819cd5fd581ba05e3805ca3a7464239be6af1f9276e297f1fcb863aac0721",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/candidate_ranking.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/color_family.py",
+          "sha256": "1fbe9203f39b076b6e5bec67f3904eba84418ffc20ee29e5701f288652050de1",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/color_family.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/color_matching.py",
+          "sha256": "4ffb60e6a4a1dc2980cd85baac468a58c31383ce19d947ea2a0ceb85ae32fb0a",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/color_matching.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/destination_policy.py",
+          "sha256": "b6a279919ab690e675b4ca342fde9767b1d88c019b1c1a2866233904489ce3f5",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/destination_policy.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/engine.py",
+          "sha256": "eb754483c42a0046cd99d53e128ba5ac47296313fbdcb7c9129272ff6cef8c0e"
+        },
+        {
+          "path": "work/studio/hotkeys.py",
+          "sha256": "051ffd764b4a96148dc5543f6b47620c0ca04daee740e2e2ecac70a05aaffb8e"
+        },
+        {
+          "path": "work/studio/native_live/read_dye_window.py",
+          "sha256": "4d7a97dbe94e6da986fe1809d917f67485e91736c2466815ae383a9611912449",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_dye_window.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/read_dye_window_mapping.py",
+          "sha256": "af03ef5b5a197ec48ecf43e0e444245d6e9b5ff9ae5ddfb483e9cf08c40161f0",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_dye_window_mapping.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/same_session_dye_planner.py",
+          "sha256": "57bb6062b335dea526be38d7ade6e8b41c41308e26c8c4ebc6ba899a3a98992a",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/same_session_dye_planner.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/session_deadline.py",
+          "sha256": "6f1e14a2634977095089cfc4ca216e922f9246cc3aa07e0f61f0829566e506b1",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/session_deadline.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/overlay_native.py",
+          "sha256": "45229b7dc9de052b7de2be4a5b89bd2fafebd688931feeb8b1cb2ad5ac9198ee",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/overlay_native.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/palette.py",
+          "sha256": "25542bb7f7a2278c7190f7564bfd3451931100d51846d00f5378d1f4dd4d9058",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/palette.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/planner.py",
+          "sha256": "9af50c89f5abe1db16aa1c1eabea63beed8ba4393351f1543af38be84d241ed5",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/planner.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/platform_win.py",
+          "sha256": "569a1f4cce69740ee0a24ce7d7ab60e6e3a9658b6cb9873ab924d9ffe64bf2cf",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/platform_win.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/process_access.py",
+          "sha256": "5da0e6b2f350545f17dec7bff2c58eda4226460b4d44a116a8595c29ba7e1fbe",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/process_access.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/profile_store.py",
+          "sha256": "bf73ea0204cc0664f5b59d0ee424d57b11e482a54a221c4b9c17dcc513be8ada",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/profile_store.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/qt_ui/overlay.py",
+          "sha256": "4a5393403e1235bbaa67cdd9e24f853d7b3006d8bb82a62bfff53d9a9f6afef9"
+        },
+        {
+          "path": "work/studio/region_priority.py",
+          "sha256": "cf0f7480b2debea6de0296b095bbb7cf4f499fa842b2c61a7049359e3a4dcf76",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/region_priority.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/result_history.py",
+          "sha256": "a846e8266c321e780be6d4a5135717e2e80d9bc3667d32fdb8c634433f0f01a6"
+        },
+        {
+          "path": "work/studio/run_stop.py",
+          "sha256": "6f8be4b3f1c04ff68d875d7f39383170bfff13462a6144960852429b71e0e7f5",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/run_stop.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/screenshot_geometry.py",
+          "sha256": "abee4607803396ee29c2a486713d7943f34b65dd2190ef8c6fa2dd36ecada99c",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_geometry.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/screenshot_live.py",
+          "sha256": "81a263d14054504987a3c4f6aca251d871809eb5f17fc4b1519545b5a670e4d3",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_live.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；显式交互等待及原期限重试；等待期间当前颜色未确认，保留最佳及最后实测；公开结果移除内部无限排序值。"
+        },
+        {
+          "path": "work/studio/screenshot_search.py",
+          "sha256": "e8725d02da0c394a91334ddd32d521542144b49de1527a1dc94eb2281f8c5119",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_search.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/screenshot_text.py",
+          "sha256": "97118a983400b25f552434dd9ac80d2b7bc4af98b5ab881687194d33f26b1256",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_text.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/session_store.py",
+          "sha256": "97389c8575b5299da3f4009348d97fbb95de40cb934c62aa08862de0aa4e9fdf"
+        },
+        {
+          "path": "work/studio/strategy_defaults.py",
+          "sha256": "bfeacee42bdf30020f5787b8e407107f203360e4aded24dd591a6a747c4d3669"
+        },
+        {
+          "path": "work/studio/update_bootstrap.py",
+          "sha256": "20ea4cbc1384c15b269eb39f248da204b615c20703cfa769f8315f598571351c"
+        },
+        {
+          "path": "work/studio/updater/manifest.py",
+          "sha256": "247743690ed29208457cb1f9bedfd8e844ba18d0332184d23ae0d9db8c2229f3"
+        },
+        {
+          "path": "work/studio/updater/planner.py",
+          "sha256": "ccebd64680b6807e5eacfe9e924834451eb3ffee1512b4b05face1d1886a131f"
+        },
+        {
+          "path": "work/studio/updater/transaction.py",
+          "sha256": "94d96d4f41da939638bf6f7d2e66c23af292cab4fbc4105d3996a7c3ae75b8f7"
+        },
+        {
+          "path": "work/studio/updater/trust.py",
+          "sha256": "cf0c60b37f79ffbeec67c2708c354a23fa7572b5f5c96c8d417350b1b8fae49c"
+        },
+        {
+          "path": "work/studio/window_dpi.py",
+          "sha256": "8b2c78f4e74973346aa8542836eab1237aed2500bb2866bc159621d013d8354e",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/window_dpi.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/window_target.py",
+          "sha256": "5c3e1026b52d05028a54f69d9315afc98ade07000abd947b68b93b73f929e0e3",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/window_target.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/atlas_bound_route.py",
+          "sha256": "3ae367b503000f72e75a19b80bdce5094b2a87ae6e1a1016f506e87b812c9c16",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/atlas_bound_route.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/atlas_execution.py",
+          "sha256": "7f68a9df0fb1d79a3f11f4a3ccdd2d5db22bf2822e67f330f46c40c6ec77c7ab",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/atlas_execution.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/atlas_masks.py",
+          "sha256": "f1ec89c127f7172159b73bd5097f096fb530492a032ded4e675e73bc4e6f6f77",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/atlas_masks.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/atlas_pose.py",
+          "sha256": "7b707811dae0e053d7da390a5a259424f869fb1359a8e502c43fa5ead98cdba2",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/atlas_pose.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/atlas_pose_scoring.py",
+          "sha256": "6595eb947800da1a274c7db5577f743bbda1f7d2f0fee7059425db5b24e34f09",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/atlas_pose_scoring.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/atlas_runtime.py",
+          "sha256": "af244e746189f69b7523725bf1f2872ac3b0355e13d8e64b43f1b86b9e8d79f3",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/atlas_runtime.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/atlas_similarity.py",
+          "sha256": "25d230306117051ee74ee7c789ab29fbb3508347076b348dd5edc6edd40e8654",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/atlas_similarity.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/atlas_stage_budget.py",
+          "sha256": "102ee298e1303f1a77454da6674aa60463a4362de9612b96e7c6e4cf460a0361",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/atlas_stage_budget.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/dye_regions.py",
+          "sha256": "46a03409cdfd673db27396d6e44ba3c6f4a7c1c28988265444e3211551261211",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/dye_regions.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/hex_feedback_search.py",
+          "sha256": "1863237186b47fbdbdcae29634321bf03f0405ab7d53e309a2d51ddc3d17b985",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/hex_feedback_search.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/hex_refinement.py",
+          "sha256": "490540d6750063bc9e41f48bc535041dec8ce20b21a70f7f60bd65d8ed705591",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/hex_refinement.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/input_gestures.py",
+          "sha256": "4535b4b894530bf5fa04288a3f826e5d764f30ecad9ee8cfe4d5cf7939651eb9",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/input_gestures.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/marker_geometry.py",
+          "sha256": "b9b44b691bc9126ef329089c6ba6947c9cfc1c5de96a5771eeb1037f57eaaff8",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/marker_geometry.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_input_compile.py",
+          "sha256": "9bc863c992b5bdbc22d749ca04c9c643dae6a12d79c828f1581121caa66a7801",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_input_compile.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_input_pipeline.py",
+          "sha256": "24a01c89dc2da9c28d510d41aa8795f96938fc122c53244c528a48368cd0ecf5",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_input_pipeline.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_input_pivot_refine.py",
+          "sha256": "16e92c66a6f97005d5c7bf6392fa4d7475117fae82ff4430c428fb04efa1cc22",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_input_pivot_refine.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_input_response.py",
+          "sha256": "938253d4f5753876f9ee1825f7df87a24593af0fd7cd5a04deddd33d5a395263",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_input_response.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_input_route_search.py",
+          "sha256": "23dbd4710b36178810acb4d9355a0eae82ed4383f4f48990f2ccb6a1f3f94a4c",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_input_route_search.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/adaptive_build.py",
+          "sha256": "5933b54cfba299ca69dbefd455aa4c6cee67765666f61faae5d7b464fef1e479",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/adaptive_build.py",
+          "adaptation": "保留原基线；同步原仓库提交 3c2942e（PR #18）的 v2 地址发现修复，按目标类有效 64 位读取引用判定唯一槽位，排除无关标记、窄字段和写入指令"
+        },
+        {
+          "path": "work/studio/native_live/build_adapters.py",
+          "sha256": "b3ea25b01489b21231cd4209a1988288ec6e6f50dcf7dd7db6ae37a60495006a",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/build_adapters.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/build_layout.py",
+          "sha256": "d4104e250f8e3f35fd38354c1b719ee4d02dd4b30b8b930d723f4fcadae4b81c",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/build_layout.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/candidate_selection.py",
+          "sha256": "e96b7d76c4d027044369694f4c677f8495319993e60e6c927fe9745d6fcff556",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/candidate_selection.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/capture_dye_state.py",
+          "sha256": "35c3f09d08dba01f201988591e46d87f712e30ed9eeca18b9e45ecfec7438e4f",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/capture_dye_state.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/collect_dye_validation.py",
+          "sha256": "e85f3dfafd4f6193a4978f043b2c5cc9fc4cd1a22e285855780572c164214653",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/collect_dye_validation.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/compromise.py",
+          "sha256": "840188a8d14064e29cf2d57a7b442890f3480e0ee9374f41473a2319272672c5",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/compromise.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/controller.py",
+          "sha256": "b1888c2a7049e354a676b6a4ac2fd366229fa82612e7d8069f4df85311798ddf",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/controller.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；复用原定位、候选排序和预算；允许候选与重试共存，重试批次增加 epoch，避免低精度 Windows 单调时钟重复 ID，保留独立实测快照。"
+        },
+        {
+          "path": "work/studio/native_live/dye_action_checkpoint.py",
+          "sha256": "4ce5c5f1142bade9e9052a6d22b9105ada9d97df828010a9984f543c366de394",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/dye_action_checkpoint.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/dye_hex_glyphs.py",
+          "sha256": "4860ea0bb406d0915e44dbbd991adabc2e0220d92402d1faf7607eff46629e21",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/dye_hex_glyphs.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/dye_visual_readiness.py",
+          "sha256": "a413e988ec2a55c28325d075ecdec6ff8905fe50acf4b82efe7b6320e9894177",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/dye_visual_readiness.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/game_font_reader.py",
+          "sha256": "3da9fdb426e989903b3b3d92421fb32b47271af9b10f1f8005718a4daf92187d",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/game_font_reader.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/il2cpp_discovery.py",
+          "sha256": "6ed7b7586132b669ba07467d221406199db2456b64f62707ca1b9183a58263d3",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/il2cpp_discovery.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/managed_layout_contract.py",
+          "sha256": "5863165df74e6ebfabe1d2fa6ab55ab9b67e51f647eba95fd8584ffd061b7b1f",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/managed_layout_contract.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/map_unity_window.py",
+          "sha256": "51c231b13f14c241b9b3ccbf169364f16be468616188006d31f57f8a928f3dc2",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/map_unity_window.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/native_provider_backend.py",
+          "sha256": "f242c04dc49c993fec9f2f80fec1b9b1b6f189636c7cd1ec6cdd18fa7cf239df",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/native_provider_backend.py",
+          "adaptation": "本地导入加包前缀；读取构建前核对宿主授予的进程创建时间，身份不符立即关闭 Reader；保留原三文件校验、布局发现与只读采集算法。"
+        },
+        {
+          "path": "work/studio/native_live/probe_timer.py",
+          "sha256": "12d982614835aaf480b6b232ad6c60cbc96335fe48ad11f37d12ac8e2b43f8d1",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/probe_timer.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/project_closed_loop_io.py",
+          "sha256": "2b55c10a8038a3f039c959a51498c8d10d097d3022d68658ceae3ac6312511ae",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/project_closed_loop_io.py",
+          "adaptation": "本地导入加包前缀；中央代理模式用类型化 release 释放鼠标，输入凭据记录宿主代理来源；保留原闭环校验、手势及重试算法。"
+        },
+        {
+          "path": "work/studio/native_live/project_probe_io.py",
+          "sha256": "ff8a013469b1f98ba0abad5fe178275ee32ef95c6a7287270f65d73c4f15e782",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/project_probe_io.py",
+          "adaptation": "本地导入加包前缀；注入代理时使用其输入来源和类型化 release，截图/输入与中央停止经注入端口；保留原色板与进程绑定校验。"
+        },
+        {
+          "path": "work/studio/native_live/read_dye_input_backend.py",
+          "sha256": "caf061dc2a5081f68dc11e9c5011014e0639a04d2bae0326ac24b48aa73a4013",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_dye_input_backend.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/read_dye_motion.py",
+          "sha256": "6e0b2879858054031ff5dad959e00a4de6f74325dd0c4dccf58b9925eb38e36e",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_dye_motion.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/read_native_mouse_diagnostic.py",
+          "sha256": "c29eacf6baa4f5f7f427a6292de5451a698a68253a00b9a0a29eab3960094db8",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_native_mouse_diagnostic.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/read_native_rect.py",
+          "sha256": "02d0791900da35c21289b0b81ad42abec0cf835bb92f964f531c0dc87f3f4a96",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_native_rect.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/read_native_transform.py",
+          "sha256": "2636a5001e4268900a68b710d2b01dc061835ff80111eb7fc4a5758f6884ef50",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_native_transform.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/read_toucharea_geometry.py",
+          "sha256": "d576510875144091bb05b249f0554131fbafd857ac02832827a09270edb9c21c",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_toucharea_geometry.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/read_toucharea_rect.py",
+          "sha256": "8162af708fe9d83ccebced2221dd4a85bac5575497b20435c757222c69a7f9bc",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_toucharea_rect.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/read_unity_screen.py",
+          "sha256": "a9b3fb4aab4f81886d9f0afc9b1a60e9ab9889ce7514caeae7580a3594c0f3eb",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_unity_screen.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/refinement.py",
+          "sha256": "b6e3325632e93616b7a61705c29201b90b35139d4c5e13a407ca36f1e08f615c",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/refinement.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/retry.py",
+          "sha256": "e5d98543aa4dca571baff5a6b9b78199c1216552ec9e6b5ba0761bef1607dbfd",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/retry.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/retry_recovery.py",
+          "sha256": "63ea57269412651c97485644d1e57cb876bd645ee06d7f22b2d3ab6bfaf572a3",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/retry_recovery.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/route_feedback.py",
+          "sha256": "3714de7f9aec78521ccf82f240fea28dbcc6d20ebda31fef22a01a46dabbd718",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/route_feedback.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/runtime_read.py",
+          "sha256": "31b6066545d69a1ca95b3746209cc12f901de235681d5bed345026cd60132707",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/runtime_read.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/scan_live_dye.py",
+          "sha256": "8959beb9b8a0b3d070ad21008a93f8b4e969d4b5428d0f64a5d93466617e195d",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/scan_live_dye.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/service.py",
+          "sha256": "3e4d457ff18dbd62368e361ba0631a752ba15e2f18622b8f222141bd6c74c7ad",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/service.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；候选事件与选择回调转发至运行上下文，截图和输入保留统一端口。"
+        },
+        {
+          "path": "work/studio/native_live/session_status.py",
+          "sha256": "553851c0f83920567aeac5a13620b713213b1195b3c8d137a3e4d9f559e25c7b",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/session_status.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/time_policy.py",
+          "sha256": "48202c67b69e03cd9374f6dca537d57a2f51d6d790f3cd0928d6600bfdfdbde9",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/time_policy.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_palette_model.py",
+          "sha256": "2faf5bf765eae3130f00dc92c4b321af408988c6627c9815e145db5e43fbd739",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_palette_model.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_palette_pose.py",
+          "sha256": "c45960a7e901d8d15616798338c89ab2ee14db47371cd024844e696fa21cf620",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_palette_pose.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_palette_scoring.py",
+          "sha256": "7cfba9746465b048a201a96a0803ba44d0e67009fe650a784363f961916ccf1f",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_palette_scoring.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_palette_search.py",
+          "sha256": "c485ac7a06cc9f2d6a1030660d1e172a250269971b8b5be3e002ef6295d7b0de",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_palette_search.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_periodic_route.py",
+          "sha256": "21b72834a77814020f009ceee082bef95eb5b0b7bb9fd2148143f2ff8483c8be",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_periodic_route.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_periodic_search.py",
+          "sha256": "76c8217d7b8f4f292277467d1bf253f6faca3ff77385e78e926335a92085755e",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_periodic_search.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；预处理缓存严格限制为 48 MiB，超大单条不保留；寻色和评价算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_runtime_adapter.py",
+          "sha256": "bd446579553c267e0166ac878b6613e75a5ce83e4585f75f4fb29016e8f62395",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_runtime_adapter.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_runtime_bridge.py",
+          "sha256": "948e5c1cdc78dc72627a2ad51ba39ff992ba59db604d029d20969cc086e4ad39",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_runtime_bridge.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_runtime_discovery.py",
+          "sha256": "253d16eda5e281a89bfeb9e32b96245615817ad49590e06e95758d13d40490bc",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_runtime_discovery.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_runtime_observation.py",
+          "sha256": "092ecd0f4b25b218d6ba6f252f15c3f1be392e0023806c1e846a5af290e759fa",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_runtime_observation.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_target_seeds.py",
+          "sha256": "628bd75c85c639766b29f01e7907e03fbef415b435bcb33328b925919032d632",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_target_seeds.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_transform_matrix.py",
+          "sha256": "cfaeb9fbb7d3617e5a0da55e87f9ecbdb049351b53a404c9f509114c239e2eae",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_transform_matrix.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/refinement_policy.py",
+          "sha256": "901416b77aacc157e06ee733cfe8683079f81f87af81062246d2e8224dede7f9",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/refinement_policy.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/screenshot_compute.py",
+          "sha256": "313ec33bde04693d0a04bb11799b71cdd89be784affd243690a73fb3a5aafd95",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_compute.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/screenshot_control.py",
+          "sha256": "63b79ac8d3a28276ed37cb0b218214ab376798c38bbf1ccbc13fdb0abb06a9f8",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_control.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；原观测记录单调时间，使用原 score_codes 补充精确命中标识，供结果证据投影。"
+        },
+        {
+          "path": "work/studio/screenshot_evidence.py",
+          "sha256": "210881010ab250e41ff936b518f6c664c11a53fe9d4b45793546f42055e1dc91",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_evidence.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/screenshot_prediction.py",
+          "sha256": "b621aeb2370bf8f2c50ae8e8f1eb63e6e31a5e961492b65a988cd9315f416d36",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_prediction.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/screenshot_refinement.py",
+          "sha256": "8affdaccec86944ac09fd623c6a4328c0b8cfff66722729bfcc4e625b9511f9f",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_refinement.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/screenshot_registration.py",
+          "sha256": "64d5b7d260dc47d8ab97eeeb039c0119cacc7d69c1493f5d96c9e13e326a6ddd",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_registration.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/screenshot_samples.py",
+          "sha256": "a219584f1ef4870764103b34fc91a2f910ec78d16596c113eacce728c274d0d6",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_samples.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/screenshot_single.py",
+          "sha256": "9660d1b87c31454c93aee917f8a5c18163d860a86a8d27ceb5480259ec3bb505",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/screenshot_single.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/vision.py",
+          "sha256": "dd653f888a6f666a993f844e0b4c2ae7653cb28c965eeb77df7c6f7406a9e915",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/vision.py",
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；OCR 只定位染色组件内（或 MABITOOL_COLOR_TESSERACT_DIRECTORY 指定）的 Tesseract，不搜索系统安装，缺失时给出原因码；算法保持来源实现"
+        },
+        {
+          "path": "work/studio/native_live/__init__.py",
+          "sha256": "3d29571096c88e7da9cd7ddb0a5ea12989349196d1c0c939a765b5bd60757984",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/__init__.py",
+          "adaptation": "原样保留算法包初始化或固定识别资源"
+        },
+        {
+          "path": "work/studio/native_live/assets/dye_hex_glyphs.json",
+          "sha256": "cf83572e00dbf94182f5fa2d1be7927c0f66a79ff9925ef55dd9fb23b99c65ae",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/assets/dye_hex_glyphs.json",
+          "adaptation": "原样保留算法包初始化或固定识别资源"
+        },
+        {
+          "path": "work/studio/native_live/assets/dye_hex_glyphs.npz",
+          "sha256": "54318c7d0a43b72861af24d02704b96ac8efe6a7b6ff03db6e97d0aaa5a3bb0b",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/assets/dye_hex_glyphs.npz",
+          "adaptation": "原样保留算法包初始化或固定识别资源"
+        },
+        {
+          "path": "work/studio/native_live/assets/dye_timer_hourglass.json",
+          "sha256": "50abe96ef1072b4013b015fc2a91e4f5b7909b1f5420ba764c8d5860cf62ea8b",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/assets/dye_timer_hourglass.json",
+          "adaptation": "原样保留算法包初始化或固定识别资源"
+        },
+        {
+          "path": "work/studio/native_live/assets/dye_timer_hourglass.png",
+          "sha256": "53327f16e4e32fff6632c38c5a2c7c013e2bb55d3dea2c97c4a169ca595e60ed",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/assets/dye_timer_hourglass.png",
+          "adaptation": "原样保留算法包初始化或固定识别资源"
+        },
+        {
+          "path": "work/studio/native_live/assets/game_font_glyphs.json",
+          "sha256": "41418287eee824cff03e2a93022f8715a625d25e46c756b1db0a60b3f2291f79",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/assets/game_font_glyphs.json",
+          "adaptation": "原样保留算法包初始化或固定识别资源"
+        },
+        {
+          "path": "work/studio/native_live/assets/game_font_glyphs.npz",
+          "sha256": "cad0d2dad4753b2777a4d37aba5863565251b7f6fc02213adb1572c3e493a52f",
+          "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/assets/game_font_glyphs.npz",
+          "adaptation": "原样保留算法包初始化或固定识别资源"
+        }
+      ],
+      "distributionLicense": {
+        "id": "MIT",
+        "copyright": "Copyright (c) 2026 MinamiChiwa（南千和）",
+        "path": "packaging/licenses/MinamiChiwa-MIT.txt",
+        "sha256": "0387f86fdf0f7009445dfeaa0f054af29e78704ed74fb603c777f61588083ee0",
+        "authorizationDate": "2026-11-17",
+        "authorizationSource": "user"
+      }
+    },
+    {
+      "id": "synccue",
+      "repository": "MinamiChiwa/SyncCue",
+      "commit": "e4d0fde3000b80a4175d0463907b6bcb4afa6fdb",
+      "licenseStatus": "author-granted-MIT",
+      "authors": [
+        "MinamiChiwa（南千和）"
+      ],
+      "licenseEvidence": [],
+      "rootLicensePresent": false,
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "ebf103705b2b69d45e000bf854a910e77ef0b840d6923d4683451f3479b59267"
+        },
+        {
+          "path": "native/Models/RoomClock.cs",
+          "sha256": "cb2678763987068fab6939acbdd54424873fd07c0699476c0660b44121f2c967"
+        },
+        {
+          "path": "native/Net/RoomClient.cs",
+          "sha256": "b2d74736070876ad77aa517dda900c44f6837a7a92b2f1068c9dc8588fd4f03f"
+        },
+        {
+          "path": "package.json",
+          "sha256": "550309480da015668af57c99f73f5ca0663114ad5d8d2841bdddffd3cba81771"
+        },
+        {
+          "path": "server/room-server.js",
+          "sha256": "db32008e8a02fbfda9c6ca675bc7623fbbca84343b467fa8f5bffd1b583f0b9c"
+        },
+        {
+          "path": "shared/clock.js",
+          "sha256": "4eac6587a0c1adec55380472e3b146366f3f704520c8eb03036f97804e77df2d"
+        },
+        {
+          "path": "shared/cue-timeline.js",
+          "sha256": "008fd9fef7a27586c8902fb97283ec1ecc988339676c8ce2eb3ffc0c27e175e2"
+        }
+      ],
+      "distributionLicense": {
+        "id": "MIT",
+        "copyright": "Copyright (c) 2026 MinamiChiwa（南千和）",
+        "path": "packaging/licenses/MinamiChiwa-MIT.txt",
+        "sha256": "0387f86fdf0f7009445dfeaa0f054af29e78704ed74fb603c777f61588083ee0",
+        "authorizationDate": "2026-11-17",
+        "authorizationSource": "user"
+      }
+    },
+    {
+      "id": "mabiagent",
+      "repository": "MinamiChiwa/MabiAgent",
+      "commit": "54804c0085a04af444e39b36b3f55d4903df66e4",
+      "licenseStatus": "PolyForm-Noncommercial-1.0.0",
+      "rootLicensePresent": true,
+      "licenseEvidence": [
+        "LICENSE"
+      ],
+      "authors": [
+        "MinamiChiwa"
+      ],
+      "workingTree": {
+        "capturedAt": "2026-11-09T19:27:09.891214+00:00",
+        "sha256": "1d419609e59a1b27b1d5c3f057c21e4be72ea73c09bdd9a2cc7c5e010a40daa6"
+      },
+      "distributionLicense": {
+        "id": "MIT",
+        "authorizationSource": "user",
+        "authorizationDate": "2026-11-10",
+        "copyright": "Copyright (c) 2026 MinamiChiwa（南千和）",
+        "path": "packaging/licenses/MinamiChiwa-MIT.txt",
+        "sha256": "0387f86fdf0f7009445dfeaa0f054af29e78704ed74fb603c777f61588083ee0"
+      },
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "74bab30de8b346f584b2c7f3f6be2530aab01bb7137f5f90950d235c1deddafa",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/AccountItemService.Candidates.cs",
+          "sha256": "402ed02b92be5b18511434dade0717a875a351fd93d42001b997eaa03dc14abf",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/AccountItemService.CharacterSlots.cs",
+          "sha256": "cf4e7bb2b73c6a31399f5bac604bfa544497d5f4d625475cc7a863628cbc9170",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/AccountItemService.cs",
+          "sha256": "14a1758de472ddf8c471a2abc583fa20983cdbd302fad9535079660277d609b7",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/ClientCatalogUpdate.cs",
+          "sha256": "286719157de33ecfa3c9af9b135617fd0681420b81f20a050b3da2356f174cb4",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/ClientInventoryDecoder.cs",
+          "sha256": "ba50e65b2bffd324344c7ee3e602f68ced0e0057d81d434bfc7d113b4606e482",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/ClientItemCatalogExtractor.Package.cs",
+          "sha256": "f8924a0c13609c4362c7939b73650d7773c18676894059aa8311e556d3130eaa",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/ClientItemCatalogExtractor.Reader.cs",
+          "sha256": "93cd548bd87d3a10ab2df0995177bac51f90f73b8e714b559ddde9da8085aa15",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/ClientItemCatalogExtractor.cs",
+          "sha256": "ca2185ac14449d86be5695ca173a4072df2d7359e799b2c73a669b13d8379e97",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/ClientItemCatalogLocation.cs",
+          "sha256": "a6118c34ca2904c30abd8701faac3ed1b83ef9d98600eba85f77bc7c2a55cc6a",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/ClientLayoutReader.cs",
+          "sha256": "6c5eb5c7d9bcd8bfd8d92696808a59957f891ff4536a63a565a9f91cb4ba075e",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/GameClientLayoutResolver.cs",
+          "sha256": "5e0f9efd27037826ee397bbae529c963360f9ff9bc05d2e316c8db40c7d6a076",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/Inventory.cs",
+          "sha256": "cb815a0bdc66e4998fc1999221c70df939e60f1a2d1867d2aa9c5268f61e2ffb",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/ItemNameRegistry.Csv.cs",
+          "sha256": "262ee394b609ed6fe64598f7f529516795686447cbc0a5f325ae8728842df255",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/LinkedItemCatalog.cs",
+          "sha256": "229070db4a60fc13972b32048e7c77c3f8d47e5052adb17fa93515bf1611bee9",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Capture/Protocol.cs",
+          "sha256": "77f7bd4c435fbf0fc58d0c3a80c3b2f76ba9f673bb3a5147dee2974a94c1317e",
+          "contentSource": "working-tree"
+        }
+      ]
+    }
+  ],
+  "features": [
+    {
+      "id": "music-normalization",
+      "source": "mobifolio",
+      "task": "4.1",
+      "module": "music-library",
+      "entries": [
+        "library.py"
+      ],
+      "acceptance": "韩文及繁体标题、歌手、别名、噪声词、标签、搜索与排序；原始名称保持不变",
+      "migrationStatus": "mapped",
+      "localImplementation": [
+        "src/Modules/MusicLibrary/Domain/ScoreNameRules.cs"
+      ],
+      "localVerification": [
+        "tests/Domain/MabiTool.MusicLibrary.Tests/ScoreNameTests.cs",
+        "tests/Domain/MabiTool.MusicLibrary.Tests/Fixtures/korean-names.json"
+      ],
+      "localAdaptation": "纯 .NET 领域规则；TW 增加繁体前缀/类别/尾部噪声，搜索含别名/标签，固定序数排序，有界配置且原名保留；持久化歌手编辑由4.3继续。"
+    },
+    {
+      "id": "score-identity",
+      "source": "mobifolio",
+      "task": "4.2",
+      "module": "music-library",
+      "entries": [
+        "library.py",
+        "store.py"
+      ],
+      "acceptance": "同名重排、重复项、角色范围、缺谱与歧义分别处理",
+      "migrationStatus": "ported",
+      "localImplementation": [
+        "src/Modules/MusicLibrary/Domain/ScoreCatalog.cs",
+        "src/Modules/MusicLibrary/Persistence/ScoreCatalogStore.cs"
+      ],
+      "localVerification": [
+        "tests/Domain/MabiTool.MusicLibrary.Tests/ScoreCatalogTests.cs"
+      ],
+      "localAdaptation": "按 TW/KR、服务器、角色、Provider 和来源类型隔离 UUID；稳定来源 ID 跨改名重排保留，无 ID 条目保留歧义候选；SQLite 修订条件、陈旧缓存和原子 outbox。"
+    },
+    {
+      "id": "score-sync",
+      "source": "mobifolio",
+      "task": "4.6",
+      "module": "music-library",
+      "entries": [
+        "server.py",
+        "cli_transport.py"
+      ],
+      "acceptance": "同步、断开、字段缺失与实际台服库存对照；观测摘要不能代替完整库存",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "library-editing",
+      "source": "mobifolio",
+      "task": "4.3",
+      "module": "music-library",
+      "entries": [
+        "server.py",
+        "store.py",
+        "ui/index.html"
+      ],
+      "acceptance": "文件夹、列表、备注、批量、拖序、分页及两前端旧修订冲突",
+      "migrationStatus": "ported",
+      "localImplementation": [
+        "src/Contracts/Music/MusicLibraryContracts.cs",
+        "src/Modules/MusicLibrary/Domain/MusicLibraryEditor.cs",
+        "src/Modules/MusicLibrary/Persistence/MusicLibraryStore.cs",
+        "src/Host/BackendApplication.cs"
+      ],
+      "localVerification": [
+        "tests/Domain/MabiTool.MusicLibrary.Tests/MusicEditorTests.cs",
+        "tests/Contracts/MabiTool.Host.Tests/MusicLibraryTests.cs",
+        "tests/Contracts/TypeScript/contracts.test.mjs"
+      ],
+      "localAdaptation": "纯 .NET 曲库编辑；SQLite CAS、24 小时幂等、原子 outbox、稳定分页游标、删除文件夹重挂子项；标准乐器目录与列表偏好分离。"
+    },
+    {
+      "id": "artists",
+      "source": "mobifolio",
+      "task": "4.1",
+      "module": "music-library",
+      "entries": [
+        "library.py",
+        "server.py",
+        "store.py"
+      ],
+      "acceptance": "歌手别名合并及手工覆盖、同名歌手歧义和持久化",
+      "migrationStatus": "mapped",
+      "localImplementation": [
+        "src/Modules/MusicLibrary/Domain/ScoreNameRules.cs"
+      ],
+      "localVerification": [
+        "tests/Domain/MabiTool.MusicLibrary.Tests/ScoreNameTests.cs",
+        "tests/Domain/MabiTool.MusicLibrary.Tests/Fixtures/korean-names.json"
+      ],
+      "localAdaptation": "纯 .NET 领域规则；TW 增加繁体前缀/类别/尾部噪声，搜索含别名/标签，固定序数排序，有界配置且原名保留；持久化歌手编辑由4.3继续。"
+    },
+    {
+      "id": "instrument-assignment",
+      "source": "mobifolio",
+      "task": "4.3",
+      "module": "music-library",
+      "entries": [
+        "library.py",
+        "server.py",
+        "ui/index.html"
+      ],
+      "acceptance": "标准目录、逐曲乐器与持有状态分开；编辑后的队列快照一致",
+      "migrationStatus": "ported",
+      "localImplementation": [
+        "src/Contracts/Music/MusicLibraryContracts.cs",
+        "src/Modules/MusicLibrary/Domain/MusicLibraryEditor.cs",
+        "src/Modules/MusicLibrary/Persistence/MusicLibraryStore.cs",
+        "src/Host/BackendApplication.cs"
+      ],
+      "localVerification": [
+        "tests/Domain/MabiTool.MusicLibrary.Tests/MusicEditorTests.cs",
+        "tests/Contracts/MabiTool.Host.Tests/MusicLibraryTests.cs",
+        "tests/Contracts/TypeScript/contracts.test.mjs"
+      ],
+      "localAdaptation": "标准乐器目录由 GET /api/v1/music/instruments 提供；列表默认乐器和逐曲乐器为偏好引用，持有/装备状态留给台服来源 Provider。"
+    },
+    {
+      "id": "performance-queue",
+      "source": "mobifolio",
+      "task": "4.4",
+      "module": "performance",
+      "entries": [
+        "ui/index.html",
+        "server.py"
+      ],
+      "acceptance": "playIndex/pollAct/advance 完整迁移；单曲、前后曲、随机、循环、等待取消、失败跳过、自然/手工停止、列表修改、前端刷新",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "performance-input",
+      "source": "mobifolio",
+      "task": "4.6",
+      "module": "performance",
+      "entries": [
+        "server.py",
+        "cli_transport.py"
+      ],
+      "acceptance": "实际台服选曲、换装、播放、停止分别取得来源证据，遵守活动租约",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "music-history",
+      "source": "mobifolio",
+      "task": "4.5",
+      "module": "music-library",
+      "entries": [
+        "store.py",
+        "server.py",
+        "ui/index.html"
+      ],
+      "acceptance": "时长、声部、播放历史及曲尾策略独立；整谱与短声部不混淆",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "nearby-ensemble",
+      "source": "mobifolio",
+      "task": "4.7",
+      "module": "performance",
+      "entries": [
+        "server.py",
+        "ui/index.html"
+      ],
+      "acceptance": "checkEnsemble 观测合奏；合奏结束不自动续曲，推断状态独立表达",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "environment",
+      "source": "mobifolio",
+      "task": "4.7",
+      "module": "environment",
+      "entries": [
+        "server.py",
+        "ui/index.html"
+      ],
+      "acceptance": "时间、昼夜、天气、频道、区域分别验证地区字段与能力缺失",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "desktop-presentation",
+      "source": "mobifolio",
+      "task": "7.1",
+      "module": "presentation",
+      "entries": [
+        "ui/overlay.html",
+        "app/main.js",
+        "app/preload.js"
+      ],
+      "acceptance": "置顶、穿透、透明、显示隐藏和窗口状态经可选桌面桥；无桥客户端仍能读领域投影",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "legacy-import",
+      "source": "mobifolio",
+      "task": "7.2",
+      "module": "music-library",
+      "entries": [
+        "store.py",
+        "server.py"
+      ],
+      "acceptance": "曲库、歌手、列表、时长、设置、历史导入预览/幂等；源文件保留",
+      "migrationStatus": "ported"
+    },
+    {
+      "id": "platform-preferences",
+      "source": "mobifolio",
+      "task": "7.4",
+      "module": "platform-services",
+      "entries": [
+        "server.py",
+        "ui/index.html",
+        "app/main.js"
+      ],
+      "acceptance": "设置、语言/主题偏好命名空间、诊断脱敏和日志轮转；业务配置跨前端一致",
+      "localEntries": [
+        "src/Host/Diagnostics/DiagnosticRecorder.cs",
+        "src/Host/Diagnostics/DiagnosticExportOperations.cs",
+        "src/Infrastructure/Diagnostics/DiagnosticStore.cs",
+        "src/Infrastructure/Diagnostics/RollingDiagnosticLog.cs"
+      ],
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "legacy-updates",
+      "source": "mobifolio",
+      "task": "9.1",
+      "module": "platform-services",
+      "entries": [
+        "server.py",
+        "app/main.js"
+      ],
+      "acceptance": "旧更新入口归入统一服务；GitHub直连/API/空中转顺序及全源失败",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "window-input",
+      "source": "mabisync",
+      "task": "3.1",
+      "module": "game-access",
+      "entries": [
+        "src/MabiSync.Core/GameInput.cs",
+        "src/MabiSync.Core/WindowActivation.cs",
+        "src/MabiSync.Windows/WindowsGamePlatform.cs",
+        "src/MabiSync.Windows/DesktopCoordinates.cs"
+      ],
+      "acceptance": "进程启动身份、窗口句柄复用、移动、DPI/尺寸、最小化恢复；输入需租约",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "emergency-hotkeys",
+      "source": "mabisync",
+      "task": "3.4",
+      "module": "game-access",
+      "entries": [
+        "src/MabiSync.Core/InputRouter.cs",
+        "src/MabiSync.Windows/LocalStopHotkey.cs"
+      ],
+      "acceptance": "F9 优先和冲突迁移；取消拒绝迟到输入并释放工具按键",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "clock-scheduler",
+      "source": "mabisync",
+      "task": "5.1",
+      "module": "synchronization",
+      "entries": [
+        "src/MabiSync.Core/RoomClock.cs",
+        "src/MabiSync.Core/ActionScheduler.cs",
+        "src/MabiSync.Core/DeadlineWaiter.cs"
+      ],
+      "acceptance": "四时间戳、异常延迟、墙钟变化、单调调度和取消与原协议等价",
+      "migrationStatus": "ported"
+    },
+    {
+      "id": "room-client",
+      "source": "mabisync",
+      "task": "5.1",
+      "module": "rooms",
+      "entries": [
+        "src/MabiSync.Client/RoomClient.cs",
+        "src/MabiSync.Client/RoomClient.Preparation.cs"
+      ],
+      "acceptance": "WPF-free WebSocket room client preserves protocol v1 handshake, recovery, preparation, cancellation and monotonic synchronization",
+      "migrationStatus": "ported"
+    },
+    {
+      "id": "room-lifecycle",
+      "source": "mabisync",
+      "task": "5.2",
+      "module": "rooms",
+      "entries": [
+        "src/MabiSync.Client/RoomClient.cs",
+        "src/MabiSync.Client/RoomClient.Preparation.cs",
+        "server/room-server.js"
+      ],
+      "acceptance": "创建/加入/邀请/退出/关闭/恢复、房主权限、身份和服务端未确认关闭",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "room-preparation",
+      "source": "mabisync",
+      "task": "5.3",
+      "module": "rooms",
+      "entries": [
+        "src/MabiSync.Core/RoomSetup.cs",
+        "src/MabiSync.Core/Actions.cs",
+        "src/MabiSync.Core/InstrumentCatalog.cs",
+        "server/room-server.js"
+      ],
+      "acceptance": "表情与合奏分组/顺位/乐器/角色关联/就绪独立；角色变化撤销准备",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "room-commit",
+      "source": "mabisync",
+      "task": "5.4",
+      "module": "synchronization",
+      "entries": [
+        "src/MabiSync.Core/MusicWorkflow.cs",
+        "src/MabiSync.Core/ShortcutText.cs",
+        "src/MabiSync.Client/RoomClient.Preparation.cs",
+        "server/room-server.js"
+      ],
+      "acceptance": "准备/提交屏障、失败成员、重复/迟到动作、epoch、个人偏移冻结及租约冲突",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "tw-music-observation",
+      "source": "mabisync",
+      "task": "5.5",
+      "module": "game-access",
+      "entries": [
+        "src/MabiSync.Core/TwGameObserver.cs",
+        "src/MabiSync.Core/TwGameProtocol.cs",
+        "src/MabiSync.Core/GameTcpStream.cs",
+        "src/MabiSync.Windows/GameObservationCapture.cs",
+        "adapters/tw-20261003-gc-map.json",
+        "adapters/tw-20261015-identity-schema.json"
+      ],
+      "acceptance": "客户端指纹、TCP分段/重传/代次、角色/合奏顺序、共享采样及停止释放",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Providers/TwObservation/TwGameObserver.cs",
+        "src/Providers/TwObservation/TwGameProtocol.cs",
+        "src/Providers/TwObservation/GameTcpStream.cs",
+        "workers/game-observation/GameObservationCapture.cs",
+        "workers/game-observation/ObservationWorkerApplication.cs",
+        "src/Host/Game/GameObservationService.cs",
+        "src/Host/Game/GameObservationFeed.cs",
+        "src/Host/Rooms/RoomSessionManager.Observation.cs"
+      ]
+    },
+    {
+      "id": "music-timeline",
+      "source": "mabisync",
+      "task": "4.5",
+      "module": "music-library",
+      "entries": [
+        "src/MabiSync.Core/MmlTimeline.cs",
+        "src/MabiSync.Core/TwScoreTimeline.cs"
+      ],
+      "acceptance": "MML/观测时间线、整谱/声部周期与曲尾；磁盘导入不生成实际起点",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "music-round-stop",
+      "source": "mabisync",
+      "task": "5.6",
+      "module": "synchronization",
+      "entries": [
+        "src/MabiSync.Core/MusicWorkflow.cs",
+        "server/ensemble-observation.js"
+      ],
+      "acceptance": "manual/duration/first-cycle、短声部、尾音、中断继续和证据失效；重连不补发",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Host/Rooms/RoomRoundEndpoints.cs",
+        "src/Host/Rooms/RoomRoundOperations.cs",
+        "src/Host/Rooms/RoomSessionManager.Rounds.cs",
+        "src/Modules/Rooms/Client/RoomClient.Rounds.cs",
+        "src/RoomServer/Domain/RoomKernel.cs",
+        "src/RoomServer/Domain/RoomObservationRules.cs"
+      ]
+    },
+    {
+      "id": "room-server-tunnel",
+      "source": "mabisync",
+      "task": "5.8",
+      "module": "rooms",
+      "entries": [
+        "server/room-server.js",
+        "server/ensemble-observation.js",
+        "src/MabiSync.Client/QuickTunnel.cs"
+      ],
+      "acceptance": "C#服务与旧Node协议对照；本机建房/局域网/公网隧道仅暴露房间端口（5.9）",
+      "migrationStatus": "mapped",
+      "localEntries": [
+        "src/RoomServer/RoomServerApplication.cs",
+        "src/RoomServer/Domain/RoomKernel.cs",
+        "src/RoomServer/Domain/RoomObservationRules.cs",
+        "src/RoomServer/Transport/RoomWebSocketPeer.cs"
+      ]
+    },
+    {
+      "id": "room-overlay",
+      "source": "mabisync",
+      "task": "7.1",
+      "module": "presentation",
+      "entries": [
+        "src/MabiSync.App/MainWindow.Overlay.cs"
+      ],
+      "acceptance": "成员、顺位、就绪、延迟及曲尾状态映射到同一投影；多前端一致",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Host/Presentation/PresentationService.cs",
+        "src/Host/Presentation/PresentationStateFeed.cs",
+        "src/Contracts/Presentation/PresentationContracts.cs"
+      ]
+    },
+    {
+      "id": "sync-migration-update",
+      "source": "mabisync",
+      "task": "7.3",
+      "module": "rooms",
+      "entries": [
+        "src/MabiSync.Client/GitHubUpdates.cs",
+        "src/MabiSync.App/MainWindow.xaml.cs",
+        "src/MabiSync.App/MainWindow.Input.cs",
+        "src/MabiSync.Core/MusicWorkflow.cs"
+      ],
+      "acceptance": "旧设置/快捷键与版本设置迁移；窗口身份失效；更新由统一后端接管",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Modules/Rooms/Domain/MabiSyncSettingsImport.cs",
+        "src/Modules/Rooms/Persistence/RoomPreferenceStore.cs",
+        "src/Host/DataImports/SettingsImportCoordinator.cs"
+      ]
+    },
+    {
+      "id": "color-context",
+      "source": "color-studio",
+      "task": "6.1",
+      "module": "color",
+      "entries": [
+        "work/studio/business.py",
+        "work/studio/engine.py",
+        "work/studio/screenshot_live.py",
+        "work/studio/native_live/service.py"
+      ],
+      "acceptance": "无Qt运行，两种策略规则快照与阶段事件一致",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "workers/color-engine/mabitool_color/context.py",
+        "workers/color-engine/mabitool_color/ports.py"
+      ]
+    },
+    {
+      "id": "color-rules",
+      "source": "color-studio",
+      "task": "6.5",
+      "module": "color",
+      "entries": [
+        "work/studio/region_priority.py",
+        "work/studio/color_matching.py",
+        "work/studio/color_family.py",
+        "work/studio/candidate_ranking.py",
+        "work/studio/palette.py",
+        "work/studio/planner.py"
+      ],
+      "acceptance": "双/三区域、替代色、HEX/相似、容差、优先级和妥协排序；不存在区域保留设置",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Host/Color/ColorRunOperations.cs",
+        "src/Infrastructure/Persistence/ColorOperationStore.cs",
+        "src/Infrastructure/Workers/ColorWorkerResults.cs",
+        "src/Host/Color/ColorPaletteService.cs",
+        "workers/color-engine/mabitool_color/palette_render.py",
+        "workers/color-engine/tests/test_interaction.py",
+        "workers/color-engine/tests/test_palette.py"
+      ]
+    },
+    {
+      "id": "color-screenshot",
+      "source": "color-studio",
+      "task": "6.3",
+      "module": "color",
+      "entries": [
+        "work/studio/screenshot_live.py",
+        "work/studio/screenshot_search.py",
+        "work/studio/screenshot_geometry.py",
+        "work/studio/platform_win.py",
+        "work/studio/window_target.py",
+        "work/studio/window_dpi.py"
+      ],
+      "acceptance": "截图坐标/DPI、拖拽连续性、取消及截止时间；统一输入代理",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "workers/color-engine/mabitool_color/game_proxy.py",
+        "src/Infrastructure/Workers/ColorGamePort.cs",
+        "src/ModuleSdk/GameInteractionSession.cs"
+      ]
+    },
+    {
+      "id": "color-native",
+      "source": "color-studio",
+      "task": "6.4",
+      "module": "color",
+      "entries": [
+        "work/studio/process_access.py",
+        "work/studio/native_live/read_dye_window.py",
+        "work/studio/native_live/read_dye_window_mapping.py"
+      ],
+      "acceptance": "构建布局匹配才启用精准数据源；截图策略不启用进程读取",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "workers/color-engine/mabitool_color/native_runtime.py",
+        "workers/color-engine/mabitool_color/_vendor/native_live/native_provider_backend.py"
+      ]
+    },
+    {
+      "id": "color-candidates",
+      "source": "color-studio",
+      "task": "6.5",
+      "module": "color",
+      "entries": [
+        "work/studio/best_result.py",
+        "work/studio/destination_policy.py",
+        "work/studio/run_stop.py",
+        "work/studio/native_live/same_session_dye_planner.py",
+        "work/studio/native_live/session_deadline.py"
+      ],
+      "acceptance": "候选绑定本轮/批次/修订，同局重试不延长截止；最佳/上次/当前实测区分；停止无后续输入",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Host/Color/ColorRunOperations.cs",
+        "src/Infrastructure/Persistence/ColorOperationStore.cs",
+        "src/Infrastructure/Workers/ColorWorkerResults.cs",
+        "src/Host/Color/ColorPaletteService.cs",
+        "workers/color-engine/mabitool_color/palette_render.py",
+        "workers/color-engine/tests/test_interaction.py",
+        "workers/color-engine/tests/test_palette.py"
+      ]
+    },
+    {
+      "id": "color-profiles-history",
+      "source": "color-studio",
+      "task": "6.6",
+      "module": "color",
+      "entries": [
+        "work/studio/profile_store.py",
+        "work/studio/result_history.py",
+        "work/studio/session_store.py",
+        "work/studio/screenshot_text.py"
+      ],
+      "acceptance": "方案保存/加载/编辑/删除、历史资产权限、取色/预览；运行快照与编辑隔离",
+      "migrationStatus": "ported"
+    },
+    {
+      "id": "color-runtime",
+      "source": "color-studio",
+      "task": "6.7",
+      "module": "color",
+      "entries": [
+        "work/studio/hotkeys.py",
+        "work/studio/overlay_native.py",
+        "work/studio/business.py"
+      ],
+      "acceptance": "按需加载、缓存/并发限额、热键停止、前端失联取消与保温退出；6.8活动切换",
+      "migrationStatus": "ported"
+    },
+    {
+      "id": "color-migration-update",
+      "source": "color-studio",
+      "task": "7.3",
+      "module": "color",
+      "entries": [
+        "work/studio/updater/manifest.py",
+        "work/studio/updater/trust.py",
+        "work/studio/updater/planner.py",
+        "work/studio/updater/transaction.py",
+        "work/studio/update_bootstrap.py",
+        "work/studio/profile_store.py",
+        "work/studio/result_history.py",
+        "work/studio/strategy_defaults.py",
+        "work/studio/region_priority.py",
+        "work/studio/qt_ui/overlay.py"
+      ],
+      "acceptance": "方案/历史迁移保留算法语义；签名更新参考并入9组统一更新，不保留第二套安装权威源",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Modules/Color/Domain/ColorStudioImport.cs",
+        "src/Modules/Color/Persistence/ColorPreferenceStore.cs",
+        "src/Host/DataImports/SettingsImportCoordinator.cs"
+      ]
+    },
+    {
+      "id": "synccue-provenance",
+      "source": "synccue",
+      "task": "5.1",
+      "module": "synchronization",
+      "entries": [
+        "native/Models/RoomClock.cs",
+        "native/Net/RoomClient.cs",
+        "server/room-server.js",
+        "shared/clock.js",
+        "shared/cue-timeline.js"
+      ],
+      "acceptance": "保留MabiSync上溯来源；房间生命周期与单调计时差异随移植登记",
+      "migrationStatus": "mapped"
+    },
+    {
+      "id": "mabiagent-inventory-layout",
+      "source": "mabiagent",
+      "task": "mabiagent-inventory-module:2.1",
+      "module": "inventory",
+      "entries": [
+        "dotnet/MabiAgent.Capture/ClientLayoutReader.cs",
+        "dotnet/MabiAgent.Capture/ClientInventoryDecoder.cs",
+        "dotnet/MabiAgent.Capture/Protocol.cs"
+      ],
+      "acceptance": "全根全部库存域、三容器、非堆叠实例、装备和乐器、截断/重复/预算校验",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Providers/TwObservation/Inventory/ClientLayoutReader.cs",
+        "src/Providers/TwObservation/Inventory/ClientInventoryDecoder.cs",
+        "src/Providers/TwObservation/Inventory/InventoryWireReader.cs"
+      ]
+    },
+    {
+      "id": "mabiagent-inventory-validity",
+      "source": "mabiagent",
+      "task": "mabiagent-inventory-module:2.3",
+      "module": "inventory",
+      "entries": [
+        "dotnet/MabiAgent.Capture/Inventory.cs",
+        "dotnet/MabiAgent.Capture/GameClientLayoutResolver.cs"
+      ],
+      "acceptance": "完整登录身份、连接/PID复用、缺口与新完整同步",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Providers/TwObservation/Inventory/InventoryProtocolObserver.cs",
+        "src/Host/Game/GameObservationService.Inventory.cs",
+        "tests/Contracts/MabiTool.Host.Tests/SharedInventoryCaptureTests.cs"
+      ]
+    },
+    {
+      "id": "mabiagent-item-catalog",
+      "source": "mabiagent",
+      "task": "mabiagent-inventory-module:3.1",
+      "module": "inventory",
+      "entries": [
+        "dotnet/MabiAgent.Capture/ClientItemCatalogExtractor.cs",
+        "dotnet/MabiAgent.Capture/ClientItemCatalogExtractor.Package.cs",
+        "dotnet/MabiAgent.Capture/ClientItemCatalogExtractor.Reader.cs",
+        "dotnet/MabiAgent.Capture/ClientItemCatalogLocation.cs"
+      ],
+      "acceptance": "全类别名称、实际原名、资源指纹、偏移、变化/取消",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Providers/TwObservation/ItemCatalog/ClientItemCatalogExtractor.cs",
+        "src/Providers/TwObservation/ItemCatalog/ClientItemCatalogExtractor.Package.cs",
+        "src/Providers/TwObservation/ItemCatalog/ClientItemCatalogExtractor.Reader.cs",
+        "src/Providers/TwObservation/ItemCatalog/ClientItemCatalogLocation.cs"
+      ]
+    },
+    {
+      "id": "mabiagent-item-associations",
+      "source": "mabiagent",
+      "task": "mabiagent-inventory-module:3.2",
+      "module": "inventory",
+      "entries": [
+        "dotnet/MabiAgent.Capture/Inventory.cs",
+        "dotnet/MabiAgent.Capture/ItemNameRegistry.Csv.cs",
+        "dotnet/MabiAgent.Capture/LinkedItemCatalog.cs"
+      ],
+      "acceptance": "类别与类型ID、同名歧义、用户确认/清除优先和重启恢复",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Modules/Inventory/Adapters/InventoryHistoryStore.Editing.cs",
+        "src/Modules/Inventory/Adapters/InventoryHistoryStore.Query.cs",
+        "src/Modules/Inventory/Adapters/InventoryHistoryStore.Csv.cs"
+      ]
+    },
+    {
+      "id": "mabiagent-account-items",
+      "source": "mabiagent",
+      "task": "mabiagent-inventory-module:3.3",
+      "module": "inventory",
+      "entries": [
+        "dotnet/MabiAgent.Capture/AccountItemService.cs"
+      ],
+      "acceptance": "账户/角色历史、共享仓只计一次、完整总量与已观察总量",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Modules/Inventory/Adapters/InventoryHistoryStore.cs",
+        "src/Modules/Inventory/Adapters/InventoryHistoryStore.Query.cs",
+        "src/Modules/Inventory/Adapters/InventoryHistoryStore.Csv.cs"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:pages="using:MabiTool.Desktop.Pages"
+             x:Class="MabiTool.Desktop.Pages.PendingPage"
+             x:DataType="pages:PendingPageModel">
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
+      <TextBlock Classes="h1" Text="{Binding Title}" />
+      <TextBlock Classes="body muted" Margin="0,2,0,0" Text="{Binding Scope}" />
+    </StackPanel>
+    <Border Classes="panel">
+      <TextBlock Classes="body muted" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                 Text="{DynamicResource S.PagePending}" />
+    </Border>
+  </DockPanel>
+</UserControl>

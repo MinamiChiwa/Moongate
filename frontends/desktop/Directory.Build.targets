@@ -1,0 +1,8 @@
+<Project>
+  <!-- SkiaSharp 的原生库随包带约 80 MB 的符号文件，运行和测试都用不到，不复制到输出目录。 -->
+  <Target Name="DropNativeSymbols" AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)" Condition="'%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+</Project>

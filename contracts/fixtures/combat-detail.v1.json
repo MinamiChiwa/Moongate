@@ -1,0 +1,39 @@
+{
+  "group": {
+    "key": "18446744073709551615", "name": "测试技能",
+    "amounts": { "actualHp": "0", "shield": "0", "overkill": "0", "unclassified": "18446744073709551615" },
+    "attributedDamage": "18446744073709551615", "eventCount": "1", "hitCount": "1", "criticalCount": "0",
+    "powerfulHitCount": "1", "rapidHitCount": "0", "doubleHitCount": null,
+    "minimumDamage": "18446744073709551615", "maximumDamage": "18446744073709551615",
+    "classificationCounts": { "direct": "1", "indirect": "0", "damageOverTime": "0", "unknown": "0" },
+    "criticalEligibleCount": "1", "mainHitEligibleCount": "1",
+    "breakedHitCount": "1", "breakOccurredCount": "1", "firstAttackCount": "0", "defaultAttackCount": "0", "multiHitCount": null,
+    "elementCounts": { "bleed": "0", "dark": "0", "fire": "1", "holy": "0", "ice": "0", "lightning": "0", "poison": "0", "soul": "0" }
+  },
+  "frame": {
+    "schemaVersion": 1,
+    "source": { "provider": "combat-detail-fixture", "providerVersion": "1", "region": "TW", "gameBuild": "synthetic" },
+    "gameSessionId": "fixture-game", "generation": "1", "sequence": "1",
+    "observedAt": "2026-11-10T00:00:00+00:00", "monotonicMs": 1000,
+    "entities": [
+      { "key": { "gameSessionId": "fixture-game", "observationGeneration": "1", "rawInstanceId": "9007199254740993", "spawnGeneration": "1" },
+        "rawName": "同名怪物", "displayName": "同名怪物", "role": "monster", "ownerKey": null,
+        "ownerConfirmed": false, "inScope": true, "quality": "confirmed",
+        "breakGauge": { "current": 125.5, "maximum": "18446744073709551615", "observedAt": "2026-11-10T00:00:00+00:00", "quality": "confirmed", "stale": false, "reason": null } },
+      { "key": { "gameSessionId": "fixture-game", "observationGeneration": "1", "rawInstanceId": "9007199254740995", "spawnGeneration": "1" },
+        "rawName": "同名怪物", "displayName": "同名怪物", "role": "monster", "ownerKey": null,
+        "ownerConfirmed": false, "inScope": true, "quality": "partial",
+        "breakGauge": { "current": 25.25, "maximum": null, "observedAt": "2026-11-10T00:00:00+00:00", "quality": "partial", "stale": true, "reason": "combat.gap" } }
+    ],
+    "damage": [
+      { "eventId": "fixture-hit", "source": { "provider": "combat-detail-fixture", "providerVersion": "1", "region": "TW", "gameBuild": "synthetic" },
+        "sourceEntity": { "gameSessionId": "fixture-game", "observationGeneration": "1", "rawInstanceId": "18446744073709551615", "spawnGeneration": "1" },
+        "targetEntity": { "gameSessionId": "fixture-game", "observationGeneration": "1", "rawInstanceId": "9007199254740993", "spawnGeneration": "1" },
+        "skillId": "18446744073709551615", "amount": "18446744073709551615", "amountKind": "unclassified",
+        "observedAt": "2026-11-10T00:00:00+00:00", "monotonicMs": 1000, "sequence": "1", "subEventIndex": 0,
+        "critical": false, "hit": true, "quality": "confirmed", "powerfulHit": true, "rapidHit": false, "classification": "direct",
+        "breakedHit": true, "breakOccurred": true, "firstAttack": false, "defaultAttack": false, "elements": ["fire"] }
+    ],
+    "effects": [], "reconciliations": [], "gaps": [], "observationResumed": false, "encounterEnded": false
+  }
+}

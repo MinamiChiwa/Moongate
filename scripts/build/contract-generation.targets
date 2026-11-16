@@ -1,0 +1,50 @@
+<Project>
+  <PropertyGroup>
+    <_ContractRepositoryRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '../..'))</_ContractRepositoryRoot>
+    <_ContractRepositoryPath>$([System.IO.Path]::TrimEndingDirectorySeparator('$(_ContractRepositoryRoot)'))</_ContractRepositoryPath>
+    <_ContractGenerationTargetFile>$(MSBuildThisFileFullPath)</_ContractGenerationTargetFile>
+    <ContractGeneratedRoot Condition="'$(ContractGeneratedRoot)' == ''">$(_ContractRepositoryRoot)artifacts/generated</ContractGeneratedRoot>
+    <_ContractGeneratedPath>$([System.IO.Path]::TrimEndingDirectorySeparator($([System.IO.Path]::GetFullPath('$(ContractGeneratedRoot)'))))</_ContractGeneratedPath>
+    <_ContractOutputList>$(_ContractGeneratedPath)/contracts/.generation.outputs</_ContractOutputList>
+    <_ContractOutputListDigest>$(_ContractGeneratedPath)/contracts/.generation.outputs.sha256</_ContractOutputListDigest>
+    <_ContractCompletionStamp>$(_ContractGeneratedPath)/contracts/.generation.state</_ContractCompletionStamp>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'MabiTool.ContractGenerator'">
+    <ProjectReference Include="$(_ContractRepositoryRoot)scripts/build/ContractGenerator/MabiTool.ContractGenerator.csproj"
+                      ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" Targets="GenerateContracts" />
+    <Compile Include="$(_ContractGeneratedPath)/sdk/csharp/MabiToolClient.g.cs" Link="MabiToolClient.g.cs" />
+  </ItemGroup>
+  <Target Name="ReadContractGenerationOutputs" Condition="'$(MSBuildProjectName)' == 'MabiTool.ContractGenerator'">
+    <GetFileHash Files="$(_ContractOutputList)" Algorithm="SHA256" HashEncoding="hex" Condition="Exists('$(_ContractOutputList)')">
+      <Output TaskParameter="Items" ItemName="_ContractHashedOutputList" />
+    </GetFileHash>
+    <ReadLinesFromFile File="$(_ContractOutputListDigest)" Condition="Exists('$(_ContractOutputListDigest)')">
+      <Output TaskParameter="Lines" ItemName="_ContractSavedOutputListHash" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(_ContractOutputList)" Condition="Exists('$(_ContractOutputList)')">
+      <Output TaskParameter="Lines" ItemName="_ContractRelativeOutput" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <_ContractExpectedOutput Include="@(_ContractRelativeOutput->'$(_ContractGeneratedPath)/%(Identity)')" />
+      <_ContractMissingOutput Include="@(_ContractExpectedOutput)" Condition="!Exists('%(_ContractExpectedOutput.Identity)')" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_ContractActualOutputListHash>@(_ContractHashedOutputList->'%(FileHash)')</_ContractActualOutputListHash>
+      <_ContractExpectedOutputListHash>@(_ContractSavedOutputListHash)</_ContractExpectedOutputListHash>
+      <_ContractOutputsComplete Condition="Exists('$(_ContractOutputListDigest)') and '$(_ContractActualOutputListHash)' != '' and '$(_ContractActualOutputListHash)' == '$(_ContractExpectedOutputListHash)' and '@(_ContractMissingOutput)' == ''">true</_ContractOutputsComplete>
+    </PropertyGroup>
+  </Target>
+  <Target Name="GenerateMissingContracts" Condition="'$(MSBuildProjectName)' == 'MabiTool.ContractGenerator' and '$(_ContractOutputsComplete)' != 'true'">
+    <CallTarget Targets="ExecuteContractGeneration" />
+  </Target>
+  <!-- 完成标记独立于内容未变的产物时间；缺失分支先补齐清单和全部产物。 -->
+  <Target Name="GenerateContracts" Condition="'$(MSBuildProjectName)' == 'MabiTool.ContractGenerator'"
+          DependsOnTargets="Build;ReadContractGenerationOutputs;GenerateMissingContracts"
+          Inputs="$(TargetPath);$(TargetDir)MabiTool.Contracts.dll;$(_ContractRepositoryRoot)contracts/worker/observation-worker.v1.schema.json;$(_ContractGenerationTargetFile)"
+          Outputs="$(_ContractCompletionStamp)">
+    <CallTarget Targets="ExecuteContractGeneration" />
+  </Target>
+  <Target Name="ExecuteContractGeneration" Condition="'$(MSBuildProjectName)' == 'MabiTool.ContractGenerator'">
+    <Exec Command="dotnet &quot;$(TargetPath)&quot; &quot;$(_ContractRepositoryPath)&quot; &quot;$(_ContractGeneratedPath)&quot;" />
+  </Target>
+</Project>

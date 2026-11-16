@@ -1,0 +1,33 @@
+#!/bin/sh
+# 提交前回收可再生的生成物，并检查 artifacts/ 的数量预算。
+# 启用：git config core.hooksPath scripts/hooks
+root=$(git rev-parse --show-toplevel) || exit 1
+cd "$root" || exit 1
+
+python=""
+for candidate in python3 python py; do
+    if command -v "$candidate" >/dev/null 2>&1 &&
+        "$candidate" -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)" >/dev/null 2>&1; then
+        python=$candidate
+        break
+    fi
+done
+if [ -z "$python" ]; then
+    echo "pre-commit: 未找到 Python 3.9+，无法执行生成物清理与预算检查。" >&2
+    echo "pre-commit: 安装 Python 并加入 PATH 后重试；确需跳过请使用 git commit --no-verify。" >&2
+    exit 1
+fi
+
+if ! summary=$("$python" -X utf8 scripts/maintenance/clean-artifacts.py --apply --summary); then
+    echo "pre-commit: 生成物清理失败，提交已中止。" >&2
+    exit 1
+fi
+echo "pre-commit: 生成物清理 $summary"
+
+if ! violations=$("$python" -X utf8 scripts/maintenance/check-artifacts-budget.py --violations-only); then
+    echo "pre-commit: 生成物超出预算，提交已中止。超限目录：" >&2
+    echo "$violations" >&2
+    echo "pre-commit: 运行 clean-artifacts.py --apply 回收或删除不再需要的输出后重试。" >&2
+    exit 1
+fi
+exit 0

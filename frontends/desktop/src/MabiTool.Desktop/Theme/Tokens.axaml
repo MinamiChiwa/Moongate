@@ -1,0 +1,137 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    随主题变化的令牌在 Light 与 Dark 下各有一份，键名相同；样式与页面以 DynamicResource 引用，切换时不重建页面。
+    新增颜色先在两套里各定义一个取值。
+  -->
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="CanvasBrush" Color="#EEF0F6" />
+      <SolidColorBrush x:Key="InkBrush" Color="#161A26" />
+      <!-- 主要按钮悬停时的底色，比 InkBrush 略浅。 -->
+      <SolidColorBrush x:Key="InkHoverBrush" Color="#2A3042" />
+      <SolidColorBrush x:Key="MutedBrush" Color="#4A5165" />
+      <SolidColorBrush x:Key="OnInkBrush" Color="#FFFFFF" />
+
+      <SolidColorBrush x:Key="PanelBrush" Color="#9EFFFFFF" />
+      <SolidColorBrush x:Key="PanelEdgeBrush" Color="#EBFFFFFF" />
+      <SolidColorBrush x:Key="InsetBrush" Color="#80FFFFFF" />
+      <SolidColorBrush x:Key="InsetEdgeBrush" Color="#BFFFFFFF" />
+      <SolidColorBrush x:Key="SelectedBrush" Color="#D9FFFFFF" />
+      <SolidColorBrush x:Key="ControlBrush" Color="#A8FFFFFF" />
+      <SolidColorBrush x:Key="ControlHoverBrush" Color="#E6FFFFFF" />
+      <SolidColorBrush x:Key="ControlEdgeBrush" Color="#F2FFFFFF" />
+      <SolidColorBrush x:Key="RowBrush" Color="#C7FFFFFF" />
+      <SolidColorBrush x:Key="SubRowBrush" Color="#8CFFFFFF" />
+      <SolidColorBrush x:Key="HairlineBrush" Color="#14161A26" />
+      <SolidColorBrush x:Key="TrackBrush" Color="#1A161A26" />
+      <!-- 弹出层的底色：叠在页面之上，完全不透明（96% 时下面的深色文字仍会透出约 4% 的反差），下面的内容不干扰阅读。 -->
+      <SolidColorBrush x:Key="PopupBrush" Color="#FFF8F9FC" />
+
+      <SolidColorBrush x:Key="ConfirmedBrush" Color="#0B6B55" />
+      <SolidColorBrush x:Key="UnknownBrush" Color="#8A5200" />
+      <SolidColorBrush x:Key="StopBrush" Color="#C8281C" />
+      <SolidColorBrush x:Key="StopHoverBrush" Color="#A81F15" />
+      <!-- 窗口右上角“有新版本”的底色与文字（悬停时底色略深）。 -->
+      <SolidColorBrush x:Key="NoticeBrush" Color="#0B6B55" />
+      <SolidColorBrush x:Key="NoticeHoverBrush" Color="#08574A" />
+      <SolidColorBrush x:Key="OnNoticeBrush" Color="#FFFFFF" />
+
+      <RadialGradientBrush x:Key="AmberHaloBrush" Center="96%,14%" GradientOrigin="96%,14%" RadiusX="45%" RadiusY="55%">
+        <GradientStop Offset="0" Color="#66FFBE50" />
+        <GradientStop Offset="1" Color="#00FFBE50" />
+      </RadialGradientBrush>
+      <RadialGradientBrush x:Key="BlueHaloBrush" Center="60%,105%" GradientOrigin="60%,105%" RadiusX="60%" RadiusY="60%">
+        <GradientStop Offset="0" Color="#576E8CFF" />
+        <GradientStop Offset="1" Color="#006E8CFF" />
+      </RadialGradientBrush>
+
+      <BoxShadows x:Key="PanelShadow">inset 0 1 0 0 #FFFFFFFF, inset 0 -1 0 0 #12161A26, 0 10 28 0 #1F28325A</BoxShadows>
+      <!-- 拖动排序时被拽起的侧栏入口。 -->
+      <BoxShadows x:Key="DragShadow">0 4 12 0 #3328325A</BoxShadows>
+      <!-- 合奏反馈横幅与阶段文字的错误语气（StopBrush 在深色面板上对比不足，文字另用这一色）。 -->
+      <SolidColorBrush x:Key="ErrorBrush" Color="#B3261E" />
+      <!-- 通用表格的检索匹配行与当前匹配行。 -->
+      <SolidColorBrush x:Key="TableMatchBrush" Color="#3DFFBE50" />
+      <SolidColorBrush x:Key="TableMatchCurrentBrush" Color="#8CFFBE50" />
+    </ResourceDictionary>
+
+    <!-- 深色沿用同一套玻璃语言：亮线和高光减弱，底部暗线和投影加深。 -->
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="CanvasBrush" Color="#0F1220" />
+      <SolidColorBrush x:Key="InkBrush" Color="#EEF1F8" />
+      <SolidColorBrush x:Key="InkHoverBrush" Color="#D3D8E6" />
+      <SolidColorBrush x:Key="MutedBrush" Color="#A9B1C6" />
+      <SolidColorBrush x:Key="OnInkBrush" Color="#0F1220" />
+
+      <SolidColorBrush x:Key="PanelBrush" Color="#12FFFFFF" />
+      <SolidColorBrush x:Key="PanelEdgeBrush" Color="#24FFFFFF" />
+      <SolidColorBrush x:Key="InsetBrush" Color="#0DFFFFFF" />
+      <SolidColorBrush x:Key="InsetEdgeBrush" Color="#17FFFFFF" />
+      <SolidColorBrush x:Key="SelectedBrush" Color="#24FFFFFF" />
+      <SolidColorBrush x:Key="ControlBrush" Color="#17FFFFFF" />
+      <SolidColorBrush x:Key="ControlHoverBrush" Color="#29FFFFFF" />
+      <SolidColorBrush x:Key="ControlEdgeBrush" Color="#29FFFFFF" />
+      <SolidColorBrush x:Key="RowBrush" Color="#1AFFFFFF" />
+      <SolidColorBrush x:Key="SubRowBrush" Color="#0FFFFFFF" />
+      <SolidColorBrush x:Key="HairlineBrush" Color="#14FFFFFF" />
+      <SolidColorBrush x:Key="TrackBrush" Color="#1FFFFFFF" />
+      <SolidColorBrush x:Key="PopupBrush" Color="#FF1A1E2E" />
+
+      <SolidColorBrush x:Key="ConfirmedBrush" Color="#4FD1A5" />
+      <SolidColorBrush x:Key="UnknownBrush" Color="#F2B84B" />
+      <SolidColorBrush x:Key="StopBrush" Color="#C8281C" />
+      <SolidColorBrush x:Key="StopHoverBrush" Color="#DD3A2D" />
+      <SolidColorBrush x:Key="NoticeBrush" Color="#4FD1A5" />
+      <SolidColorBrush x:Key="NoticeHoverBrush" Color="#7ADDBB" />
+      <SolidColorBrush x:Key="OnNoticeBrush" Color="#0F1220" />
+
+      <!-- 深色背景统一为冷色：右上环境光晕 #35B6FF 20%，底部环境光晕 #6E5BFF 18%；左上主光晕见 DarkMainHaloBrush。 -->
+      <RadialGradientBrush x:Key="AmberHaloBrush" Center="96%,14%" GradientOrigin="96%,14%" RadiusX="45%" RadiusY="55%">
+        <GradientStop Offset="0" Color="#3335B6FF" />
+        <GradientStop Offset="1" Color="#0035B6FF" />
+      </RadialGradientBrush>
+      <RadialGradientBrush x:Key="BlueHaloBrush" Center="60%,105%" GradientOrigin="60%,105%" RadiusX="60%" RadiusY="60%">
+        <GradientStop Offset="0" Color="#2E6E5BFF" />
+        <GradientStop Offset="1" Color="#006E5BFF" />
+      </RadialGradientBrush>
+
+      <BoxShadows x:Key="PanelShadow">inset 0 1 0 0 #38FFFFFF, inset 0 -1 0 0 #59000000, 0 10 28 0 #73000000</BoxShadows>
+      <BoxShadows x:Key="DragShadow">0 4 12 0 #80000000</BoxShadows>
+      <SolidColorBrush x:Key="ErrorBrush" Color="#FF8A80" />
+      <SolidColorBrush x:Key="TableMatchBrush" Color="#33F2B84B" />
+      <SolidColorBrush x:Key="TableMatchCurrentBrush" Color="#66F2B84B" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+
+  <!-- 深色主题的左上主光晕：不随模块色调变化，固定为 #3F6BFF，中心 38%，向外渐隐。位置与大小同浅色的模块光晕。 -->
+  <RadialGradientBrush x:Key="DarkMainHaloBrush" Center="8%,6%" GradientOrigin="8%,6%" RadiusX="55%" RadiusY="65%">
+    <GradientStop Offset="0" Color="#613F6BFF" />
+    <GradientStop Offset="1" Color="#003F6BFF" />
+  </RadialGradientBrush>
+
+  <!-- 模块色调不随主题变化；放在色调底色上的文字一律用白色。 -->
+  <SolidColorBrush x:Key="CombatBrush" Color="#D9502F" />
+  <SolidColorBrush x:Key="SelfEffectBrush" Color="#2A6FD6" />
+  <SolidColorBrush x:Key="TargetEffectBrush" Color="#6F51E0" />
+  <SolidColorBrush x:Key="RecordBrush" Color="#4B5563" />
+  <SolidColorBrush x:Key="ShellBrush" Color="#5F6B85" />
+  <SolidColorBrush x:Key="RoomsBrush" Color="#6F51E0" />
+  <SolidColorBrush x:Key="OverlayBrush" Color="#2A6FD6" />
+  <!-- 浮窗元件的锁图标：盖在游戏画面上，外观固定，不随主题变化。解锁时底色用 OverlayBrush。 -->
+  <SolidColorBrush x:Key="OverlayLockBrush" Color="#CC121624" />
+  <SolidColorBrush x:Key="OverlayLockEdgeBrush" Color="#80FFFFFF" />
+  <SolidColorBrush x:Key="OverlayLockGlyphBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="InventoryBrush" Color="#0E8C7D" />
+  <!-- 染色页的屏幕吸管：盖在冻结画面上，外观固定，取值同原工具 Eyedropper.qml。 -->
+  <SolidColorBrush x:Key="EyedropperLineBrush" Color="#B3FFFFFF" />
+  <SolidColorBrush x:Key="EyedropperCapsuleBrush" Color="#F2262A33" />
+  <SolidColorBrush x:Key="EyedropperCapsuleEdgeBrush" Color="#33FFFFFF" />
+  <SolidColorBrush x:Key="EyedropperSwatchEdgeBrush" Color="#59FFFFFF" />
+  <SolidColorBrush x:Key="EyedropperTextBrush" Color="#F2F4F8" />
+  <!-- 浮窗元件内的文字层次与状态色：盖在深色外框上，外观固定，不随主题变化。 -->
+  <SolidColorBrush x:Key="OverlayMutedBrush" Color="#D5DAE8" />
+  <SolidColorBrush x:Key="OverlayAccentBrush" Color="#FFD08A" />
+  <SolidColorBrush x:Key="OverlayReadyBrush" Color="#6EE7B7" />
+  <SolidColorBrush x:Key="OverlayWaitingBrush" Color="#FF8A80" />
+</ResourceDictionary>

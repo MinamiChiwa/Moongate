@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <InternalsVisibleTo Include="MabiTool.Host" />
+    <InternalsVisibleTo Include="MabiTool.Updater" />
+    <InternalsVisibleTo Include="MabiTool.Launcher" />
+    <InternalsVisibleTo Include="MabiTool.Host.Tests" />
+    <InternalsVisibleTo Include="MabiTool.Updates.Tests" />
+    <InternalsVisibleTo Include="MabiTool.CombatObservation.Tests" />
+    <InternalsVisibleTo Include="MabiTool.MusicLibrary.Tests" />
+    <InternalsVisibleTo Include="MabiTool.PersistenceProbe" />
+    <InternalsVisibleTo Include="MabiTool.BackendRuntimeProbe" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <ProjectReference Include="../ModuleSdk/MabiTool.ModuleSdk.csproj" />
+  </ItemGroup>
+</Project>

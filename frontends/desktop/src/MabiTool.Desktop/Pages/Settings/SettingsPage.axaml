@@ -1,0 +1,310 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:settings="using:MabiTool.Desktop.Pages.Settings"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Pages.Settings.SettingsPage"
+             x:DataType="settings:SettingsPageModel"
+             controls:Card.PageId="settings">
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
+      <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+      <DockPanel Margin="{DynamicResource TitleReserve}">
+        <controls:CardGridEditBar DockPanel.Dock="Right" Target="{Binding #CardsGrid}" VerticalAlignment="Center" Margin="12,0,8,0" />
+        <TextBlock Classes="h1" Margin="0" Text="{DynamicResource T.Title}" />
+      </DockPanel>
+      <TextBlock Classes="body muted" Margin="0,4,0,0" Text="{DynamicResource T.Status}" />
+    </StackPanel>
+
+    <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <!-- 卡片网格：六张卡片都是半宽随内容，两张一行、同一行等高；顺序与尺寸档在“编辑布局”里调整。 -->
+      <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
+        <controls:Card x:Name="LanguagePanel" CardId="interface" Title="{DynamicResource T.Interface}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="10">
+            <controls:PairRow>
+              <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource S.Language}" />
+              <controls:SelectionBorder Classes="segmented">
+                <StackPanel Orientation="Horizontal">
+                  <Button x:Name="SettingsSimplified" Classes="segment" Classes.active="{Binding IsSimplified}"
+                          Command="{Binding UseSimplifiedCommand}" Content="简体中文" />
+                  <Button x:Name="SettingsTraditional" Classes="segment" Classes.active="{Binding IsTraditional}"
+                          Command="{Binding UseTraditionalCommand}" Content="繁體中文" />
+                </StackPanel>
+              </controls:SelectionBorder>
+            </controls:PairRow>
+            <TextBlock Classes="note" Text="{DynamicResource T.LanguageHint}" />
+            <controls:PairRow>
+              <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource T.Theme}" />
+              <controls:SelectionBorder Classes="segmented">
+                <StackPanel Orientation="Horizontal">
+                  <Button x:Name="ThemeLightButton" Classes="segment" Classes.active="{Binding ThemeLight}"
+                          Command="{Binding ThemeCommand}" CommandParameter="Light" Content="{DynamicResource T.ThemeLight}" />
+                  <Button x:Name="ThemeDarkButton" Classes="segment" Classes.active="{Binding ThemeDark}"
+                          Command="{Binding ThemeCommand}" CommandParameter="Dark" Content="{DynamicResource T.ThemeDark}" />
+                  <Button x:Name="ThemeSystemButton" Classes="segment" Classes.active="{Binding ThemeSystem}"
+                          Command="{Binding ThemeCommand}" CommandParameter="System" Content="{DynamicResource T.ThemeSystem}" />
+                </StackPanel>
+              </controls:SelectionBorder>
+            </controls:PairRow>
+            <controls:PairRow>
+              <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource T.Motion}" />
+              <controls:SelectionBorder Classes="segmented">
+                <StackPanel Orientation="Horizontal">
+                  <Button x:Name="MotionOnButton" Classes="segment" Classes.active="{Binding MotionOn}"
+                          Command="{Binding MotionOnCommand}" Content="{DynamicResource T.MotionOn}" />
+                  <Button x:Name="MotionOffButton" Classes="segment" Classes.active="{Binding MotionOff}"
+                          Command="{Binding MotionOffCommand}" Content="{DynamicResource T.MotionOff}" />
+                </StackPanel>
+              </controls:SelectionBorder>
+            </controls:PairRow>
+            <TextBlock Classes="note" Text="{DynamicResource T.MotionHint}" />
+          </StackPanel>
+        </controls:Card>
+
+        <!-- 抓包：全局设置，合奏、DPS检测、背包等功能共用同一次抓包。改动即保存；未连接后端时停用并写明原因。 -->
+        <controls:Card x:Name="CapturePanel" CardId="capture" Title="{DynamicResource T.Capture}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="10">
+            <!-- 未抓包的原因是 Npcap 缺失时状态右侧给出“查看指引”，打开安装指引弹出层。 -->
+            <DockPanel>
+              <Button DockPanel.Dock="Right" x:Name="NpcapGuideButton" Classes="chip" Margin="10,0,0,0" VerticalAlignment="Top"
+                      Content="{DynamicResource S.NpcapGuide}" Command="{Binding NpcapGuideCommand}" IsVisible="{Binding CaptureNpcapMissing}"
+                      AutomationProperties.Name="{DynamicResource S.NpcapGuide}" />
+              <TextBlock x:Name="CaptureStatusText" Classes="body" TextWrapping="Wrap" Text="{Binding CaptureStatus}"
+                         Classes.confirmed="{Binding CaptureRunning}" Classes.unconfirmed="{Binding !CaptureRunning}" />
+            </DockPanel>
+            <TextBlock x:Name="CaptureUnavailableNote" Classes="note" Text="{DynamicResource T.CaptureUnavailable}" IsVisible="{Binding CaptureUnavailable}" />
+            <StackPanel x:Name="CaptureRows" Spacing="10" IsEnabled="{Binding CanEditCapture}" IsVisible="{Binding HasCapture}">
+              <controls:PairRow>
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource T.CaptureAuto}" />
+                <controls:SelectionBorder Classes="segmented">
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="CaptureOnButton" Classes="segment" Classes.active="{Binding CaptureOn}"
+                            Command="{Binding CaptureCommand}" CommandParameter="on" Content="{DynamicResource T.On}" />
+                    <Button x:Name="CaptureOffButton" Classes="segment" Classes.active="{Binding CaptureOff}"
+                            Command="{Binding CaptureCommand}" CommandParameter="off" Content="{DynamicResource T.Off}" />
+                  </StackPanel>
+                </controls:SelectionBorder>
+              </controls:PairRow>
+              <TextBlock Classes="note" Text="{DynamicResource T.CaptureAutoHint}" />
+              <controls:PairRow>
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource T.CaptureChannel}" />
+                <controls:SelectionBorder Classes="segmented">
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="ChannelAutoButton" Classes="segment" Classes.active="{Binding ChannelAutomatic}"
+                            Command="{Binding ChannelModeCommand}" CommandParameter="automatic" Content="{DynamicResource T.ChannelAuto}" />
+                    <Button x:Name="ChannelManualButton" Classes="segment" Classes.active="{Binding ChannelManual}"
+                            Command="{Binding ChannelModeCommand}" CommandParameter="manual" Content="{DynamicResource T.ChannelManual}" />
+                  </StackPanel>
+                </controls:SelectionBorder>
+              </controls:PairRow>
+              <TextBlock x:Name="SavedChannelText" Classes="note strong" TextWrapping="Wrap" Text="{Binding SavedChannel}" IsVisible="{Binding HasSavedChannel}" />
+              <TextBlock Classes="note" Text="{DynamicResource T.ChannelHint}" />
+              <Button x:Name="ListChannelsButton" HorizontalAlignment="Left" Command="{Binding ListChannelsCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Panel Width="10" VerticalAlignment="Center">
+                    <Path Data="M0,0 L5,4 L0,8 Z" Fill="{DynamicResource MutedBrush}" IsVisible="{Binding !ChannelsExpanded}" />
+                    <Path Data="M0,1 L8,1 L4,6 Z" Fill="{DynamicResource MutedBrush}" IsVisible="{Binding ChannelsExpanded}" />
+                  </Panel>
+                  <TextBlock Text="{DynamicResource T.ListChannels}" IsVisible="{Binding !ChannelsExpanded}" />
+                  <TextBlock Text="{DynamicResource T.HideChannels}" IsVisible="{Binding ChannelsExpanded}" />
+                </StackPanel>
+              </Button>
+              <controls:ExpandPanel IsExpanded="{Binding HasCaptureChannels, Mode=OneWay}">
+              <ItemsControl x:Name="CaptureChannelList" controls:StableItems.Source="{Binding CaptureChannels}"
+                            AutomationProperties.Name="{DynamicResource T.ChannelList}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="settings:CaptureChannelRow">
+                    <Button Classes="chip" Classes.active="{Binding Current}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="0,0,0,6"
+                            Command="{Binding $parent[UserControl].((settings:SettingsPageModel)DataContext).ChooseChannelCommand}" CommandParameter="{Binding}">
+                      <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              </controls:ExpandPanel>
+              <StackPanel x:Name="DetectionPanel" Spacing="6">
+                <TextBlock Classes="name strong" Text="{DynamicResource T.Debug}" />
+                <TextBlock Classes="note" Text="{DynamicResource T.DebugHint}" />
+                <WrapPanel>
+                  <Button x:Name="DetectionStartButton" Margin="0,0,8,6" Content="{DynamicResource T.DebugStart}"
+                          Command="{Binding StartDetectionCommand}" IsVisible="{Binding !DetectionRunning}" IsEnabled="{Binding CanStartDetection}" />
+                  <Button x:Name="DetectionCancelButton" Margin="0,0,8,6" Content="{DynamicResource T.DebugCancel}"
+                          Command="{Binding CancelDetectionCommand}" IsVisible="{Binding DetectionRunning}" />
+                  <Button x:Name="DetectionConfirmButton" Classes="primary" Margin="0,0,8,6" Content="{DynamicResource T.DebugConfirm}"
+                          Command="{Binding ConfirmDetectionCommand}" IsVisible="{Binding CanConfirmDetection}" />
+                </WrapPanel>
+                <TextBlock x:Name="DetectionMessageText" Classes="note" TextWrapping="Wrap" Text="{Binding DetectionMessage}" IsVisible="{Binding HasDetectionMessage}"
+                           Classes.confirmed="{Binding !DetectionMessageFailed}" Classes.error="{Binding DetectionMessageFailed}" />
+                <TextBlock x:Name="DetectionText" Classes="note" TextWrapping="Wrap" Text="{Binding DetectionText}" IsVisible="{Binding HasDetection}" />
+                <ItemsControl x:Name="DetectionList" controls:StableItems.Source="{Binding DetectionRows}" IsVisible="{Binding HasDetection}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="settings:DetectionRow">
+                      <controls:PairRow Margin="0,0,0,4">
+                        <TextBlock Classes="muted" Classes.strong="{Binding Winner}" TextWrapping="Wrap" Text="{Binding Name}" />
+                        <TextBlock Classes="body" Classes.confirmed="{Binding Winner}" Text="{Binding Traffic}" />
+                      </controls:PairRow>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+              <controls:PairRow>
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource T.AutoWindow}" />
+                <controls:SelectionBorder Classes="segmented">
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="AutoWindowOnButton" Classes="segment" Classes.active="{Binding AutoWindowOn}"
+                            Command="{Binding AutoWindowCommand}" CommandParameter="on" Content="{DynamicResource T.On}" />
+                    <Button x:Name="AutoWindowOffButton" Classes="segment" Classes.active="{Binding AutoWindowOff}"
+                            Command="{Binding AutoWindowCommand}" CommandParameter="off" Content="{DynamicResource T.Off}" />
+                  </StackPanel>
+                </controls:SelectionBorder>
+              </controls:PairRow>
+              <TextBlock Classes="note" Text="{DynamicResource T.AutoWindowHint}" />
+            </StackPanel>
+            <TextBlock x:Name="CaptureMessageText" Classes="note" TextWrapping="Wrap" Text="{Binding CaptureMessage}" IsVisible="{Binding HasCaptureMessage}" />
+          </StackPanel>
+        </controls:Card>
+
+        <controls:Card x:Name="ShortcutsPanel" CardId="shortcuts" Title="{DynamicResource T.Shortcuts}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="note" Text="{DynamicResource T.NoShortcuts}" IsVisible="{Binding NoShortcuts}" />
+            <ItemsControl x:Name="ShortcutList" controls:StableItems.Source="{Binding Lines}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="settings:ShortcutLine">
+                  <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1" Padding="0,7">
+                    <StackPanel Spacing="4">
+                      <DockPanel>
+                        <Button DockPanel.Dock="Right" Classes="chip" Margin="10,0,0,0" VerticalAlignment="Center"
+                                Content="{DynamicResource T.ChangeShortcut}" IsVisible="{Binding Idle}" IsEnabled="{Binding CanStart}"
+                                Command="{Binding $parent[UserControl].((settings:SettingsPageModel)DataContext).RecordCommand}"
+                                CommandParameter="{Binding Row.Id}" />
+                        <Button DockPanel.Dock="Right" Classes="chip" Margin="10,0,0,0" VerticalAlignment="Center"
+                                Content="{DynamicResource T.CancelShortcut}" IsVisible="{Binding Recording}"
+                                Command="{Binding $parent[UserControl].((settings:SettingsPageModel)DataContext).CancelRecordCommand}" />
+                        <controls:ReflowPanel MinItemWidth="110" Spacing="12">
+                          <TextBlock Classes="name strong" Text="{Binding Row.Action}" />
+                          <TextBlock Classes="name" Text="{Binding Row.Chord}" IsVisible="{Binding Idle}" />
+                          <TextBlock Classes="body unconfirmed" FontWeight="Bold" Text="{DynamicResource T.PressKeys}"
+                                     IsVisible="{Binding Recording}" />
+                          <TextBlock Classes="body" FontSize="13" Text="{Binding Row.State}"
+                                     Classes.confirmed="{Binding Row.Registered}" Classes.unconfirmed="{Binding !Row.Registered}" />
+                        </controls:ReflowPanel>
+                      </DockPanel>
+                      <TextBlock Classes="note" Text="{Binding Message}" IsVisible="{Binding HasMessage}"
+                                 Classes.unconfirmed="{Binding Failed}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Classes="note" Text="{DynamicResource T.ShortcutHint}" />
+          </StackPanel>
+        </controls:Card>
+
+        <controls:Card x:Name="UpdatePanel" CardId="update" Title="{DynamicResource T.Update}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="8">
+            <ItemsControl controls:StableItems.Source="{Binding Data.Update}" />
+            <!-- 更新策略：改动即保存；未连接或后端没有提供策略时停用。没有自动下载、自动安装的选项。 -->
+            <StackPanel x:Name="UpdatePolicyRows" Spacing="10" IsEnabled="{Binding HasPolicy}">
+              <controls:PairRow>
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource T.AutoCheck}" />
+                <controls:SelectionBorder Classes="segmented">
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="AutoCheckOnButton" Classes="segment" Classes.active="{Binding AutoCheckOn}"
+                            Command="{Binding AutoCheckCommand}" CommandParameter="on" Content="{DynamicResource T.On}"
+                            AutomationProperties.Name="{DynamicResource T.AutoCheckOn}" />
+                    <Button x:Name="AutoCheckOffButton" Classes="segment" Classes.active="{Binding AutoCheckOff}"
+                            Command="{Binding AutoCheckCommand}" CommandParameter="off" Content="{DynamicResource T.Off}"
+                            AutomationProperties.Name="{DynamicResource T.AutoCheckOff}" />
+                  </StackPanel>
+                </controls:SelectionBorder>
+              </controls:PairRow>
+              <controls:PairRow IsEnabled="{Binding CanEditInterval}">
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource T.CheckInterval}" />
+                <controls:SelectionBorder Classes="segmented">
+                  <ItemsControl x:Name="IntervalChoices" controls:StableItems.Source="{Binding IntervalChoices}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="settings:PolicyChoice">
+                        <Button Classes="segment" Classes.active="{Binding Active}" Content="{Binding Label}"
+                                AutomationProperties.Name="{Binding AccessibleName}"
+                                Command="{Binding $parent[UserControl].((settings:SettingsPageModel)DataContext).IntervalCommand}"
+                                CommandParameter="{Binding Value}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </controls:SelectionBorder>
+              </controls:PairRow>
+              <!--
+                下载限速：不限速或自定义。不限速保存为空的带宽上限；自定义是数字加单位，按回车、离开输入框或切换单位时提交，
+                从不限速改选自定义时沿用输入框里的值；不合法时不发送，下方写出当前单位下的范围。
+              -->
+              <StackPanel Spacing="4">
+                <controls:PairRow>
+                  <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource T.DownloadLimit}" />
+                  <controls:SelectionBorder Classes="segmented">
+                    <StackPanel Orientation="Horizontal">
+                      <Button x:Name="LimitUnlimitedButton" Classes="segment" Classes.active="{Binding LimitUnlimited}"
+                              IsEnabled="{Binding CanChooseUnlimited}" Command="{Binding LimitModeCommand}" CommandParameter="unlimited"
+                              Content="{DynamicResource T.LimitUnlimited}" />
+                      <Button x:Name="LimitCustomButton" Classes="segment" Classes.active="{Binding LimitCustom}"
+                              Command="{Binding LimitModeCommand}" CommandParameter="custom" Content="{DynamicResource T.LimitCustom}" />
+                    </StackPanel>
+                  </controls:SelectionBorder>
+                </controls:PairRow>
+                <WrapPanel HorizontalAlignment="Right" IsVisible="{Binding LimitCustom}">
+                  <TextBox x:Name="LimitBox" Classes="field" Width="120" Margin="0,0,8,0" VerticalAlignment="Center"
+                           Text="{Binding LimitText}" AutomationProperties.Name="{DynamicResource T.DownloadLimit}"
+                           KeyDown="OnLimitKeyDown" LostFocus="OnLimitLostFocus" />
+                  <controls:SelectionBorder Classes="segmented" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                      <Button x:Name="LimitKilobytesButton" Classes="segment" Classes.active="{Binding LimitInKilobytes}"
+                              Command="{Binding LimitUnitCommand}" CommandParameter="KB" Content="KB/s"
+                              AutomationProperties.Name="{DynamicResource T.LimitInKilobytes}" />
+                      <Button x:Name="LimitMegabytesButton" Classes="segment" Classes.active="{Binding LimitInMegabytes}"
+                              Command="{Binding LimitUnitCommand}" CommandParameter="MB" Content="MB/s"
+                              AutomationProperties.Name="{DynamicResource T.LimitInMegabytes}" />
+                    </StackPanel>
+                  </controls:SelectionBorder>
+                </WrapPanel>
+                <!--
+                  范围说明的位置在显示自定义限速时一直留着（下面透明的同一段文字撑出高度），输入框失焦提交时说明出现或消失，
+                  下方的按钮不被挤开。
+                -->
+                <Panel IsVisible="{Binding LimitCustom}">
+                  <TextBlock Classes="note" Text="{Binding LimitRange}" Opacity="0" IsHitTestVisible="False"
+                             AutomationProperties.AccessibilityView="Raw" />
+                  <TextBlock x:Name="LimitRangeNote" Classes="note unconfirmed" Text="{Binding LimitRange}"
+                             IsVisible="{Binding LimitInvalid}" />
+                </Panel>
+              </StackPanel>
+            </StackPanel>
+            <TextBlock x:Name="PolicyUnavailableNote" Classes="note" Text="{DynamicResource T.PolicyUnavailable}" IsVisible="{Binding PolicyUnavailable}" />
+            <TextBlock Classes="note" Text="{DynamicResource T.UpdateHint}" />
+            <WrapPanel>
+              <Button Margin="0,0,8,6" Content="{DynamicResource T.CheckUpdate}" Command="{Binding IntentCommand}"
+                      CommandParameter="update.check" IsEnabled="{Binding Data.CanCheckUpdate}" />
+              <Button Margin="0,0,8,6" Content="{DynamicResource T.DownloadUpdate}" Command="{Binding IntentCommand}"
+                      CommandParameter="update.download" IsVisible="{Binding Data.CanDownloadUpdate}" />
+              <Button Classes="primary" Margin="0,0,0,6" Content="{DynamicResource T.InstallUpdate}" Command="{Binding IntentCommand}"
+                      CommandParameter="update.install" IsVisible="{Binding Data.CanInstallUpdate}" />
+            </WrapPanel>
+          </StackPanel>
+        </controls:Card>
+
+        <controls:Card x:Name="BackendPanel" CardId="backend" Title="{DynamicResource T.Backend}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="8">
+            <ItemsControl controls:StableItems.Source="{Binding Data.Backend}" />
+          </StackPanel>
+        </controls:Card>
+
+        <controls:Card x:Name="AboutPanel" CardId="about" Title="{DynamicResource T.About}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="8">
+            <ItemsControl controls:StableItems.Source="{Binding About}" />
+          </StackPanel>
+        </controls:Card>
+      </controls:CardGrid>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

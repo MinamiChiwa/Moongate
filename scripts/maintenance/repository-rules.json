@@ -1,0 +1,144 @@
+{
+  "allowedRootFiles": [
+    ".editorconfig",
+    ".gitattributes",
+    ".gitignore",
+    "Directory.Build.props",
+    "Directory.Packages.props",
+    "LICENSE",
+    "MabiTool.slnx",
+    "README.md",
+    "README.zh-TW.md",
+    "THIRD_PARTY_NOTICES.md",
+    "global.json"
+  ],
+  "allowedRoots": [
+    "src",
+    "tests",
+    "workers",
+    "frontends",
+    "contracts",
+    "scripts",
+    "packaging",
+    "docs",
+    ".github"
+  ],
+  "sourceAreas": [
+    "Host",
+    "Contracts",
+    "ModuleSdk",
+    "Platform.Windows",
+    "Infrastructure",
+    "Modules",
+    "Providers",
+    "RoomServer",
+    "Updater",
+    "Launcher",
+    "PortableLauncher"
+  ],
+  "testAreas": [
+    "Contracts",
+    "Domain",
+    "Providers",
+    "Migration",
+    "Performance",
+    "EndToEnd"
+  ],
+  "scriptAreas": [
+    "build",
+    "release",
+    "maintenance",
+    "hooks"
+  ],
+  "legacyFiles": [],
+  "markdownFiles": [
+    "README.md",
+    "README.zh-TW.md",
+    "THIRD_PARTY_NOTICES.md",
+    "docs/development.md",
+    "docs/extensions.md",
+    "docs/release-notes-0.1.0.md",
+    "docs/release-notes-0.1.0.zh-TW.md",
+    "docs/user-guide.md",
+    "docs/user-guide.zh-TW.md"
+  ],
+  "generatedSegments": [
+    "artifacts",
+    "bin",
+    "obj",
+    "node_modules",
+    ".venv",
+    "__pycache__",
+    ".vs"
+  ],
+  "maxFileBytes": 5242880,
+  "largeFileExceptions": [],
+  "artifactPolicy": {
+    "protectRecentHours": 2,
+    "regenerable": [
+      "artifacts/packages",
+      "artifacts/test-data",
+      "artifacts/tmp",
+      "artifacts/pending-cleanup"
+    ],
+    "generated": {
+      "root": "artifacts/generated",
+      "registered": [
+        "contracts",
+        "sdk"
+      ]
+    },
+    "latestOnly": [
+      "artifacts/build"
+    ],
+    "accumulatingNamePattern": "^(?:[0-9a-fA-F]{16,}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|\\d{8}T?\\d{4,6}Z?(?:[-_].*)?)$",
+    "evidence": [
+      "artifacts/test-results",
+      "artifacts/reports",
+      "artifacts/probes"
+    ],
+    "retained": [],
+    "evidenceExtensions": [
+      ".trx",
+      ".json",
+      ".log",
+      ".md",
+      ".txt",
+      ".csv"
+    ],
+    "payloadSegments": [
+      "bin",
+      "obj",
+      "image",
+      "images",
+      "installation",
+      "versions",
+      "staging",
+      "components",
+      "packages",
+      "package",
+      "publish",
+      "dotnet-runtime",
+      "node_modules",
+      "tmp"
+    ],
+    "payloadExtensions": [
+      ".dll",
+      ".exe"
+    ],
+    "referenceSources": [
+      "docs",
+      "contracts"
+    ],
+    "worktrees": ".claude/worktrees",
+    "agentWorktreePattern": "^agent-"
+  },
+  "cleanupQueue": "artifacts/pending-cleanup",
+  "cleanTargets": [
+    "artifacts/build",
+    "artifacts/generated",
+    "artifacts/test-results",
+    "artifacts/reports",
+    "artifacts/tmp"
+  ]
+}

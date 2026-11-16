@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>MabiTool 本机 API 与 SSE 的 C# 客户端。</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Contracts/MabiTool.Contracts.csproj" />
+  </ItemGroup>
+  <Import Project="../../../scripts/build/contract-generation.targets" />
+</Project>

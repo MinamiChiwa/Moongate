@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "provenance": "Synthetic protocol messages adapted from MabiSync room protocol v1 tests. No account, room secret, or real participant identity is included.",
+  "protocolVersion": 1,
+  "serverEpoch": "fixture-epoch-01",
+  "messages": [
+    {
+      "direction": "server-to-client",
+      "message": {
+        "type": "hello",
+        "product": "MabiSync",
+        "protocolVersion": 1,
+        "serverEpoch": "fixture-epoch-01"
+      }
+    },
+    {
+      "direction": "client-to-server",
+      "message": {
+        "type": "hello",
+        "product": "MabiSync",
+        "protocolVersion": 1
+      }
+    },
+    {
+      "direction": "server-to-client",
+      "message": {
+        "type": "hello-accepted",
+        "serverEpoch": "fixture-epoch-01"
+      }
+    },
+    {
+      "direction": "client-to-server",
+      "message": {
+        "type": "sync",
+        "id": 1,
+        "t1": 1000.0
+      }
+    },
+    {
+      "direction": "server-to-client",
+      "message": {
+        "type": "sync",
+        "id": 1,
+        "t1": 1000.0,
+        "t2": 1012.0,
+        "t3": 1013.0,
+        "serverEpoch": "fixture-epoch-01"
+      }
+    }
+  ]
+}

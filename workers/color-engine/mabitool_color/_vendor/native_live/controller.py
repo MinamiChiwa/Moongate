@@ -1,0 +1,1722 @@
+"""Bounded user-goal controller; IO owns reads and actual input, never apply."""
+import copy,json,math,time,traceback
+import inspect
+import numpy as np
+from mabitool_color._vendor.native_input_response import InputGeometry,replay_native_route
+from mabitool_color._vendor.native_palette_search import PoseGrid
+from mabitool_color._vendor.native_palette_scoring import score_native_pose
+from mabitool_color._vendor.hex_refinement import score_codes
+from mabitool_color._vendor.color_matching import MATCHING_POLICY
+from mabitool_color._vendor.refinement_policy import RefinementPolicy,compare_refinement,recovery_rank
+from .same_session_dye_planner import (normalize_target_rules,bind_planning_context,assess_feedback,
+    plan_from_checkpoint,validate_plan_reference,assess_native_feedback,_frames,EARLY_TIMER_GRACE_SECONDS,EXECUTION_RESERVE_SECONDS,
+    audit_candidate_endpoint,observation_reference_fingerprint,_fresh)
+from .read_dye_input_backend import input_backend_binding
+from .project_closed_loop_io import validate_research_gesture,validate_retry_reset_route,InputNotStarted
+from .dye_visual_readiness import VisualNotReady
+from .compromise import rebase_compromise_plan,observed_quality,predicted_quality,quality_fields
+from .refinement import find_refinement,find_recovery,_endpoint_checkpoint
+from mabitool_color._vendor.native_input_route_search import _needed
+from mabitool_color._vendor.dye_regions import session_region_count,bind_region_rules
+from .candidate_selection import (candidate_id,candidate_observation,present_candidates,
+    compile_candidate_selection,CandidateUnavailable,exact_observed_rules,actual_colors)
+from .retry import (RetryRequested,minimum_scale_route,at_minimum_scale,retry_budget,
+    phase_allowances,MINIMUM_USEFUL_SEARCH_SECONDS)
+from .session_deadline import verified_timer_extension,verified_timer_grace_until,verified_timer_shortening
+from .session_status import SessionStatusError,SessionBindingChanged,session_diagnostic
+from .retry_recovery import prepare_retry_recovery
+from .route_feedback import correct_remaining_route
+
+
+class GoalStop(Exception):pass
+
+
+def _prefix_is_safe(actual_quality, baseline_quality, suffix_quality):
+    """Keep a measured prefix when it improves the anchor and ties the suffix."""
+    return actual_quality < baseline_quality and actual_quality <= suffix_quality
+
+
+def run_goal_loop(io,session,settings,rules,*,engineering_deadline,clock=time.monotonic,
+        max_rounds=64,max_actions=64,planner=plan_from_checkpoint,event=lambda row:None,pause=time.sleep,
+        candidate_choice=None,retry_requested=None,timer_deadline_extension=None,timer_grace_baseline=None):
+    count=session_region_count(session)
+    rules=normalize_target_rules(bind_region_rules(rules,count))
+    if (type(max_rounds) is not int or not 1<=max_rounds<=64 or type(max_actions) is not int or not 1<=max_actions<=64
+        or not math.isfinite(engineering_deadline)):
+        raise ValueError('Invalid native execution limits')
+    start=clock();end=engineering_deadline;timer_grace_until=start+EARLY_TIMER_GRACE_SECONDS
+    timer_grace_binding=None
+    if timer_grace_baseline is not None:
+        if not isinstance(timer_grace_baseline,dict):
+            raise ValueError('Invalid timer grace baseline or session binding')
+        io_reference=getattr(io,'reference',{})
+        if not isinstance(io_reference,dict):
+            raise ValueError('Invalid timer grace baseline or session binding')
+        reference=io_reference.get('baseline',timer_grace_baseline.get('baseline',{}))
+        if not isinstance(reference,dict):raise ValueError('Invalid timer grace baseline or session binding')
+        timer_grace_until=verified_timer_grace_until(timer_grace_baseline,
+            session_token=reference.get('session_token'),process_identity=reference.get('process_identity'),now=start)
+        timer_grace_binding=json.loads(json.dumps([reference['session_token'],reference['process_identity']]))
+    initial_engineering_deadline=engineering_deadline
+    qualified_timer_frame=None;qualified_timer_checkpoint=None;timer_shortening_observed=False
+    backend_binding=None;previous_timer=None;current=None;context=None;last_verified_observation=None
+    result=dict(rules=rules,matching_policy=MATCHING_POLICY,region_count=count,
+        stop_reason='not_started',accepted=False,target_exact=False,verified=False,
+        planning_rounds=[],steps=[],observations=[],actual_input_attempts=0,
+        server_confirmation_verified=False,initial_visual_retries=0,observation_retries=0,compromise_selected=False,
+        retry_epochs=0,retries=[],retry_budget_checks=[])
+    compromise_route=None;compromise_template=None;best_observed=None
+    refinement_floor=None
+    def retained_not_worse(codes,target):
+        if refinement_floor is not None:return compare_refinement(codes,target,rules)['not_worse']
+        return observed_quality(codes,rules)<=observed_quality(target,rules)
+    def retained_better(codes,target):
+        if refinement_floor is not None:return compare_refinement(codes,target,rules)['improved']
+        return observed_quality(codes,rules)<observed_quality(target,rules)
+    target_route=None;target_template=None
+    candidate_rows=[];candidate_observations={};batch_id='native-'+str(time.monotonic_ns())
+    if candidate_choice is not None and not callable(candidate_choice):raise ValueError('Invalid candidate choice callback')
+    if retry_requested is not None and not callable(retry_requested):raise ValueError('Invalid retry callback')
+    retry_suppressed=True;retry_pending=False;planning_count=0;retry_anchor=None;retry_return=None;retry_return_reference=None
+    previous_retry_check=getattr(io,'retry_check',None)
+    costs=dict(native=[],visual=[],input=[],closing_visual=[])
+    io.timer_grace_until=timer_grace_until
+    def emit(name,**data):event(dict(event=name,at_monotonic=clock(),**data))
+    def complete_screenshot(cp,frames):
+        colors=list(cp['client_hex'])
+        return bool(frames and len(frames)==2 and all(frame.get('screenshot_hex',frame['hex'])==colors
+            and frame.get('hex_source',['screenshot']*count)==['screenshot']*count
+            and frame.get('screenshot_hex_verified',True) is True for frame in frames))
+    def current_reference_fresh():
+        if current is None or not current.get('frames'):return False
+        try:_fresh(clock(),current['frames'],current['checkpoint']);return True
+        except ValueError:return False
+    def invalidate_current():
+        nonlocal current
+        if current is not None and not current.get('frames'):
+            result['native_current']=copy.deepcopy(current)
+        current=None;result.update(accepted=False,verified=False)
+    def remember_verified(cp,frames):
+        nonlocal last_verified_observation
+        if complete_screenshot(cp,frames):
+            if context is not None:assess_feedback(context,cp,frames,rules)
+            last_verified_observation=copy.deepcopy(dict(checkpoint=cp,frames=frames,screenshot_verified=True))
+    def process_binding_stop(before,cp,label):
+        binding=json.loads(cp['binding'])
+        expected=dict(active=True,session_token=binding[0],process_identity=before['process_identity'])
+        observed=dict(active=True,session_token=binding[0],process_identity=binding[1])
+        writer=getattr(io,'_session_stop',None)
+        if callable(writer):writer(SessionBindingChanged,observed,'checkpoint_process',expected=expected,changed_fields=['process_identity'])
+        diagnostic=session_diagnostic(expected,observed,error_type=SessionBindingChanged,
+            stage=label,observed_monotonic=clock(),changed_fields=['process_identity'])
+        raise SessionBindingChanged('Checkpoint process identity changed',diagnostic)
+    def check_retry():
+        nonlocal retry_pending
+        if retry_requested is not None and not retry_suppressed:
+            if retry_pending or retry_requested():
+                retry_pending=True;raise RetryRequested('user_retry')
+    if retry_requested is not None:io.retry_check=check_retry
+    def guard(phase_deadline=None):
+        until=end if phase_deadline is None else min(end,phase_deadline)
+        io.check(until)
+        check_retry()
+        if phase_deadline is not None and clock()>=until:raise TimeoutError('observation/input phase deadline')
+        if clock()>=end:raise GoalStop('insufficient_time')
+    def planning_guard(phase_deadline=None):
+        getattr(io,'planning_check',io.check)(end if phase_deadline is None else min(end,phase_deadline));check_retry()
+    def route_allowance(row):
+        route=row['input_route'];count=len(route)
+        native,visual,preparation=phase_allowances(costs)
+        measured=sum(g['input_seconds']+preparation for g in route)+native*max(0,count-1)+visual
+        return max(row['needed'],measured),visual
+    def retry_recovery_allowance():
+        # Reserve work for this concrete return, not another idle game tail.
+        if (retry_return is None or retry_anchor is None or current is not None and
+                observed_quality(current['checkpoint']['client_hex'],rules)<=
+                observed_quality(retry_anchor['checkpoint']['client_hex'],rules)):return 0.,0
+        native,_,_=phase_allowances(costs)
+        return route_allowance(retry_return)[0]+2.+native,len(retry_return['input_route'])
+    def reserve_route(row,purpose,*,include_revalidation=False):
+        count=len(row['input_route'])
+        return_cost,return_actions=(retry_recovery_allowance() if purpose in ('target','compromise','approach') else (0.,0))
+        if count+return_actions>max_actions-result['actual_input_attempts']:
+            raise GoalStop('insufficient_compromise_actions' if purpose=='compromise' else 'insufficient_route_actions')
+        allowance,visual=route_allowance(row)
+        if count and clock()+allowance+return_cost+(visual if include_revalidation else 0.)>=end:
+            raise GoalStop('insufficient_time')
+    def observe(label,phase_deadline=None,*,planning_reference=False):
+        nonlocal end,backend_binding,previous_timer,current,qualified_timer_frame,qualified_timer_checkpoint,timer_shortening_observed
+        current=None;io.session_status_label=label
+        began=clock();guard(phase_deadline);until=end if phase_deadline is None else min(end,phase_deadline)
+        before=io.input_backend(until)
+        if backend_binding is None:backend_binding=input_backend_binding(before)
+        if input_backend_binding(before)!=backend_binding:raise GoalStop('input_backend_changed')
+        cp=io.checkpoint(label,until)
+        if timer_grace_binding is not None and json.loads(cp['binding'])[:2]!=timer_grace_binding:
+            expected=dict(active=True,session_token=timer_grace_binding[0],process_identity=timer_grace_binding[1])
+            binding=json.loads(cp['binding'])
+            observed=dict(active=True,session_token=binding[0],process_identity=binding[1])
+            writer=getattr(io,'_session_stop',None)
+            if callable(writer):writer(SessionBindingChanged,observed,'timer_grace_binding',expected=expected)
+            raise SessionBindingChanged('Timer grace checkpoint binding changed',session_diagnostic(expected,observed,
+                error_type=SessionBindingChanged,stage='timer_grace_binding',observed_monotonic=clock()))
+        native_before_frames=max(0.,clock()-began)
+        # Initial and pre-input references can use bound native colors and a
+        # fast actual layout capture. An apparent target hit still requires
+        # the independent full screenshot read before being called a success.
+        layout_reader=getattr(io,'planning_frames',None)
+        layout_only=bool(planning_reference and callable(layout_reader) and
+            not score_codes(cp['client_hex'],rules)['accepted'])
+        try:frames=(layout_reader if layout_only else io.frames)(label,until)
+        except TimeoutError:
+            # Retain only this fresh checkpoint, never a previous screenshot
+            # pose. A decoder timeout does not invalidate the native readback.
+            if (cp.get('checkpoint_valid') is True and cp.get('cpu_matches') is True
+                    and before['process_identity']==json.loads(cp['binding'])[1]):
+                current=dict(checkpoint=cp,frames=None,screenshot_verified=False)
+            raise
+        after_began=clock();after=io.input_backend(until)
+        native_after_frames=max(0.,clock()-after_began)
+        if input_backend_binding(after)!=backend_binding:raise GoalStop('input_backend_changed')
+        if before['process_identity']!=json.loads(cp['binding'])[1]:process_binding_stop(before,cp,label)
+        if cp.get('checkpoint_valid') is not True or cp.get('cpu_matches') is not True:raise GoalStop('checkpoint_unavailable')
+        frames=copy.deepcopy(frames)
+        for frame in frames:frame['timer_advisory']=True
+        _frames(cp,frames)
+        if clock()-frames[-1]['captured_monotonic']>5.:
+            # Image age is a reason to reread state, not to abort a valid round.
+            # Preserve the original capture timestamp and bind the new evidence
+            # only if pose, colors, session and geometry are actually unchanged.
+            refreshed=io.checkpoint(label+'_post_decode',until)
+            if refreshed.get('checkpoint_valid') is not True or refreshed.get('cpu_matches') is not True:
+                raise GoalStop('checkpoint_unavailable')
+            fields=('binding','pose','client_hex','board','local_size','pixel_mapping')
+            if any(cp.get(key)!=refreshed.get(key) for key in fields):
+                raise VisualNotReady('Observation reference changed during color read')
+            validation=dict(checked_monotonic=clock(),
+                checkpoint_fingerprint=observation_reference_fingerprint(cp,frames))
+            for frame in frames:frame['reference_validation']=copy.deepcopy(validation)
+        remember_verified(cp,frames)
+        timer_shortened=False
+        # Metadata distinguishes the conservative unknown-age startup cap from
+        # an intentional caller limit. IO independently validates this pair.
+        if timer_grace_baseline is not None or (timer_deadline_extension is not None and callable(getattr(io,'set_verified_session_deadline',None))):
+            pairs=[frames]
+            if (qualified_timer_checkpoint is not None and qualified_timer_frame is not None
+                    and all(qualified_timer_checkpoint[key]==cp[key] for key in ('binding','pose','client_hex'))):
+                pairs.extend(([qualified_timer_frame,frame] for frame in frames))
+            for pair in pairs:
+                approved=(verified_timer_extension(cp,pair,initial_engineering_deadline=initial_engineering_deadline,
+                    current_deadline=end,extension=timer_deadline_extension,timer_grace_until=timer_grace_until,now=clock())
+                    if (not timer_shortening_observed and timer_deadline_extension is not None
+                        and callable(getattr(io,'set_verified_session_deadline',None))) else None)
+                if approved is not None:
+                    io.set_verified_session_deadline(approved['deadline'],approved['evidence'])
+                    end=approved['deadline']
+                    result.setdefault('deadline_extensions',[]).append(copy.deepcopy(approved))
+                    emit('native_deadline_corrected',effective_deadline=end,maximum_deadline=timer_deadline_extension['maximum_deadline'])
+                    break
+                shortened=(verified_timer_shortening(cp,pair,current_deadline=end,
+                    timer_grace_until=timer_grace_until,now=clock()) if timer_grace_baseline is not None else None)
+                if shortened is not None:
+                    end=shortened['deadline']
+                    timer_shortening_observed=True
+                    timer_shortened=True
+                    result.setdefault('deadline_shortenings',[]).append(copy.deepcopy(shortened))
+                    emit('native_deadline_shortened',effective_deadline=end,source='verified_decreasing_timer_pair')
+                    break
+            qualified=[frame for frame in frames if frame.get('screenshot_hex_verified') is True
+                and frame.get('screenshot_hex')==cp['client_hex'] and frame.get('hex_source')==['screenshot']*count
+                and frame.get('timer_confidence')=='two_pass_agree' and frame.get('captured_monotonic',0.)>=timer_grace_until]
+            if qualified:
+                qualified_timer_frame=copy.deepcopy(qualified[-1]);qualified_timer_checkpoint=copy.deepcopy(cp)
+            else:qualified_timer_frame=qualified_timer_checkpoint=None
+        for frame in frames:
+            seconds,when=frame['remaining_seconds'],frame['captured_monotonic']
+            if when<timer_grace_until:
+                frame['timer_policy']='startup_advisory';continue
+            if timer_grace_baseline is not None:
+                frame['timer_policy']='verified_pair_shortened_deadline' if timer_shortened else 'unknown_advisory'
+                continue
+            if previous_timer and type(seconds) is int:
+                old,old_when=previous_timer;elapsed=when-old_when
+                if elapsed<=0:raise GoalStop('countdown_discontinuity')
+                if seconds>old+1 or old-seconds>math.ceil(elapsed)+3:
+                    seconds=None
+            if type(seconds) is int and 1<=seconds<=120:
+                if previous_timer:
+                    end=min(end,when+seconds-EXECUTION_RESERVE_SECONDS)
+                    frame['timer_policy']='consistent_pair_shortened_deadline'
+                else:frame['timer_policy']='first_late_read_advisory'
+                previous_timer=(seconds,when)
+            else:frame['timer_policy']='unknown_advisory'
+        current=dict(checkpoint=cp,frames=frames)
+        result['observations'].append(dict(label=label,checkpoint=cp,frames=frames,input_before=before,input_after=after))
+        exit_began=clock();guard(phase_deadline)
+        costs['native'].append(native_before_frames+native_after_frames+max(0.,clock()-exit_began))
+        if not layout_only:
+            costs['closing_visual'].append(max(0.,clock()-began))
+            if not label.startswith('initial'):costs['visual'].append(max(0.,clock()-began))
+        # Publish measured client colors on every successful readback. This
+        # presentation event does not certify a target or request extra OCR.
+        emit('native_observed',colors=list(cp['client_hex']),label=label,
+            screenshot_verified=complete_screenshot(cp,frames))
+        return cp,frames
+    def observe_resilient(label,phase_deadline=None,*,planning_reference=False):
+        for retry in range(3):
+            try:return observe(label if retry==0 else label+'_retry_'+str(retry),phase_deadline,
+                planning_reference=planning_reference)
+            except (VisualNotReady,TimeoutError) as exc:
+                # Recheck the actual phase/session deadline and F9 before
+                # retrying a local frame allowance. Never repeat the input.
+                guard(phase_deadline)
+                result['observation_retries']+=1
+                emit('observation_wait',label=label,attempt=retry+1,error=str(exc))
+                if retry==2:
+                    if isinstance(exc,TimeoutError):
+                        raise VisualNotReady('Visual observation timed out within the active session: '+str(exc)) from exc
+                    raise
+                if phase_deadline is not None and clock()+.25>=min(end,phase_deadline):
+                    raise TimeoutError('visual retry phase deadline') from exc
+                pause(.25)
+    def observe_native(label,phase_deadline=None):
+        nonlocal current
+        current=None;io.session_status_label=label;began=clock();guard(phase_deadline);until=end if phase_deadline is None else min(end,phase_deadline)
+        before=io.input_backend(until)
+        if input_backend_binding(before)!=backend_binding:raise GoalStop('input_backend_changed')
+        cp=io.checkpoint(label,until)
+        after=io.input_backend(until)
+        if input_backend_binding(after)!=backend_binding:raise GoalStop('input_backend_changed')
+        if before['process_identity']!=json.loads(cp['binding'])[1]:process_binding_stop(before,cp,label)
+        assess_native_feedback(context,cp,rules)
+        current=dict(checkpoint=cp,frames=None,screenshot_verified=False)
+        result['observations'].append(dict(label=label,checkpoint=cp,frames=None,
+            input_before=before,input_after=after,screenshot_verified=False))
+        emit('native_observed',colors=cp['client_hex'],label=label,screenshot_verified=False)
+        guard(phase_deadline);costs['native'].append(max(0.,clock()-began));return cp
+
+    def recover_best_failure(reason,*,alternatives=()):
+        """A local phase failure yields to a fresh measured return, never F9."""
+        nonlocal cp,frames,current,retry_suppressed,best_observed
+        recovery=dict(reason=reason,attempted=False,verified=False)
+        result['failure_recovery']=recovery
+        if context is None or best_observed is None:return False
+        saved_retry=retry_suppressed;retry_suppressed=True
+        try:
+            # Release does not establish a pose. IO then checks the original
+            # active session, process/window binding and real deadline again.
+            io.release();guard()
+            if getattr(io,'_performing_input',False):return False
+            recovery['attempted']=True
+            anchor=best_observed['checkpoint']
+            nearest=None;nearest_key=None
+            def keep_landing(observation):
+                nonlocal nearest,nearest_key
+                if (refinement_floor is None or observation is None or not complete_screenshot(
+                        observation['checkpoint'],observation.get('frames'))):return
+                codes=observation['checkpoint']['client_hex']
+                if retained_not_worse(codes,anchor['client_hex']):return
+                key=recovery_rank(codes,anchor['client_hex'],rules)
+                if nearest_key is None or key<nearest_key:
+                    nearest=copy.deepcopy(observation);nearest_key=key
+            for observation in (*alternatives,current):keep_landing(observation)
+            def return_read(label,*,visual=False):
+                while True:
+                    try:
+                        return observe_resilient(label,end) if visual else observe_native(label,end)
+                    except (TimeoutError,VisualNotReady):
+                        # Retry only the observation. A completed return must
+                        # never be sent a second time because its HEX read timed out.
+                        guard()
+                        emit('refinement_return',refinement_status='recovering',
+                            retained_colors=list(anchor['client_hex']),
+                            retained_deltas=score_codes(anchor['client_hex'],rules)['deltas'])
+            attempt=0
+            while True:
+                attempt+=1
+                guard();fresh=return_read('failure_return_'+str(attempt)+'_reference')
+                if refinement_floor is not None:
+                    emit('refinement_return',refinement_status='recovering',
+                        retained_colors=list(anchor['client_hex']),
+                        retained_deltas=score_codes(anchor['client_hex'],rules)['deltas'])
+                if retained_not_worse(fresh['client_hex'],anchor['client_hex']):
+                    cp,frames=return_read('failure_return_current',visual=True)
+                else:
+                    native,visual,preparation=phase_allowances(costs)
+                    available=end-clock()-visual-preparation-3.
+                    if available<=0:
+                        cp,frames=return_read('failure_return_final_current',visual=True)
+                        break
+                    admit=lambda candidate:len(candidate['input_route'])<=max_actions-result['actual_input_attempts'] \
+                        and clock()+route_allowance(candidate)[0]<end
+                    fallback=None;fallback_selected=False;budget_blocked=False
+                    if nearest is not None:
+                        fallback=prepare_retry_recovery(context,fresh,nearest['checkpoint'],rules,
+                            deadline=min(end-visual-preparation-3.,clock()+min(2.,available*.2)),
+                            clock=clock,check=planning_guard,preserve_regions=True,admit=admit)
+                    fallback_allowance=route_allowance(fallback)[0]+native+preparation if fallback is not None else 0.
+                    search_until=min(end-visual-preparation-3.,end-fallback_allowance,
+                        clock()+min(4.,available*.35))
+                    def protected_admit(candidate):
+                        nonlocal budget_blocked
+                        if not admit(candidate):budget_blocked=True;return False
+                        if nearest is None:return True
+                        predicted=_endpoint_checkpoint(context,fresh,candidate['final_pose'],planning_guard)
+                        back_started=clock()
+                        back=prepare_retry_recovery(context,predicted,nearest['checkpoint'],rules,
+                            deadline=min(search_until,clock()+min(2.,available*.2)),
+                            clock=clock,check=planning_guard,preserve_regions=True)
+                        if back is None:return False
+                        # A model can predict an exact anchor and still miss in
+                        # game. Keep one correction plus measured return/read cost.
+                        return_actions=max(1,len(back['input_route']),
+                            len(fallback['input_route']) if fallback is not None else 0)
+                        return_seconds=max(route_allowance(back)[0],
+                            route_allowance(fallback)[0] if fallback is not None else 0.)
+                        fits=(len(candidate['input_route'])+return_actions<=max_actions-result['actual_input_attempts']
+                            and clock()+route_allowance(candidate)[0]+return_seconds+native+preparation+
+                                max(.25,clock()-back_started)<end)
+                        if not fits:budget_blocked=True
+                        return fits
+                    row=prepare_retry_recovery(context,fresh,anchor,rules,
+                        deadline=search_until,
+                        clock=clock,check=planning_guard,preserve_regions=refinement_floor is not None,
+                        admit=protected_admit)
+                    if row is None and fallback is not None:
+                        row=fallback;fallback_selected=True
+                        recovery['nearest_colors']=list(nearest['checkpoint']['client_hex'])
+                    if row is None:
+                        # A failed local model/route is not a finished round.
+                        # Rebind the actual pose and use the remaining live time.
+                        if refinement_floor is not None:
+                            emit('refinement_return',refinement_status='recovering',
+                                retained_colors=list(anchor['client_hex']),
+                                retained_deltas=score_codes(anchor['client_hex'],rules)['deltas'])
+                            continue
+                        break
+                    reserve_route(row,'restore_best',include_revalidation=False)
+                    reference=fresh;route=row['input_route']
+                    for index,gesture in enumerate(route):
+                        before_inputs=result['actual_input_attempts']
+                        try:
+                            cp,frames,_=submit(gesture,'failure_return_'+str(attempt)+'_step_'+str(index),
+                                reference,'restore_best',visual_required=index==len(route)-1,phase_deadline=end)
+                        except (TimeoutError,VisualNotReady,GoalStop) as exc:
+                            if isinstance(exc,GoalStop) and str(exc)!='target_visual_unconfirmed':raise
+                            guard()
+                            if (not isinstance(exc,InputNotStarted) and result['actual_input_attempts']>before_inputs
+                                    and not result['steps'][-1].get('receipt',{}).get('completed')):
+                                raise GoalStop('input_outcome_unknown')
+                            cp,frames=return_read('failure_return_completed_input',visual=True)
+                            break
+                        reference=cp
+                    if not route:cp,frames=return_read('failure_return_current',visual=True)
+                    if (fallback_selected and complete_screenshot(cp,frames) and
+                            retained_not_worse(cp['client_hex'],nearest['checkpoint']['client_hex'])):
+                        recovery.update(status='nearest_measured',actual_colors=list(cp['client_hex']))
+                        if budget_blocked:return False
+                keep_landing(current)
+                if (complete_screenshot(cp,frames) and retained_not_worse(cp['client_hex'],anchor['client_hex'])):
+                    if retained_better(cp['client_hex'],anchor['client_hex']):
+                        best_observed=copy.deepcopy(current)
+                    recovery.update(verified=True,actual_colors=list(cp['client_hex']))
+                    return True
+            recovery['status']='unconfirmed';return False
+        except SessionStatusError as exc:
+            recovery.update(blocked=exc.stop_reason,diagnostic=copy.deepcopy(exc.diagnostic));invalidate_current()
+            result.update(stop_reason=exc.stop_reason,session_stop_reason=exc.stop_reason,
+                session_stop_classification=exc.classification,session_diagnostic=copy.deepcopy(exc.diagnostic),
+                error=type(exc).__name__+': '+str(exc))
+        except InterruptedError as exc:
+            recovery['blocked']='InterruptedError: '+str(exc);invalidate_current()
+            result.update(stop_reason='interrupted',error=str(exc))
+        except (TimeoutError,GoalStop) as exc:
+            recovery['blocked']=type(exc).__name__+': '+str(exc);invalidate_current()
+        except Exception as exc:
+            recovery['error']=type(exc).__name__+': '+str(exc);invalidate_current()
+        finally:retry_suppressed=saved_retry
+        return False
+    def submit(gesture,label,fresh,purpose,*,visual_required=True,phase_deadline=None,retry_route=None):
+        nonlocal current
+        if retry_route is None:validate_research_gesture(gesture,geometry.board)
+        elif (purpose!='retry_reset' or not visual_required or
+                json.dumps(validate_retry_reset_route(retry_route,geometry.board).record(),sort_keys=True)!=json.dumps(gesture,sort_keys=True)):
+            raise ValueError('Invalid continuous retry reset')
+        expected=replay_native_route(fresh['pose'],[gesture] if retry_route is None else retry_route,geometry,settings,
+            wheel_delta_per_step=1.,sample_policy='all_recorded_points')['final_pose']
+        began=clock()
+        try:guard(phase_deadline)
+        except TimeoutError as exc:
+            if phase_deadline is not None:raise InputNotStarted(str(exc)) from exc
+            raise
+        until=end if phase_deadline is None else min(end,phase_deadline)
+        if clock()>=until:raise InputNotStarted('input phase deadline')
+        native,visual,preparation=phase_allowances(costs)
+        feedback_cost=visual if visual_required else native
+        if phase_deadline is None and clock()+gesture['input_seconds']+preparation+feedback_cost>=until:
+            raise InputNotStarted('Actual input and feedback do not fit phase')
+        if result['actual_input_attempts']>=max_actions:raise GoalStop('action_limit')
+        current=None;result['actual_input_attempts']+=1
+        step=dict(before=fresh,requested_gesture=gesture,expected_pose=expected,purpose=purpose);result['steps'].append(step)
+        if retry_route is not None:step['requested_route']=copy.deepcopy(retry_route)
+        emit('action',kind=gesture['kind'],purpose=purpose)
+        performer=(getattr(io,'perform_protected_candidate',io.perform_candidate)
+            if phase_deadline is not None and purpose in ('refine','restore_refinement','select_candidate','restore_selection') else io.perform_candidate)
+        try:receipt=(performer(gesture,label,until) if retry_route is None else io.perform_retry_reset(retry_route,label,until))
+        except RetryRequested as exc:
+            costs['input'].append(max(0.,clock()-began))
+            receipt=getattr(exc,'receipt',None)
+            if receipt is not None:step['receipt']=receipt
+            elif getattr(exc,'input_not_started',False):
+                step['input_not_started']=True;result['actual_input_attempts']-=1
+            else:raise GoalStop('input_outcome_unknown') from exc
+            raise
+        step['receipt']=receipt
+        costs['input'].append(max(0.,clock()-began-gesture['input_seconds']))
+        if receipt.get('completed') is not True:raise GoalStop('input_outcome_unknown')
+        if retry_requested is not None and receipt.get('released') is not True:raise GoalStop('input_outcome_unknown')
+        trace=receipt.get('actual_trace')
+        trace_ok=(isinstance(trace,list) and len(trace)==len(gesture['points']) and not any(
+            row.get('actual_client') is None or np.max(np.abs(np.asarray(row['actual_client'])-point))>1
+            for row,point in zip(trace,gesture['points'])))
+        if not trace_ok:
+            # The game state readback is authoritative. A missing or slightly
+            # delayed SendInput trace is useful evidence, but does not prove
+            # that the gesture failed; retain it as a warning and replan from
+            # the actual checkpoint below.
+            step['trace_warning']='cursor_trace_mismatch'
+        if visual_required:
+            after,after_frames=observe_resilient(label+'_after',until)
+            measured=assess_feedback(context,after,after_frames,rules,expected_pose=expected)
+        else:
+            after=observe_native(label+'_native_after',until);after_frames=None
+            measured=assess_native_feedback(context,after,rules,expected_pose=expected)
+            if measured['observed_target_accepted'] and purpose not in ('select_candidate','restore_selection','retry_reset'):
+                # Confirm an early target hit visually. A valid bound native
+                # pose residual only rebases subsequent input; it does not
+                # repeat the costly screenshot/OCR phase mid-route.
+                step['native_readback']=copy.deepcopy(after)
+                after,after_frames=observe_resilient(label+'_after',until)
+                measured=assess_feedback(context,after,after_frames,rules,expected_pose=expected)
+        step.update(after=after,after_frames=after_frames,screenshot_verified=measured['screenshot_verified'])
+        step['feedback']=measured
+        if measured['stop_reason']=='target_visual_unconfirmed':raise GoalStop('target_visual_unconfirmed')
+        if measured['stop_reason']=='model_response_mismatch':
+            # Response residuals calibrate the next reference; their magnitude
+            # does not cancel an authorized route. Identity, focus, timing and
+            # read validity are checked independently by the IO boundary.
+            step['model_response_warning']='model_response_mismatch'
+            measured['stop_reason']='replan_required'
+        return after,after_frames,measured
+
+    def retain_superior_prefix(checkpoint,visual_frames,feedback,suffix,baseline_quality,label,phase_deadline=None,*,anchor_colors=None):
+        """Keep a better intermediate landing before a worse remaining route.
+
+        Native feedback triggers a visual check only when this landing beats
+        both the retained anchor and the remaining route from its actual pose.
+        This avoids decoding every intermediate action or discarding a gain
+        merely because it occurred before the planned endpoint.
+        """
+        def better_than_suffix(reference):
+            if anchor_colors is not None:
+                if not compare_refinement(reference['client_hex'],anchor_colors,rules)['improved']:return False
+                guard(phase_deadline)
+                replay=replay_native_route(reference['pose'],suffix,geometry,settings,
+                    wheel_delta_per_step=1.,sample_policy='all_recorded_points')
+                prediction=score_native_pose(session,replay['final_pose'],rules)
+                # A newly measured gain becomes the floor before another
+                # gesture can trade it away. Equal endpoints need no more input.
+                return not RefinementPolicy(rules,reference['client_hex']).assess(
+                    prediction['colors'],deltas=prediction['deltas'])['improved']
+            actual=observed_quality(reference['client_hex'],rules)
+            if actual>=baseline_quality:return False
+            guard(phase_deadline)
+            replay=replay_native_route(reference['pose'],suffix,geometry,settings,
+                wheel_delta_per_step=1.,sample_policy='all_recorded_points')
+            return _prefix_is_safe(actual,baseline_quality,
+                predicted_quality(score_native_pose(session,replay['final_pose'],rules),rules))
+        if not suffix or not better_than_suffix(checkpoint):
+            return checkpoint,visual_frames,feedback,False
+        if not visual_frames:
+            checkpoint,visual_frames=observe_resilient(label+'_prefix_best',phase_deadline)
+            feedback=assess_feedback(context,checkpoint,visual_frames,rules)
+        retained=bool(feedback['screenshot_verified'] and better_than_suffix(checkpoint))
+        if retained:
+            emit('route_prefix_retained',colors=checkpoint['client_hex'],remaining_gestures=len(suffix))
+        return checkpoint,visual_frames,feedback,retained
+
+    def retry_fields():
+        fields=dict(effective_deadline=end,epoch=result['retry_epochs'])
+        if current is not None:
+            fields.update(current_colors=list(current['checkpoint']['client_hex']),
+                verified=True,screenshot_verified=bool(current.get('frames') and context and
+                    assess_feedback(context,current['checkpoint'],current['frames'],rules)['screenshot_verified']))
+        else:fields.update(current_colors=[None]*count,verified=False,screenshot_verified=False)
+        return fields
+    retry_route_cache={}
+    def retry_assessment(phase,*,include_reference=True,permit_unknown=False,checkpoint=None):
+        checkpoint=checkpoint if checkpoint is not None else (current or {}).get('checkpoint')
+        route=[];route_known=checkpoint is not None;route_error=None
+        if route_known:
+            key=json.dumps(checkpoint['pose'],sort_keys=True)
+            try:
+                if key not in retry_route_cache:
+                    retry_route_cache.clear()
+                    retry_route_cache[key]=minimum_scale_route(checkpoint['pose'],geometry,settings)
+                route=retry_route_cache[key]
+            except ValueError as exc:route_error=str(exc)
+        budget=retry_budget(route,costs,include_reference=include_reference,
+            continuous=callable(getattr(io,'perform_retry_reset',None)))
+        budget.update(phase=phase,at_monotonic=clock(),remaining_seconds=end-clock(),effective_deadline=end,
+            epoch=result['retry_epochs'],reset_route_known=route_known,reset_wheel_steps=[g['wheel_steps'] for g in route],
+            remaining_actions=max_actions-result['actual_input_attempts'],remaining_rounds=max_rounds-planning_count,
+            measured_native_seconds=list(costs['native'][-3:]),measured_visual_seconds=list(costs['closing_visual'][-3:]),
+            measured_input_preparation_seconds=list(costs['input'][-3:]))
+        if planning_count>=max_rounds:reason='round_limit'
+        elif result['actual_input_attempts']>=max_actions:reason='action_limit'
+        elif route_error is not None:reason='unsupported_retry_settings'
+        elif not route_known and not permit_unknown:reason='retry_resetting'
+        elif budget['required_actions']>budget['remaining_actions']:reason='insufficient_retry_actions'
+        elif budget['required_seconds']>=budget['remaining_seconds']:reason='insufficient_retry_time'
+        else:reason=None
+        budget.update(enabled=reason is None,reason=reason)
+        if route_error is not None:budget['route_error']=route_error
+        return budget
+    def record_retry_budget(budget):
+        result['retry_budget_checks'].append(copy.deepcopy(budget))
+        emit('native_retry_budget',phase=budget['phase'],enabled=budget['enabled'],budget=copy.deepcopy(budget))
+    def retry_available(reason,*,waiting=False):
+        if retry_requested is None:return False
+        budget=retry_assessment('availability');record_retry_budget(budget)
+        emit('native_retry_available',enabled=budget['enabled'],reason=reason if budget['enabled'] else budget['reason'],
+            waiting_for_retry=waiting,budget=budget,**retry_fields())
+        return budget['enabled']
+    def wait_for_retry():
+        nonlocal cp,frames,current,retry_suppressed
+        if retry_requested is None:return False
+        budget_disabled=not retry_available(result['stop_reason'],waiting=True)
+        _,closing_visual,_=phase_allowances(costs,closing=True)
+        # A route's freshly verified endpoint is already the required closing
+        # observation. Do not demand a duplicate full read when it finishes
+        # inside that read's allowance; waiting would only make it stale.
+        # This call has not begun waiting. Capture timestamps precede decoding
+        # and its closing guard, so use the standard freshness window here.
+        if clock()+closing_visual>=end and current_reference_fresh():
+            io.check(end)
+            checked=getattr(io,'last_checked_state',None)
+            checked_at=getattr(io,'last_checked_monotonic',None)
+            actual_pose=checked.get('pose',checked.get('motion',{}).get('pose')) if isinstance(checked,dict) else None
+            checked_identity=getattr(io,'last_checked_process_identity',None)
+            expected_binding=json.loads(current['checkpoint']['binding'])
+            unchanged=(checked is not None and checked.get('active') is True
+                and json.dumps(checked.get('session_token'))==json.dumps(expected_binding[0])
+                and checked_identity is not None and list(checked_identity)==expected_binding[1]
+                and actual_pose==current['checkpoint']['pose'] and checked_at is not None
+                and checked_at>=current['frames'][-1]['captured_monotonic'])
+            if clock()<end and unchanged and current_reference_fresh():
+                result['closing_pose_check']=dict(unchanged=True,observed_monotonic=checked_at,pose=copy.deepcopy(actual_pose))
+                emit('native_retry_available',enabled=False,reason='session_closing',**retry_fields())
+                return False
+        while True:
+            _,visual,_=phase_allowances(costs,closing=True)
+            # This complete observation already includes native reads.
+            close=visual+.1
+            if clock()+close>=end:break
+            if not budget_disabled:
+                budget=retry_assessment('availability')
+                if not budget['enabled']:
+                    record_retry_budget(budget)
+                    emit('native_retry_available',enabled=False,reason=budget['reason'],waiting_for_retry=True,
+                        budget=budget,**retry_fields())
+                    budget_disabled=True
+            try:
+                io.check(end);check_retry()
+            except RetryRequested:return True
+            except Exception:
+                if current is not None:result['last_verified_retry']=copy.deepcopy(current)
+                current=None
+                raise
+            pause(min(.1,max(0.,end-close-clock())))
+        emit('native_retry_available',enabled=False,reason='session_closing',**retry_fields())
+        # Finish the waiting session from a new actual pose and screenshots.
+        # A normal waiting deadline never overwrites a measured target hit.
+        retry_suppressed=True
+        try:
+            if clock()+visual<end:
+                cp,frames=observe_resilient('retry_wait_closed')
+                measured=assess_feedback(context,cp,frames,rules)
+                result['accepted']=measured['observed_target_accepted']
+                if result['accepted']:result['stop_reason']='target_observed'
+                elif result['stop_reason']=='target_observed':result['stop_reason']='compromise_observed'
+            else:
+                # No final independent read means the cached match is stale.
+                if current is not None:result['last_verified_retry']=copy.deepcopy(current)
+                current=None;result['accepted']=False;result['verified']=False
+                if result['stop_reason']=='target_observed':result['stop_reason']='insufficient_time'
+        finally:retry_suppressed=False
+        return False
+    def reset_retry():
+        nonlocal cp,frames,current,best_observed,retry_suppressed,retry_pending,retry_anchor,retry_return,retry_return_reference
+        nonlocal target_route,target_template,compromise_route,compromise_template
+        nonlocal candidate_rows,candidate_observations,batch_id
+        retry_pending=False;retry_suppressed=True
+        epoch=result['retry_epochs']+1
+        attempt=dict(epoch=epoch,requested_monotonic=clock(),effective_deadline=end,status='requested')
+        result['retries'].append(attempt)
+        def reject(reason):
+            nonlocal cp,frames
+            if current is None or not current.get('frames'):
+                cp,frames=observe_resilient('retry_'+str(epoch)+'_rejected')
+            attempt.update(status='rejected',reason=reason)
+            emit('native_retry_reset',status='rejected',reason=reason,**retry_fields())
+            return False
+        try:
+            if result['steps']:
+                last=result['steps'][-1]
+                receipt=last.get('receipt')
+                if receipt is not None and (receipt.get('completed') is not True and
+                        not (receipt.get('interrupted') is True and receipt.get('released') is True)):
+                    raise GoalStop('input_outcome_unknown')
+                if receipt is not None and receipt.get('released') is not True:
+                    raise GoalStop('input_outcome_unknown')
+            # A released partial gesture has no current pose. Its only initial
+            # authorization is a fresh read; no wheel is admitted until that
+            # actual pose has passed the complete reset budget below.
+            budget=retry_assessment('before_reference',permit_unknown=True)
+            record_retry_budget(budget);attempt['before_reference_budget']=copy.deepcopy(budget)
+            if not budget['enabled']:return reject(budget['reason'])
+            fresh=observe_native('retry_'+str(epoch)+'_reference')
+            try:route=minimum_scale_route(fresh['pose'],geometry,settings)
+            except ValueError:return reject('unsupported_retry_settings')
+            budget=retry_assessment('after_reference',include_reference=False,checkpoint=fresh)
+            record_retry_budget(budget);attempt['after_reference_budget']=copy.deepcopy(budget)
+            if not budget['enabled']:return reject(budget['reason'])
+            saved_anchor=copy.deepcopy(best_observed)
+            # Compile a return before destructive zooming. The proposed reset
+            # uses the production float32 kernel; actual input is still checked
+            # below, and any differing endpoint is recompiled from its readback.
+            reset_reference=copy.deepcopy(fresh)
+            reset_reference['pose']=replay_native_route(fresh['pose'],route,geometry,settings,
+                wheel_delta_per_step=1.,sample_policy='all_recorded_points')['final_pose']
+            reset_reference['client_hex']=actual_colors(context,reset_reference['pose'])
+            prepared=None
+            if saved_anchor and observed_quality(reset_reference['client_hex'],rules)>observed_quality(saved_anchor['checkpoint']['client_hex'],rules):
+                prepared=prepare_retry_recovery(context,reset_reference,saved_anchor['checkpoint'],rules,
+                    deadline=min(end,clock()+2.),clock=clock,check=planning_guard)
+                if prepared is None:return reject('retry_recovery_unavailable')
+                return_cost,_=route_allowance(prepared)
+                budget.update(recovery_actions=len(prepared['input_route']),recovery_allowance_seconds=return_cost)
+                budget['required_actions']=max(budget['required_actions'],budget['reset_actions']+len(prepared['input_route']))
+                budget['required_seconds']+=return_cost+2.+phase_allowances(costs)[0]
+                budget.update(at_monotonic=clock(),remaining_seconds=end-clock())
+                if budget['required_actions']>max_actions-result['actual_input_attempts']:return reject('insufficient_retry_actions')
+                if budget['required_seconds']>=end-clock():return reject('insufficient_retry_time')
+                attempt['after_reference_budget']=copy.deepcopy(budget)
+            retry_anchor=saved_anchor;retry_return=prepared;retry_return_reference=reset_reference
+            emit('native_candidate_closed',batch_id=batch_id,reason='retry')
+            # Windows monotonic_ns can repeat within one clock tick; the retry
+            # epoch keeps this run's batches distinct even on coarse clocks.
+            candidate_rows=[];candidate_observations={};batch_id='native-'+str(time.monotonic_ns())+'-'+str(epoch)
+            result.pop('candidates',None);result.pop('candidate_observations',None)
+            result.pop('current_candidate_id',None);result.pop('candidate_batch_id',None)
+            cp=fresh;frames=None
+            emit('native_retry_available',enabled=False,reason='retry_resetting',**retry_fields())
+            emit('native_retry_reset',status='zooming',reason='user_retry',**retry_fields())
+            if route and callable(getattr(io,'perform_retry_reset',None)):
+                correction=0
+                while route:
+                    prior=cp['pose']['scale']
+                    gesture=validate_retry_reset_route(route,geometry.board).record()
+                    label='retry_'+str(epoch)+('_correction_'+str(correction) if correction else '')
+                    cp,frames,feedback=submit(gesture,label,cp,'retry_reset',retry_route=route)
+                    if at_minimum_scale(cp['pose'],settings):break
+                    if cp['pose']['scale']>=prior:raise GoalStop('retry_minimum_unconfirmed')
+                    # Missed wheel events are repaired from the actual endpoint,
+                    # never by repeating the original route or trusting its pose.
+                    budget=retry_assessment('correction',include_reference=False,checkpoint=cp)
+                    record_retry_budget(budget)
+                    if not budget['enabled']:raise GoalStop('retry_minimum_unconfirmed')
+                    route=minimum_scale_route(cp['pose'],geometry,settings)
+                    if prepared is not None:
+                        recover_cost,_=route_allowance(prepared)
+                        correction_budget=retry_budget(route,costs,include_reference=False,continuous=True)
+                        reason=('insufficient_retry_actions' if correction_budget['reset_actions']+len(prepared['input_route'])>
+                            max_actions-result['actual_input_attempts'] else 'insufficient_retry_time' if
+                            correction_budget['required_seconds']+recover_cost+2.+phase_allowances(costs)[0]>=end-clock() else None)
+                        if reason:
+                            # A missed wheel event does not authorize spending
+                            # the actions reserved for the earlier result.
+                            retry_return=None;retry_return_reference=None
+                            restore_retry_anchor()
+                            return reject(reason)
+                    correction+=1;attempt['correction_passes']=correction
+            else:
+                for index,gesture in enumerate(route):
+                    prior=cp['pose']['scale']
+                    cp,frames,feedback=submit(gesture,'retry_'+str(epoch)+'_zoom_'+str(index),cp,
+                        'retry_reset',visual_required=False)
+                    if at_minimum_scale(cp['pose'],settings):break
+                    if cp['pose']['scale']>=prior:raise GoalStop('retry_minimum_unconfirmed')
+            if not at_minimum_scale(cp['pose'],settings):raise GoalStop('retry_minimum_unconfirmed')
+            if frames is None:cp,frames=observe_resilient('retry_'+str(epoch)+'_after')
+            if not at_minimum_scale(cp['pose'],settings):raise GoalStop('retry_minimum_unconfirmed')
+            # Zoom-out is a search reference, not a replacement for the best
+            # measured result. Keep a checked return before spending search time.
+            if (retry_anchor and observed_quality(cp['client_hex'],rules)>
+                    observed_quality(retry_anchor['checkpoint']['client_hex'],rules)):
+                if cp['pose']!=reset_reference['pose'] or cp['client_hex']!=reset_reference['client_hex']:
+                    retry_return=prepare_retry_recovery(context,cp,retry_anchor['checkpoint'],rules,
+                        deadline=min(end,clock()+2.),clock=clock,check=planning_guard,
+                        preferred_routes=[prepared['input_route']] if prepared else [])
+                retry_return_reference=copy.deepcopy(cp)
+                attempt['recovery_preparation']=dict(prepared=retry_return is not None,
+                    anchor_colors=retry_anchor['checkpoint']['client_hex'],
+                    route=copy.deepcopy(retry_return['input_route']) if retry_return else None)
+            else:retry_return=None;retry_return_reference=None
+            if (best_observed is None or observed_quality(cp['client_hex'],rules)<
+                    observed_quality(best_observed['checkpoint']['client_hex'],rules)):
+                best_observed=copy.deepcopy(current)
+            target_route=target_template=compromise_route=compromise_template=None
+            result.update(retry_epochs=epoch,accepted=False,stop_reason='not_started',compromise_selected=False)
+            attempt.update(status='searching',actual_pose=copy.deepcopy(cp['pose']),actual_colors=list(cp['client_hex']))
+            emit('native_retry_reset',status='searching',reason='user_retry',**retry_fields())
+            return True
+        finally:
+            retry_suppressed=False
+            # Repeated presses during the reset are coalesced into this reset.
+            if retry_requested is not None:retry_requested()
+
+    def restore_retry_anchor():
+        nonlocal cp,frames,current,retry_return,retry_suppressed,best_observed
+        if retry_anchor is None or current is None:return False
+        baseline=retry_anchor['checkpoint']
+        if observed_quality(current['checkpoint']['client_hex'],rules)<=observed_quality(baseline['client_hex'],rules):
+            return False
+        saved_suppressed=retry_suppressed;retry_suppressed=True
+        transaction=dict(status='preparing',anchor_colors=list(baseline['client_hex']),attempts=[])
+        result['retries'][-1]['recovery']=transaction
+        try:
+            if clock()>=end:return False
+            # The reset endpoint is already screenshot-verified. Re-read only
+            # if intervening input/failed observation invalidated that reference.
+            fresh=current['checkpoint']
+            for attempt in range(2):
+                reference_pose=copy.deepcopy(fresh['pose'])
+                guard()
+                checked_pose=(getattr(io,'last_checked_state',{}) or {}).get('pose')
+                if checked_pose is not None and checked_pose!=reference_pose:
+                    fresh=observe_native('retry_return_reference_'+str(attempt))
+                preferred=[retry_return['input_route']] if retry_return is not None else []
+                unchanged=(retry_return_reference is not None and all(fresh[key]==retry_return_reference[key]
+                    for key in ('binding','pose','client_hex')))
+                candidate=(retry_return if unchanged else prepare_retry_recovery(context,fresh,baseline,rules,
+                    deadline=min(end,clock()+2.),clock=clock,check=planning_guard,preferred_routes=preferred))
+                if candidate is None:
+                    transaction['status']='route_unavailable';return False
+                try:reserve_route(candidate,'restore_retry')
+                except GoalStop as exc:
+                    transaction['status']=str(exc);return False
+                transaction['attempts'].append(copy.deepcopy(candidate))
+                emit('action',kind='return',purpose='restore_retry')
+                route=candidate['input_route'];reference=fresh
+                for index,gesture in enumerate(route):
+                    cp,frames,feedback=submit(gesture,'retry_return_'+str(result['retry_epochs'])+'_'+str(attempt)+'_'+str(index),
+                        reference,'restore_retry',visual_required=index==len(route)-1)
+                    reference=cp
+                    if (complete_screenshot(cp,frames) and observed_quality(cp['client_hex'],rules)<=
+                            observed_quality(baseline['client_hex'],rules)):break
+                if not route:cp,frames=observe_resilient('retry_return_current')
+                if (complete_screenshot(cp,frames) and observed_quality(cp['client_hex'],rules)<=
+                        observed_quality(baseline['client_hex'],rules)):
+                    transaction.update(status='restored',actual_colors=list(cp['client_hex']))
+                    if observed_quality(cp['client_hex'],rules)<observed_quality(best_observed['checkpoint']['client_hex'],rules):
+                        best_observed=copy.deepcopy(current)
+                    retry_return=None
+                    result.update(stop_reason='target_observed' if score_codes(cp['client_hex'],rules)['accepted'] else 'compromise_observed',
+                        accepted=score_codes(cp['client_hex'],rules)['accepted'],retry_recovered=True)
+                    return True
+                fresh=cp;retry_return=None
+            transaction['status']='unconfirmed';return False
+        finally:retry_suppressed=saved_suppressed
+
+    def retain_candidates(plan):
+        nonlocal candidate_rows
+        if candidate_choice is None:return
+        rows=plan.get('candidate_pool',[])
+        rows=[*rows,*(row for row in (plan.get('candidate'),plan.get('compromise_candidate')) if row)]
+        retained={tuple(row['actual_colors']):row for row in candidate_rows}
+        for row in rows:
+            owned=copy.deepcopy(row)
+            owned.setdefault('actual_colors',actual_colors(context,owned['final_pose']))
+            retained[tuple(owned['actual_colors'])]=owned
+        candidate_rows=sorted(retained.values(),key=lambda row:(*predicted_quality(row['prediction'],rules),
+            row['needed'],len(row['input_route'])))[:12]
+        emit('native_candidates',**present_candidates(batch_id,candidate_rows,rules,
+            cp['client_hex'],candidate_observations,deadline=end))
+
+    def candidate_choices():
+        """Retain this IO/context and reserve a checked return before any selection."""
+        nonlocal cp,frames,current,candidate_rows,best_observed
+        if candidate_choice is None or not current or not current.get('frames'):return
+        score=score_native_pose(session,cp['pose'],rules)
+        stationary=audit_candidate_endpoint(context,cp,rules,dict(input_route=[],final_pose=cp['pose'],
+            prediction=score,needed=_needed([],3.,.5),source='current_observed_reference'))
+        stationary['actual_colors']=cp['client_hex']
+        retained={tuple(row['actual_colors']):row for row in candidate_rows}
+        retained[tuple(cp['client_hex'])]=stationary
+        candidate_rows=sorted(retained.values(),key=lambda row:(*predicted_quality(row['prediction'],rules),
+            row['needed'],len(row['input_route'])))
+        if len(candidate_rows)>12:
+            candidate_rows=[row for row in candidate_rows[:11] if row['actual_colors']!=cp['client_hex']]+[stationary]
+            candidate_rows.sort(key=lambda row:(*predicted_quality(row['prediction'],rules),row['needed']))
+        result.update(candidate_batch_id=batch_id,candidate_selections=[])
+        def closing_allowance():return max(4.,1.5*max(costs['visual'][-3:],default=0.)+.5)+8.25
+        def ready():
+            payload=present_candidates(batch_id,candidate_rows,rules,cp['client_hex'],candidate_observations,deadline=end)
+            payload['selection_deadline']=max(clock(),end-closing_allowance())
+            result['candidates']=copy.deepcopy(payload['candidates']);result['candidate_observations']=copy.deepcopy(payload['observations'])
+            emit('native_candidate_ready',**payload)
+            retry_available('candidates',waiting=True)
+        ready()
+        close_reason='deadline'
+        while clock()+closing_allowance()<end:
+            close_allowance=closing_allowance()
+            guard();began=clock();poll_end=min(end-close_allowance,began+.25)
+            selected_id=candidate_choice(batch_id,poll_end)
+            io.check(end)
+            if clock()+close_allowance>=end:break
+            guard()
+            if selected_id is None:
+                # A UI poll may return immediately. Keep guards active without
+                # consuming a search allowance or extending this session cap.
+                left=poll_end-clock()
+                if left>0:pause(left)
+                continue
+            row=next((row for row in candidate_rows if candidate_id(batch_id,row['actual_colors'])==selected_id),None)
+            if row is None:
+                emit('native_candidate_selected',batch_id=batch_id,candidate_id=selected_id,status='rejected',reason='stale_or_unknown_candidate')
+                ready()
+                continue
+            if row['actual_colors']==cp['client_hex']:
+                cp,frames=observe_resilient('selection_current_revalidate')
+                if row['actual_colors']==cp['client_hex']:
+                    emit('native_candidate_selected',batch_id=batch_id,candidate_id=selected_id,status='current',
+                        **candidate_observation(cp['client_hex'],rules));ready();continue
+            # Even the cheapest choice needs fresh frames, full compilation,
+            # final frames and protected measured recovery. No partial route
+            # begins merely because its first gesture fits.
+            if clock()+24.>=end:
+                emit('native_candidate_selected',batch_id=batch_id,candidate_id=selected_id,status='rejected',reason='insufficient_protected_time')
+                ready()
+                continue
+            fresh,fresh_frames=observe_resilient('selection_reference')
+            cp,frames=fresh,fresh_frames
+            anchor=copy.deepcopy(current);baseline=anchor['checkpoint'];anchor_rules=exact_observed_rules(baseline['client_hex'])
+            try:
+                compiled=compile_candidate_selection(context,fresh,rules,row,
+                    deadline=min(clock()+6.,end-18.),clock=clock,
+                    check=planning_guard)
+                route=compiled['input_route'];returns=compiled['prefix_recoveries']
+                outward,visual=route_allowance(compiled)
+                return_allowance=max((route_allowance(recovery)[0] for recovery in returns),default=0.)
+                return_actions=max((len(recovery['input_route']) for recovery in returns),default=0)+1
+                # Two measured return attempts and correction search are reserved.
+                recovery_reserve=2*(return_allowance+2.)+visual
+                if len(route)+2*return_actions>max_actions-result['actual_input_attempts']:
+                    raise CandidateUnavailable('insufficient_protected_actions')
+                if clock()+outward+recovery_reserve>=end:
+                    raise CandidateUnavailable('insufficient_protected_time')
+            except SessionStatusError:raise
+            except (CandidateUnavailable,ValueError,TimeoutError) as exc:
+                emit('native_candidate_selected',batch_id=batch_id,candidate_id=selected_id,status='rejected',reason=str(exc))
+                ready()
+                continue
+            transaction=dict(candidate_id=selected_id,anchor_colors=baseline['client_hex'],
+                target_colors=row['actual_colors'],protection_audit=compiled['protection_audit'],
+                status='admitted',return_allowance=recovery_reserve,actual_colors=None)
+            result['candidate_selections'].append(transaction)
+            emit('native_candidate_selected',batch_id=batch_id,candidate_id=selected_id,status='positioning')
+            phase_end=min(end-recovery_reserve,clock()+outward);completed=0;dirty=False
+            failure=None;selection_step_start=len(result['steps'])
+            try:
+                reference=fresh
+                for index,gesture in enumerate(route):
+                    dirty=True
+                    cp,frames,feedback=submit(gesture,'selection_'+str(len(result['candidate_selections']))+'_'+str(index),
+                        reference,'select_candidate',visual_required=index==len(route)-1,phase_deadline=phase_end)
+                    completed=index+1;reference=cp
+                    # A hit on the user's original target is an intermediate,
+                    # not permission to truncate the explicitly selected route.
+                    if result['steps'][-1].get('model_response_warning') and index+1<len(route):
+                        suffix=route[index+1:]
+                        replay=replay_native_route(cp['pose'],suffix,geometry,settings,
+                            wheel_delta_per_step=1.,sample_policy='all_recorded_points')
+                        audited=audit_candidate_endpoint(context,cp,rules,dict(input_route=suffix,
+                            final_pose=replay['final_pose'],prediction=score_native_pose(session,replay['final_pose'],rules),
+                            needed=_needed(suffix,3.,.5),source='actual_selection_suffix'))
+                        result['steps'][-1]['remaining_route_audit']=dict(reference_pose=cp['pose'],
+                            final_pose=audited['final_pose'],prediction=audited['prediction'],continued=True)
+                        emit('route_revalidated',remaining_gestures=len(suffix),reference_pose=cp['pose'],
+                            predicted_colors=audited['prediction']['colors'],purpose='select_candidate')
+                if not route:cp,frames=observe_resilient('selection_current',phase_end)
+                if not assess_feedback(context,cp,frames,compiled['selection_rules'])['observed_target_accepted']:
+                    failure='candidate_endpoint_unconfirmed'
+            except SessionStatusError:raise
+            except (TimeoutError,VisualNotReady,GoalStop,ValueError) as exc:
+                if isinstance(exc,GoalStop) and str(exc)!='target_visual_unconfirmed':raise
+                latest=result['steps'][-1] if len(result['steps'])>selection_step_start else None
+                completed=sum(step.get('receipt',{}).get('completed') is True
+                    for step in result['steps'][selection_step_start:])
+                if isinstance(exc,InputNotStarted):dirty=completed>0
+                if dirty and not isinstance(exc,InputNotStarted) and (latest is None or not latest.get('receipt',{}).get('completed')):
+                    raise GoalStop('input_outcome_unknown')
+                failure=str(exc)
+            if failure is None:
+                transaction.update(status='observed',actual_colors=cp['client_hex'])
+                candidate_observations[selected_id]=candidate_observation(cp['client_hex'],rules)
+                if observed_quality(cp['client_hex'],rules)<observed_quality(best_observed['checkpoint']['client_hex'],rules):
+                    best_observed=copy.deepcopy(current)
+                result.update(stop_reason='user_candidate_observed',accepted=score_codes(cp['client_hex'],rules)['accepted'])
+                emit('native_candidate_selected',batch_id=batch_id,candidate_id=selected_id,status='observed',
+                    **candidate_observations[selected_id]);ready();continue
+            transaction['failure']=failure
+            if not dirty:
+                current=anchor;cp,frames=baseline,anchor['frames']
+                emit('native_candidate_selected',batch_id=batch_id,candidate_id=selected_id,status='rejected',reason=failure)
+                ready();continue
+            # Failure returns through fresh native readback; opposite wheel
+            # descriptors or an old pose reference never authorize this input.
+            restored=False
+            for retry in range(2):
+                cp=observe_native('selection_return_reference_'+str(retry))
+                preferred=returns[min(max(completed,1),len(returns))-1]['input_route'] if returns else []
+                replay=replay_native_route(cp['pose'],preferred,geometry,settings,
+                    wheel_delta_per_step=1.,sample_policy='all_recorded_points')
+                recovery=audit_candidate_endpoint(context,cp,anchor_rules,dict(input_route=preferred,
+                    final_pose=replay['final_pose'],prediction=score_native_pose(session,replay['final_pose'],anchor_rules),
+                    needed=_needed(preferred,3.,.5),source='actual_selection_return'))
+                if not recovery['prediction']['predicted_accepted']:
+                    recovery=find_recovery(context,cp,baseline,anchor_rules,
+                        deadline=min(clock()+2.,end-8.),clock=clock,
+                        check=planning_guard,preferred_routes=(preferred,))
+                if recovery is None:continue
+                allowance,_=route_allowance(recovery)
+                if len(recovery['input_route'])>max_actions-result['actual_input_attempts'] or clock()+allowance>=end:break
+                reference=cp;return_route=recovery['input_route'];return_end=min(end-8.,clock()+allowance)
+                for index,gesture in enumerate(return_route):
+                    cp,frames,feedback=submit(gesture,'selection_return_'+str(retry)+'_'+str(index),reference,
+                        'restore_selection',visual_required=index==len(return_route)-1,phase_deadline=return_end)
+                    reference=cp
+                if not return_route:cp,frames=observe_resilient('selection_return_current',return_end)
+                if assess_feedback(context,cp,frames,anchor_rules)['observed_target_accepted']:
+                    restored=True;break
+            if not restored:
+                transaction['status']='recovery_unconfirmed'
+                emit('native_candidate_selected',batch_id=batch_id,candidate_id=selected_id,status='recovery_unconfirmed',reason=failure)
+                raise GoalStop('candidate_recovery_unconfirmed')
+            transaction.update(status='restored',actual_colors=cp['client_hex'])
+            result['accepted']=score_codes(cp['client_hex'],rules)['accepted']
+            restored_id=next((candidate_id(batch_id,row['actual_colors']) for row in candidate_rows
+                if row['actual_colors']==cp['client_hex']),None)
+            emit('native_candidate_selected',batch_id=batch_id,candidate_id=restored_id,status='restored',reason=failure,
+                failed_candidate_id=selected_id,current_candidate_id=restored_id,
+                **candidate_observation(cp['client_hex'],rules));ready()
+        result['candidate_selection_close']=close_reason
+        # Waiting is not evidence that the board stayed at its last measured
+        # pose. Re-read two frames before exposing a final current result.
+        result['last_verified_candidate_colors']=cp['client_hex']
+        cp,frames=observe_resilient('candidate_wait_closed')
+        final_id=next((candidate_id(batch_id,row['actual_colors']) for row in candidate_rows
+            if row['actual_colors']==cp['client_hex']),None)
+        emit('native_candidate_closed',batch_id=batch_id,reason=close_reason,current_colors=cp['client_hex'],
+            current_candidate_id=final_id,**candidate_observation(cp['client_hex'],rules))
+        result['current_candidate_id']=final_id
+
+    def protected_refinement():
+        """Spend only time left after reserving a measured, audited return."""
+        nonlocal cp,frames,current,best_observed,refinement_floor
+        refinement_floor=copy.deepcopy(best_observed)
+        result['refinement_attempts']=[];result['refinement_searches']=[]
+        result['refinement_budget_decisions']=[];excluded=[];excluded_keys=set()
+        def exclude(route):
+            key=json.dumps(route,sort_keys=True)
+            if key not in excluded_keys:
+                excluded_keys.add(key);excluded.append(copy.deepcopy(route))
+        def stop(reason):result['refinement_stop']=reason
+        def limits():
+            # Each call receives its phase deadline. These allowances absorb
+            # measured latency; a slow probe cannot borrow the return window.
+            native,visual,action=phase_allowances(costs)
+            # Long earlier drags must not inflate the cost of a tiny arc. Its
+            # descriptor duration is known; reserve measured preparation apart.
+            return native,visual,action
+        def route_cost(route,native,visual,action):
+            return sum(action+g['input_seconds'] for g in route)+native*max(0,len(route)-1)+visual
+        def reaudited(reference,route):
+            replay=replay_native_route(reference['pose'],route,geometry,settings,
+                wheel_delta_per_step=1.,sample_policy='all_recorded_points')
+            return audit_candidate_endpoint(context,reference,rules,dict(
+                input_route=copy.deepcopy(route),final_pose=replay['final_pose'],
+                prediction=score_native_pose(session,replay['final_pose'],rules),
+                needed=_needed(route,3.,.5),source='protected_actual_reference'))
+        def endpoint_checkpoint(reference,row):
+            # Disabled regions are omitted from target predictions, while a
+            # bound native checkpoint includes every actual client HEX.
+            neutral=[dict(enabled=True,exact=True,colors=['#000000'],tolerance=0.) for _ in range(count)]
+            return dict(reference,pose=row['final_pose'],
+                client_hex=score_native_pose(session,row['final_pose'],neutral)['colors'])
+        while result['actual_input_attempts']<max_actions:
+            anchor=copy.deepcopy(current)
+            if not anchor or not anchor.get('frames') or not assess_feedback(
+                context,anchor['checkpoint'],anchor['frames'],rules)['screenshot_verified']:
+                stop('anchor_not_visually_verified');return
+            baseline=anchor['checkpoint'];quality=observed_quality(baseline['client_hex'],rules)
+            policy=RefinementPolicy(rules,baseline['client_hex'])
+            if best_observed is not None and not retained_not_worse(
+                    baseline['client_hex'],best_observed['checkpoint']['client_hex']):
+                stop('anchor_not_retained');return
+            native,visual,action=limits()
+            # First admit the shortest useful trial, one checked return and an
+            # actual reference/correction search. A longer selected candidate
+            # is independently costed below; do not block a one-action late
+            # improvement with a hypothetical pair of long return attempts.
+            short_arc_seconds=.296
+            prototype_trial=action+short_arc_seconds+visual
+            prototype_return=prototype_trial+action+.5+native
+            correction_search=2.
+            minimum=native+prototype_trial+native+correction_search+prototype_return
+            budget=dict(at_monotonic=clock(),effective_deadline=end,remaining_seconds=end-clock(),
+                native_phase_seconds=native,visual_phase_seconds=visual,input_preparation_seconds=action,
+                protected_allowance_seconds=minimum)
+            result['refinement_budget_decisions'].append(budget)
+            if clock()+minimum+MINIMUM_USEFUL_SEARCH_SECONDS>=end:stop('insufficient_protected_time');return
+            display=dict(current_colors=list(baseline['client_hex']),
+                current_deltas=score_codes(baseline['client_hex'],rules)['deltas'],
+                verified=True,screenshot_verified=True)
+            emit('refinement_planning',protected_colors=baseline['client_hex'],**display)
+            # The local search itself never changes the board. Let its finite
+            # family use the usable remainder; successful candidates return
+            # promptly after polishing, while every trial still owns recovery.
+            search_end=end-minimum
+            stats={};search_started=clock();search_state={}
+            try:
+                while True:
+                    row=find_refinement(context,baseline,rules,deadline=search_end,clock=clock,
+                        check=lambda:planning_guard(search_end),excluded=excluded,
+                        stats=stats,search_state=search_state,slice_seconds=2.,
+                        progress=lambda update:emit('refinement_search_progress',**update,**display))
+                    if row is not None or not stats.get('search_pending'):break
+                    planning_guard(search_end)
+            except TimeoutError:
+                stop('local_search_timeout');return
+            finally:
+                stats.update(started_monotonic=search_started,finished_monotonic=clock(),
+                    allowance_seconds=search_end-search_started,effective_deadline=end)
+                result['refinement_searches'].append(stats)
+            if row is None:
+                stop('local_family_exhausted' if stats.get('family_exhausted') else
+                    'local_search_budget' if stats.get('deadline_reached') else 'no_safe_improvement');return
+            # Independently gate the handoff from CPU planning to live input.
+            if not policy.assess(row['prediction']['colors'],deltas=row['prediction']['deltas'])['improved']:
+                stop('no_safe_improvement');return
+            route=row.get('input_route',[]);returns=row.get('prefix_recoveries',[])
+            if json.dumps(route,sort_keys=True) in excluded_keys:
+                stop('no_safe_improvement');return
+            if not route or len(route)!=len(returns):stop('recovery_not_proven');return
+            # Reproduce both outward and every prefix return against this
+            # session. A candidate's own advertised quality is insufficient.
+            row=reaudited(baseline,route)
+            if not policy.assess(row['prediction']['colors'],deltas=row['prediction']['deltas'])['improved']:
+                stop('no_safe_improvement');return
+            longest=0;return_cost=0.
+            for index,recovery in enumerate(returns):
+                prefix=reaudited(baseline,route[:index+1])
+                endpoint=endpoint_checkpoint(baseline,prefix)
+                recovery=reaudited(endpoint,recovery['input_route'])
+                if not policy.assess(recovery['prediction']['colors'],deltas=recovery['prediction']['deltas'])['not_worse']:
+                    stop('recovery_not_proven');return
+                longest=max(longest,len(recovery['input_route']))
+                return_cost=max(return_cost,route_cost(recovery['input_route'],native,visual,action))
+            maximum_return_actions=min(4,longest+1)
+            remaining_actions=max_actions-result['actual_input_attempts']
+            if len(route)+max(1,maximum_return_actions)>remaining_actions:
+                stop('insufficient_protected_actions');return
+            trial_cost=route_cost(route,native,visual,action)
+            # A measured endpoint correction can add one bounded drag to the
+            # prepared inverse; reserve one complete measured return, not two
+            # hypothetical failures before allowing a useful improvement.
+            corrected_return_cost=return_cost+action+.5+native
+            one_return=native+correction_search+corrected_return_cost
+            recovery_limit=2 if len(route)+2*max(1,maximum_return_actions)<=remaining_actions else 1
+            reserved_return=one_return
+            required=native+trial_cost+reserved_return
+            if clock()+required>=end:
+                stop('insufficient_protected_time');return
+            fresh=observe_native('refine_reference',end-trial_cost-reserved_return)
+            if fresh['pose']!=baseline['pose'] or fresh['client_hex']!=baseline['client_hex']:
+                cp,frames=observe_resilient('refine_reference_changed');stop('reference_changed');return
+            current=anchor
+            if clock()+trial_cost+reserved_return>=end:
+                stop('insufficient_protected_time');return
+            transaction=dict(anchor=anchor,candidate=row,prefix_recoveries=copy.deepcopy(returns),
+                admitted_at=clock(),deadline=end,trial_allowance=trial_cost,
+                return_allowance=reserved_return,maximum_return_actions=maximum_return_actions,
+                maximum_recovery_attempts=recovery_limit,correction_search_allowance=correction_search,
+                status='admitted',recovery_attempts=[])
+            result['refinement_attempts'].append(transaction)
+            # Measurements estimate admission cost; spare session time belongs
+            # to the real read, not an artificial per-trial timeout. Keep one
+            # complete recovery available if the endpoint is actually worse.
+            phase_end=end-reserved_return
+            completed_prefix=0;dirty=False;failure=None
+            try:
+                reference=fresh
+                for index,gesture in enumerate(route):
+                    dirty=True
+                    cp,frames,feedback=submit(gesture,'refine_'+str(len(result['refinement_attempts'])-1)+'_'+str(index),
+                        reference,'refine',visual_required=index==len(route)-1,phase_deadline=phase_end)
+                    completed_prefix=index+1;reference=cp
+                    if feedback['observed_target_accepted']:break
+                    cp,frames,feedback,retained=retain_superior_prefix(cp,frames,feedback,
+                        route[index+1:],quality,'refine_'+str(len(result['refinement_attempts'])-1),phase_end,
+                        anchor_colors=baseline['client_hex'])
+                    reference=cp
+                    if retained:
+                        transaction['retained_prefix_length']=completed_prefix
+                        break
+                    if index<len(route)-1:
+                        measured_return=reaudited(cp,returns[index]['input_route'])
+                        transaction.setdefault('prefix_return_audits',[]).append(measured_return)
+                        # Measured feedback, rather than error magnitude, decides
+                        # whether the next trial input still has a proven return.
+                        if not policy.assess(measured_return['prediction']['colors'],
+                                deltas=measured_return['prediction']['deltas'])['not_worse']:
+                            failure='actual_return_requires_revalidation';break
+                        for future in range(index+1,len(route)):
+                            suffix=reaudited(cp,route[index+1:future+1])
+                            endpoint=endpoint_checkpoint(cp,suffix)
+                            future_return=reaudited(endpoint,returns[future]['input_route'])
+                            transaction.setdefault('remaining_return_audits',[]).append(future_return)
+                            if not policy.assess(future_return['prediction']['colors'],
+                                    deltas=future_return['prediction']['deltas'])['not_worse']:
+                                failure='remaining_return_requires_revalidation';break
+                        if failure:break
+                if current and current.get('frames') and assess_feedback(context,cp,frames,rules)['screenshot_verified']:
+                    comparison=policy.assess(cp['client_hex'])
+                    transaction['comparison']=comparison
+                    emit('refinement_trial',current_colors=list(cp['client_hex']),
+                        current_deltas=score_codes(cp['client_hex'],rules)['deltas'],
+                        retained_colors=list(baseline['client_hex']),retained_deltas=policy.baseline['deltas'],
+                        verified=True,screenshot_verified=True,refinement_status='trial')
+                    if comparison['not_worse']:
+                        transaction.update(status='promoted' if comparison['improved'] else 'retained',actual_colors=cp['client_hex'])
+                        if retained_better(cp['client_hex'],best_observed['checkpoint']['client_hex']):
+                            best_observed=copy.deepcopy(current)
+                        if comparison['improved']:
+                            emit('refinement_retained',current_colors=list(cp['client_hex']),
+                                current_deltas=score_codes(cp['client_hex'],rules)['deltas'],
+                                verified=True,screenshot_verified=True,refinement_status='retained')
+                        if feedback['observed_target_accepted']:
+                            result.update(accepted=True,stop_reason='target_observed');stop('target_observed');return
+                        exclude(route)
+                        continue
+            except (TimeoutError,VisualNotReady,GoalStop) as exc:
+                if isinstance(exc,GoalStop) and str(exc)!='target_visual_unconfirmed':raise
+                failure=type(exc).__name__+': '+str(exc)
+                # Input whose completion is unknown is not safe to reverse.
+                if isinstance(exc,InputNotStarted):
+                    if completed_prefix==0:
+                        current=anchor;transaction['status']='not_started';stop('trial_not_started');return
+                elif not result['steps'][-1].get('receipt',{}).get('completed'):
+                    raise GoalStop('input_outcome_unknown')
+                else:completed_prefix=index+1
+            if not dirty:current=anchor;stop('trial_not_started');return
+            transaction['trial_failure']=failure
+            emit('refinement_return',retained_colors=list(baseline['client_hex']),
+                retained_deltas=policy.baseline['deltas'],refinement_status='restoring')
+            # Never improvise a full global search in this reserved phase.
+            restore_end=end
+            trial_landing=copy.deepcopy(current)
+            cp=observe_native('refinement_return_reference',restore_end-corrected_return_cost)
+            pending_returns=[];recovery_landings=[trial_landing]
+            restored=False
+            for recovery_index in range(recovery_limit):
+                guard()
+                search_until=min(restore_end-corrected_return_cost,clock()+correction_search)
+                if search_until<=clock():break
+                candidate=None
+                if recovery_index==0 and 0<completed_prefix<=len(returns):
+                    prepared=reaudited(cp,returns[completed_prefix-1]['input_route'])
+                    if policy.assess(prepared['prediction']['colors'],deltas=prepared['prediction']['deltas'])['not_worse']:candidate=prepared
+                if candidate is None:
+                    try:
+                        candidate=find_recovery(context,cp,baseline,rules,deadline=search_until,clock=clock,
+                            check=lambda:planning_guard(search_until),
+                            preferred_routes=(*pending_returns,*(r['input_route'] for r in reversed(returns))),preserve_regions=True)
+                    except TimeoutError as exc:
+                        transaction.setdefault('recovery_search_errors',[]).append(str(exc));continue
+                if candidate is None:break
+                candidate=reaudited(cp,candidate['input_route'])
+                if not policy.assess(candidate['prediction']['colors'],deltas=candidate['prediction']['deltas'])['not_worse']:break
+                recovery_route=candidate['input_route']
+                if (len(recovery_route)>maximum_return_actions or
+                    len(recovery_route)>max_actions-result['actual_input_attempts']):break
+                allowance=route_cost(recovery_route,native,visual,action)
+                if clock()+allowance>restore_end:break
+                transaction['recovery_attempts'].append(candidate)
+                until=restore_end
+                recovery_step_start=len(result['steps'])
+                try:
+                    reference=cp
+                    for index,gesture in enumerate(recovery_route):
+                        cp,frames,feedback=submit(gesture,'refinement_return_'+str(recovery_index)+'_'+str(index),
+                            reference,'restore_refinement',visual_required=index==len(recovery_route)-1,phase_deadline=until)
+                        reference=cp
+                    if not recovery_route:cp,frames=observe_resilient('refinement_return_current',until)
+                    if current and complete_screenshot(cp,frames):recovery_landings.append(copy.deepcopy(current))
+                    if (current and current.get('frames') and assess_feedback(context,cp,frames,rules)['screenshot_verified'] and
+                        policy.assess(cp['client_hex'])['not_worse']):
+                        transaction.update(status='restored',actual_colors=cp['client_hex'])
+                        if retained_better(cp['client_hex'],best_observed['checkpoint']['client_hex']):
+                            best_observed=copy.deepcopy(current)
+                        if score_codes(cp['client_hex'],rules)['accepted']:
+                            result.update(accepted=True,stop_reason='target_observed')
+                            stop('target_observed');return
+                        exclude(route);restored=True;break
+                except (TimeoutError,VisualNotReady,GoalStop) as exc:
+                    if isinstance(exc,GoalStop) and str(exc)!='target_visual_unconfirmed':raise
+                    transaction['recovery_read_error']=str(exc)
+                    if (recovery_route and not isinstance(exc,InputNotStarted) and
+                        not result['steps'][-1].get('receipt',{}).get('completed')):
+                        raise GoalStop('input_outcome_unknown')
+                    if clock()+native>=restore_end:break
+                    cp=observe_native('refinement_return_refresh',restore_end)
+                finished=sum(s.get('receipt',{}).get('completed') is True
+                    for s in result['steps'][recovery_step_start:])
+                pending_returns=[recovery_route[finished:]] if finished<len(recovery_route) else []
+            if restored:continue
+            # A missed short inverse enters the measured geometric recovery
+            # planner; it must not turn an otherwise active round into a stop.
+            if recover_best_failure('refinement_return_replan',alternatives=recovery_landings):
+                transaction.update(status='restored',actual_colors=list(cp['client_hex']),
+                    expanded_recovery=True)
+                exclude(route)
+                continue
+            if current and complete_screenshot(current['checkpoint'],current.get('frames')):
+                transaction.update(status='recovery_time_used',actual_colors=list(cp['client_hex']))
+                stop('recovery_time_used');return
+            if result.get('stop_reason')=='interrupted':raise InterruptedError(result.get('error','F9'))
+            transaction['status']='recovery_unconfirmed'
+            raise GoalStop('refinement_recovery_unconfirmed')
+        stop('insufficient_protected_actions')
+    def execute_search():
+        nonlocal cp,frames,current,end,best_observed,planning_count,refinement_floor
+        refinement_floor=None
+        nonlocal target_route,target_template,compromise_route,compromise_template
+        def planner_search_budget():
+            # A search keeps the actual fresh plan-reference observation and
+            # shortest complete input/final read. No second idle tail applies.
+            native,visual,preparation=phase_allowances(costs)
+            shortest_route=max(3.5,preparation+.296+visual)
+            recover_cost=retry_recovery_allowance()[0]
+            cap=min(25.,end-clock()-max(visual+shortest_route,recover_cost))
+            if cap<MINIMUM_USEFUL_SEARCH_SECONDS:raise GoalStop('insufficient_time')
+            return cap
+        admission_failures=set()
+        def measured_admission(row):
+            # Filter before ranking the final candidates, not after publishing
+            # one long route that leaves the user stranded at the reset pose.
+            return_cost,return_actions=retry_recovery_allowance()
+            if len(row['input_route'])+return_actions>max_actions-result['actual_input_attempts']:
+                admission_failures.add('actions');return False
+            if clock()+route_allowance(row)[0]+return_cost+phase_allowances(costs)[1]>=end:
+                admission_failures.add('time');return False
+            return True
+        def call_planner(*args,**kwargs):
+            if 'candidate_admission' in inspect.signature(planner).parameters:
+                kwargs['candidate_admission']=measured_admission
+            return planner(*args,**kwargs)
+        while planning_count<max_rounds:
+            number=planning_count;planning_count+=1
+            admission_failures.clear()
+            search_cap=25.
+            retry_available('searching')
+            guard();observed=assess_feedback(context,cp,frames,rules)
+            emit('observed',colors=cp['client_hex'],remaining_seconds=frames[-1]['remaining_seconds'])
+            if observed['stop_reason']=='target_visual_unconfirmed':raise GoalStop('target_visual_unconfirmed')
+            if observed['observed_target_accepted']:
+                if candidate_choice is not None and not candidate_rows:
+                    p=cp['pose'];x,y=p['position'];s=p['scale']
+                    grid=PoseGrid((x-.04,x+.04),(y-.02,y+.02),9,5,
+                        (s*.99,s,s*1.01,s*.9999),(p['rotation_degrees'],))
+                    plan=call_planner(context,cp,frames,rules,grid,now=clock(),engineering_deadline=end,
+                        time_budget_seconds=planner_search_budget(),clock=clock,
+                        verification_margin_seconds=phase_allowances(costs)[1],
+                        check=planning_guard,collect_candidates=True)
+                    result['planning_rounds'].append(plan);retain_candidates(plan)
+                result.update(stop_reason='target_observed',accepted=True);break
+            if result['actual_input_attempts']>=max_actions:raise GoalStop('action_limit')
+            pose=cp['pose'];x,y=pose['position'];scale=pose['scale']
+            grid=PoseGrid((x-.04,x+.04),(y-.02,y+.02),9,5,
+                (scale*.99,scale,scale*1.01,scale*.9999),(pose['rotation_degrees'],))
+            if result['retry_epochs']:
+                native,visual,preparation=phase_allowances(costs)
+                recover_cost=retry_recovery_allowance()[0]
+                search_cap=max(0.,min(25.,end-clock()-max(visual+max(3.5,preparation+.296+visual),recover_cost)))
+                search_budget=dict(phase='search',at_monotonic=clock(),effective_deadline=end,
+                    epoch=result['retry_epochs'],remaining_seconds=end-clock(),visual_allowance_seconds=visual,
+                    closing_guard_seconds=0.,search_cap_seconds=search_cap,enabled=search_cap>=MINIMUM_USEFUL_SEARCH_SECONDS,
+                    reason=None if search_cap>=MINIMUM_USEFUL_SEARCH_SECONDS else 'insufficient_retry_time')
+                record_retry_budget(search_budget)
+                if search_cap<MINIMUM_USEFUL_SEARCH_SECONDS:raise GoalStop('insufficient_time')
+            emit('planning',round=number,purpose='compromise' if compromise_route is not None else 'target')
+            if target_route is not None:
+                plan=rebase_compromise_plan(context,cp,frames,rules,target_route,target_template,
+                    now=clock(),check=planning_guard,purpose='target')
+                if plan['candidate'] is None:
+                    target_route=target_template=None
+                    plan=call_planner(context,cp,frames,rules,grid,now=clock(),engineering_deadline=end,
+                        time_budget_seconds=planner_search_budget(),clock=clock,
+                        verification_margin_seconds=phase_allowances(costs)[1],
+                        check=planning_guard,
+                        **({'collect_candidates':True} if candidate_choice is not None else {}))
+            elif compromise_route is None:
+                plan=call_planner(context,cp,frames,rules,grid,now=clock(),engineering_deadline=end,
+                    time_budget_seconds=planner_search_budget(),clock=clock,
+                    verification_margin_seconds=phase_allowances(costs)[1],
+                    check=planning_guard,
+                    **({'collect_candidates':True} if candidate_choice is not None else {}))
+            else:
+                plan=rebase_compromise_plan(context,cp,frames,rules,compromise_route,compromise_template,
+                    now=clock(),check=planning_guard)
+            result['planning_rounds'].append(plan)
+            retain_candidates(plan)
+            purpose='target'
+            if plan['candidate'] is None:
+                if plan.get('approach_candidate') is not None:
+                    purpose='approach'
+                    emit('target_approach',prediction=plan['approach_candidate']['target_prediction'])
+                elif plan.get('compromise_candidate') is None:
+                    if 'actions' in admission_failures:raise GoalStop('insufficient_route_actions')
+                    raise GoalStop('insufficient_time' if plan.get('result_classification')=='insufficient_time' else 'not_found_in_budget')
+                else:
+                    purpose='compromise';selected=plan['compromise_candidate']
+                    result['compromise_selected']=True
+                    if compromise_template is None:
+                        result['compromise_prediction']=copy.deepcopy(selected)
+                        compromise_template=copy.deepcopy(plan)
+                        emit('compromise_selected',prediction=selected['prediction'],metrics=selected.get('compromise_metrics'))
+            selected=plan[{'target':'candidate','compromise':'compromise_candidate','approach':'approach_candidate'}[purpose]]
+            end=min(end,plan['effective_deadline'])
+            # Admit the complete sequence and its final visual readback before
+            # any gesture, independent of whether it is target or compromise.
+            reserve_route(selected,purpose,include_revalidation=True)
+            try:
+                fresh,fresh_frames=observe_resilient('plan_'+str(number)+'_revalidate',
+                    planning_reference=bool(selected['input_route']))
+                validate_plan_reference(context,plan,fresh,fresh_frames,now=clock(),rules=rules,purpose=purpose,
+                    reference_observation_paid=True)
+            except ValueError as exc:
+                if 'Plan reference differs' not in str(exc):raise
+                result['reference_replans']=result.get('reference_replans',0)+1
+                compromise_route=None;compromise_template=None
+                fresh,fresh_frames=observe_resilient('plan_'+str(number)+'_reference_refresh',planning_reference=True)
+                cp,frames=fresh,fresh_frames
+                continue
+            route=selected['input_route']
+            if not route:
+                cp,frames=fresh,fresh_frames
+                if purpose=='compromise':result['stop_reason']='compromise_observed';break
+                continue
+            reserve_route(selected,purpose)
+            # Run a validated route in sequence. Every gesture uses the measured
+            # previous endpoint; response residuals update that reference and
+            # the remaining-route forecast instead of restarting global search.
+            route_fresh=fresh
+            gesture_index=0
+            while gesture_index<len(route):
+                gesture=route[gesture_index]
+                cp,frames,feedback=submit(
+                    gesture,
+                    'candidate_'+str(number) if gesture_index==0 else
+                    'candidate_'+str(number)+'_step_'+str(gesture_index),
+                    route_fresh,purpose,visual_required=gesture_index==len(route)-1)
+                suffix=route[gesture_index+1:]
+                warning=result['steps'][-1].get('model_response_warning')
+                if warning and not feedback['observed_target_accepted']:
+                    replay=replay_native_route(cp['pose'],suffix,geometry,settings,
+                        wheel_delta_per_step=1.,sample_policy='all_recorded_points')
+                    prediction=score_native_pose(session,replay['final_pose'],rules)
+                    # A drifted forecast is a reason to restore the selected
+                    # destination, not to abandon it for unrelated local work.
+                    if not RefinementPolicy(rules,selected['prediction']['colors']).assess(
+                            prediction['colors'])['not_worse']:
+                        original_remainder=dict(input_route=suffix,needed=_needed(suffix,3.,.5))
+                        until=min(clock()+(2. if suffix else 3.),
+                            end-route_allowance(original_remainder)[0]-retry_recovery_allowance()[0])
+                        repaired=correct_remaining_route(context,cp,rules,suffix,
+                            expected_pose=result['steps'][-1]['expected_pose'],target_pose=selected['final_pose'],
+                            deadline=until,clock=clock,check=planning_guard,admission=measured_admission)
+                        if repaired is not None:
+                            reserve_route(repaired,purpose)
+                            route=route[:gesture_index+1]+repaired['input_route']
+                            suffix=route[gesture_index+1:]
+                            result['steps'][-1]['destination_correction']=repaired
+                            emit('route_destination_corrected',remaining_gestures=len(suffix),
+                                predicted_colors=repaired['prediction']['colors'],purpose=purpose)
+                        elif suffix:
+                            # Computing a correction pays real time too. The
+                            # unchanged suffix must still fit its concrete
+                            # input/readback and any pending retry return.
+                            reserve_route(original_remainder,purpose)
+                # If a response residual still leaves a worse forecast than
+                # the intended endpoint, do not mistake that for exhaustion of
+                # the global destination. Run the admitted measured suffix.
+                replay=replay_native_route(cp['pose'],suffix,geometry,settings,
+                    wheel_delta_per_step=1.,sample_policy='all_recorded_points') if suffix else None
+                retain_allowed=not warning or not suffix or RefinementPolicy(
+                    rules,selected['prediction']['colors']).assess(
+                        score_native_pose(session,replay['final_pose'],rules)['colors'])['not_worse']
+                cp,frames,feedback,retained=retain_superior_prefix(cp,frames,feedback,
+                    suffix if retain_allowed else [],observed_quality(best_observed['checkpoint']['client_hex'],rules),
+                    'candidate_'+str(number))
+                if (current.get('frames') and feedback['screenshot_verified'] and
+                        observed_quality(cp['client_hex'],rules)<observed_quality(best_observed['checkpoint']['client_hex'],rules)):
+                    best_observed=copy.deepcopy(current)
+                if feedback['observed_target_accepted']:
+                    result.update(stop_reason='target_observed',accepted=True);break
+                if retained:
+                    result['stop_reason']='compromise_observed'
+                    break
+                if result['steps'][-1].get('model_response_warning'):
+                    suffix=route[gesture_index+1:]
+                    if suffix:
+                        guard()
+                        replay=replay_native_route(cp['pose'],suffix,geometry,settings,
+                            wheel_delta_per_step=1.,sample_policy='all_recorded_points')
+                        rescored=score_native_pose(session,replay['final_pose'],rules)
+                        result['steps'][-1]['remaining_route_audit']=dict(
+                            reference_pose=cp['pose'],final_pose=replay['final_pose'],
+                            prediction=rescored,continued=True,
+                            target_prediction_changed=not bool(rescored['predicted_accepted']))
+                        emit('route_revalidated',remaining_gestures=len(suffix),
+                            reference_pose=cp['pose'],predicted_colors=rescored['colors'],purpose=purpose)
+                route_fresh=cp
+                gesture_index+=1
+            if result.get('accepted'):break
+            if result.get('stop_reason')=='compromise_observed':break
+            if purpose=='target':
+                target_route=target_template=None
+            if purpose=='compromise':
+                compromise_route=compromise_template=None
+                result['stop_reason']='compromise_observed';break
+        else:result['stop_reason']='round_limit'
+        if retry_anchor is not None:restore_retry_anchor()
+        if (retry_anchor is None and result['stop_reason']=='compromise_observed' and best_observed is not None and
+            observed_quality(cp['client_hex'],rules)>observed_quality(best_observed['checkpoint']['client_hex'],rules)):
+            # Restore actual measured colors through a new native search. No
+            # inverse-wheel assumption or reused old-pose route is permitted.
+            restore_rules=[dict(enabled=True,exact=True,colors=[c],tolerance=0.)
+                for c in best_observed['checkpoint']['client_hex']]
+            result['restoration_rounds']=[]
+            for recovery in range(min(2,max_actions-result['actual_input_attempts'])):
+                guard();fresh,fresh_frames=observe_resilient('restore_'+str(recovery)+'_before')
+                p=fresh['pose'];x,y=p['position'];s=p['scale']
+                grid=PoseGrid((x-.04,x+.04),(y-.02,y+.02),9,5,(s*.99,s,s*1.01,s*.9999),(p['rotation_degrees'],))
+                recovery_plan=plan_from_checkpoint(context,fresh,fresh_frames,restore_rules,grid,now=clock(),
+                    engineering_deadline=end,time_budget_seconds=min(4.,planner_search_budget()),clock=clock,
+                    verification_margin_seconds=phase_allowances(costs)[1],
+                    check=planning_guard)
+                result['restoration_rounds'].append(recovery_plan)
+                candidate=recovery_plan['candidate']
+                if candidate is None:break
+                try:reserve_route(candidate,'restore_best',include_revalidation=True)
+                except GoalStop as exc:
+                    result['restoration_budget_stop']=str(exc);break
+                checked,checked_frames=observe_resilient('restore_'+str(recovery)+'_revalidate')
+                validate_plan_reference(context,recovery_plan,checked,checked_frames,now=clock(),rules=restore_rules,
+                    reference_observation_paid=True)
+                if not candidate['input_route']:cp,frames=checked,checked_frames;break
+                try:reserve_route(candidate,'restore_best')
+                except GoalStop as exc:
+                    result['restoration_budget_stop']=str(exc);break
+                restore_fresh=checked;route=candidate['input_route']
+                for index,gesture in enumerate(route):
+                    cp,frames,feedback=submit(gesture,
+                        'restore_'+str(recovery) if index==0 else 'restore_'+str(recovery)+'_step_'+str(index),
+                        restore_fresh,'restore_best',visual_required=index==len(route)-1)
+                    if (current and current.get('frames') and assess_feedback(context,cp,frames,rules)['screenshot_verified']
+                            and observed_quality(cp['client_hex'],rules)<observed_quality(best_observed['checkpoint']['client_hex'],rules)):
+                        best_observed=copy.deepcopy(current)
+                    if feedback['observed_target_accepted']:
+                        result.update(accepted=True,stop_reason='target_observed');break
+                    suffix=route[index+1:]
+                    if suffix and result['steps'][-1].get('model_response_warning'):
+                        # Continue the already admitted suffix from actual
+                        # native feedback. Residuals do not trigger another
+                        # global search or repeat a completed wheel leg.
+                        guard()
+                        replay=replay_native_route(cp['pose'],suffix,geometry,settings,
+                            wheel_delta_per_step=1.,sample_policy='all_recorded_points')
+                        audit=audit_candidate_endpoint(context,cp,restore_rules,dict(
+                            input_route=copy.deepcopy(suffix),final_pose=replay['final_pose'],
+                            prediction=score_native_pose(session,replay['final_pose'],restore_rules),
+                            needed=_needed(suffix,3.,.5),source='actual_feedback_restore_suffix'))
+                        result['steps'][-1]['remaining_route_audit']=dict(
+                            reference_pose=cp['pose'],final_pose=audit['final_pose'],
+                            prediction=audit['prediction'],continued=True,
+                            target_prediction_changed=not bool(audit['prediction']['predicted_accepted']))
+                        emit('route_revalidated',remaining_gestures=len(suffix),reference_pose=cp['pose'],
+                            predicted_colors=audit['prediction']['colors'],purpose='restore_best')
+                    restore_fresh=cp
+                if result.get('accepted'):break
+                # A return is complete only when its actual HEX is independently
+                # visible at the final endpoint; native-only hits remain reads.
+                if frames and assess_feedback(context,cp,frames,restore_rules)['observed_target_accepted']:break
+        if result['stop_reason']=='compromise_observed':
+            restore_retry_anchor()
+            protected_refinement()
+        try:candidate_choices()
+        except RetryRequested:raise
+        except Exception:
+            # A cancelled or rebound waiting session cannot certify its cached
+            # checkpoint as current. Preserve it only as last measured evidence.
+            if candidate_choice is not None and current is not None:
+                result['last_verified_candidate_colors']=current['checkpoint']['client_hex']
+                result['last_verified_candidate']=copy.deepcopy(current)
+                current=None
+            raise
+    try:
+        guard();visual_end=min(end,clock()+EARLY_TIMER_GRACE_SECONDS)
+        for attempt in range(120):
+            if clock()>=visual_end:raise GoalStop('initial_visual_timeout')
+            try:
+                cp,frames=observe('initial' if attempt==0 else 'initial_retry_'+str(attempt),visual_end,
+                    planning_reference=True)
+                if clock()>=visual_end:raise GoalStop('initial_visual_timeout')
+                break
+            except (VisualNotReady,TimeoutError) as exc:
+                guard()
+                if clock()>=visual_end:raise GoalStop('initial_visual_timeout')
+                result['initial_visual_retries']+=1
+                result['initial_layout_diagnostic']=getattr(exc,'layout_diagnostic',None)
+                emit('initial_visual_wait',attempt=attempt+1,error=str(exc),waiting_deadline=visual_end,
+                    layout_diagnostic=result['initial_layout_diagnostic'])
+                pause(min(.25,max(0.,visual_end-clock())))
+        else:raise GoalStop('initial_visual_timeout')
+        geometry=InputGeometry(cp['board'],cp['local_size'],'windows_legacy_mouse_pixels',cp.get('pixel_mapping'))
+        context=bind_planning_context(session,cp,geometry,settings,wheel_delta_per_step=1.,calibration_evidence=dict(
+            source='native_live_repeated_input_backend',viewport_origin=backend_binding['viewport_origin'],
+            viewport_scale=backend_binding['viewport_scale'],backend_during_actions_synchronously_recorded=True))
+        if settings.move_threshold!=0.:raise GoalStop('unsupported_input_settings')
+        result['initial']=copy.deepcopy(current)
+        initial_score=score_codes(cp['client_hex'],rules)
+        initial_metrics=quality_fields(initial_score,rules,verified=True)
+        result.update(initial_maximum=initial_metrics['maximum'],initial_average=initial_metrics['average'])
+        best_observed=copy.deepcopy(current)
+        retry_suppressed=False
+        while True:
+            should_retry=False
+            try:
+                execute_search()
+                restore_retry_anchor()
+                should_retry=wait_for_retry()
+            except RetryRequested:should_retry=True
+            except GoalStop as exc:
+                reason=str(exc)
+                if retry_requested is None or reason not in ('not_found_in_budget','insufficient_time','round_limit','action_limit',
+                        'insufficient_route_actions','insufficient_compromise_actions'):
+                    raise
+                result['stop_reason']=reason
+                restore_retry_anchor()
+                try:should_retry=wait_for_retry()
+                except RetryRequested:should_retry=True
+            if not should_retry:break
+            while should_retry:
+                if reset_retry():break
+                should_retry=wait_for_retry()
+            if not should_retry:break
+    except SessionStatusError as exc:
+        invalidate_current()
+        result.update(stop_reason=exc.stop_reason,accepted=False,verified=False,
+            session_stop_reason=exc.stop_reason,session_stop_classification=exc.classification,
+            session_diagnostic=copy.deepcopy(exc.diagnostic),error=type(exc).__name__+': '+str(exc))
+        emit('session_status',stop_reason=exc.stop_reason,classification=exc.classification,
+            changed_fields=exc.diagnostic.get('changed_fields',[]),
+            diagnostic_file=exc.diagnostic.get('diagnostic_file'))
+        if getattr(exc,'recoverable',False):recover_best_failure(exc.stop_reason)
+    except GoalStop as exc:
+        reason=str(exc);result['stop_reason']=reason
+        # Budget and quota stops do not themselves invalidate a completed read.
+        # Every failed binding, unconfirmed input, recovery or visual read does.
+        if (reason not in ('not_found_in_budget','round_limit','action_limit','insufficient_time',
+                'insufficient_route_actions','insufficient_compromise_actions')
+                or current is None or not complete_screenshot(current['checkpoint'],current.get('frames'))):
+            invalidate_current()
+        # An incomplete gesture or unconfirmed button release is terminal.
+        # Re-reading a pose must not authorize another gesture after that fault.
+        if reason in ('insufficient_time','not_found_in_budget','round_limit','insufficient_route_actions'):
+            if best_observed is not None and (current is None or not retained_not_worse(
+                    current['checkpoint']['client_hex'],best_observed['checkpoint']['client_hex'])):
+                recover_best_failure(reason)
+    except InterruptedError as exc:
+        invalidate_current();result.update(stop_reason='interrupted',error=str(exc))
+        if getattr(exc,'recoverable',False):recover_best_failure('capture_interrupted')
+    except TimeoutError as exc:
+        invalidate_current();result.update(stop_reason='insufficient_time',error=str(exc))
+        recover_best_failure('phase_timeout')
+    except (ValueError,OSError,RuntimeError,KeyError) as exc:
+        invalidate_current()
+        result.update(stop_reason='observation_failed',error=type(exc).__name__+': '+str(exc))
+        if isinstance(exc,(VisualNotReady,OSError,RuntimeError)):recover_best_failure('recoverable_observation')
+    except Exception as exc:
+        invalidate_current()
+        result.update(stop_reason='internal_error',error=type(exc).__name__+': '+str(exc),
+                      error_traceback=traceback.format_exc())
+    finally:
+        if retry_requested is not None:io.retry_check=previous_retry_check
+        try:io.release()
+        except Exception as exc:
+            invalidate_current();result['release_error']=str(exc)
+    if current is not None and current.get('frames'):
+        score=score_codes(current['checkpoint']['client_hex'],rules)
+        result['screenshot_verified']=assess_feedback(context,current['checkpoint'],current['frames'],rules)['screenshot_verified'] if context else False
+        result.update(verified=True,actual_colors=score['colors'],actual_deltas=score['deltas'],
+            target_exact=score['target_exact'],current=current,remaining_seconds=current['frames'][-1]['remaining_seconds'])
+        if candidate_choice is not None or retry_requested is not None:
+            result['accepted']=bool(score['accepted'] and result['screenshot_verified'])
+            result['actual_colors']=list(current['checkpoint']['client_hex'])
+        if candidate_choice is not None:
+            result['current_candidate_id']=next((candidate_id(batch_id,row['actual_colors']) for row in candidate_rows
+                if row['actual_colors']==current['checkpoint']['client_hex']),None)
+        if best_observed is not None:
+            result.update(best_actual_colors=best_observed['checkpoint']['client_hex'],
+                best_current=retained_not_worse(score['colors'],best_observed['checkpoint']['client_hex']))
+            result['restored']=(bool(result['best_current'] and result['screenshot_verified'])
+                if result.get('restoration_rounds') or result.get('retry_recovered') else None)
+    else:
+        result.update(verified=False,accepted=False,target_exact=False,
+            actual_colors=[None]*count,actual_deltas=[None]*count,current=None,screenshot_verified=False)
+        if current is not None:
+            result['native_current']=current
+    if best_observed is not None and 'best_actual_colors' not in result:
+        result.update(best_actual_colors=list(best_observed['checkpoint']['client_hex']),best_current=False)
+    if last_verified_observation is not None:
+        last_colors=list(last_verified_observation['checkpoint']['client_hex'])
+        result.update(last_verified_colors=last_colors,last_verified_deltas=score_codes(last_colors,rules)['deltas'],
+            last_verified_captured_monotonic=last_verified_observation['frames'][-1]['captured_monotonic'],
+            last_verified_screenshot=True,last_verified_observation=last_verified_observation)
+    result.update(elapsed_seconds=max(0.,clock()-start),effective_deadline=end)
+    from mabitool_color.measurements import snapshot
+    def measured(observation):
+        if observation is None or not complete_screenshot(observation['checkpoint'],observation.get('frames')):return None
+        score=score_codes(observation['checkpoint']['client_hex'],rules)
+        return dict(verified=True,actual_colors=score['colors'],actual_deltas=score['deltas'],
+            accepted=score['accepted'],target_exact=score['target_exact'],
+            observed_monotonic=observation['frames'][-1]['captured_monotonic'])
+    result['measurements']=snapshot(measured(best_observed),measured(last_verified_observation),measured(current),clock=clock)
+    result['outcome']=('matched' if result['accepted'] else 'compromise' if result['stop_reason'] in ('compromise_observed','user_candidate_observed')
+        and result['verified'] else 'not_found' if result['stop_reason']=='not_found_in_budget' else 'stopped')
+    values=[v for v in result['actual_deltas'] if v is not None]
+    result.update(maximum=max(values) if values else None,average=sum(values)/len(values) if values else None)
+    return result

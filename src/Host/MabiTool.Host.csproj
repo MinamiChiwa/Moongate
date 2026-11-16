@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="MabiTool.Host.Tests" />
+    <ProjectReference Include="../Providers/GitHubReleases/MabiTool.Providers.GitHubReleases.csproj" />
+    <ProjectReference Include="../Providers/Tunnels/MabiTool.Providers.Tunnels.csproj" />
+    <ProjectReference Include="../RoomServer/MabiTool.RoomServer.csproj" />
+    <ProjectReference Include="../Modules/MusicLibrary/MabiTool.Modules.MusicLibrary.csproj" />
+    <ProjectReference Include="../Modules/Color/MabiTool.Modules.Color.csproj" />
+    <ProjectReference Include="../Modules/Rooms/MabiTool.Modules.Rooms.csproj" />
+    <ProjectReference Include="../Modules/CombatObservation/MabiTool.Modules.CombatObservation.csproj" />
+    <ProjectReference Include="../Modules/Inventory/MabiTool.Modules.Inventory.csproj" />
+    <ProjectReference Include="../Providers/Replay/MabiTool.Providers.Replay.csproj" />
+    <ProjectReference Include="../Providers/TwObservation/MabiTool.Providers.TwObservation.csproj" />
+    <ProjectReference Include="../Contracts/MabiTool.Contracts.csproj" />
+    <ProjectReference Include="../Platform.Windows/MabiTool.Platform.Windows.csproj" />
+    <ProjectReference Include="../ModuleSdk/MabiTool.ModuleSdk.csproj" />
+    <ProjectReference Include="../Infrastructure/MabiTool.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

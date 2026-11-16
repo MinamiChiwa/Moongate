@@ -1,0 +1,406 @@
+{
+  "schemaVersion": 1,
+  "sourceEvidenceKind": "live-current-field-projection",
+  "parsingLayout": "Tw20261110",
+  "currentFieldsVerified": false,
+  "timingSource": "capture-relative-monotonic-ms",
+  "maximumCases": 24,
+  "cases": [
+    {
+      "kind": "local-identity",
+      "session": "session-1",
+      "entity": "entity-1",
+      "role": "localPlayer",
+      "monotonicMs": 16969,
+      "quality": "confirmed"
+    },
+    {
+      "kind": "effect",
+      "scope": "self",
+      "change": "apply",
+      "session": "session-1",
+      "entity": "entity-1",
+      "effectId": "580093575",
+      "effectInstance": "effect-instance-1",
+      "casterEntity": "entity-1",
+      "monotonicMs": 31891,
+      "durationKind": "unknown",
+      "durationMs": null,
+      "stacks": 1,
+      "aggregated": false,
+      "category": null,
+      "quality": "confirmed"
+    },
+    {
+      "kind": "effect",
+      "scope": "self",
+      "change": "refresh",
+      "session": "session-1",
+      "entity": "entity-1",
+      "effectId": "580093575",
+      "effectInstance": "effect-instance-1",
+      "casterEntity": "entity-1",
+      "monotonicMs": 31891,
+      "durationKind": "unknown",
+      "durationMs": null,
+      "stacks": 10,
+      "aggregated": false,
+      "category": null,
+      "quality": "confirmed"
+    },
+    {
+      "kind": "effect",
+      "scope": "monster",
+      "change": "apply",
+      "session": "session-1",
+      "entity": "entity-2",
+      "effectId": "1187287141",
+      "effectInstance": "effect-instance-2",
+      "casterEntity": "entity-3",
+      "monotonicMs": 31891,
+      "durationKind": "unknown",
+      "durationMs": null,
+      "stacks": 1,
+      "aggregated": false,
+      "category": null,
+      "quality": "confirmed",
+      "monsterTypeCode": "5BE8F911"
+    },
+    {
+      "kind": "effect",
+      "scope": "monster",
+      "change": "refresh",
+      "session": "session-1",
+      "entity": "entity-2",
+      "effectId": "1187287141",
+      "effectInstance": "effect-instance-2",
+      "casterEntity": "entity-3",
+      "monotonicMs": 31891,
+      "durationKind": "unknown",
+      "durationMs": null,
+      "stacks": 1,
+      "aggregated": false,
+      "category": null,
+      "quality": "confirmed",
+      "monsterTypeCode": "5BE8F911"
+    },
+    {
+      "kind": "damage",
+      "attribution": "chain",
+      "session": "session-1",
+      "sourceEntity": "entity-3",
+      "targetEntity": "entity-2",
+      "skillCasterEntity": "entity-4",
+      "skillId": "580436877",
+      "amount": "12809",
+      "amountKind": "unclassified",
+      "monotonicMs": 31891,
+      "critical": false,
+      "hit": true,
+      "skillResolved": true,
+      "chain": true,
+      "quality": "confirmed"
+    },
+    {
+      "kind": "effect",
+      "scope": "monster",
+      "change": "remove",
+      "session": "session-1",
+      "entity": "entity-2",
+      "effectId": "644292822",
+      "effectInstance": "effect-instance-3",
+      "casterEntity": "entity-3",
+      "monotonicMs": 33688,
+      "durationKind": "unknown",
+      "durationMs": null,
+      "stacks": null,
+      "aggregated": false,
+      "category": null,
+      "quality": "confirmed",
+      "monsterTypeCode": "5BE8F911"
+    },
+    {
+      "kind": "damage",
+      "attribution": "local",
+      "session": "session-1",
+      "sourceEntity": "entity-1",
+      "targetEntity": "entity-5",
+      "skillCasterEntity": "entity-1",
+      "skillId": "1648821009",
+      "amount": "12846",
+      "amountKind": "unclassified",
+      "monotonicMs": 34203,
+      "critical": true,
+      "hit": true,
+      "skillResolved": true,
+      "chain": false,
+      "quality": "confirmed"
+    },
+    {
+      "kind": "effect",
+      "scope": "self",
+      "change": "remove",
+      "session": "session-1",
+      "entity": "entity-1",
+      "effectId": "217387979",
+      "effectInstance": "effect-instance-4",
+      "casterEntity": "entity-1",
+      "monotonicMs": 34657,
+      "durationKind": "unknown",
+      "durationMs": null,
+      "stacks": null,
+      "aggregated": false,
+      "category": null,
+      "quality": "confirmed"
+    }
+  ],
+  "provenance": {
+    "checkedOn": "2026-11-10",
+    "sourceSampleSha256": "83fb25e9b51af682effbedf176b265544fe7eb0f7ff9e2784e0e6f5a1d49668b",
+    "clientFiles": [
+      {
+        "file": "GameAssembly.dll",
+        "bytes": 324992496,
+        "sha256": "4304456511f58cb543169434908f46726845d2ab2ec33668170b47a4de02a549"
+      },
+      {
+        "file": "UnityPlayer.dll",
+        "bytes": 29419008,
+        "sha256": "e969642866c2195f16a0bd0e52ff8ffe87cad5b213fda9a62ca1564970e2fa26"
+      },
+      {
+        "file": "MabinogiMobile_Data/il2cpp_data/Metadata/global-metadata.dat",
+        "bytes": 60663204,
+        "sha256": "2d98c3b1f8adc6d3e5455ac24b10a3374dc2401dc1d0a6749b336f44d841f6b4"
+      }
+    ],
+    "gcProtocolEnumSha256": "967d84bfbb8de4b280e724d12b0e0a8db170cac10fd75c988c30d3471e6d444f",
+    "mappingMethod": "exact-protocol-name-to-reference-code",
+    "protocols": [
+      {
+        "name": "CHANNEL_MyCharacterPersonalData_NTF",
+        "referenceCode": 20520,
+        "currentCode": 20590,
+        "observedFrames": 1,
+        "minimumBodyBytes": 355542,
+        "maximumBodyBytes": 355542
+      },
+      {
+        "name": "CHANNEL_AppearingCharacter_NTF",
+        "referenceCode": 20047,
+        "currentCode": 20054,
+        "observedFrames": 7,
+        "minimumBodyBytes": 3216,
+        "maximumBodyBytes": 3530
+      },
+      {
+        "name": "CHANNEL_AppearingAutomaton_NTF",
+        "referenceCode": 20044,
+        "currentCode": 20051,
+        "observedFrames": 35,
+        "minimumBodyBytes": 1404,
+        "maximumBodyBytes": 1572
+      },
+      {
+        "name": "CHANNEL_ShowDamageFloater_NTF",
+        "referenceCode": 21045,
+        "currentCode": 21196,
+        "observedFrames": 24,
+        "minimumBodyBytes": 53,
+        "maximumBodyBytes": 53
+      },
+      {
+        "name": "CHANNEL_HitPresentation_NTF",
+        "referenceCode": 20460,
+        "currentCode": 20526,
+        "observedFrames": 119,
+        "minimumBodyBytes": 35,
+        "maximumBodyBytes": 35
+      },
+      {
+        "name": "REPLICATION_ActorBuff_Add_REPL",
+        "referenceCode": 120061,
+        "currentCode": 170069,
+        "observedFrames": 359,
+        "minimumBodyBytes": 36,
+        "maximumBodyBytes": 36
+      },
+      {
+        "name": "REPLICATION_ActorBuff_Expire_REPL",
+        "referenceCode": 120062,
+        "currentCode": 170070,
+        "observedFrames": 348,
+        "minimumBodyBytes": 16,
+        "maximumBodyBytes": 16
+      },
+      {
+        "name": "REPLICATION_ActorBuff_Refresh_REPL",
+        "referenceCode": 120063,
+        "currentCode": 170071,
+        "observedFrames": 1512,
+        "minimumBodyBytes": 36,
+        "maximumBodyBytes": 36
+      }
+    ],
+    "sampleDurationSeconds": 90.0,
+    "referenceLayout": {
+      "opcodeRemappedByName": true,
+      "localIdentityResolved": true,
+      "identityFrames": 1795,
+      "damageEvents": 24,
+      "effectEvents": 2219,
+      "localDamageEvents": 16,
+      "selfEffectEvents": 272,
+      "monsterEffectEvents": 178,
+      "observedMonsterInstances": 30
+    },
+    "protocolFailures": [
+      {
+        "code": 20283,
+        "name": "CHANNEL_DisassembleItems_RSP_SUCCESS",
+        "reason": "frame.expandFailed",
+        "count": 1
+      },
+      {
+        "code": 20570,
+        "name": "CHANNEL_LoadDirectChatRooms_RSP_SUCCESS",
+        "reason": "frame.expandFailed",
+        "count": 1
+      },
+      {
+        "code": 20942,
+        "name": "CHANNEL_RequestDungeonGoddessMissions_RSP_SUCCESS",
+        "reason": "frame.expandFailed",
+        "count": 1
+      },
+      {
+        "code": 21231,
+        "name": "CHANNEL_SocialServerAuthTokenIssued_NTF",
+        "reason": "frame.expandFailed",
+        "count": 1
+      },
+      {
+        "code": 100048,
+        "name": "GUILD_LoadGuildChat_RSP_SUCCESS",
+        "reason": "frame.expandFailed",
+        "count": 1
+      },
+      {
+        "code": 190001,
+        "name": "SESSION_AuthenticateAndEnterGameServer_RSP_SUCCESS",
+        "reason": "frame.expandFailed",
+        "count": 1
+      }
+    ],
+    "gaps": {
+      "frame.expandFailed": 6
+    },
+    "capabilities": [
+      {
+        "id": "combat.damage.local",
+        "evidence": "sampleCollected",
+        "referenceAttributedEvents": 16,
+        "productStatus": "implemented-live-validation-pending"
+      },
+      {
+        "id": "combat.effects.self",
+        "evidence": "sampleCollected",
+        "referenceAttributedEvents": 272,
+        "productStatus": "implemented-live-validation-pending"
+      },
+      {
+        "id": "combat.effects.monster",
+        "evidence": "sampleCollected",
+        "referenceAttributedEvents": 178,
+        "productStatus": "implemented-live-validation-pending"
+      }
+    ],
+    "productCapabilitiesEnabled": false,
+    "parsingLayout": "Tw20261110",
+    "fieldLayouts": {
+      "identityBits": 64,
+      "damage": {
+        "wireType": "int64",
+        "bodyOffset": 16,
+        "positiveOnly": true,
+        "shieldDamageCombined": false
+      },
+      "hitFlags": {
+        "wireType": "int64",
+        "skillOffset": 24,
+        "damageOffset": 32,
+        "matchingBytes": 8,
+        "traitDefinitionSource": "static-client-enum",
+        "traitDefinitionSha256": "2c4843a73e5a364f502b11a268b8a8907310c462491396bd1c71157db2240003",
+        "traits": {
+          "PowerfulHit": "512",
+          "RapidHit": "1024",
+          "DoubleHit": "134217728",
+          "BreakedHit": "4",
+          "BreakOccurred": "8",
+          "FirstAttack": "64",
+          "DefaultAttack": "128",
+          "MultiHit": "256",
+          "ElementalBleed": "268435456",
+          "ElementalDark": "536870912",
+          "ElementalFire": "1073741824",
+          "ElementalHoly": "2147483648",
+          "ElementalIce": "4294967296",
+          "ElementalLightning": "8589934592",
+          "ElementalPoison": "17179869184",
+          "ElementalSoul": "34359738368"
+        }
+      },
+      "breakGauge": {
+        "appearanceCurrentField": "ActorStatus.BreakPoint",
+        "appearanceCurrentType": "float32",
+        "appearanceMaximumField": "ActorParameter.BreakPointMax",
+        "appearanceMaximumType": "int64",
+        "currentUpdateCode": 170204,
+        "currentUpdateName": "SetBreakPoint",
+        "currentUpdateBodyBytes": 13,
+        "currentUpdateLayout": ["entity:uint64", "current:float32", "skipUIFx:bool"],
+        "currentUpdateObservedFrames": 103,
+        "maximumUpdateCode": 170117,
+        "maximumUpdateObservedFrames": 32,
+        "maximumUpdateBodyBytes": 32,
+        "maximumUpdateLayoutVerified": false,
+        "maximumUpdateHandling": "invalidate-maximum-until-fresh-appearance",
+        "valuesLiveVerified": false
+      },
+      "effectTime": {
+        "field": "BuffReplicatedData.EndAt",
+        "codec": "ReplicatedTime.offsetInSeconds",
+        "bodyOffset": 20,
+        "valueType": "float32",
+        "semantics": "remaining-seconds-at-send",
+        "finiteRange": "0 < value < 9999",
+        "infiniteWhen": "abs(value) >= 9999",
+        "unknownWhen": "non-finite, zero, or negative above -9999",
+        "pairedExpireSamples": 403,
+        "expireWithin50msOfValue": 140,
+        "expireLaterThanValueBy1s": 0,
+        "observedInfiniteValues": [-94608474112, 99999]
+      },
+      "automaton": {
+        "method": "bounded-schema-prefix",
+        "schemaPath": "src/Providers/TwObservation/Resources/tw-20261110-automaton-prefix-schema.json",
+        "schemaSha256": "246cb3933da5a98038d750079d3fab0734da4c2d9422e31d837882258586f6ec",
+        "parsedAppearances": 35,
+        "monsterAppearances": 30,
+        "petAppearances": 5,
+        "petRole": "unknown",
+        "trailingPresentationFieldsVerified": false
+      },
+      "identity": {
+        "method": "bounded-schema-prefix-and-full-character-id-equality",
+        "schemaPath": "src/Providers/TwObservation/Resources/tw-20261110-character-prefix-schema.json",
+        "schemaSha256": "26e932edcd2e6c8a1e315b78d8cb5494dfac540dd9dd09f7c67b8e18f6b370fc",
+        "appearanceFrames": 7,
+        "matchedPersonalAppearances": 1,
+        "distinctEntities": 6
+      }
+    },
+    "gameBuild": "tw-20261110:1d2255e092ba970e06abede16d5983ebb349d620eb42f6a17f2325c876e87e29"
+  }
+}

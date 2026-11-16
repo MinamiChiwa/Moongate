@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../ModuleSdk/MabiTool.ModuleSdk.csproj" />
+    <ProjectReference Include="../Providers/TwObservation/MabiTool.Providers.TwObservation.csproj" />
+  </ItemGroup>
+</Project>

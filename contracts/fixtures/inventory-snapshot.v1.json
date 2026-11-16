@@ -1,0 +1,55 @@
+{
+  "backendEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "eventCursor": "inventory-fixture-cursor",
+  "resourceRevision": "9007199254740993",
+  "data": {
+    "id": "inventory-fixture",
+    "gameSessionId": "game-fixture",
+    "identity": { "accountId": "account-1", "characterId": "character-1", "rawName": "原始角色名", "displayName": "原始角色名" },
+    "generation": "2",
+    "revision": "9007199254740993",
+    "bindingRevision": "18446744073709551615",
+    "quality": "confirmed",
+    "current": true,
+    "lastObservedAt": "2026-11-10T00:00:00Z",
+    "items": [
+      {
+        "item": { "category": "Consumable", "container": "backpack", "key": "stack-1001", "typeId": "1001", "instanceId": null, "quantity": "9007199254740993", "attributes": {}, "sheet": "Consumable", "equipped": false },
+        "name": { "type": { "category": "Consumable", "typeId": "1001", "sheet": "Consumable" }, "rawName": "<color=#ffffff>原始药水</color>", "displayName": "原始药水", "state": "client-catalog", "source": "client-catalog", "evidence": "catalog-fixture", "isInstrument": false },
+        "current": true, "lastObservedAt": "2026-11-10T00:00:00Z", "quality": "confirmed",
+        "source": { "provider": "mabiagent-inventory", "providerVersion": "1.0.0", "region": "TW", "gameBuild": "synthetic-fixture-v1" }
+      },
+      {
+        "item": { "category": "Equipment", "container": "character-storage", "key": "instance-1", "typeId": "1001", "instanceId": "18446744073709551615", "quantity": "1", "attributes": { "enchant": "9007199254740994" }, "sheet": "Equipment", "equipped": false },
+        "name": { "type": { "category": "Equipment", "typeId": "1001", "sheet": "Equipment" }, "rawName": "同名道具", "displayName": "同名道具", "state": "user-confirmed", "source": "user", "evidence": null, "isInstrument": false },
+        "current": true, "lastObservedAt": "2026-11-10T00:00:00Z", "quality": "confirmed",
+        "source": { "provider": "mabiagent-inventory", "providerVersion": "1.0.0", "region": "TW", "gameBuild": "synthetic-fixture-v1" }
+      },
+      {
+        "item": { "category": "EquipmentTool", "container": "account-storage", "key": "instrument-1", "typeId": "1001", "instanceId": "9007199254740995", "quantity": "1", "attributes": { "instrumentTypeId": "9007199254740997" }, "sheet": "EquipmentTool", "equipped": true },
+        "name": { "type": { "category": "EquipmentTool", "typeId": "1001", "sheet": "EquipmentTool" }, "rawName": "原始钢琴", "displayName": "原始钢琴", "state": "client-catalog", "source": "client-catalog", "evidence": "catalog-fixture", "isInstrument": true },
+        "current": true, "lastObservedAt": "2026-11-10T00:00:00Z", "quality": "confirmed",
+        "source": { "provider": "mabiagent-inventory", "providerVersion": "1.0.0", "region": "TW", "gameBuild": "synthetic-fixture-v1" }
+      }
+    ],
+    "coverage": [
+      { "category": "Consumable", "container": "backpack", "complete": true, "reason": null },
+      { "category": "Equipment", "container": "character-storage", "complete": true, "reason": null },
+      { "category": "EquipmentTool", "container": "account-storage", "complete": true, "reason": null },
+      { "category": "JamItem", "container": "account-storage", "complete": false, "reason": "inventory.storageNotRepresented" }
+    ],
+    "gold": "18446744073709551615",
+    "reasons": [],
+    "source": { "provider": "mabiagent-inventory", "providerVersion": "1.0.0", "region": "TW", "gameBuild": "synthetic-fixture-v1" }
+  },
+  "catalog": {
+    "revision": "9007199254740994", "id": "catalog-fixture",
+    "indexSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "entries": 3, "excluded": 0,
+    "categories": [
+      { "category": "Consumable", "table": "Consumable", "supported": true, "entries": 1, "reason": null },
+      { "category": "Equipment", "table": "Equipment", "supported": true, "entries": 1, "reason": null },
+      { "category": "EquipmentTool", "table": "EquipmentTool", "supported": true, "entries": 1, "reason": null }
+    ]
+  }
+}

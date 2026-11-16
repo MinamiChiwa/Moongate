@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Provenance and verification index for sanitized upstream fixtures and algorithm baselines.",
+  "sources": [
+    {
+      "id": "mabisync",
+      "commit": "2cb69b5ddec8de4fe9d20ec98bbb410ac015e671",
+      "licenseStatus": "author-granted-MIT",
+      "fixtures": [
+        {
+          "path": "contracts/fixtures/tw-music-synthetic.json",
+          "sha256": "5ac49fd692f1ec5b216a480f9e7aafc69f055bfe6fbfa0ce0faba45699824d5b",
+          "sourcePath": "tests/fixtures/tw-music-synthetic.json",
+          "sourceSha256": "5ac49fd692f1ec5b216a480f9e7aafc69f055bfe6fbfa0ce0faba45699824d5b",
+          "protocol": "TW music observations 120412/120692/120693/120413; synthetic wire fixture gameBuild TW 2026-10-03",
+          "algorithm": "MabiSync.Core TwGameProtocol + TwGameObserver + TwScoreTimeline at pinned commit"
+        },
+        {
+          "path": "contracts/fixtures/tw-character-synthetic.bin",
+          "sha256": "0a62415d3a27de78584a65872738b1eb09c4f7d38c1573992932e69db30bd0a4",
+          "sourcePath": "tests/fixtures/tw-character-synthetic.bin",
+          "sourceSha256": "0a62415d3a27de78584a65872738b1eb09c4f7d38c1573992932e69db30bd0a4",
+          "protocol": "TW character identity schema tw-20261015",
+          "algorithm": "MabiSync.Core TwGameProtocol.DecodeCharacter at pinned commit"
+        },
+        {
+          "path": "contracts/fixtures/room-protocol.v1.json",
+          "sha256": "274c24fce56be5fafb6559d2a9461497bb8c3e66868a07867ad9109f5cb58e4c",
+          "sourcePath": "tests/client.edge.integration.mjs",
+          "protocol": "MabiSync room protocolVersion 1; synthetic hello and four-timestamp synchronization messages"
+        }
+      ],
+      "algorithmSources": [
+        {
+          "path": "src/MabiSync.Core/TwScoreTimeline.cs",
+          "sha256": "2279c0107d47a1aa43a572e2ca1c04edf169bc732a42bb5c328dcf1364983bab"
+        },
+        {
+          "path": "src/MabiSync.Core/RoomClock.cs",
+          "sha256": "40d43ae8316b2905830b8d5d53d5e92704761a3020f63e2b6dde2617e4faadc5"
+        },
+        {
+          "path": "src/MabiSync.Core/TwGameProtocol.cs",
+          "sha256": "1bcff5896532d49cd310e778eda18c6c7ea1bd07639fbb9862d6abbdb552fefc"
+        },
+        {
+          "path": "src/MabiSync.Core/TwGameObserver.cs",
+          "sha256": "fbb4fc032ec97507dad468d92a33d22e0f02b1d8ceab17f47b418a32ab41f3ad"
+        }
+      ]
+    },
+    {
+      "id": "color-studio",
+      "commit": "5e53ec8481857563c6718b282c8990ea3830931d",
+      "licenseStatus": "author-granted-MIT",
+      "fixtures": [
+        {
+          "path": "contracts/fixtures/color-rules.v1.json",
+          "sha256": "8731d07f6dfc93337081cc0ad7d2ee7886c0e6470b3cf6f7d37e085f57912433",
+          "sourcePath": "tests/test_rules_and_profile.py",
+          "algorithm": "RuleSource.rule and vision.normalize_hex at pinned commit"
+        }
+      ],
+      "algorithmSources": [
+        {
+          "path": "work/studio/business.py",
+          "sha256": "fe3b95cdaf6d8373c8e8d1d15de0dd8d9ffd4a5764b936484b1bc000cbca8620"
+        },
+        {
+          "path": "work/studio/vision.py",
+          "sha256": "dd653f888a6f666a993f844e0b4c2ae7653cb28c965eeb77df7c6f7406a9e915"
+        },
+        {
+          "path": "work/studio/profile_store.py",
+          "sha256": "bf73ea0204cc0664f5b59d0ee424d57b11e482a54a221c4b9c17dcc513be8ada"
+        }
+      ]
+    }
+  ]
+}

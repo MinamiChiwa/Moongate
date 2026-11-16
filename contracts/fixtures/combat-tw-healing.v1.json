@@ -1,0 +1,802 @@
+{
+  "schemaVersion": 1,
+  "sourceEvidenceKind": "live-current-healing-projection",
+  "parsingLayout": "Tw20261110",
+  "protocolProfile": "tw-combat-20261110-v2",
+  "clientFingerprint": {
+    "assemblySha256": "4304456511f58cb543169434908f46726845d2ab2ec33668170b47a4de02a549",
+    "metadataSha256": "2d98c3b1f8adc6d3e5455ac24b10a3374dc2401dc1d0a6749b336f44d841f6b4"
+  },
+  "protocols": {
+    "healReceived": 20645,
+    "healCasted": 20644,
+    "setHealth": 170205
+  },
+  "sanitization": "只保留治疗三类帧及本机 HP 更新；本机实体以 local 表示，其他实体的 HP 更新已删除；流偏移与时点相对于样本内首个保留帧，紧邻关系不变。",
+  "samples": [
+    {
+      "id": "confirmed-02",
+      "rawSha256": "c366d3e319926d90dc615248d05027cc5501594a9b3e9cd0a7f9f6e53af72d24",
+      "expected": {
+        "received": 45,
+        "receivedAmount": 45817,
+        "cast": 5,
+        "castAmount": 4037,
+        "localHealth": 9,
+        "pairedReceived": 5,
+        "receivedSelfAmount": 4037,
+        "receivedSelfCount": 5,
+        "pairs": [
+          {
+            "amount": 503,
+            "effective": 503,
+            "overheal": 0
+          },
+          {
+            "amount": 1232,
+            "effective": 68,
+            "overheal": 1164
+          },
+          {
+            "amount": 419,
+            "effective": 419,
+            "overheal": 0
+          },
+          {
+            "amount": 524,
+            "effective": 524,
+            "overheal": 0
+          },
+          {
+            "amount": 1392,
+            "effective": 1368,
+            "overheal": 24
+          }
+        ]
+      },
+      "frames": [
+        {
+          "kind": "received",
+          "monotonicMs": 0.0,
+          "streamOffset": 0,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 381
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 1000.0,
+          "streamOffset": 12539,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 469
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 1328.0,
+          "streamOffset": 17169,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 2995
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 2031.0,
+          "streamOffset": 23932,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 499
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 3031.0,
+          "streamOffset": 31497,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 499
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 7984.0,
+          "streamOffset": 77040,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 279
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 9000.0,
+          "streamOffset": 87830,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 472
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 9375.0,
+          "streamOffset": 92541,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 3017
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 9671.0,
+          "streamOffset": 97984,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 1232
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 10015.0,
+          "streamOffset": 102456,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 503
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 11015.0,
+          "streamOffset": 111817,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 503
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 11671.0,
+          "streamOffset": 121886,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 1232
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 12015.0,
+          "streamOffset": 126828,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 503
+        },
+        {
+          "kind": "health",
+          "monotonicMs": 12812.0,
+          "streamOffset": 137478,
+          "wireLength": 30,
+          "hp": 23210
+        },
+        {
+          "kind": "health",
+          "monotonicMs": 13015.0,
+          "streamOffset": 138496,
+          "wireLength": 30,
+          "hp": 23713
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 13015.0,
+          "streamOffset": 138526,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 503
+        },
+        {
+          "kind": "health",
+          "monotonicMs": 13687.0,
+          "streamOffset": 145477,
+          "wireLength": 30,
+          "hp": 23781
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 13687.0,
+          "streamOffset": 145507,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 1232
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 14046.0,
+          "streamOffset": 147459,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 335
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 14750.0,
+          "streamOffset": 154402,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 2995
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 15031.0,
+          "streamOffset": 156948,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 499
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 16046.0,
+          "streamOffset": 162661,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 499
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 17062.0,
+          "streamOffset": 172792,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 499
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 18328.0,
+          "streamOffset": 187751,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 499
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 18828.0,
+          "streamOffset": 193222,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 1619
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 19328.0,
+          "streamOffset": 199469,
+          "wireLength": 25,
+          "flags": 10240,
+          "amount": 320
+        },
+        {
+          "kind": "cast",
+          "monotonicMs": 19328.0,
+          "streamOffset": 199494,
+          "wireLength": 33,
+          "target": "local",
+          "flags": 10240,
+          "amount": 320
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 19359.0,
+          "streamOffset": 200175,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 426
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 19859.0,
+          "streamOffset": 204379,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 2661
+        },
+        {
+          "kind": "cast",
+          "monotonicMs": 19859.0,
+          "streamOffset": 204404,
+          "wireLength": 33,
+          "target": "local",
+          "flags": 8192,
+          "amount": 2661
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 20328.0,
+          "streamOffset": 207992,
+          "wireLength": 25,
+          "flags": 10240,
+          "amount": 320
+        },
+        {
+          "kind": "cast",
+          "monotonicMs": 20328.0,
+          "streamOffset": 208017,
+          "wireLength": 33,
+          "target": "local",
+          "flags": 10240,
+          "amount": 320
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 20359.0,
+          "streamOffset": 208359,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 499
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 20984.0,
+          "streamOffset": 216055,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 1373
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 21296.0,
+          "streamOffset": 219184,
+          "wireLength": 25,
+          "flags": 10240,
+          "amount": 368
+        },
+        {
+          "kind": "cast",
+          "monotonicMs": 21296.0,
+          "streamOffset": 219209,
+          "wireLength": 33,
+          "target": "local",
+          "flags": 10240,
+          "amount": 368
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 21359.0,
+          "streamOffset": 220308,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 659
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 22312.0,
+          "streamOffset": 237625,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 3956
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 22312.0,
+          "streamOffset": 237846,
+          "wireLength": 25,
+          "flags": 10240,
+          "amount": 368
+        },
+        {
+          "kind": "cast",
+          "monotonicMs": 22312.0,
+          "streamOffset": 237871,
+          "wireLength": 33,
+          "target": "local",
+          "flags": 10240,
+          "amount": 368
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 22375.0,
+          "streamOffset": 240345,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 659
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 23656.0,
+          "streamOffset": 265963,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 311
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 24671.0,
+          "streamOffset": 281728,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 497
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 25015.0,
+          "streamOffset": 284629,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 1027
+        },
+        {
+          "kind": "health",
+          "monotonicMs": 25406.0,
+          "streamOffset": 288311,
+          "wireLength": 30,
+          "hp": 23138
+        },
+        {
+          "kind": "health",
+          "monotonicMs": 25687.0,
+          "streamOffset": 291944,
+          "wireLength": 30,
+          "hp": 23557
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 25687.0,
+          "streamOffset": 291974,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 419
+        },
+        {
+          "kind": "health",
+          "monotonicMs": 26031.0,
+          "streamOffset": 296351,
+          "wireLength": 30,
+          "hp": 22921
+        },
+        {
+          "kind": "health",
+          "monotonicMs": 26687.0,
+          "streamOffset": 303545,
+          "wireLength": 30,
+          "hp": 23445
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 26687.0,
+          "streamOffset": 303575,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 524
+        },
+        {
+          "kind": "health",
+          "monotonicMs": 26921.0,
+          "streamOffset": 306680,
+          "wireLength": 30,
+          "hp": 22413
+        },
+        {
+          "kind": "health",
+          "monotonicMs": 27046.0,
+          "streamOffset": 308210,
+          "wireLength": 30,
+          "hp": 23781
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 27046.0,
+          "streamOffset": 308240,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 1392
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 27687.0,
+          "streamOffset": 313265,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 568
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 28703.0,
+          "streamOffset": 328598,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 568
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 29046.0,
+          "streamOffset": 332968,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 1474
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 29093.0,
+          "streamOffset": 333729,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 1952
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 29593.0,
+          "streamOffset": 337862,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 3610
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 29703.0,
+          "streamOffset": 338609,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 602
+        }
+      ]
+    },
+    {
+      "id": "confirmed-04",
+      "rawSha256": "83fb25e9b51af682effbedf176b265544fe7eb0f7ff9e2784e0e6f5a1d49668b",
+      "expected": {
+        "received": 32,
+        "receivedAmount": 23983,
+        "cast": 0,
+        "castAmount": 0,
+        "localHealth": 0,
+        "pairedReceived": 0,
+        "receivedSelfAmount": 0,
+        "receivedSelfCount": 0,
+        "pairs": []
+      },
+      "frames": [
+        {
+          "kind": "received",
+          "monotonicMs": 0.0,
+          "streamOffset": 0,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 585
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 1515.0,
+          "streamOffset": 20538,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 585
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 7531.0,
+          "streamOffset": 70050,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 576
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 10562.0,
+          "streamOffset": 97158,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 541
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 12062.0,
+          "streamOffset": 119921,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 598
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 12265.0,
+          "streamOffset": 123269,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 805
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 12547.0,
+          "streamOffset": 124206,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 805
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 12828.0,
+          "streamOffset": 127209,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 805
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 13140.0,
+          "streamOffset": 129060,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 805
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 13422.0,
+          "streamOffset": 130919,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 884
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 13578.0,
+          "streamOffset": 132204,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 657
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 13703.0,
+          "streamOffset": 132745,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 884
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 14031.0,
+          "streamOffset": 135347,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 884
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 32094.0,
+          "streamOffset": 249483,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 537
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 33594.0,
+          "streamOffset": 269793,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 585
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 34937.0,
+          "streamOffset": 292575,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 873
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 35125.0,
+          "streamOffset": 294996,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 649
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 35234.0,
+          "streamOffset": 295505,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 873
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 35515.0,
+          "streamOffset": 302239,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 873
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 35640.0,
+          "streamOffset": 303890,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 570
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 35812.0,
+          "streamOffset": 304825,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 873
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 36094.0,
+          "streamOffset": 308109,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 873
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 36375.0,
+          "streamOffset": 310893,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 954
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 36640.0,
+          "streamOffset": 312510,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 623
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 36640.0,
+          "streamOffset": 312896,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 709
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 36672.0,
+          "streamOffset": 313618,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 954
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 36984.0,
+          "streamOffset": 319762,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 954
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 37265.0,
+          "streamOffset": 324782,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 954
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 37625.0,
+          "streamOffset": 328033,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 623
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 38156.0,
+          "streamOffset": 334355,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 649
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 38656.0,
+          "streamOffset": 338584,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 570
+        },
+        {
+          "kind": "received",
+          "monotonicMs": 39062.0,
+          "streamOffset": 346917,
+          "wireLength": 25,
+          "flags": 8192,
+          "amount": 873
+        }
+      ]
+    }
+  ]
+}

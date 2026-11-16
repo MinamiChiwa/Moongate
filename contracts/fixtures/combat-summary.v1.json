@@ -1,0 +1,48 @@
+{
+  "eventId": "fixture-epoch:9007199254740993",
+  "type": "combat.summary.changed",
+  "schemaVersion": 1,
+  "module": "combat-observation",
+  "resourceId": "fixture-encounter",
+  "resourceRevision": "18446744073709551615",
+  "occurredAt": "2026-11-08T01:00:00+00:00",
+  "correlationId": null,
+  "data": {
+    "encounterId": "fixture-encounter",
+    "localEntity": {
+      "gameSessionId": "fixture-session",
+      "observationGeneration": "1",
+      "rawInstanceId": "9007199254740993",
+      "spawnGeneration": null
+    },
+    "displayName": "測試角色",
+    "attributedDamage": "18446744073709551615",
+    "durationMs": 0,
+    "encounterDps": null,
+    "rollingDps": null,
+    "rollingWindowMs": 5000,
+    "calculationVersion": "fixture-v1",
+    "final": false,
+    "boundaryReason": "manual",
+    "quality": "partial",
+    "reasons": ["insufficientDuration"],
+    "healing": {
+      "calculationVersion": "observed-healing-v1",
+      "castAmount": "4037",
+      "castCount": "5",
+      "castSelfAmount": "4037",
+      "castOtherAmount": "0",
+      "receivedAmount": "45817",
+      "receivedCount": "45",
+      "receivedSelfAmount": "4037",
+      "receivedOtherAmount": "41780",
+      "receivedEffective": null,
+      "receivedOverheal": null,
+      "pairedReceivedCount": "5",
+      "effectiveReason": "hp-unpaired",
+      "encounterHps": null,
+      "rollingHps": null,
+      "reasons": []
+    }
+  }
+}

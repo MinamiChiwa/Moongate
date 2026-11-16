@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "connections": { "current": "1", "opened": "2", "closed": "1" },
+  "packets": { "received": "1840", "bytes": "2216504", "filtered": "3", "truncated": "0", "driverDropped": "0", "readLimitHits": "1" },
+  "queues": { "combatDepth": "0", "combatPeak": "2", "inventoryDepth": "0", "inventoryPeak": "1", "inventoryLaneRejected": "0" },
+  "reassembly": {
+    "segments": "1837",
+    "bytes": "2201120",
+    "outOfOrder": "4",
+    "retransmitted": "2",
+    "resets": { "connectionSyn": "1", "gapTimeout": "1" }
+  },
+  "frames": {
+    "total": "912",
+    "dispatched": "640",
+    "decompressFailures": "0",
+    "rejected": { "combat": "1" },
+    "types": { "20054": "12", "20526": "300", "20590": "2", "21196": "320", "170069": "6" },
+    "otherFrames": "0"
+  }
+}

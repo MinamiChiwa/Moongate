@@ -1,0 +1,227 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:page="using:MabiTool.Desktop.Pages.Overlay"
+             xmlns:overlay="using:MabiTool.Desktop.Overlay"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Pages.Overlay.OverlayPage"
+             x:DataType="page:OverlayPageModel"
+             controls:Card.PageId="overlay">
+  <UserControl.Styles>
+    <Style Selector="Button.segment.active">
+      <Setter Property="Background" Value="{StaticResource OverlayBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.chip.active">
+      <Setter Property="Background" Value="{StaticResource OverlayBrush}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderBrush" Value="{StaticResource OverlayBrush}" />
+    </Style>
+  </UserControl.Styles>
+  <Panel>
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
+      <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+      <DockPanel Margin="{DynamicResource TitleReserve}">
+        <controls:CardGridEditBar DockPanel.Dock="Right" Target="{Binding #CardsGrid}" VerticalAlignment="Center" Margin="12,0,8,0" />
+        <TextBlock Classes="h1" Margin="0" Text="{DynamicResource O.Title}" />
+      </DockPanel>
+      <controls:ReflowPanel MinItemWidth="260" Spacing="12" Margin="0,4,0,0">
+        <TextBlock Classes="body muted" VerticalAlignment="Center" Text="{DynamicResource O.Status}" />
+        <StackPanel HorizontalAlignment="Right">
+          <WrapPanel HorizontalAlignment="Right">
+            <controls:SelectionBorder Classes="segmented" Margin="0,0,8,6" VerticalAlignment="Center">
+              <ItemsControl x:Name="LayoutTabs" controls:StableItems.Source="{Binding Layouts}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="page:LayoutTab">
+                    <Button Classes="segment" Classes.active="{Binding Selected}" Content="{Binding Name}"
+                            Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).SelectLayoutCommand}"
+                            CommandParameter="{Binding Id}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </controls:SelectionBorder>
+            <Button x:Name="AddLayoutButton" Margin="0,0,8,6" Content="{DynamicResource O.AddLayout}" Command="{Binding AddLayoutCommand}" />
+            <Button x:Name="RemoveLayoutButton" Margin="0,0,8,6" Content="{DynamicResource O.RemoveLayout}"
+                    Command="{Binding RemoveLayoutCommand}" IsEnabled="{Binding CanRemoveLayout}" />
+            <!-- 浮窗的显示状态：选中项取浮窗的实际状态，快捷键切换后同样更新。 -->
+            <controls:SelectionBorder x:Name="OverlaySwitch" Classes="segmented" Margin="0,0,0,6" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal">
+                <Button x:Name="ShowOverlayButton" Classes="segment" Classes.active="{Binding OverlayShown}"
+                        Content="{DynamicResource O.ShowOverlay}" Command="{Binding ShowOverlayCommand}" />
+                <Button x:Name="HideOverlayButton" Classes="segment" Classes.active="{Binding OverlayHidden}"
+                        Content="{DynamicResource O.HideOverlay}" Command="{Binding HideOverlayCommand}" />
+              </StackPanel>
+            </controls:SelectionBorder>
+          </WrapPanel>
+        </StackPanel>
+      </controls:ReflowPanel>
+    </StackPanel>
+
+    <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <!-- 卡片网格：版面预览两列宽、选中元件设置一列宽，同一行等高；元件库全宽。都随内容。 -->
+      <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
+          <controls:Card x:Name="CanvasPanel" CardId="canvas" Title="{DynamicResource O.Canvas}" Padding="14" Size="TwoByAuto" AllowedSizes="FullWidth">
+            <StackPanel Spacing="10">
+              <Border CornerRadius="16" ClipToBounds="True" Background="#5B7468">
+                <Panel>
+                  <!-- 画布显示的是哪几块显示器（只画摆有元件的显示器），由代码后置按显示器信息写出。 -->
+                  <TextBlock x:Name="CanvasLabel" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#DCE6E0" FontSize="13"
+                             TextWrapping="Wrap" TextAlignment="Center" Text="{DynamicResource O.GameArea}" />
+                  <overlay:OverlayCanvas x:Name="Canvas" IsEditing="True" AspectRatio="1.7778"
+                                         SelectedWidgetId="{Binding SelectedWidgetId, Mode=TwoWay}" />
+                </Panel>
+              </Border>
+              <TextBlock Classes="note" Text="{Binding StatusLine}" />
+              <WrapPanel>
+                <!-- 选中表示当前版面的元件都已上锁；有元件解锁时按下全部上锁，否则全部解锁。 -->
+                <Button x:Name="LockAllButton" Classes="chip" Classes.active="{Binding AllLocked}" Margin="0,0,6,6"
+                        Content="{DynamicResource O.LockAll}" Command="{Binding ToggleAllLocksCommand}"
+                        ToolTip.Tip="{DynamicResource O.LockAllHint}" />
+                <Button Classes="chip" Classes.active="{Binding HideFromCapture}" Margin="0,0,6,6"
+                        Content="{DynamicResource O.HideFromCapture}" Command="{Binding ToggleCaptureCommand}" />
+                <!-- 缺省关闭：浮窗是屏幕级的独立窗口，始终显示；开启后游戏窗口最小化期间整个浮窗不显示。 -->
+                <Button x:Name="HideWithGameButton" Classes="chip" Classes.active="{Binding HideWithGame}" Margin="0,0,0,6"
+                        Content="{DynamicResource O.HideWithGame}" Command="{Binding ToggleHideWithGameCommand}"
+                        ToolTip.Tip="{DynamicResource O.HideWithGameHint}" />
+              </WrapPanel>
+            </StackPanel>
+          </controls:Card>
+
+        <controls:Card x:Name="AppearancePanel" CardId="appearance" Title="{Binding SelectedTitle}" Size="OneByAuto"
+                       AllowedSizes="HalfByAuto,FullWidth,OneByThree,OneByFour">
+          <StackPanel Spacing="12">
+            <TextBlock Classes="note" Text="{DynamicResource O.NoSelection}" IsVisible="{Binding NoSelection}" />
+            <StackPanel Spacing="12" IsVisible="{Binding HasSelection}">
+              <ItemsControl controls:StableItems.Source="{Binding SelectedDetails}" />
+              <controls:PairRow>
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource O.Lock}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock x:Name="LockStateText" VerticalAlignment="Center" Text="{Binding LockState}" />
+                  <Button x:Name="LockToggleButton" Classes="chip" Content="{Binding LockAction}" Command="{Binding ToggleLockCommand}" />
+                </StackPanel>
+              </controls:PairRow>
+              <controls:PairRow>
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource O.Scale}" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Button x:Name="ScaleDown" Classes="chip" Width="34" Padding="0" Content="−" Command="{Binding ScaleCommand}" CommandParameter="-" />
+                  <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding ScaleText}" />
+                  <Button x:Name="ScaleUp" Classes="chip" Width="34" Padding="0" Content="+" Command="{Binding ScaleCommand}" CommandParameter="+" />
+                </StackPanel>
+              </controls:PairRow>
+              <controls:PairRow>
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource O.Opacity}" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Button x:Name="OpacityDown" Classes="chip" Width="34" Padding="0" Content="−" Command="{Binding OpacityCommand}" CommandParameter="-" />
+                  <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding OpacityText}" />
+                  <Button x:Name="OpacityUp" Classes="chip" Width="34" Padding="0" Content="+" Command="{Binding OpacityCommand}" CommandParameter="+" />
+                </StackPanel>
+              </controls:PairRow>
+              <TextBlock Classes="muted" Text="{DynamicResource O.Skin}" />
+              <controls:SelectionBorder Classes="segmented" HorizontalAlignment="Left">
+                <ItemsControl controls:StableItems.Source="{Binding Skins}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="page:SkinOption">
+                      <Button Classes="segment" Classes.active="{Binding Selected}" Content="{Binding Label}"
+                              Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).SkinCommand}"
+                              CommandParameter="{Binding Id}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </controls:SelectionBorder>
+              <Border Classes="inset" IsVisible="{Binding UsesImage}">
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="strong" Text="{DynamicResource O.FrameImage}" />
+                  <TextBlock Classes="note" Text="{DynamicResource O.FrameImageHint}" />
+                  <TextBox x:Name="ImagePathBox" Classes="field" Text="{Binding ImagePath}"
+                           PlaceholderText="{DynamicResource O.FrameImagePath}" />
+                  <Button Classes="chip" HorizontalAlignment="Left" Content="{DynamicResource O.PickImage}" Click="OnPickImage" />
+                </StackPanel>
+              </Border>
+              <Button x:Name="RemoveWidgetButton" HorizontalAlignment="Left" Content="{DynamicResource O.RemoveWidget}"
+                      Command="{Binding RemoveWidgetCommand}" />
+            </StackPanel>
+            <TextBlock Classes="note" Text="{DynamicResource O.SettingsHint}" />
+          </StackPanel>
+        </controls:Card>
+
+          <controls:Card x:Name="LibraryPanel" CardId="library" Title="{DynamicResource O.Library}" Padding="16" AllowedSizes="TwoByAuto,HalfByAuto">
+            <controls:Card.Actions>
+              <Button x:Name="GameDataButton" Content="{DynamicResource O.GameDataEntry}" Command="{Binding OpenGameDataCommand}"
+                      ToolTip.Tip="{DynamicResource O.GameDataEntryHint}" />
+            </controls:Card.Actions>
+            <StackPanel Spacing="10">
+              <TextBlock Classes="note" Text="{DynamicResource O.LibraryHint}" />
+              <ItemsControl controls:StableItems.Source="{Binding Library}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="190" Spacing="8" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="page:LibraryItem">
+                    <Button Classes="tile" Classes.active="{Binding Placed}" Padding="10,8" HorizontalAlignment="Stretch"
+                            Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).ToggleWidgetCommand}"
+                            CommandParameter="{Binding WidgetId}">
+                      <DockPanel>
+                        <Border DockPanel.Dock="Left" Width="8" Height="8" CornerRadius="4" Margin="0,0,8,0"
+                                VerticalAlignment="Center" Background="{Binding Accent}" />
+                        <StackPanel>
+                          <TextBlock Classes="name" FontSize="13" Text="{Binding Title}" />
+                          <TextBlock Classes="name muted" FontSize="12" Text="{Binding Group}" />
+                          <TextBlock Classes="note unconfirmed" Text="{Binding Notice}" IsVisible="{Binding HasNotice}" />
+                        </StackPanel>
+                      </DockPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </controls:Card>
+      </controls:CardGrid>
+    </ScrollViewer>
+  </DockPanel>
+
+  <!-- 需要游戏数据的元件：依赖游戏内数据的元件集中在这一层；点外面或按 Esc 关闭，Tab 只在层内循环。 -->
+  <Panel x:Name="GameDataLayer" IsVisible="{Binding IsGameDataOpen}" KeyDown="OnGameDataKeyDown">
+    <Border Background="Transparent" PointerPressed="OnGameDataOutsidePressed" />
+    <Border x:Name="GameDataPanel" Classes="panel popup" Classes.open="{Binding IsGameDataOpen}" MaxWidth="460"
+            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14,56,14,14" KeyboardNavigation.TabNavigation="Cycle">
+      <DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+          <Button DockPanel.Dock="Right" x:Name="GameDataClose" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
+                  Content="{DynamicResource S.ClosePicker}" Command="{Binding CloseGameDataCommand}"
+                  AutomationProperties.Name="{DynamicResource S.ClosePicker}" />
+          <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource O.GameDataTitle}" />
+        </DockPanel>
+        <TextBlock DockPanel.Dock="Top" Classes="note" Margin="0,0,0,10" Text="{DynamicResource O.GameDataHint}" />
+        <ScrollViewer controls:EdgeFade.IsEnabled="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl x:Name="GameDataList" controls:StableItems.Source="{Binding GameDataLibrary}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="page:LibraryItem">
+                <Button Classes="tile" Classes.active="{Binding Placed}" Padding="10,8" Margin="0,0,0,8" HorizontalAlignment="Stretch"
+                        Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).ToggleWidgetCommand}"
+                        CommandParameter="{Binding WidgetId}">
+                  <DockPanel>
+                    <Border DockPanel.Dock="Left" Width="8" Height="8" CornerRadius="4" Margin="0,0,8,0"
+                            VerticalAlignment="Center" Background="{Binding Accent}" />
+                    <StackPanel>
+                      <TextBlock Classes="name" FontSize="13" Text="{Binding Title}" />
+                      <TextBlock Classes="name muted" FontSize="12" Text="{Binding Group}" />
+                      <TextBlock Classes="note unconfirmed" Text="{Binding Notice}" IsVisible="{Binding HasNotice}" />
+                    </StackPanel>
+                  </DockPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+  </Panel>
+  </Panel>
+</UserControl>

@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    解压版包根的 Moongate.exe。目标为 Windows 10/11 自带的 .NET Framework 4.8，产物是单个约十几 KB 的窗口程序，
+    不依赖随包 .NET 运行时，因此运行时或组件缺失时仍能用中文消息框说明原因。引用系统目录里的框架程序集，
+    构建不需要下载目标包或安装 C++ 工具链。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>Moongate</AssemblyName>
+    <RootNamespace>MabiTool.PortableLauncher</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <!-- 程序图标与桌面前端共用 packaging/Moongate.ico。 -->
+    <ApplicationIcon>../../packaging/Moongate.ico</ApplicationIcon>
+    <Title>Moongate</Title>
+    <Description>Moongate</Description>
+    <Company>MinamiChiwa</Company>
+    <Copyright>Copyright (c) 2026 MinamiChiwa（南千和）</Copyright>
+    <DebugType>none</DebugType>
+    <GenerateSupportedRuntime>false</GenerateSupportedRuntime>
+    <FrameworkPathOverride>$(WINDIR)\Microsoft.NET\Framework64\v4.0.30319</FrameworkPathOverride>
+    <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="mscorlib" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+</Project>

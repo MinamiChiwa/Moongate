@@ -1,0 +1,223 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:inventory="using:MabiTool.Desktop.Pages.Inventory"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             xmlns:tables="using:MabiTool.Desktop.Controls.Tables"
+             xmlns:infrastructure="using:MabiTool.Desktop.Infrastructure"
+             x:Class="MabiTool.Desktop.Pages.Inventory.InventoryPage"
+             x:DataType="inventory:InventoryPageModel"
+             controls:Card.PageId="inventory">
+  <UserControl.Styles>
+    <Style Selector="Button.chip.active">
+      <Setter Property="Background" Value="{StaticResource InventoryBrush}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderBrush" Value="{StaticResource InventoryBrush}" />
+    </Style>
+  </UserControl.Styles>
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
+      <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+      <DockPanel Margin="{DynamicResource TitleReserve}">
+        <controls:CardGridEditBar DockPanel.Dock="Right" Target="{Binding #CardsGrid}" VerticalAlignment="Center" Margin="12,0,8,0" />
+        <TextBlock Classes="h1" Margin="0" Text="{DynamicResource I.Title}" />
+      </DockPanel>
+      <controls:ReflowPanel MinItemWidth="260" Spacing="12" Margin="0,4,0,0">
+        <!-- 同步状态：背包随全局常驻抓包自动同步，没有开始/停止按钮。 -->
+        <TextBlock x:Name="SyncStatus" Classes="body muted" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding Data.Status}" />
+        <TextBox x:Name="SearchBox" Classes="field" Text="{Binding Search}"
+                 PlaceholderText="{DynamicResource I.SearchHint}" AutomationProperties.Name="{DynamicResource I.SearchHint}" />
+      </controls:ReflowPanel>
+      <TextBlock Margin="0,4,0,0" x:Name="CapabilityNotice" Classes="note" Text="{Binding CapabilityNotice}" IsVisible="{Binding HasCapabilityNotice}" />
+      <!-- 账号与显示的列组；在窗口中打开与导出 CSV 在表格左上角。 -->
+      <WrapPanel Margin="0,8,0,0">
+        <StackPanel Orientation="Horizontal" Margin="0,0,16,6" VerticalAlignment="Center">
+          <TextBlock Classes="label" VerticalAlignment="Center" Margin="0,0,8,0" Text="{DynamicResource I.Account}" />
+          <ComboBox x:Name="AccountBox" MinWidth="160" MaxWidth="260" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount}"
+                    IsEnabled="{Binding HasAccounts}" PlaceholderText="{DynamicResource I.NoAccount}"
+                    AutomationProperties.Name="{DynamicResource I.Account}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate DataType="inventory:InventoryAccountOption">
+                <TextBlock Classes="name" Text="{Binding Label}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="0,0,16,6" VerticalAlignment="Center">
+          <TextBlock Classes="label" VerticalAlignment="Center" Margin="0,0,8,0" Text="{DynamicResource I.Groups}" />
+          <ItemsControl x:Name="GroupToggles" controls:StableItems.Source="{Binding Groups}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="inventory:GroupToggle">
+                <Button Classes="chip" Classes.active="{Binding Shown}" Content="{Binding Label}"
+                        Command="{Binding Command}" CommandParameter="{Binding Id}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </WrapPanel>
+    </StackPanel>
+
+    <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <!--
+        卡片网格：物品 2×4（表格在卡片内滚动），右侧一列叠放概况 1×1.5 与资源 1×2.5，两者合起来与物品等高；
+        其下读取范围与道具名称目录各一列、随内容。顺序与尺寸档在“编辑布局”里调整。
+      -->
+      <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
+        <controls:Card x:Name="ItemsPanel" CardId="items" Title="{DynamicResource I.Items}" Size="TwoByFour"
+                       AllowedSizes="TwoByThree,TwoByAuto,FullWidth">
+          <StackPanel Spacing="10">
+            <tables:DataTable x:Name="ItemsTable" TableId="inventory.items" ColumnsSource="{Binding Columns}" ItemsSource="{Binding Rows}"
+                              EmptyText="{DynamicResource I.NoItems}" CanExport="True" ExportFileName="{Binding ExportFileName}"
+                              BodyMaxHeight="470">
+              <!-- 表格左上角、表头“名称”上方：在窗口中打开与导出 CSV。 -->
+              <tables:DataTable.CornerContent>
+                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,6">
+                  <Button x:Name="OpenWindowButton" Classes="chip" Content="{DynamicResource I.OpenWindow}" Click="OnOpenWindowClick" />
+                  <Button x:Name="ExportButton" Classes="chip" Content="{DynamicResource I.ExportCsv}" Click="OnExportClick" />
+                </StackPanel>
+              </tables:DataTable.CornerContent>
+            </tables:DataTable>
+            <TextBlock Classes="note" Text="{DynamicResource I.TableHint}" />
+          </StackPanel>
+        </controls:Card>
+
+          <!-- 概况：固定高度。角色行与金币、银币、魔族貢品跟随资源区所选角色，与资源区读同一份数据；银币与贡品带补充倒计时（全页一个每秒节拍，只改倒计时文字）。
+               五行的值都停在卡片右边线：标签靠左停靠，数值靠右停靠，中间的剩余宽度放倒计时（小号、弱化色、右对齐、等宽数字），倒计时每秒变化不推动数值。 -->
+          <controls:Card x:Name="SummaryPanel" CardId="summary" Title="{DynamicResource I.Summary}" Size="OneByOneAndHalf"
+                         AllowedSizes="OneByTwo,OneByAuto,HalfByAuto">
+            <StackPanel Spacing="8">
+              <StackPanel>
+                <DockPanel Height="26">
+                  <TextBlock DockPanel.Dock="Left" Classes="muted" VerticalAlignment="Center" Margin="0,0,12,0" Text="{DynamicResource I.SummaryCharacter}" />
+                  <TextBlock x:Name="SummaryCharacter" Classes="name" VerticalAlignment="Center" TextAlignment="Right"
+                             Text="{Binding SummaryCharacter}" ToolTip.Tip="{Binding SummaryCharacter}" />
+                </DockPanel>
+                <ItemsControl controls:StableItems.Source="{Binding Data.Summary}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="infrastructure:KeyValue">
+                      <Grid Height="26" ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding Label}" />
+                        <TextBlock Grid.Column="1" Classes="body" VerticalAlignment="Center" Text="{Binding Value}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <ItemsControl x:Name="SummaryResourceList" controls:StableItems.Source="{Binding SummaryResources}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="inventory:InventoryResourceRow">
+                      <DockPanel Height="26" Background="Transparent" ToolTip.Tip="{Binding Tip}">
+                        <TextBlock DockPanel.Dock="Left" Classes="muted" VerticalAlignment="Center" Text="{Binding Name}" />
+                        <TextBlock DockPanel.Dock="Right" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Value}"
+                                   Classes.muted="{Binding !Observed}" />
+                        <inventory:InventoryCountdownText Classes="name muted" FontSize="11" FontFeatures="+tnum" VerticalAlignment="Center" Margin="8,0,8,0"
+                                                          TextAlignment="Right" Refill="{Binding Refill}" />
+                      </DockPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </StackPanel>
+          </controls:Card>
+          <!-- 资源：账户级（客户端 AccountWallet 的成员）跟随账号下拉；角色级按所选账户下的角色分开（金币、银币、贡品在概况）。每项一行，明细在悬停提示；各组最高 200，超出组内滚动；未读取折叠。 -->
+          <controls:Card x:Name="ResourcesPanel" CardId="resources" Title="{DynamicResource I.Resources}" Size="OneByTwoAndHalf"
+                         AllowedSizes="OneByThree,OneByFour,OneByAuto,HalfByAuto">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="note" Text="{DynamicResource I.ResourcesHint}" TextWrapping="Wrap" />
+              <TextBlock Classes="label" Margin="0,4,0,0" Text="{DynamicResource I.AccountResources}" />
+              <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="AccountResourceList" controls:StableItems.Source="{Binding AccountResources}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="inventory:InventoryResourceRow">
+                      <Grid Height="26" Background="Transparent" ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Tip}">
+                        <TextBlock Classes="body" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                        <TextBlock Grid.Column="1" Classes="body" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Value}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+              <Button x:Name="UnreadAccountResourcesToggle" Classes="bare" HorizontalAlignment="Left" IsVisible="{Binding HasUnreadAccountResources}"
+                      Command="{Binding ToggleUnreadAccountCommand}" Content="{Binding UnreadAccountResourcesText}" />
+              <controls:ExpandPanel IsExpanded="{Binding UnreadAccountExpanded, Mode=OneWay}">
+                <ItemsControl controls:StableItems.Source="{Binding UnreadAccountResources}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="inventory:InventoryResourceRow">
+                      <controls:PairRow Margin="0,2" Background="Transparent" ToolTip.Tip="{Binding Tip}">
+                        <TextBlock Classes="muted" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                        <TextBlock Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" Text="{Binding Detail}" />
+                      </controls:PairRow>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </controls:ExpandPanel>
+              <TextBlock Classes="label" Margin="0,4,0,0" Text="{DynamicResource I.CharacterResources}" />
+              <!-- 角色与透视表的角色列同一来源；默认当前登录角色。概况的三项资源跟随这里的选择。 -->
+              <ItemsControl x:Name="ResourceCharacterChips" controls:StableItems.Source="{Binding ResourceCharacters}" IsVisible="{Binding HasResourceCharacters}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="inventory:ResourceCharacterChoice">
+                    <Button Classes="chip" Classes.active="{Binding Active}" Margin="0,0,6,4" Content="{Binding Name}"
+                            Command="{Binding Command}" CommandParameter="{Binding Id}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="CharacterResourceList" controls:StableItems.Source="{Binding CharacterResources}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="inventory:InventoryResourceRow">
+                      <Grid Height="26" Background="Transparent" ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Tip}">
+                        <TextBlock Classes="body" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                        <TextBlock Grid.Column="1" Classes="body" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Value}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+              <Button x:Name="UnreadCharacterResourcesToggle" Classes="bare" HorizontalAlignment="Left" IsVisible="{Binding HasUnreadCharacterResources}"
+                      Command="{Binding ToggleUnreadCharacterCommand}" Content="{Binding UnreadCharacterResourcesText}" />
+              <controls:ExpandPanel IsExpanded="{Binding UnreadCharacterExpanded, Mode=OneWay}">
+                <ItemsControl controls:StableItems.Source="{Binding UnreadCharacterResources}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="inventory:InventoryResourceRow">
+                      <controls:PairRow Margin="0,2" Background="Transparent" ToolTip.Tip="{Binding Tip}">
+                        <TextBlock Classes="muted" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                        <TextBlock Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" Text="{Binding Detail}" />
+                      </controls:PairRow>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </controls:ExpandPanel>
+            </StackPanel>
+          </controls:Card>
+          <controls:Card x:Name="CoveragePanel" CardId="coverage" Title="{DynamicResource I.Coverage}" Size="OneByAuto"
+                         AllowedSizes="HalfByAuto,OneByOneAndHalf">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="note" Text="{DynamicResource I.CoverageHint}" />
+              <ItemsControl controls:StableItems.Source="{Binding Data.Coverage}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="inventory:CoverageRow">
+                    <controls:PairRow Margin="0,3">
+                      <TextBlock Classes="muted" Text="{Binding Label}" />
+                      <TextBlock Classes="body" FontWeight="Medium" Text="{Binding State}"
+                                 Classes.confirmed="{Binding Complete}" Classes.unconfirmed="{Binding !Complete}" />
+                    </controls:PairRow>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </controls:Card>
+          <controls:Card x:Name="CatalogPanel" CardId="catalog" Title="{DynamicResource I.Catalog}" Size="OneByAuto"
+                         AllowedSizes="HalfByAuto,OneByOne">
+            <StackPanel Spacing="8">
+              <ItemsControl controls:StableItems.Source="{Binding Data.Catalog}" />
+            </StackPanel>
+          </controls:Card>
+      </controls:CardGrid>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

@@ -1,0 +1,564 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mabitool:worker:color:v1",
+  "title": "Color Worker v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "messageId",
+    "requestId",
+    "kind",
+    "runId",
+    "bindingRevision",
+    "fencingToken",
+    "payload"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "const": 1
+    },
+    "messageId": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/uint64"
+        },
+        {
+          "not": {
+            "const": "0"
+          }
+        }
+      ]
+    },
+    "requestId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kind": {
+      "enum": [
+        "hello",
+        "ready",
+        "ping",
+        "pong",
+        "request",
+        "accepted",
+        "event",
+        "result",
+        "error",
+        "cancel",
+        "cancelled",
+        "shutdown",
+        "bye",
+        "portRequest",
+        "portResult",
+        "portError",
+        "command",
+        "commandResult"
+      ]
+    },
+    "runId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "bindingRevision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/uint64"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "fencingToken": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/uint64"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "hello",
+              "ready",
+              "ping",
+              "pong",
+              "shutdown",
+              "bye"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "requestId": {
+            "type": "null"
+          },
+          "runId": {
+            "type": "null"
+          },
+          "bindingRevision": {
+            "type": "null"
+          },
+          "fencingToken": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "requestId": {
+            "$ref": "#/$defs/id"
+          },
+          "runId": {
+            "$ref": "#/$defs/id"
+          },
+          "bindingRevision": {
+            "$ref": "#/$defs/uint64"
+          },
+          "fencingToken": {
+            "$ref": "#/$defs/uint64"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "request"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/request"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "portRequest"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/portRequest"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "portResult"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/portResult"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "portError"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/portError"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "command"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/command"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "commandResult"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/commandResult"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}(?![\\s\\S])"
+    },
+    "uint64": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)(?![\\s\\S])",
+      "maxLength": 20
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId",
+        "runId",
+        "sizeBytes",
+        "sha256",
+        "expiresAtUnixMs"
+      ],
+      "properties": {
+        "assetId": {
+          "$ref": "#/$defs/id"
+        },
+        "runId": {
+          "$ref": "#/$defs/id"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 67108864
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "expiresAtUnixMs": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "arguments": {
+          "type": "object"
+        },
+        "argumentsAsset": {
+          "$ref": "#/$defs/asset"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "arguments"
+          ],
+          "not": {
+            "required": [
+              "argumentsAsset"
+            ]
+          }
+        },
+        {
+          "required": [
+            "argumentsAsset"
+          ],
+          "not": {
+            "required": [
+              "arguments"
+            ]
+          }
+        }
+      ]
+    },
+    "portRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "callId",
+        "method",
+        "arguments"
+      ],
+      "properties": {
+        "callId": {
+          "$ref": "#/properties/messageId"
+        },
+        "method": {
+          "enum": [
+            "game.snapshot",
+            "game.nativeAccess",
+            "game.check",
+            "game.capture",
+            "game.gesture",
+            "game.move",
+            "game.wheel",
+            "game.release"
+          ]
+        },
+        "arguments": {
+          "type": "object"
+        }
+      }
+    },
+    "portResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "callId",
+        "result"
+      ],
+      "properties": {
+        "callId": {
+          "$ref": "#/properties/messageId"
+        },
+        "result": {
+          "type": "object"
+        }
+      }
+    },
+    "portError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "callId",
+        "code"
+      ],
+      "properties": {
+        "callId": {
+          "$ref": "#/properties/messageId"
+        },
+        "code": {
+          "type": "string"
+        }
+      }
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commandId",
+            "revision",
+            "action"
+          ],
+          "properties": {
+            "commandId": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/uint64"
+                },
+                {
+                  "not": {
+                    "const": "0"
+                  }
+                }
+              ]
+            },
+            "revision": {
+              "$ref": "#/$defs/uint64"
+            },
+            "action": {
+              "const": "retry"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commandId",
+            "revision",
+            "action",
+            "batchId",
+            "candidateId"
+          ],
+          "properties": {
+            "commandId": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/uint64"
+                },
+                {
+                  "not": {
+                    "const": "0"
+                  }
+                }
+              ]
+            },
+            "revision": {
+              "$ref": "#/$defs/uint64"
+            },
+            "action": {
+              "const": "select"
+            },
+            "batchId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "candidateId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      ]
+    },
+    "interaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "batchId",
+        "selectionEnabled",
+        "retryEnabled"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/uint64"
+        },
+        "batchId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selectionEnabled": {
+          "type": "boolean"
+        },
+        "retryEnabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "commandResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commandId",
+        "accepted",
+        "code",
+        "interaction"
+      ],
+      "properties": {
+        "commandId": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "not": {
+                "const": "0"
+              }
+            }
+          ]
+        },
+        "accepted": {
+          "type": "boolean"
+        },
+        "code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interaction": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/interaction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "accepted": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "code": {
+                "type": "null"
+              },
+              "interaction": {
+                "$ref": "#/$defs/interaction"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

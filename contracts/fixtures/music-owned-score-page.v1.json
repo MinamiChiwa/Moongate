@@ -1,0 +1,43 @@
+{
+  "backendEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "inventoryRevision": "9007199254740993",
+  "workspaceId": "inventory-owned-score-fixture",
+  "workspaceRevision": "9007199254740994",
+  "gameSessionId": "game-fixture",
+  "bindingRevision": "18446744073709551615",
+  "generation": "2",
+  "identity": { "accountId": "9007199254740993", "characterId": "18446744073709551615", "rawName": "原始角色名", "displayName": "原始角色名" },
+  "source": { "provider": "mabiagent-inventory", "providerVersion": "1.0.0", "region": "TW", "gameBuild": "synthetic-fixture-v1" },
+  "lastObservedAt": "2026-11-10T00:00:00Z",
+  "simulation": true,
+  "current": true,
+  "complete": false,
+  "quality": "partial",
+  "coverage": [
+    { "category": "MusicNoteItem", "container": "backpack", "complete": true, "reason": null },
+    { "category": "MusicNoteItem", "container": "character-storage", "complete": true, "reason": null },
+    { "category": "MusicNoteItem", "container": "account-storage", "complete": false, "reason": "inventory.storageNotRepresented" }
+  ],
+  "reasons": ["inventory.coverageIncomplete"],
+  "items": [
+    {
+      "type": { "category": "MusicNoteItem", "typeId": "9007199254740993", "sheet": null },
+      "container": "backpack", "key": "music-note-a", "instanceId": "18446744073709551615", "quantity": "1", "sheetId": "9007199254740993",
+      "rawTitle": " <color=#ffffff>同名譜</color> ", "composer": "作曲者原名", "composerRealmId": 3, "arranger": "編曲者原名", "arrangerRealmId": 5,
+      "acquiredTimeRaw": "-9223372036854775808", "isCopyingAllowed": true, "isFavorite": false, "isLocked": true, "isJunked": false,
+      "attributes": { "data": { "Id": "18446744073709551615", "SheetId": "9007199254740993", "Title": " <color=#ffffff>同名譜</color> ", "Composer": "作曲者原名", "ComposerRealmId": 3, "Arranger": "編曲者原名", "ArrangerRealmId": 5, "AcquiredTime": "-9223372036854775808", "IsCopyingAllowed": true, "IsFavorite": false, "IsLocked": true, "IsJunked": false } },
+      "metadataComplete": true, "reasons": [], "current": true, "quality": "confirmed", "lastObservedAt": "2026-11-10T00:00:00Z",
+      "source": { "provider": "mabiagent-inventory", "providerVersion": "1.0.0", "region": "TW", "gameBuild": "synthetic-fixture-v1" }
+    },
+    {
+      "type": { "category": "MusicNoteItem", "typeId": "9007199254740993", "sheet": null },
+      "container": "character-storage", "key": "music-note-b", "instanceId": "9007199254740995", "quantity": null, "sheetId": "9007199254740993",
+      "rawTitle": " <color=#ffffff>同名譜</color> ", "composer": null, "composerRealmId": null, "arranger": null, "arrangerRealmId": null,
+      "acquiredTimeRaw": null, "isCopyingAllowed": null, "isFavorite": null, "isLocked": null, "isJunked": null,
+      "attributes": { "data": { "Id": "9007199254740995", "SheetId": "9007199254740993", "Title": " <color=#ffffff>同名譜</color> " } },
+      "metadataComplete": false, "reasons": ["music.scoreMetadata.composer.missing", "inventory.quantityUnknown"], "current": false, "quality": "partial", "lastObservedAt": "2026-11-10T00:00:00Z",
+      "source": { "provider": "mabiagent-inventory", "providerVersion": "1.0.0", "region": "TW", "gameBuild": "synthetic-fixture-v1" }
+    }
+  ],
+  "nextCursor": null
+}

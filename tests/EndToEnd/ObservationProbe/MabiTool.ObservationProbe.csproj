@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../../workers/game-observation/MabiTool.Observation.Worker.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../../contracts/fixtures/combat-tw-current-identity.v1.json" LogicalName="MabiTool.CurrentCombatIdentity" /></ItemGroup>
+</Project>

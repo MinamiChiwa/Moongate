@@ -1,0 +1,332 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="using:MabiTool.Desktop.Shell"
+        xmlns:controls="using:MabiTool.Desktop.Controls"
+        x:Class="MabiTool.Desktop.Shell.MainWindow"
+        x:DataType="shell:ShellViewModel"
+        Title="Moongate"
+        Width="1280" Height="860" MinWidth="760" MinHeight="600"
+        WindowDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        WindowStartupLocation="CenterScreen">
+  <Window.DataTemplates>
+    <DataTemplate DataType="shell:NavigationItem">
+      <Button Classes="nav" Classes.selected="{Binding IsSelected}"
+              Command="{Binding SelectCommand}" CommandParameter="{Binding}">
+        <DockPanel>
+          <controls:IconTile DockPanel.Dock="Left" Margin="0,0,10,0" VerticalAlignment="Center"
+                             Slot="{Binding Module.IconSlot}" Fallback="{Binding Glyph}"
+                             Accent="{Binding Module.AccentBrush}" IsActive="{Binding IsSelected}" />
+          <TextBlock Classes="name" VerticalAlignment="Center" Text="{Binding Title}" />
+        </DockPanel>
+      </Button>
+    </DataTemplate>
+  </Window.DataTemplates>
+
+  <Panel>
+    <Border x:Name="Frame" CornerRadius="30" ClipToBounds="True" Background="{DynamicResource CanvasBrush}">
+      <Panel>
+        <!-- 背景光晕：浅色下左上主光晕跟随目前模块的色调；深色下三处都是固定的冷色。 -->
+        <Border x:Name="ModuleHalo" Background="{Binding ModuleHaloBrush}" />
+        <Border Background="{DynamicResource AmberHaloBrush}" />
+        <Border Background="{DynamicResource BlueHaloBrush}" />
+        <!-- 素材包提供的模块背景：叠在光晕之上、面板之下，再盖一层随主题的遮罩保证文字对比度。 -->
+        <Image x:Name="Backdrop" Source="{Binding BackdropImage}" Stretch="UniformToFill" IsVisible="{Binding HasBackdrop}"
+               IsHitTestVisible="False" />
+        <Border x:Name="BackdropScrim" Background="{Binding BackdropScrim}" IsVisible="{Binding HasBackdrop}"
+                IsHitTestVisible="False" />
+
+        <Grid ColumnDefinitions="236,*" Margin="14">
+          <!-- 侧栏：模块入口与底部入口的选中底色在入口之间滑动（SlidingSelection）。 -->
+          <controls:SelectionBorder x:Name="Sidebar" Classes="panel" Padding="12,16" Margin="0,0,14,0">
+            <DockPanel>
+              <DockPanel DockPanel.Dock="Top" x:Name="BrandArea" Margin="8,0,8,14">
+                <!-- 标志：星月门石柱上的月环符文（缺口圆环与三道刻痕），环中是月亮碎片；线条随主题取前景色，碎片固定为蓝色。 -->
+                <Viewbox DockPanel.Dock="Left" Width="28" Height="28" Margin="0,0,10,0">
+                  <Canvas Width="100" Height="100">
+                    <Path Data="M35,62 A24,24 0 1 1 65,62 M38,73 L34,85 M50,75 L50,89 M62,73 L66,85"
+                          Stroke="{DynamicResource InkBrush}" StrokeThickness="7" StrokeLineCap="Round" />
+                    <Path Data="M50,27 L59,42 L50,60 L41,42 Z" Fill="#4F7DFF" />
+                    <Path Data="M50,27 L50,60 L41,42 Z" Fill="#9CC0FF" />
+                  </Canvas>
+                </Viewbox>
+                <TextBlock Classes="name" FontSize="18" FontWeight="Black" VerticalAlignment="Center"
+                           Text="{DynamicResource S.ProductName}" />
+              </DockPanel>
+
+              <!-- 全局抓包状态：未抓包及原因／抓包中但未识别角色／已识别的角色名（游戏原文）；点击前往设置页抓包区，Npcap 缺失时打开安装指引。 -->
+              <Button DockPanel.Dock="Top" x:Name="CaptureChip" Classes="chip" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                      Margin="0,0,0,10" Command="{Binding OpenCaptureSettingsCommand}"
+                      ToolTip.Tip="{Binding CaptureTip}" AutomationProperties.Name="{Binding CaptureTip}">
+                <DockPanel>
+                  <Panel DockPanel.Dock="Left" Width="8" Height="8" Margin="0,0,8,0" VerticalAlignment="Center">
+                    <Border CornerRadius="4" Background="{DynamicResource MutedBrush}" IsVisible="{Binding !CaptureIdentified}" />
+                    <Border CornerRadius="4" Background="{DynamicResource ConfirmedBrush}" IsVisible="{Binding CaptureIdentified}" />
+                  </Panel>
+                  <StackPanel>
+                    <TextBlock Classes="note" FontSize="11" Text="{DynamicResource S.Capture}" />
+                    <!-- 两行都是单行：放不下时省略，全文在悬停提示里，卡片高度不随文字长短变化。 -->
+                    <TextBlock x:Name="CaptureLineText" Classes="name" Classes.strong="{Binding CaptureIdentified}"
+                               Text="{Binding CaptureLine}" ToolTip.Tip="{Binding CaptureLine}" Classes.confirmed="{Binding CaptureIdentified}"
+                               Classes.unconfirmed="{Binding !CaptureIdentified}" />
+                    <!-- 地图与频道：全局信息，紧凑地放在抓包状态下方；两项各有悬停提示写明来源或原因。
+                         长文本加后缀的共用排法：后缀先声明并靠右停靠、完整显示，地图名最后声明、占剩余宽度并省略；整行靠左，后缀紧跟地图名。 -->
+                    <DockPanel x:Name="PlaceLine" HorizontalAlignment="Left" Margin="0,2,0,0">
+                      <TextBlock x:Name="ChannelText" DockPanel.Dock="Right" Classes="muted" FontSize="12" Text="{Binding Place.Channel}" ToolTip.Tip="{Binding Place.ChannelNote}" />
+                      <TextBlock DockPanel.Dock="Right" Classes="muted" FontSize="12" Text=" · " />
+                      <TextBlock x:Name="MapText" Classes="name muted" FontSize="12" Text="{Binding Place.Map}" ToolTip.Tip="{Binding Place.MapNote}" />
+                    </DockPanel>
+                  </StackPanel>
+                </DockPanel>
+              </Button>
+
+              <!-- 游戏绑定卡：点开选择游戏窗口的弹出层；未连接后端时停用。 -->
+              <Button DockPanel.Dock="Top" x:Name="BindingCard" Classes="bindingcard" Margin="0,0,0,14"
+                      Command="{Binding GamePicker.OpenCommand}" IsEnabled="{Binding Binding.Connected}"
+                      ToolTip.Tip="{DynamicResource S.PickWindow}" AutomationProperties.Name="{DynamicResource S.PickWindow}">
+                <StackPanel>
+                  <!-- 标题是绑定的窗口本身；角色名只在上方的抓包状态里显示，不重复。 -->
+                  <TextBlock x:Name="BindingTitle" Classes="name strong" Text="{Binding Binding.Title}" ToolTip.Tip="{Binding Binding.Title}" />
+                  <TextBlock Classes="name muted" FontSize="12" Text="{Binding Binding.Region}" ToolTip.Tip="{Binding Binding.Region}" />
+                  <TextBlock Classes="note" FontWeight="Medium" Text="{Binding Binding.Status}"
+                             Classes.confirmed="{Binding Binding.Confirmed}" Classes.unconfirmed="{Binding !Binding.Confirmed}" />
+                </StackPanel>
+              </Button>
+
+              <!-- 外壳自带的入口与语言选择：与模块入口同一种行样式。 -->
+              <Border DockPanel.Dock="Bottom" x:Name="ShellGroup" Classes="inset" Padding="4" Margin="0,14,0,0">
+                <StackPanel>
+                  <ItemsControl ItemsSource="{Binding ShellEntries}" />
+                  <DockPanel MinHeight="32" Margin="9,7">
+                    <controls:IconTile DockPanel.Dock="Left" Margin="0,0,10,0" VerticalAlignment="Center"
+                                       Slot="shell.language" Fallback="文" Accent="{StaticResource ShellBrush}" />
+                    <controls:SelectionBorder DockPanel.Dock="Right" Classes="segmented" VerticalAlignment="Center" Margin="6,0,0,0">
+                      <StackPanel Orientation="Horizontal">
+                        <Button x:Name="LanguageSimplified" Classes="segment" Classes.active="{Binding IsSimplified}"
+                                Command="{Binding UseSimplifiedCommand}" Content="简"
+                                ToolTip.Tip="简体中文" AutomationProperties.Name="简体中文" />
+                        <Button x:Name="LanguageTraditional" Classes="segment" Classes.active="{Binding IsTraditional}"
+                                Command="{Binding UseTraditionalCommand}" Content="繁"
+                                ToolTip.Tip="繁體中文" AutomationProperties.Name="繁體中文" />
+                      </StackPanel>
+                    </controls:SelectionBorder>
+                    <TextBlock Classes="name" VerticalAlignment="Center" Text="{DynamicResource S.Language}" />
+                  </DockPanel>
+                </StackPanel>
+              </Border>
+
+              <!--
+                模块入口可拖动排序（SidebarReorder）：各分组内排序，不跨分组。滚动区向两侧外扩 6、内容内缩 6，
+                拖起的入口略微放大时左右不被滚动区裁掉。
+              -->
+              <ScrollViewer x:Name="NavigationScroller" controls:EdgeFade.IsEnabled="True" Margin="-6,0"
+                            VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="14" Margin="6,0">
+                  <StackPanel Spacing="2">
+                    <TextBlock Classes="note" Margin="8,0,8,4" Text="{DynamicResource S.BuiltInModules}" />
+                    <ItemsControl x:Name="BuiltInList" ItemsSource="{Binding BuiltIn}" />
+                  </StackPanel>
+                  <StackPanel Spacing="2" IsVisible="{Binding HasExtensions}">
+                    <TextBlock Classes="note" Margin="8,0,8,4" Text="{DynamicResource S.ExtensionModules}" />
+                    <ItemsControl x:Name="ExtensionList" ItemsSource="{Binding Extensions}" />
+                  </StackPanel>
+                  <!-- 核心功能尚未实现的模块：默认收起，展开状态保存在偏好文件；选中其中的模块时保持展开。 -->
+                  <StackPanel x:Name="PendingGroup" Spacing="2" IsVisible="{Binding HasPending}">
+                    <ToggleButton x:Name="PendingToggle" Classes="grouphead" IsChecked="{Binding IsPendingOpen, Mode=TwoWay}"
+                                  Click="OnPendingToggleClick"
+                                  AutomationProperties.Name="{DynamicResource S.PendingModules}">
+                      <DockPanel>
+                        <Panel DockPanel.Dock="Left" Width="14" Margin="0,0,6,0" VerticalAlignment="Center">
+                          <Path Data="M0,0 L5,4 L0,8 Z" Fill="{DynamicResource MutedBrush}" HorizontalAlignment="Left"
+                                IsVisible="{Binding !IsPendingOpen}" />
+                          <Path Data="M0,1 L8,1 L4,6 Z" Fill="{DynamicResource MutedBrush}" HorizontalAlignment="Left"
+                                IsVisible="{Binding IsPendingOpen}" />
+                        </Panel>
+                        <TextBlock Classes="name muted" FontSize="12" Text="{DynamicResource S.PendingModules}" />
+                      </DockPanel>
+                    </ToggleButton>
+                    <controls:ExpandPanel IsExpanded="{Binding IsPendingOpen, Mode=OneWay}">
+                      <ItemsControl x:Name="PendingList" ItemsSource="{Binding PendingModules}" />
+                    </controls:ExpandPanel>
+                  </StackPanel>
+                </StackPanel>
+              </ScrollViewer>
+            </DockPanel>
+          </controls:SelectionBorder>
+
+          <DockPanel Grid.Column="1">
+            <Border DockPanel.Dock="Bottom" x:Name="ActivityCapsule" Classes="panel" CornerRadius="30"
+                    Padding="22,12,12,12" Margin="0,14,0,0">
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Classes="stop" Margin="16,0,0,0" VerticalAlignment="Center"
+                        Command="{Binding EmergencyStopCommand}" IsEnabled="{Binding Activity.CanEmergencyStop}"
+                        Content="{DynamicResource S.EmergencyStop}" />
+                <controls:ReflowPanel MinItemWidth="220" Spacing="12" VerticalAlignment="Center">
+                  <StackPanel>
+                    <TextBlock Classes="note" FontWeight="Bold" Foreground="{Binding ActivityOwnerBrush}"
+                               Text="{Binding OwnerLine}" />
+                    <!-- 活动胶囊最多两行，完整文字放在提示里，窗口变矮时不挤占页面。 -->
+                    <TextBlock Classes="body strong" FontSize="17" MaxLines="2" TextTrimming="CharacterEllipsis"
+                               Text="{Binding Activity.Title}" ToolTip.Tip="{Binding Activity.Title}" />
+                  </StackPanel>
+                  <TextBlock Classes="body muted" VerticalAlignment="Center" MaxLines="2" TextTrimming="CharacterEllipsis"
+                             Text="{Binding Activity.Detail}" ToolTip.Tip="{Binding Activity.Detail}" />
+                  <ItemsControl ItemsSource="{Binding Stages}" IsVisible="{Binding ShowStages}" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="shell:StageViewModel">
+                        <Border Classes="inset" Padding="10,4" CornerRadius="15" Margin="0,0,6,6">
+                          <TextBlock FontSize="12" FontWeight="Bold" Text="{Binding Text}"
+                                     Classes.confirmed="{Binding IsDone}" Classes.unconfirmed="{Binding IsUnknown}"
+                                     Classes.muted="{Binding IsPending}" />
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </controls:ReflowPanel>
+              </DockPanel>
+            </Border>
+            <!-- 页面区：每个模块一个外框（PageFrame），切换时先显示骨架，页面在之后的调度帧里建立，访问过的外框一直复用并留在逻辑树上（见 PageHost）。 -->
+            <shell:PageHost x:Name="PageHost" Current="{Binding CurrentFrame}" />
+          </DockPanel>
+          <!-- 窗口按钮直接叠在右上角，不占用单独的标题列。 -->
+          <StackPanel Grid.Column="1" x:Name="WindowButtons" Orientation="Horizontal" Spacing="6" SizeChanged="OnWindowButtonsSizeChanged"
+                      HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,2,0">
+                <!-- 自动检查更新开启且后端发现新版本时出现；点击打开设置页的更新区。其余时候不显示、不占位。 -->
+                <Button x:Name="UpdateBadge" Classes="window updatebadge" Click="OnUpdateBadgeClick"
+                        IsVisible="{Binding HasUpdate}" ToolTip.Tip="{Binding UpdateLabel}"
+                        AutomationProperties.Name="{Binding UpdateLabel}">
+                  <TextBlock Classes="name" VerticalAlignment="Center" Text="{Binding UpdateLabel}" />
+                </Button>
+                <!-- 一键切换深浅色：与窗口按钮同一行，中间留出较大的空隙。 -->
+                <Button x:Name="ThemeToDarkButton" Classes="window" Margin="0,0,6,0" Command="{Binding ToggleThemeCommand}"
+                        IsVisible="{Binding IsLightTheme}" ToolTip.Tip="{DynamicResource S.ToDark}"
+                        AutomationProperties.Name="{DynamicResource S.ToDark}">
+                  <Path Data="M10,7.6 A5,5 0 1 1 3.4,1 A4,4 0 0 0 10,7.6 Z" Stroke="{DynamicResource InkBrush}" StrokeThickness="1.2"
+                        StrokeLineCap="Round" StrokeJoin="Round" />
+                </Button>
+                <Button x:Name="ThemeToLightButton" Classes="window" Margin="0,0,6,0" Command="{Binding ToggleThemeCommand}"
+                        IsVisible="{Binding IsDarkTheme}" ToolTip.Tip="{DynamicResource S.ToLight}"
+                        AutomationProperties.Name="{DynamicResource S.ToLight}">
+                  <Path Data="M5.5,3 A2.5,2.5 0 1 0 5.5,8 A2.5,2.5 0 1 0 5.5,3 Z M5.5,0 V1.2 M5.5,9.8 V11 M0,5.5 H1.2 M9.8,5.5 H11 M1.6,1.6 L2.4,2.4 M8.6,8.6 L9.4,9.4 M1.6,9.4 L2.4,8.6 M8.6,2.4 L9.4,1.6"
+                        Stroke="{DynamicResource InkBrush}" StrokeThickness="1.2" StrokeLineCap="Round" />
+                </Button>
+                <Button x:Name="MinimizeButton" Classes="window" Click="OnMinimizeClick" ToolTip.Tip="{DynamicResource S.Minimize}"
+                        AutomationProperties.Name="{DynamicResource S.Minimize}">
+                  <Path Data="M0,0 H10" Stroke="{DynamicResource InkBrush}" StrokeThickness="1.2" />
+                </Button>
+                <!-- 最大化或还原：图标与提示随窗口的实际状态切换（见 MainWindow.UpdateMaximizeButton）。 -->
+                <Button x:Name="MaximizeButton" Classes="window" Click="OnMaximizeClick">
+                  <Panel>
+                    <Path x:Name="MaximizeIcon" Data="M0,0 H9 V9 H0 Z" Stroke="{DynamicResource InkBrush}" StrokeThickness="1.2" />
+                    <Path x:Name="RestoreIcon" Data="M2.5,2.5 V0 H10 V7.5 H7.5 M0,2.5 H7.5 V10 H0 Z" Stroke="{DynamicResource InkBrush}"
+                          StrokeThickness="1.2" StrokeJoin="Round" IsVisible="False" />
+                  </Panel>
+                </Button>
+                <Button Classes="window close" Click="OnCloseClick" ToolTip.Tip="{DynamicResource S.Close}"
+                        AutomationProperties.Name="{DynamicResource S.Close}">
+                  <Path Data="M0,0 L9,9 M9,0 L0,9" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.2" />
+                </Button>
+          </StackPanel>
+        </Grid>
+
+        <!-- 选择游戏窗口：叠在窗口内的弹出层，从绑定卡下方展开；点外面或按 Esc 关闭，Tab 只在层内循环。 -->
+        <Panel x:Name="GamePickerLayer" IsVisible="{Binding GamePicker.IsOpen}">
+          <Border Background="Transparent" PointerPressed="OnPickerOutsidePressed" />
+          <Border x:Name="GamePickerPanel" Classes="panel popup" Classes.open="{Binding GamePicker.IsOpen}"
+                  Width="380" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="26,150,14,14"
+                  KeyboardNavigation.TabNavigation="Cycle">
+            <DockPanel>
+              <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                <Button DockPanel.Dock="Right" x:Name="GamePickerClose" Classes="chip" Margin="6,0,0,0" VerticalAlignment="Center"
+                        Content="{DynamicResource S.ClosePicker}" Command="{Binding GamePicker.CloseCommand}"
+                        AutomationProperties.Name="{DynamicResource S.ClosePicker}" />
+                <Button DockPanel.Dock="Right" x:Name="GamePickerRefresh" Classes="chip" Margin="10,0,0,0" VerticalAlignment="Center"
+                        Content="{DynamicResource S.RefreshWindows}" Command="{Binding GamePicker.RefreshCommand}"
+                        IsEnabled="{Binding GamePicker.CanAct}" AutomationProperties.Name="{DynamicResource S.RefreshWindows}" />
+                <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource S.PickWindow}" />
+              </DockPanel>
+              <TextBlock DockPanel.Dock="Top" Classes="note" Margin="0,0,0,10" Text="{DynamicResource S.PickWindowHint}" />
+              <TextBlock DockPanel.Dock="Top" x:Name="GamePickerLoading" Classes="body muted" Margin="0,0,0,6"
+                         Text="{DynamicResource S.LoadingWindows}" IsVisible="{Binding GamePicker.IsLoading}" />
+              <TextBlock DockPanel.Dock="Top" x:Name="GamePickerEmpty" Classes="body unconfirmed" Margin="0,0,0,6"
+                         Text="{DynamicResource S.NoWindows}" IsVisible="{Binding GamePicker.IsEmpty}" />
+              <TextBlock DockPanel.Dock="Top" x:Name="GamePickerProblem" Classes="body unconfirmed" Margin="0,0,0,6"
+                         Text="{Binding GamePicker.Problem}" IsVisible="{Binding GamePicker.HasProblem}" />
+              <ScrollViewer x:Name="GamePickerScroller" controls:EdgeFade.IsEnabled="True"
+                            VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="GameWindowList" ItemsSource="{Binding GamePicker.Rows}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="shell:GameWindowRow">
+                      <Button Classes="tile" Classes.active="{Binding Current}" Margin="0,0,0,6" Padding="12,8"
+                              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                              IsEnabled="{Binding $parent[Window].((shell:ShellViewModel)DataContext).GamePicker.CanAct}"
+                              Command="{Binding $parent[Window].((shell:ShellViewModel)DataContext).GamePicker.SelectCommand}"
+                              CommandParameter="{Binding Id}" AutomationProperties.Name="{Binding AccessibleName}"
+                              ToolTip.Tip="{Binding Name}">
+                        <DockPanel>
+                          <Border DockPanel.Dock="Right" Classes="inset" Padding="8,2" CornerRadius="10" Margin="10,0,0,0"
+                                  VerticalAlignment="Center" IsVisible="{Binding Current}">
+                            <TextBlock Classes="confirmed" FontSize="12" FontWeight="Bold" Text="{DynamicResource S.CurrentWindow}" />
+                          </Border>
+                          <StackPanel>
+                            <TextBlock Classes="name strong" Text="{Binding Name}" />
+                            <TextBlock Classes="name muted" FontSize="12" Text="{Binding Detail}" />
+                          </StackPanel>
+                        </DockPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </DockPanel>
+          </Border>
+        </Panel>
+
+        <!-- 缺少 Npcap 的安装指引：与选择游戏窗口同一种窗口内弹出层，居中显示；点外面或按 Esc 关闭，Tab 只在层内循环。
+             “打开下载页”只交给系统默认浏览器打开地址，程序不下载、不安装任何东西。 -->
+        <Panel x:Name="NpcapGuideLayer" IsVisible="{Binding NpcapGuide.IsOpen}">
+          <Border Background="Transparent" PointerPressed="OnNpcapGuideOutsidePressed" />
+          <Border x:Name="NpcapGuidePanel" Classes="panel popup" Classes.open="{Binding NpcapGuide.IsOpen}"
+                  Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14"
+                  KeyboardNavigation.TabNavigation="Cycle">
+            <StackPanel Spacing="10">
+              <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource S.NpcapTitle}" />
+              <TextBlock Classes="body" TextWrapping="Wrap" Text="{DynamicResource S.NpcapBody}" />
+              <Border Classes="inset" Padding="12,8">
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="note" Text="{DynamicResource S.NpcapUrlLabel}" />
+                  <TextBlock x:Name="NpcapGuideUrl" Classes="body strong" TextWrapping="Wrap" Text="{Binding NpcapGuide.Url}" />
+                </StackPanel>
+              </Border>
+              <TextBlock Classes="note" TextWrapping="Wrap" Text="{DynamicResource S.NpcapRetry}" />
+              <!-- 打开或复制的结果；预留一行位置，出现与消失不推动下方按钮。 -->
+              <TextBlock x:Name="NpcapGuideNotice" Classes="note" MinHeight="16" Text="{Binding NpcapGuide.Notice}" />
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button x:Name="NpcapGuideLater" Classes="chip" Content="{DynamicResource S.NpcapLater}"
+                        Command="{Binding NpcapGuide.CloseCommand}" AutomationProperties.Name="{DynamicResource S.NpcapLater}" />
+                <Button x:Name="NpcapGuideCopy" Classes="chip" Content="{DynamicResource S.NpcapCopy}"
+                        Command="{Binding NpcapGuide.CopyAddressCommand}" AutomationProperties.Name="{DynamicResource S.NpcapCopy}" />
+                <Button x:Name="NpcapGuideOpen" Classes="primary" Content="{DynamicResource S.NpcapOpen}"
+                        Command="{Binding NpcapGuide.OpenDownloadCommand}" AutomationProperties.Name="{DynamicResource S.NpcapOpen}" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </Panel>
+      </Panel>
+    </Border>
+
+    <!-- 无边框窗口的缩放感应区。 -->
+    <Border Tag="North" Height="6" VerticalAlignment="Top" Margin="12,0" Background="Transparent" Cursor="SizeNorthSouth" PointerPressed="OnResizePressed" />
+    <Border Tag="South" Height="6" VerticalAlignment="Bottom" Margin="12,0" Background="Transparent" Cursor="SizeNorthSouth" PointerPressed="OnResizePressed" />
+    <Border Tag="West" Width="6" HorizontalAlignment="Left" Margin="0,12" Background="Transparent" Cursor="SizeWestEast" PointerPressed="OnResizePressed" />
+    <Border Tag="East" Width="6" HorizontalAlignment="Right" Margin="0,12" Background="Transparent" Cursor="SizeWestEast" PointerPressed="OnResizePressed" />
+    <Border Tag="NorthWest" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Top" Background="Transparent" Cursor="TopLeftCorner" PointerPressed="OnResizePressed" />
+    <Border Tag="NorthEast" Width="12" Height="12" HorizontalAlignment="Right" VerticalAlignment="Top" Background="Transparent" Cursor="TopRightCorner" PointerPressed="OnResizePressed" />
+    <Border Tag="SouthWest" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomLeftCorner" PointerPressed="OnResizePressed" />
+    <Border Tag="SouthEast" Width="12" Height="12" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomRightCorner" PointerPressed="OnResizePressed" />
+  </Panel>
+</Window>

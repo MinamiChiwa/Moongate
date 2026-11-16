@@ -1,0 +1,83 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:inventory="using:MabiTool.Desktop.Pages.Inventory"
+        xmlns:tables="using:MabiTool.Desktop.Controls.Tables"
+        x:Class="MabiTool.Desktop.Pages.Inventory.InventoryTableWindow"
+        x:DataType="inventory:InventoryPageModel"
+        Title="Moongate"
+        Width="1120" Height="720" MinWidth="520" MinHeight="360"
+        WindowDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        WindowStartupLocation="CenterScreen">
+  <Panel>
+    <Border x:Name="Frame" CornerRadius="26" ClipToBounds="True" Background="{DynamicResource CanvasBrush}">
+      <Panel>
+        <Border Background="{DynamicResource AmberHaloBrush}" />
+        <Border Background="{DynamicResource BlueHaloBrush}" />
+
+        <DockPanel Margin="12">
+          <!-- 顶部：标题、账号、搜索、导出与窗口按钮；这块面板内的空白处拖动窗口，双击最大化或还原。 -->
+          <Border DockPanel.Dock="Top" x:Name="TopPanel" Classes="panel" Padding="16,12" Margin="0,0,0,10">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8,0,0,0">
+                <Button x:Name="MinimizeButton" Classes="window" Click="OnMinimizeClick" ToolTip.Tip="{DynamicResource S.Minimize}"
+                        AutomationProperties.Name="{DynamicResource S.Minimize}">
+                  <Path Data="M0,0 H10" Stroke="{DynamicResource InkBrush}" StrokeThickness="1.2" />
+                </Button>
+                <Button x:Name="MaximizeButton" Classes="window" Click="OnMaximizeClick">
+                  <Panel>
+                    <Path x:Name="MaximizeIcon" Data="M0,0 H9 V9 H0 Z" Stroke="{DynamicResource InkBrush}" StrokeThickness="1.2" />
+                    <Path x:Name="RestoreIcon" Data="M2.5,2.5 V0 H10 V7.5 H7.5 M0,2.5 H7.5 V10 H0 Z" Stroke="{DynamicResource InkBrush}"
+                          StrokeThickness="1.2" StrokeJoin="Round" IsVisible="False" />
+                  </Panel>
+                </Button>
+                <Button x:Name="CloseButton" Classes="window close" Click="OnCloseClick" ToolTip.Tip="{DynamicResource I.CloseWindow}"
+                        AutomationProperties.Name="{DynamicResource I.CloseWindow}">
+                  <Path Data="M0,0 L9,9 M9,0 L0,9" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.2" />
+                </Button>
+              </StackPanel>
+              <StackPanel Spacing="8">
+                <TextBlock Classes="name" FontSize="22" FontWeight="Black" Text="{DynamicResource I.WindowTitle}" />
+                <WrapPanel>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,12,6" VerticalAlignment="Center">
+                    <TextBlock Classes="label" VerticalAlignment="Center" Margin="0,0,8,0" Text="{DynamicResource I.Account}" />
+                    <ComboBox x:Name="AccountBox" MinWidth="160" MaxWidth="260" ItemsSource="{Binding Accounts}"
+                              SelectedItem="{Binding SelectedAccount}" IsEnabled="{Binding HasAccounts}"
+                              PlaceholderText="{DynamicResource I.NoAccount}" AutomationProperties.Name="{DynamicResource I.Account}">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate DataType="inventory:InventoryAccountOption">
+                          <TextBlock Classes="name" Text="{Binding Label}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </StackPanel>
+                  <TextBox x:Name="SearchBox" Classes="field" Width="260" Margin="0,0,12,6" Text="{Binding Search}"
+                           PlaceholderText="{DynamicResource I.SearchHint}" AutomationProperties.Name="{DynamicResource I.SearchHint}" />
+                  <Button x:Name="ExportButton" Classes="chip" Margin="0,0,0,6" VerticalAlignment="Center"
+                          Content="{DynamicResource I.ExportCsv}" Click="OnExportClick" />
+                </WrapPanel>
+              </StackPanel>
+            </DockPanel>
+          </Border>
+
+          <Border Classes="panel" x:Name="TablePanel">
+            <tables:DataTable x:Name="ItemsTable" TableId="inventory.items" ColumnsSource="{Binding Columns}" ItemsSource="{Binding Rows}"
+                              EmptyText="{DynamicResource I.NoItems}" CanExport="True" ExportFileName="{Binding ExportFileName}"
+                              BodyMaxHeight="Infinity" />
+          </Border>
+        </DockPanel>
+      </Panel>
+    </Border>
+
+    <!-- 四边与四角拖动缩放；系统贴靠由 SnapFrame 补回。 -->
+    <Border Tag="North" Height="6" VerticalAlignment="Top" Margin="12,0" Background="Transparent" Cursor="SizeNorthSouth" PointerPressed="OnResizePressed" />
+    <Border Tag="South" Height="6" VerticalAlignment="Bottom" Margin="12,0" Background="Transparent" Cursor="SizeNorthSouth" PointerPressed="OnResizePressed" />
+    <Border Tag="West" Width="6" HorizontalAlignment="Left" Margin="0,12" Background="Transparent" Cursor="SizeWestEast" PointerPressed="OnResizePressed" />
+    <Border Tag="East" Width="6" HorizontalAlignment="Right" Margin="0,12" Background="Transparent" Cursor="SizeWestEast" PointerPressed="OnResizePressed" />
+    <Border Tag="NorthWest" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Top" Background="Transparent" Cursor="TopLeftCorner" PointerPressed="OnResizePressed" />
+    <Border Tag="NorthEast" Width="12" Height="12" HorizontalAlignment="Right" VerticalAlignment="Top" Background="Transparent" Cursor="TopRightCorner" PointerPressed="OnResizePressed" />
+    <Border Tag="SouthWest" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomLeftCorner" PointerPressed="OnResizePressed" />
+    <Border Tag="SouthEast" Width="12" Height="12" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomRightCorner" PointerPressed="OnResizePressed" />
+  </Panel>
+</Window>

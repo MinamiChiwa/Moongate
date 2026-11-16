@@ -1,0 +1,242 @@
+{
+  "Shared.Protocols.Replications.GroupReplicatedDatas.CharacterPublicReplicatedData": {
+    "parent": "Shared.Protocols.Replications.GroupReplicatedDatas.ActorPublicReplicatedData",
+    "fields": [
+      {
+        "name": "CharacterIdentity",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.CharacterIdentityReplicatedData"
+      },
+      {
+        "name": "TitleSlots",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.TitleSlotsReplicatedData"
+      },
+      {
+        "name": "EnabledCombatJob",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.EnabledCombatJobReplicatedData"
+      },
+      {
+        "name": "PublicParty",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.PublicPartyReplicatedData"
+      },
+      {
+        "name": "ReviveState",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.ReviveStateReplicatedData"
+      },
+      {
+        "name": "InstrumentPlayer",
+        "type": "Shared.Protocols.Replications.ReplicatedDatas.InstrumentPlayerReplicatedData"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.CharacterIdentityReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "CharacterId",
+        "type": "Shared.Characters.CharacterId"
+      },
+      {
+        "name": "RealmId",
+        "type": "Shared.Realms.RealmId"
+      },
+      {
+        "name": "Name",
+        "type": "string"
+      },
+      {
+        "name": "CreatedAt",
+        "type": "Core.Times.RealTime"
+      },
+      {
+        "name": "CharacterNatureSheetId",
+        "type": "Shared.Symbols.CharacterNatureSheetId"
+      }
+    ]
+  },
+  "Shared.Realms.RealmId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "rawValue",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Symbols.CharacterNatureSheetId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "Id",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.TitleSlotsReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "IsVisible",
+        "type": "bool"
+      },
+      {
+        "name": "TitleSlots",
+        "type": "System.Collections.Generic.Dictionary`2<Shared.GameLogic.ChannelObjects.Characters.Title.TitleSlotIndex,Shared.Symbols.TitleSheetId>"
+      }
+    ]
+  },
+  "Shared.GameLogic.ChannelObjects.Characters.Title.TitleSlotIndex": {
+    "parent": "System.Enum",
+    "fields": [
+      {
+        "name": "value__",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Symbols.TitleSheetId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "Id",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.EnabledCombatJobReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "EnabledCombatJobSheetId",
+        "type": "Shared.Symbols.CombatJobSheetId"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.PublicPartyReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "PartyId",
+        "type": "Shared.GameLogic.Parties.PartyId"
+      },
+      {
+        "name": "PartyRegisterType",
+        "type": "Shared.GameLogic.Parties.PartyRegisterType"
+      },
+      {
+        "name": "PartyRegisterCondition",
+        "type": "Shared.GameLogic.Parties.PartyRegisterCondition"
+      },
+      {
+        "name": "PartyName",
+        "type": "string"
+      },
+      {
+        "name": "LeaderCharacterId",
+        "type": "Shared.Characters.CharacterId"
+      },
+      {
+        "name": "CurrentMemberCount",
+        "type": "int32"
+      },
+      {
+        "name": "MaxMemberCount",
+        "type": "int32"
+      },
+      {
+        "name": "IsAdPanelActive",
+        "type": "bool"
+      }
+    ]
+  },
+  "Shared.GameLogic.Parties.PartyId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "int64Value",
+        "type": "int64"
+      }
+    ]
+  },
+  "Shared.GameLogic.Parties.PartyRegisterType": {
+    "parent": "System.Enum",
+    "fields": [
+      {
+        "name": "value__",
+        "type": "int32"
+      }
+    ]
+  },
+  "Shared.GameLogic.Parties.PartyRegisterCondition": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "Level",
+        "type": "System.Nullable`1<int64>"
+      },
+      {
+        "name": "CombatScore",
+        "type": "System.Nullable`1<int64>"
+      },
+      {
+        "name": "ArcaneResistance",
+        "type": "System.Nullable`1<int64>"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.ReviveStateReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "IsAskingForHelp",
+        "type": "bool"
+      },
+      {
+        "name": "ReviveAskCooldownEndTime",
+        "type": "Core.Times.RealTime"
+      },
+      {
+        "name": "ReviveOtherCharacterStartTime",
+        "type": "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime"
+      }
+    ]
+  },
+  "Shared.Protocols.Replications.ReplicatedDatas.InstrumentPlayerReplicatedData": {
+    "parent": "object",
+    "fields": [
+      {
+        "name": "ConcertId",
+        "type": "Shared.GameLogic.Concerts.ConcertId"
+      },
+      {
+        "name": "ConcertChannelIndices",
+        "type": "Silvervine.ManualMemory.MMList`1<int32>"
+      },
+      {
+        "name": "InstrumentSheetId",
+        "type": "Shared.Symbols.InstrumentSheetId"
+      },
+      {
+        "name": "IsLoop",
+        "type": "bool"
+      }
+    ]
+  },
+  "Shared.GameLogic.Concerts.ConcertId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "uint64Value",
+        "type": "uint64"
+      }
+    ]
+  },
+  "Shared.Symbols.InstrumentSheetId": {
+    "parent": "System.ValueType",
+    "fields": [
+      {
+        "name": "Id",
+        "type": "int32"
+      }
+    ]
+  }
+}

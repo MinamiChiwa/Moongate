@@ -1,0 +1,812 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:color="using:MabiTool.Desktop.Pages.Dyeing"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Pages.Dyeing.ColorPage"
+             x:DataType="color:ColorPageModel"
+             controls:Card.PageId="dye">
+  <UserControl.Styles>
+    <!-- 卡片内的小按钮：色块、替代色格子、开关等，只有内容本身，没有按钮的底色与最小高度。 -->
+    <Style Selector="Button.bare">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="Button.bare:pointerover">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- 色块格子：按钮主题把内容水平居中，色块需要占满格子，否则只剩边框宽的竖条。 -->
+    <Style Selector="Button.bare.cell">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <!-- 选色浮层精调的数值输入框。 -->
+    <Style Selector="TextBox.field.num">
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Margin" Value="8,0,0,0" />
+      <Setter Property="Padding" Value="6,0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextAlignment" Value="Right" />
+    </Style>
+    <!-- 锚定浮层（选色、目标色集合）的打开与关闭：不透明度与轻微下移、缩放，Window.motion 下 200 ms 减速曲线；减弱动效时直接到位。 -->
+    <Style Selector="Border.anchored">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="RenderTransform" Value="translateY(-6px) scale(0.98)" />
+    </Style>
+    <Style Selector="Border.anchored.shown">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="RenderTransform" Value="translateY(0px) scale(1)" />
+    </Style>
+    <Style Selector="Window.motion Border.anchored">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2" Easing="CubicEaseOut" />
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <!-- 默认预设折叠区的箭头随展开旋转 90°；内容的展开与收起由共用 ExpandPanel 过渡。 -->
+    <Style Selector="Path.chevron">
+      <Setter Property="RenderTransform" Value="rotate(0deg)" />
+    </Style>
+    <Style Selector="Path.chevron.open">
+      <Setter Property="RenderTransform" Value="rotate(90deg)" />
+    </Style>
+    <Style Selector="Window.motion Path.chevron">
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.rule">
+      <Setter Property="Height" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource HairlineBrush}" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox.invalid">
+      <Setter Property="BorderBrush" Value="{DynamicResource StopBrush}" />
+    </Style>
+    <Style Selector="Button.compact">
+      <Setter Property="Padding" Value="9,2" />
+      <Setter Property="MinHeight" Value="26" />
+    </Style>
+    <!-- 分区判定徽标（原工具 RegionCard badge）：达标绿色、未达标琥珀色，其余灰色描边。 -->
+    <Style Selector="Border.mark">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource HairlineBrush}" />
+      <Setter Property="Padding" Value="5,0" />
+      <Setter Property="MinWidth" Value="40" />
+      <Setter Property="MinHeight" Value="16" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.mark > TextBlock">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="TextAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.mark.good">
+      <Setter Property="BorderBrush" Value="{DynamicResource ConfirmedBrush}" />
+    </Style>
+    <Style Selector="Border.mark.good > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource ConfirmedBrush}" />
+    </Style>
+    <Style Selector="Border.mark.warn">
+      <Setter Property="BorderBrush" Value="{DynamicResource UnknownBrush}" />
+    </Style>
+    <Style Selector="Border.mark.warn > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource UnknownBrush}" />
+    </Style>
+    <!-- 色块：颜色来自数据，外圈一像素描边，浅色在浅色底上也看得清。 -->
+    <Style Selector="Border.swatch">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource HairlineBrush}" />
+    </Style>
+    <Style Selector="TextBlock.hex">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel x:Name="Root">
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
+      <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+      <DockPanel Margin="{DynamicResource TitleReserve}">
+        <controls:CardGridEditBar DockPanel.Dock="Right" x:Name="LayoutEditBar" VerticalAlignment="Center" Margin="12,0,8,0" />
+        <TextBlock Classes="h1" Margin="0" Text="{DynamicResource D.Title}" />
+      </DockPanel>
+      <!-- 原工具环境栏的“选色方案”“寻色记录”：各开一层（QuickPanel）。 -->
+      <WrapPanel HorizontalAlignment="Right" Margin="0,4,0,0">
+        <Button x:Name="PresetsButton" Margin="0,0,8,0" Content="{DynamicResource D.SavePresets}"
+                Command="{Binding OpenLayerCommand}" CommandParameter="presets" />
+        <Button x:Name="RecordsButton" Content="{DynamicResource D.Records}"
+                Command="{Binding OpenLayerCommand}" CommandParameter="history" />
+      </WrapPanel>
+    </StackPanel>
+
+    <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="14,0,14,18" Spacing="14">
+        <TextBlock x:Name="NoDraftNote" Classes="note" Text="{Binding NoDraftText}" IsVisible="{Binding NoDraft}" />
+
+        <!--
+          三张区域卡（原工具 RegionCard.qml）排在卡片网格里：各一列宽、随内容，三列时并排等高，两列时两张一行，一列时上下排。
+          网格是项目列表的面板，编辑入口的目标由代码后置在面板建立后给出；不能编辑草稿时停用的是卡片，布局编辑照常可用。
+        -->
+        <ItemsControl x:Name="CardList" ItemsSource="{Binding Cards}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><controls:CardGrid /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="color:RegionCardModel">
+              <controls:Card CardId="{Binding CardId}" Title="{Binding Title}" Padding="14,12" Opacity="{Binding CardOpacity}"
+                             Size="OneByAuto" AllowedSizes="HalfByAuto,FullWidth"
+                             IsEnabled="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).CanEdit}">
+                <!-- 标题行：区域序号、状态与开关；内容区第一行是优先级（三区各占一个，选中已占用的则互换）。 -->
+                <controls:Card.Status>
+                  <TextBlock Classes="label" Text="{Binding StatusText}" />
+                </controls:Card.Status>
+                <controls:Card.Actions>
+                <Button x:Name="EnableSwitch" Classes="bare" VerticalAlignment="Center" Command="{Binding ToggleCommand}"
+                        IsEnabled="{Binding Available}" AutomationProperties.Name="{Binding StatusText}">
+                  <Panel Width="32" Height="18">
+                    <Border CornerRadius="9" Background="{DynamicResource ConfirmedBrush}" IsVisible="{Binding Enabled}" />
+                    <Border CornerRadius="9" Background="{DynamicResource TrackBrush}" IsVisible="{Binding !Enabled}" />
+                    <Border Width="14" Height="14" CornerRadius="7" Margin="2" Background="{DynamicResource PopupBrush}"
+                            HorizontalAlignment="Right" IsVisible="{Binding Enabled}" />
+                    <Border Width="14" Height="14" CornerRadius="7" Margin="2" Background="{DynamicResource PopupBrush}"
+                            HorizontalAlignment="Left" IsVisible="{Binding !Enabled}" />
+                  </Panel>
+                </Button>
+                </controls:Card.Actions>
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto">
+                  <!-- 区域序号、状态、开关；优先级（三区各占一个，选中已占用的则互换）。 -->
+                  <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                    <TextBlock Classes="label" Text="{DynamicResource D.Priority}" />
+                    <controls:SelectionBorder Classes="segmented">
+                      <StackPanel Orientation="Horizontal">
+                        <Button Classes="segment compact" Classes.active="{Binding IsPriority1}" Content="1"
+                                Command="{Binding PriorityCommand}" CommandParameter="1" />
+                        <Button Classes="segment compact" Classes.active="{Binding IsPriority2}" Content="2"
+                                Command="{Binding PriorityCommand}" CommandParameter="2" />
+                        <Button Classes="segment compact" Classes.active="{Binding IsPriority3}" Content="3"
+                                Command="{Binding PriorityCommand}" CommandParameter="3" />
+                      </StackPanel>
+                    </controls:SelectionBorder>
+                  </StackPanel>
+
+                  <!-- 目标色：色块（打开选色浮层）、HEX 输入、吸管。 -->
+                  <DockPanel Grid.Row="1" Margin="0,12,0,0">
+                    <TextBlock DockPanel.Dock="Left" Classes="label" MinWidth="52" Margin="0,0,8,0" Text="{DynamicResource D.Target}" />
+                    <Button x:Name="TargetSwatch" DockPanel.Dock="Left" Classes="bare" Margin="0,0,8,0" Command="{Binding OpenPickerCommand}"
+                            ToolTip.Tip="{DynamicResource D.PickColor}" AutomationProperties.Name="{DynamicResource D.PickColor}">
+                      <Border Width="32" Height="32" CornerRadius="7" Background="{Binding TargetBrush}"
+                              BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                    </Button>
+                    <Button x:Name="EyedropperButton" DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" Padding="8,3"
+                            Command="{Binding EyedropperCommand}"
+                            IsEnabled="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).CanPick}"
+                            ToolTip.Tip="{DynamicResource D.Eyedropper}" AutomationProperties.Name="{DynamicResource D.Eyedropper}">
+                      <Path Width="13" Height="13" Stretch="Uniform" Stroke="{DynamicResource InkBrush}" StrokeThickness="1.4"
+                            StrokeLineCap="Round" StrokeJoin="Round"
+                            Data="M14.5,4.5 L19.5,9.5 M13,6 L18,11 M4,20 L5.2,15.8 L15.6,5.4 Q16.6,4.2 18.4,6.2 L8.2,18.8 Z" />
+                    </Button>
+                    <TextBox x:Name="TargetBox" Classes="field" Classes.invalid="{Binding TargetInvalid}" MinWidth="0"
+                             Text="{Binding TargetText}" PlaceholderText="#RRGGBB" MaxLength="16"
+                             AutomationProperties.Name="{DynamicResource D.Target}" />
+                  </DockPanel>
+
+                  <!-- 颜色要求：精准 HEX／相似颜色；相似时右侧显示 ΔE。 -->
+                  <StackPanel Grid.Row="2" Margin="0,10,0,0" Spacing="10">
+                    <Border Classes="rule" />
+                    <DockPanel>
+                      <Border DockPanel.Dock="Right" Classes="inset" Padding="8,2" CornerRadius="6" VerticalAlignment="Center"
+                              IsVisible="{Binding IsSimilar}">
+                        <TextBlock FontSize="11" Text="{Binding ToleranceBadge}" />
+                      </Border>
+                      <controls:SelectionBorder Classes="segmented" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal">
+                          <Button Classes="segment compact" Classes.active="{Binding IsExact}" Content="{DynamicResource D.MatchExact}"
+                                  Command="{Binding ModeCommand}" CommandParameter="exact-hex" />
+                          <Button Classes="segment compact" Classes.active="{Binding IsSimilar}" Content="{DynamicResource D.MatchSimilar}"
+                                  Command="{Binding ModeCommand}" CommandParameter="similar" />
+                        </StackPanel>
+                      </controls:SelectionBorder>
+                    </DockPanel>
+                  </StackPanel>
+
+                  <!-- 容差 1–35，仅相似颜色时展开；精准 HEX 时收起（共用 ExpandPanel）。 -->
+                  <controls:ExpandPanel Grid.Row="3" IsExpanded="{Binding IsSimilar, Mode=OneWay}">
+                    <DockPanel Margin="0,8,0,0">
+                      <TextBlock DockPanel.Dock="Left" Classes="label" MinWidth="52" Margin="0,0,8,0" Text="{DynamicResource D.Tolerance}" />
+                      <color:DyeSlider x:Name="ToleranceSlider" Minimum="1" Maximum="35" Value="{Binding Tolerance}"
+                                       Track="{DynamicResource TrackBrush}" Fill="{DynamicResource InkBrush}"
+                                       Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
+                                       AutomationProperties.Name="{DynamicResource D.Tolerance}" />
+                    </DockPanel>
+                  </controls:ExpandPanel>
+
+                  <!-- 替代色：最多显示 6 个，多出显示 +N；悬停出现 ×；+ 展开输入。
+                       精准 HEX 没有容差条：替代色区域下方留出与容差条相同的高度，两种模式下集合与读数行的位置一致、三张卡对齐。 -->
+                  <StackPanel Grid.Row="4">
+                    <StackPanel Margin="0,10,0,0" Spacing="6">
+                      <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Classes="label" MinWidth="52" Margin="0,0,8,0" Text="{DynamicResource D.Alternatives}" />
+                        <WrapPanel VerticalAlignment="Center">
+                          <ItemsControl ItemsSource="{Binding VisibleAlternatives}">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="5" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate DataType="color:AlternativeSwatch">
+                                <Button x:Name="AlternativeChip" Classes="bare"
+                                        Command="{Binding $parent[ItemsControl].((color:RegionCardModel)DataContext).RemoveAlternativeCommand}"
+                                        CommandParameter="{Binding Hex}" ToolTip.Tip="{Binding Hex}"
+                                        AutomationProperties.Name="{DynamicResource D.RemoveAlternative}">
+                                  <Panel Width="20" Height="20">
+                                    <Border CornerRadius="4" Background="{Binding Brush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+                                    <Border Width="12" Height="12" CornerRadius="6" Background="{DynamicResource PopupBrush}"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                            IsVisible="{Binding $parent[Button].IsPointerOver}">
+                                      <TextBlock FontSize="9" HorizontalAlignment="Center" VerticalAlignment="Center" Text="×" />
+                                    </Border>
+                                  </Panel>
+                                </Button>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <TextBlock Classes="label" FontSize="11" Margin="5,0,0,0" Text="{Binding MoreAlternatives}" IsVisible="{Binding HasMoreAlternatives}" />
+                          <TextBlock Classes="label" FontSize="11" Margin="0,0,5,0" Text="{DynamicResource D.None}" IsVisible="{Binding NoAlternatives}" />
+                          <Button x:Name="AddAlternativeToggle" Classes="bare" Margin="5,0,0,0" Command="{Binding ToggleAlternativeEditorCommand}"
+                                  IsEnabled="{Binding CanAddAlternative}" AutomationProperties.Name="{DynamicResource D.AddAlternative}">
+                            <Border Width="20" Height="20" CornerRadius="4" BorderBrush="{DynamicResource MutedBrush}" BorderThickness="1">
+                              <TextBlock FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center" Text="+" />
+                            </Border>
+                          </Button>
+                        </WrapPanel>
+                      </DockPanel>
+                      <DockPanel IsVisible="{Binding AlternativeEditorOpen}">
+                        <Button DockPanel.Dock="Right" Classes="chip" Margin="6,0,0,0" Content="{DynamicResource D.Cancel}"
+                                Command="{Binding CancelAlternativeCommand}" />
+                        <Button x:Name="AddAlternativeButton" DockPanel.Dock="Right" Classes="chip" Margin="6,0,0,0"
+                                Content="{DynamicResource D.AddAlternative}" Command="{Binding AddAlternativeCommand}" />
+                        <TextBox x:Name="AlternativeBox" Classes="field" Classes.invalid="{Binding NewAlternativeInvalid}" MinWidth="0"
+                                 Text="{Binding NewAlternative}" PlaceholderText="#FFFFFF" MaxLength="16"
+                                 AutomationProperties.Name="{DynamicResource D.Alternatives}" />
+                      </DockPanel>
+                    </StackPanel>
+                    <!-- 与容差条同步反向展开收起，两种模式切换时卡片总高度保持不变。 -->
+                    <controls:ExpandPanel IsExpanded="{Binding IsExact, Mode=OneWay}" IsHitTestVisible="False">
+                      <Panel>
+                        <DockPanel x:Name="ToleranceSpace" Margin="0,8,0,0" Opacity="0">
+                          <TextBlock DockPanel.Dock="Left" Classes="label" MinWidth="52" Margin="0,0,8,0" Text="{DynamicResource D.Tolerance}" />
+                          <Border Height="18" />
+                        </DockPanel>
+                      </Panel>
+                    </controls:ExpandPanel>
+                  </StackPanel>
+
+                  <!-- 目标色集合：数量与“点击查看全部”，缩略图占满卡片剩余高度，点击打开集合浮层。 -->
+                  <DockPanel Grid.Row="5" Margin="0,12,0,0">
+                    <Border DockPanel.Dock="Top" Classes="rule" Margin="0,0,0,12" />
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,5">
+                      <TextBlock DockPanel.Dock="Left" Classes="label" Margin="0,0,10,0" Text="{DynamicResource D.Atlas}" />
+                      <TextBlock Classes="name muted" FontSize="10" TextAlignment="Right" VerticalAlignment="Center"
+                                 Text="{Binding Atlas.CountText}" ToolTip.Tip="{Binding Atlas.CountText}" />
+                    </DockPanel>
+                    <color:AtlasFrame>
+                      <Button x:Name="AtlasThumb" Classes="bare" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                              Command="{Binding OpenAtlasCommand}" IsHitTestVisible="{Binding Atlas.CanOpen}"
+                              AutomationProperties.Name="{DynamicResource D.Atlas}">
+                        <Border CornerRadius="12" ClipToBounds="True" Background="{DynamicResource TrackBrush}"
+                                BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                          <Panel>
+                            <Image x:Name="AtlasImage" Source="{Binding Atlas.Thumbnail}" Stretch="UniformToFill"
+                                   RenderOptions.BitmapInterpolationMode="None" IsVisible="{Binding Atlas.HasThumbnail}" />
+                            <TextBlock x:Name="AtlasWaiting" Classes="note" Margin="10" TextAlignment="Center"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Text="{Binding Atlas.Message}" IsVisible="{Binding Atlas.HasMessage}" />
+                            <!-- 计算中保留上一张缩略图，左下角提示“色板计算中…”。 -->
+                            <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="6" Padding="7,2" CornerRadius="6"
+                                    Background="{DynamicResource PopupBrush}" IsVisible="{Binding Atlas.Loading}">
+                              <TextBlock x:Name="AtlasComputing" FontSize="10" Foreground="{DynamicResource MutedBrush}"
+                                         TextTrimming="CharacterEllipsis" Text="{Binding Atlas.Message}" />
+                            </Border>
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4" Width="18" Height="18" CornerRadius="4"
+                                    Background="{DynamicResource PopupBrush}" IsVisible="{Binding Atlas.CanOpen}">
+                              <TextBlock FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" Text="⤢" />
+                            </Border>
+                          </Panel>
+                        </Border>
+                      </Button>
+                    </color:AtlasFrame>
+                  </DockPanel>
+
+                  <!-- 读数：当前、实测与 ΔE。 -->
+                  <StackPanel Grid.Row="6" Margin="0,10,0,0" Spacing="5">
+                    <Border Classes="rule" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Border Width="11" Height="11" CornerRadius="3" VerticalAlignment="Center" Background="{Binding CurrentDot}" />
+                      <TextBlock Classes="label" FontSize="11" Text="{DynamicResource D.Current}" />
+                      <TextBlock FontSize="11" VerticalAlignment="Center" Text="{Binding CurrentText}" />
+                    </StackPanel>
+                    <DockPanel>
+                      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" Margin="6,0,0,0">
+                        <TextBlock Classes="label" FontSize="10" Text="{Binding MeasuredDelta}" />
+                        <Border x:Name="RegionMark" Classes="mark" Classes.good="{Binding Mark.Good}" Classes.warn="{Binding Mark.Warn}">
+                          <TextBlock Text="{Binding Mark.Text}" />
+                        </Border>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Border Width="11" Height="11" CornerRadius="3" VerticalAlignment="Center" Background="{Binding MeasuredDot}" />
+                        <TextBlock Classes="label" FontSize="11" Text="{DynamicResource D.Measured}" />
+                        <TextBlock FontSize="11" VerticalAlignment="Center" Text="{Binding MeasuredText}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </StackPanel>
+                </Grid>
+              </controls:Card>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 运行栏（原工具 RunBar；操作条，不是卡片，不折叠）：寻色方式、开始与停止、状态行、候选方案。 -->
+        <Border Classes="panel" Padding="16" x:Name="RunBar">
+          <StackPanel Spacing="14">
+            <controls:ReflowPanel MinItemWidth="300" Spacing="18">
+              <StackPanel Spacing="8">
+                <WrapPanel>
+                  <Button x:Name="StartButton" Classes="primary" Margin="0,0,8,0" MinWidth="120" Content="{DynamicResource D.Start}"
+                          Command="{Binding StartCommand}" IsEnabled="{Binding Data.Actions.CanStart}" />
+                  <Button x:Name="StopButton" Content="{DynamicResource D.Stop}" Command="{Binding IntentCommand}"
+                          CommandParameter="color.stop" IsEnabled="{Binding Data.Actions.CanStop}" />
+                </WrapPanel>
+                <TextBlock x:Name="CapabilityNotice" Classes="note" Text="{Binding CapabilityNotice}" IsVisible="{Binding HasCapabilityNotice}" />
+                <controls:SelectionBorder Classes="segmented" HorizontalAlignment="Left" IsEnabled="{Binding CanEdit}">
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="ScreenshotStrategy" Classes="segment" Classes.active="{Binding IsScreenshot}"
+                            Content="{DynamicResource D.StrategyScreenshot}" Command="{Binding StrategyCommand}" CommandParameter="screenshot" />
+                    <Button x:Name="PreciseStrategy" Classes="segment" Classes.active="{Binding IsPrecise}"
+                            Content="{DynamicResource D.StrategyPrecise}" Command="{Binding StrategyCommand}" CommandParameter="precise" />
+                  </StackPanel>
+                </controls:SelectionBorder>
+                <TextBlock x:Name="StrategyNote" Classes="note" Classes.unconfirmed="{Binding IsPrecise}" Text="{Binding StrategyNote}" />
+              </StackPanel>
+              <DockPanel VerticalAlignment="Top">
+                <Border x:Name="AcceptedBadge" DockPanel.Dock="Right" Classes="inset" Padding="8,2" CornerRadius="6" Margin="10,0,0,0"
+                        VerticalAlignment="Top" IsVisible="{Binding HasAccepted}">
+                  <TextBlock FontSize="11" FontWeight="Bold" Text="{Binding AcceptedText}"
+                             Classes.confirmed="{Binding Accepted}" Classes.unconfirmed="{Binding !Accepted}" />
+                </Border>
+                <Ellipse DockPanel.Dock="Left" Width="7" Height="7" Margin="0,7,8,0" VerticalAlignment="Top"
+                         Fill="{DynamicResource MutedBrush}" IsVisible="{Binding !StatusLive}" />
+                <Ellipse DockPanel.Dock="Left" Width="7" Height="7" Margin="0,7,8,0" VerticalAlignment="Top"
+                         Fill="{DynamicResource ConfirmedBrush}" IsVisible="{Binding StatusLive}" />
+                <StackPanel Spacing="6">
+                  <TextBlock x:Name="StatusLine" Classes="body" FontWeight="SemiBold" Text="{Binding StatusText}"
+                             Classes.unconfirmed="{Binding StatusWarn}" />
+                  <!-- 寻色进度（原工具浮窗）：步骤“当前/总数”、剩余时间（剩 10 秒内琥珀色）、已用与本阶段时间，每秒更新。 -->
+                  <WrapPanel x:Name="ProgressRow" IsVisible="{Binding HasProgress}">
+                    <Border Classes="inset" Padding="7,1" CornerRadius="6" Margin="0,0,8,4" VerticalAlignment="Center"
+                            IsVisible="{Binding HasProgressCount}">
+                      <TextBlock x:Name="ProgressCount" FontSize="11" Text="{Binding ProgressCount}" />
+                    </Border>
+                    <TextBlock x:Name="RemainingText" FontSize="13" FontWeight="SemiBold" Margin="0,0,10,4" VerticalAlignment="Center"
+                               Text="{Binding RemainingText}" IsVisible="{Binding HasRemaining}" Classes.unconfirmed="{Binding RemainingLow}" />
+                    <TextBlock x:Name="ElapsedText" Classes="note" FontSize="11" Margin="0,0,0,4" VerticalAlignment="Center"
+                               Text="{Binding ElapsedText}" />
+                  </WrapPanel>
+                </StackPanel>
+              </DockPanel>
+            </controls:ReflowPanel>
+
+            <StackPanel Spacing="10" IsVisible="{Binding HasCandidates}">
+              <Border Classes="rule" />
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Classes="chip" Margin="10,0,0,0" VerticalAlignment="Center" Content="{DynamicResource D.Retry}"
+                        Command="{Binding IntentCommand}" CommandParameter="color.retry" IsEnabled="{Binding Data.Actions.CanRetry}" />
+                <TextBlock Classes="h2" FontSize="16" VerticalAlignment="Center" Text="{DynamicResource D.Candidates}" />
+              </DockPanel>
+              <ItemsControl x:Name="CandidateList" controls:StableItems.Source="{Binding Data.Candidates}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="200" Spacing="10" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="color:ColorCandidateCard">
+                    <Border Classes="inset" Padding="12,10">
+                      <StackPanel Spacing="6">
+                        <TextBlock Classes="name strong" Text="{Binding Title}" ToolTip.Tip="{Binding Title}" />
+                        <ItemsControl ItemsSource="{Binding Regions}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="color:CandidateRegion">
+                              <DockPanel Margin="0,2">
+                                <Border DockPanel.Dock="Right" Classes="mark" Margin="6,0,0,0"
+                                        Classes.good="{Binding Badge.Good}" Classes.warn="{Binding Badge.Warn}">
+                                  <TextBlock Text="{Binding Badge.Text}" />
+                                </Border>
+                                <TextBlock DockPanel.Dock="Right" Classes="label" FontSize="11" Margin="8,0,0,0" Text="{Binding Delta}" />
+                                <TextBlock DockPanel.Dock="Left" Classes="label" FontSize="11" Margin="0,0,8,0" Text="{Binding Name}" />
+                                <Border DockPanel.Dock="Left" Classes="swatch" Width="12" Height="12" CornerRadius="3" Margin="0,0,6,0"
+                                        Background="{Binding Swatch}" IsVisible="{Binding HasHex}" />
+                                <TextBlock Classes="hex" Text="{Binding Hex}" />
+                              </DockPanel>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Classes="note" FontSize="11" Text="{Binding Summary}" IsVisible="{Binding HasSummary}" />
+                        <Button Classes="chip" HorizontalAlignment="Stretch" IsEnabled="{Binding CanSelect}"
+                                Command="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).IntentCommand}"
+                                CommandParameter="{Binding Intent}">
+                          <TextBlock Classes="name" Text="{Binding ActionLabel}" />
+                        </Button>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+
+  <!-- 选色浮层：色相环与饱和度／明度方块、当前／打开时、最近、常用色、精调与数值输入。宽度与内容高度固定，窗口矮时在浮层内滚动。 -->
+  <!-- 层的显示与隐藏由代码后置管理：打开时先按锚点排好位置再显示，关闭时淡出后再隐藏（AnchoredLayer）。 -->
+  <Panel x:Name="PickerLayer" IsVisible="False" KeyDown="OnLayerKeyDown">
+    <Border Background="Transparent" PointerPressed="OnPickerOutsidePressed" />
+    <color:AnchoredLayer x:Name="PickerHost">
+    <Border x:Name="PickerPanel" Classes="panel popup anchored" Width="336" Padding="14">
+      <!-- 数据上下文由代码后置在打开时设为所选卡片的选色模型，关闭过渡结束后才清空，淡出期间内容保持关闭那一刻的样子。 -->
+      <DockPanel x:Name="PickerContent" x:DataType="color:ColorPickerModel">
+          <!-- 标题行：当前目标色的色块与 HEX、关闭。放在滚动区外、按最高元素（关闭按钮）定高并垂直居中，按钮连同悬停放大不被滚动区裁切。 -->
+          <DockPanel DockPanel.Dock="Top" MinHeight="30" Margin="0,0,0,10">
+            <Button DockPanel.Dock="Right" x:Name="PickerClose" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center" Content="✕"
+                    Command="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).ClosePickerCommand}"
+                    AutomationProperties.Name="{DynamicResource D.Close}" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <Border x:Name="PickerResultSwatch" Classes="swatch" Width="18" Height="18" Background="{Binding TargetBrush}"
+                      ToolTip.Tip="{Binding Target}" />
+              <TextBlock x:Name="PickerResultHex" Classes="hex" Width="58" FontSize="12" Text="{Binding Target}" />
+            </StackPanel>
+            <TextBlock Classes="name strong" FontSize="13" VerticalAlignment="Center" Text="{DynamicResource D.PickerTitle}" />
+          </DockPanel>
+      <ScrollViewer x:Name="PickerScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="184,*" Height="184">
+            <color:HsvWheel x:Name="PickerWheel" Width="184" Height="184"
+                            Hue="{Binding Hue}" Saturation="{Binding Saturation}" Brightness="{Binding Brightness}"
+                            AutomationProperties.Name="{DynamicResource D.PickerTitle}" />
+            <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="4">
+              <!-- 当前／打开时对照：点“打开时”回到打开浮层时的颜色。 -->
+              <Grid ColumnDefinitions="*,*">
+                <TextBlock Classes="label" FontSize="10" Text="{DynamicResource D.PickerNow}" />
+                <TextBlock Grid.Column="1" Classes="label" FontSize="10" TextAlignment="Right" Text="{DynamicResource D.PickerBefore}" />
+              </Grid>
+              <Grid ColumnDefinitions="*,*" Height="40">
+                <Border CornerRadius="8,0,0,8" Background="{Binding TargetBrush}" BorderBrush="{DynamicResource HairlineBrush}"
+                        BorderThickness="1,1,0,1" ToolTip.Tip="{Binding Target}" />
+                <Button x:Name="PickerRevert" Grid.Column="1" Classes="bare cell" Command="{Binding RevertCommand}"
+                        ToolTip.Tip="{Binding OriginalTip}" AutomationProperties.Name="{Binding OriginalTip}">
+                  <Border CornerRadius="0,8,8,0" Background="{Binding OriginalBrush}" BorderBrush="{DynamicResource HairlineBrush}"
+                          BorderThickness="0,1,1,1" />
+                </Button>
+              </Grid>
+              <DockPanel Margin="0,8,0,0">
+                <TextBlock DockPanel.Dock="Right" Classes="label" FontSize="10" Text="{DynamicResource D.NoRecent}" IsVisible="{Binding NoRecent}" />
+                <TextBlock Classes="label" FontSize="10" Text="{DynamicResource D.Recent}" />
+              </DockPanel>
+              <ItemsControl x:Name="PickerRecent" controls:StableItems.Source="{Binding Recent}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><color:EvenColumns Columns="4" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="color:RecentSlot">
+                    <Panel Height="22" Margin="1.5">
+                      <Border Classes="swatch" IsVisible="{Binding Empty}" />
+                      <Button Classes="bare cell" IsVisible="{Binding Filled}"
+                              Command="{Binding $parent[ItemsControl].((color:ColorPickerModel)DataContext).PickCommand}"
+                              CommandParameter="{Binding Swatch}" ToolTip.Tip="{Binding Swatch.Tip, FallbackValue={x:Null}}">
+                        <Border Classes="swatch" Background="{Binding Swatch.Brush, FallbackValue={x:Null}}" />
+                      </Button>
+                    </Panel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Grid>
+          <!-- 两行时尚设计常用色：基础中性色、经典服饰色（色值与来源见 ColorMath.CommonColors）。 -->
+          <StackPanel Spacing="4">
+            <TextBlock Classes="label" FontSize="10" Text="{DynamicResource D.CommonColors}" />
+            <ItemsControl x:Name="PickerCommon" ItemsSource="{Binding Common}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><color:EvenColumns Columns="10" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="color:PickerSwatch">
+                  <Button Classes="bare cell" Height="22" Margin="1.5"
+                          Command="{Binding $parent[ItemsControl].((color:ColorPickerModel)DataContext).PickCommand}"
+                          CommandParameter="{Binding}" ToolTip.Tip="{Binding Tip}" AutomationProperties.Name="{Binding Tip}">
+                    <Border Classes="swatch" Background="{Binding Brush}" />
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <Border Classes="rule" />
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Right" Classes="label" FontSize="10" Text="HSV" />
+            <TextBlock Classes="label" FontSize="11" Text="{DynamicResource D.Fine}" />
+          </DockPanel>
+          <Grid ColumnDefinitions="44,*,52" RowDefinitions="28,28,28">
+            <TextBlock Classes="label" FontSize="11" Text="{DynamicResource D.Hue}" />
+            <color:DyeSlider x:Name="HueSlider" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="360"
+                             Value="{Binding Hue}" Track="{Binding HueTrack}"
+                             Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
+                             AutomationProperties.Name="{DynamicResource D.Hue}" />
+            <TextBox x:Name="HueInput" Grid.Column="2" Classes="field num" Classes.invalid="{Binding HueInvalid}"
+                     Text="{Binding HueInput}" MaxLength="3" AutomationProperties.Name="{DynamicResource D.Hue}" />
+            <TextBlock Grid.Row="1" Classes="label" FontSize="11" Text="{DynamicResource D.Saturation}" />
+            <color:DyeSlider x:Name="SaturationSlider" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="100"
+                             Value="{Binding Saturation}" Track="{Binding SaturationTrack}"
+                             Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
+                             AutomationProperties.Name="{DynamicResource D.Saturation}" />
+            <TextBox x:Name="SaturationInput" Grid.Row="1" Grid.Column="2" Classes="field num" Classes.invalid="{Binding SaturationInvalid}"
+                     Text="{Binding SaturationInput}" MaxLength="3" AutomationProperties.Name="{DynamicResource D.Saturation}" />
+            <TextBlock Grid.Row="2" Classes="label" FontSize="11" Text="{DynamicResource D.Lightness}" />
+            <color:DyeSlider x:Name="BrightnessSlider" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="100"
+                             Value="{Binding Brightness}" Track="{Binding BrightnessTrack}"
+                             Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
+                             AutomationProperties.Name="{DynamicResource D.Lightness}" />
+            <TextBox x:Name="BrightnessInput" Grid.Row="2" Grid.Column="2" Classes="field num" Classes.invalid="{Binding BrightnessInvalid}"
+                     Text="{Binding BrightnessInput}" MaxLength="3" AutomationProperties.Name="{DynamicResource D.Lightness}" />
+          </Grid>
+          <Button x:Name="PickerConfirm" Classes="primary compact" HorizontalAlignment="Right" Content="{DynamicResource D.Confirm}"
+                  Command="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).ClosePickerCommand}" />
+        </StackPanel>
+      </ScrollViewer>
+      </DockPanel>
+    </Border>
+    </color:AnchoredLayer>
+  </Panel>
+
+  <!-- 目标色集合浮层（原工具 AtlasPanel.qml）：适合、1:1、放大、缩小，放大后拖动浏览；最近邻放大。 -->
+  <Panel x:Name="AtlasLayer" IsVisible="False" KeyDown="OnLayerKeyDown">
+    <Border Background="Transparent" PointerPressed="OnAtlasOutsidePressed" />
+    <color:AnchoredLayer x:Name="AtlasHost">
+    <Border x:Name="AtlasPanel" Classes="panel popup anchored" Width="500" Height="336" Padding="14">
+      <DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4">
+            <Button Classes="chip" Padding="8,2" Content="{DynamicResource D.Fit}" Command="{Binding AtlasZoomCommand}" CommandParameter="fit" />
+            <Button Classes="chip" Padding="8,2" Content="1:1" Command="{Binding AtlasZoomCommand}" CommandParameter="one" />
+            <Button Classes="chip" Padding="8,2" Content="＋" Command="{Binding AtlasZoomCommand}" CommandParameter="in" />
+            <Button x:Name="AtlasZoomOut" Classes="chip" Padding="8,2" Content="－" Command="{Binding AtlasZoomCommand}" CommandParameter="out" />
+          </StackPanel>
+          <TextBlock DockPanel.Dock="Left" Classes="label" Margin="0,0,8,0" Text="{DynamicResource D.Atlas}" />
+          <TextBlock x:Name="AtlasNote" Classes="name muted" FontSize="11" VerticalAlignment="Center" Text="{Binding AtlasNote}" />
+        </DockPanel>
+        <Border x:Name="AtlasViewport" CornerRadius="12" ClipToBounds="True" Background="{DynamicResource TrackBrush}"
+                BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+          <Panel>
+            <Image Source="{Binding AtlasImage}" Stretch="UniformToFill"
+                   RenderOptions.BitmapInterpolationMode="None" IsVisible="{Binding AtlasFitted}" />
+            <ScrollViewer x:Name="AtlasScroller" IsVisible="{Binding !AtlasFitted}" Cursor="SizeAll"
+                          HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <Image x:Name="AtlasZoomed" Source="{Binding AtlasImage}" Stretch="Fill"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" RenderOptions.BitmapInterpolationMode="None" />
+            </ScrollViewer>
+            <TextBlock x:Name="AtlasFullMessage" Classes="note" Margin="14" TextAlignment="Center"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Text="{Binding AtlasMessage}" IsVisible="{Binding HasAtlasMessage}" />
+          </Panel>
+        </Border>
+      </DockPanel>
+    </Border>
+    </color:AnchoredLayer>
+  </Panel>
+
+  <!-- 选色方案层（原工具 QuickPanel presets）：默认预设（可展开）、名称与“保存当前设置”、方案列表的载入与删除。 -->
+  <Panel x:Name="PresetsLayer" IsVisible="{Binding IsPresetsOpen}" KeyDown="OnLayerKeyDown">
+    <Border Background="Transparent" PointerPressed="OnLayerOutsidePressed" />
+    <Border x:Name="PresetsPanel" Classes="panel popup" Classes.open="{Binding IsPresetsOpen}" MaxWidth="420"
+            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14,56,14,14" KeyboardNavigation.TabNavigation="Cycle">
+      <DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+          <Button DockPanel.Dock="Right" x:Name="PresetsClose" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
+                  Content="{DynamicResource D.Close}" Command="{Binding CloseLayerCommand}" />
+          <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource D.SavePresets}" />
+        </DockPanel>
+        <!-- 默认预设、名称与保存、方案列表在同一个滚动区里，窗口矮或展开预设时整体滚动。 -->
+        <ScrollViewer x:Name="PresetsScroller" controls:EdgeFade.IsEnabled="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel>
+        <!-- 默认预设：十套内置只读配色（日系插画、时尚设计两组），默认收起；展开时箭头旋转，内容由共用 ExpandPanel 展开。 -->
+        <Border Classes="inset" Padding="10,6" Margin="0,0,0,8">
+          <StackPanel>
+            <Button x:Name="PresetsToggle" Classes="bare cell" Height="28" Command="{Binding TogglePresetsCommand}"
+                    AutomationProperties.Name="{DynamicResource D.DefaultPresets}">
+              <DockPanel>
+                <Path x:Name="PresetsChevron" DockPanel.Dock="Left" Classes="chevron" Classes.open="{Binding PresetsExpanded}"
+                      Width="10" Height="10" Margin="0,0,8,0" Stretch="Uniform" Stroke="{DynamicResource InkBrush}" StrokeThickness="1.6"
+                      StrokeLineCap="Round" StrokeJoin="Round" VerticalAlignment="Center" Data="M3,1 L8,6 L3,11" />
+                <TextBlock DockPanel.Dock="Right" Classes="label" FontSize="11" Text="{DynamicResource D.PresetsReadOnly}" />
+                <TextBlock Classes="name strong" FontSize="13" VerticalAlignment="Center" Text="{DynamicResource D.DefaultPresets}" />
+              </DockPanel>
+            </Button>
+            <controls:ExpandPanel IsExpanded="{Binding PresetsExpanded, Mode=OneWay}">
+            <!-- 两组分组显示，日系插画配色在前；区内最多约六行高，超出时在区内滚动，展开区高度固定、不推挤层内其余内容。 -->
+            <ScrollViewer x:Name="BuiltInPresetScroller" controls:EdgeFade.IsEnabled="True" MaxHeight="232" Margin="0,4,0,2"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel x:Name="BuiltInPresetList" Spacing="2">
+                <StackPanel.Resources>
+                  <!-- 一行预设：名称、区域 1–3 的色块与“套用”。两组共用。 -->
+                  <DataTemplate x:Key="PresetRow" DataType="color:ColorPreset">
+                    <DockPanel Margin="0,3">
+                      <Button DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center" Content="{DynamicResource D.ApplyPreset}"
+                              Command="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).ApplyPresetCommand}"
+                              CommandParameter="{Binding Id}"
+                              IsEnabled="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).CanEdit}" />
+                      <ItemsControl DockPanel.Dock="Right" ItemsSource="{Binding Swatches}" VerticalAlignment="Center" ToolTip.Tip="{Binding Tip}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="3" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate DataType="color:PickerSwatch">
+                            <Border Classes="swatch" Width="18" Height="18" Background="{Binding Brush}" ToolTip.Tip="{Binding Hex}" />
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <TextBlock Classes="name" VerticalAlignment="Center" Text="{Binding Name}" ToolTip.Tip="{Binding Name}" />
+                    </DockPanel>
+                  </DataTemplate>
+                </StackPanel.Resources>
+                <TextBlock Classes="label" FontSize="11" Margin="0,2,0,0" Text="{DynamicResource D.PresetsIllustration}" />
+                <ItemsControl x:Name="IllustrationPresetList" ItemsSource="{Binding IllustrationPresets}" ItemTemplate="{StaticResource PresetRow}" />
+                <TextBlock Classes="label" FontSize="11" Margin="0,6,0,0" Text="{DynamicResource D.PresetsFashion}" />
+                <ItemsControl x:Name="FashionPresetList" ItemsSource="{Binding FashionPresets}" ItemTemplate="{StaticResource PresetRow}" />
+              </StackPanel>
+            </ScrollViewer>
+            </controls:ExpandPanel>
+          </StackPanel>
+        </Border>
+        <StackPanel Spacing="6" Margin="0,0,0,8">
+          <TextBox x:Name="ProfileNameBox" Classes="field" Text="{Binding ProfileName}" MaxLength="60"
+                   PlaceholderText="{DynamicResource D.NewProfileName}" AutomationProperties.Name="{DynamicResource D.NewProfileName}" />
+          <Button x:Name="SaveProfileButton" Classes="primary" HorizontalAlignment="Right" Content="{DynamicResource D.Save}"
+                  Command="{Binding SaveProfileCommand}" IsEnabled="{Binding CanSaveProfile}" />
+          <TextBlock x:Name="PresetMessage" Classes="note" Text="{Binding PresetMessage}" IsVisible="{Binding HasPresetMessage}" />
+          <TextBlock Classes="note" Text="{DynamicResource D.NoProfiles}" IsVisible="{Binding NoProfiles}" />
+        </StackPanel>
+          <ItemsControl x:Name="ProfileList" controls:StableItems.Source="{Binding Data.Profiles}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="color:ColorProfileRow">
+                <Border Classes="inset" Padding="10,8" Margin="0,0,0,4">
+                  <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="8,0,0,0">
+                      <Button Classes="chip" Content="{DynamicResource D.Load}"
+                              Command="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).LoadProfileCommand}"
+                              CommandParameter="{Binding Id}" />
+                      <Button Classes="chip" Content="{DynamicResource D.Delete}"
+                              Command="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).DeleteProfileCommand}"
+                              CommandParameter="{Binding Id}" />
+                    </StackPanel>
+                    <!-- 名称与各启用区域的目标色色块；有替代色时色块旁标出 +N。 -->
+                    <StackPanel VerticalAlignment="Center" Spacing="5">
+                      <TextBlock Classes="name" Text="{Binding Name}" ToolTip.Tip="{Binding Name}" />
+                      <WrapPanel x:Name="ProfileSwatches" ToolTip.Tip="{Binding Tip}">
+                        <ItemsControl ItemsSource="{Binding Swatches}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="color:ProfileSwatch">
+                              <StackPanel Orientation="Horizontal" Spacing="3" Margin="0,0,8,0" ToolTip.Tip="{Binding Tip}">
+                                <Border Classes="swatch" Width="18" Height="18" Background="{Binding Brush}" />
+                                <TextBlock Classes="label" FontSize="10" Text="{Binding AlternativesText}" IsVisible="{Binding HasAlternatives}" />
+                              </StackPanel>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Classes="label" FontSize="11" Text="{DynamicResource D.NoEnabledRegions}" IsVisible="{Binding NoSwatches}" />
+                      </WrapPanel>
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+  </Panel>
+
+  <!-- 寻色记录层（原工具 QuickPanel history）：最新 30 条，每条一张小卡片——时间与结果在上，各区域“目标色 → 实测色”、HEX、色差与判定在下。 -->
+  <Panel x:Name="HistoryLayer" IsVisible="{Binding IsHistoryOpen}" KeyDown="OnLayerKeyDown">
+    <Border Background="Transparent" PointerPressed="OnLayerOutsidePressed" />
+    <Border x:Name="HistoryPanel" Classes="panel popup" Classes.open="{Binding IsHistoryOpen}" MaxWidth="560"
+            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14,56,14,14" KeyboardNavigation.TabNavigation="Cycle">
+      <DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+          <Button DockPanel.Dock="Right" x:Name="HistoryClose" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
+                  Content="{DynamicResource D.Close}" Command="{Binding CloseLayerCommand}" />
+          <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource D.Records}" />
+        </DockPanel>
+        <!-- 记录列表占满层内剩余高度，窗口矮时在层内滚动。 -->
+        <DockPanel DataContext="{Binding History}" x:DataType="color:ColorHistoryModel">
+          <StackPanel DockPanel.Dock="Top" Spacing="4">
+            <TextBlock Classes="note" Text="{DynamicResource D.LoadingHistory}" IsVisible="{Binding IsLoading}" />
+            <TextBlock x:Name="HistoryEmpty" Classes="note" Text="{DynamicResource D.NoHistory}" IsVisible="{Binding IsEmpty}" />
+            <TextBlock Classes="body unconfirmed" FontSize="13" Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
+            <TextBlock x:Name="HistoryLimit" Classes="note" FontSize="11" Text="{DynamicResource D.HistoryLimit}" IsVisible="{Binding HasRows}" />
+          </StackPanel>
+          <ScrollViewer x:Name="HistoryScroller" controls:EdgeFade.IsEnabled="True" MaxHeight="420" Margin="0,6,0,0"
+                        VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasRows}">
+            <ItemsControl x:Name="HistoryList" controls:StableItems.Source="{Binding Rows}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="color:ColorHistoryRow">
+                  <Border Classes="inset" Padding="12,9" Margin="0,0,0,6">
+                    <StackPanel Spacing="8">
+                      <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Classes="label" FontSize="11" Margin="0,0,10,0" Text="{Binding Time}" />
+                        <TextBlock Classes="name strong" FontSize="12" TextAlignment="Right" Text="{Binding Result}" ToolTip.Tip="{Binding Result}"
+                                   Classes.confirmed="{Binding ResultGood}" Classes.unconfirmed="{Binding ResultWarn}" />
+                      </DockPanel>
+                      <ItemsControl ItemsSource="{Binding Regions}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate DataType="color:ColorHistoryRegion">
+                            <StackPanel Spacing="3" Margin="0,0,8,0" Opacity="{Binding Opacity}">
+                              <TextBlock Classes="label" FontSize="10" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                              <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Border Classes="swatch" Width="20" Height="20" Background="{Binding TargetBrush}" ToolTip.Tip="{Binding TargetHex}" />
+                                <TextBlock Classes="label" FontSize="11" VerticalAlignment="Center" Text="→" />
+                                <Panel Width="20" Height="20">
+                                  <Border Classes="swatch" Background="{Binding MeasuredBrush}" IsVisible="{Binding HasMeasured}" />
+                                  <Border Classes="swatch" BorderBrush="{DynamicResource MutedBrush}" IsVisible="{Binding NoMeasured}" />
+                                </Panel>
+                              </StackPanel>
+                              <TextBlock Classes="hex" Text="{Binding MeasuredText}" />
+                              <WrapPanel>
+                                <TextBlock Classes="label" FontSize="10" Margin="0,0,6,2" VerticalAlignment="Center" Text="{Binding Delta}"
+                                           IsVisible="{Binding HasDelta}" />
+                                <Border Classes="mark" HorizontalAlignment="Left" Margin="0,0,0,2"
+                                        Classes.good="{Binding Mark.Good}" Classes.warn="{Binding Mark.Warn}">
+                                  <TextBlock Text="{Binding Mark.Text}" />
+                                </Border>
+                              </WrapPanel>
+                            </StackPanel>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </DockPanel>
+      </DockPanel>
+    </Border>
+  </Panel>
+  </Panel>
+</UserControl>

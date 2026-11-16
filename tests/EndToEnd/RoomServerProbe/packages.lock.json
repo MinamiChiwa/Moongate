@@ -1,0 +1,167 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "Microsoft.Data.Sqlite.Core": {
+        "type": "Transitive",
+        "resolved": "10.0.13",
+        "contentHash": "Gge8XsSCOwcbkbdmt2UDAe6kIv9Q0vA6yb3wsTStjjexaMFLTWfc/1gH4kbhJ+zWiXRTRA4lG2sOQNVfir204w==",
+        "dependencies": {
+          "SQLitePCLRaw.core": "2.1.13"
+        }
+      },
+      "SQLitePCLRaw.bundle_e_sqlite3": {
+        "type": "Transitive",
+        "resolved": "2.1.13",
+        "contentHash": "NlDixlC7uHmo+ojXRgkNvN0tQtVGpLDZ3x2OpgNj+G07VHh5cXSszFDrAiC4BpUiPwkcaeuQkMV9WQ123xVtmQ==",
+        "dependencies": {
+          "SQLitePCLRaw.lib.e_sqlite3": "2.1.13",
+          "SQLitePCLRaw.provider.e_sqlite3": "2.1.13"
+        }
+      },
+      "SQLitePCLRaw.core": {
+        "type": "Transitive",
+        "resolved": "2.1.13",
+        "contentHash": "2joofoinuHBFs0nMX3nKuXgxpXryRkCOdM2Ua6HBqQLLy6IW+5f28ZI+HAvMyF8vG7XfNz/lwfBfE6V4juru8Q=="
+      },
+      "SQLitePCLRaw.lib.e_sqlite3": {
+        "type": "Transitive",
+        "resolved": "2.1.13",
+        "contentHash": "D2UAuiGxFYBqeRXjjjGgvJ5UQifzn6wefmSqeKU7XcNGKLbJRP6X7kcPZ6opOBJGdCIlgbSxTvDpBbLvsN594A=="
+      },
+      "SQLitePCLRaw.provider.e_sqlite3": {
+        "type": "Transitive",
+        "resolved": "2.1.13",
+        "contentHash": "ZU60dSqoSNRe49KcQDUmOVgdRtjITOssVXFtiISs+zJXDI4D2Sndwpn2NOtzDQNPu0ZAvpoLPQ+GLKv6iEZn8Q==",
+        "dependencies": {
+          "SQLitePCLRaw.core": "2.1.13"
+        }
+      },
+      "mabitool.client": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )"
+        }
+      },
+      "mabitool.contracts": {
+        "type": "Project"
+      },
+      "mabitool.host": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )",
+          "MabiTool.Infrastructure": "[0.1.0, )",
+          "MabiTool.ModuleSdk": "[0.1.0, )",
+          "MabiTool.Modules.Color": "[0.1.0, )",
+          "MabiTool.Modules.CombatObservation": "[0.1.0, )",
+          "MabiTool.Modules.Inventory": "[0.1.0, )",
+          "MabiTool.Modules.MusicLibrary": "[0.1.0, )",
+          "MabiTool.Modules.Rooms": "[0.1.0, )",
+          "MabiTool.Platform.Windows": "[0.1.0, )",
+          "MabiTool.Providers.GitHubReleases": "[0.1.0, )",
+          "MabiTool.Providers.Replay": "[0.1.0, )",
+          "MabiTool.Providers.Tunnels": "[0.1.0, )",
+          "MabiTool.Providers.TwObservation": "[0.1.0, )",
+          "MabiTool.RoomServer": "[0.1.0, )"
+        }
+      },
+      "mabitool.infrastructure": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.ModuleSdk": "[0.1.0, )",
+          "Microsoft.Data.Sqlite": "[10.0.13, )"
+        }
+      },
+      "mabitool.modules.color": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Infrastructure": "[0.1.0, )"
+        }
+      },
+      "mabitool.modules.combatobservation": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Infrastructure": "[0.1.0, )"
+        }
+      },
+      "mabitool.modules.inventory": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )",
+          "MabiTool.Infrastructure": "[0.1.0, )",
+          "MabiTool.ModuleSdk": "[0.1.0, )"
+        }
+      },
+      "mabitool.modules.musiclibrary": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Infrastructure": "[0.1.0, )",
+          "MabiTool.ModuleSdk": "[0.1.0, )"
+        }
+      },
+      "mabitool.modules.rooms": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )",
+          "MabiTool.Infrastructure": "[0.1.0, )",
+          "MabiTool.ModuleSdk": "[0.1.0, )"
+        }
+      },
+      "mabitool.modulesdk": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )"
+        }
+      },
+      "mabitool.platform.windows": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.ModuleSdk": "[0.1.0, )",
+          "MabiTool.Providers.TwObservation": "[0.1.0, )"
+        }
+      },
+      "mabitool.providers.githubreleases": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )"
+        }
+      },
+      "mabitool.providers.replay": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )",
+          "MabiTool.Modules.CombatObservation": "[0.1.0, )"
+        }
+      },
+      "mabitool.providers.tunnels": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Platform.Windows": "[0.1.0, )"
+        }
+      },
+      "mabitool.providers.twobservation": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )"
+        }
+      },
+      "mabitool.roomserver": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )"
+        }
+      },
+      "Microsoft.Data.Sqlite": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "w37nz3WFmDtRfXxWEwIXX2OgqDRiwhD1JGbFwfpFCF8GkCrV/yO6Y2JF5058J2RGoI2sCcdn02wrk0yEcekWcw==",
+        "dependencies": {
+          "Microsoft.Data.Sqlite.Core": "10.0.13",
+          "SQLitePCLRaw.bundle_e_sqlite3": "2.1.13",
+          "SQLitePCLRaw.core": "2.1.13"
+        }
+      }
+    }
+  }
+}

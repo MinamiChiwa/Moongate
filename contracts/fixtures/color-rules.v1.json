@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "provenance": "Synthetic rule conversion cases adapted from Color Studio tests; no screenshots or user profiles are included.",
+  "cases": [
+    {
+      "name": "exact-with-alternatives",
+      "input": {
+        "enabled": true,
+        "target": "#a1b2c3",
+        "alternatives": "#ffffff， eaeaea ,",
+        "mode": "精准 HEX",
+        "tolerance": 8.0
+      },
+      "expected": {
+        "enabled": true,
+        "colors": ["#A1B2C3", "#FFFFFF", "#EAEAEA"],
+        "exact": true,
+        "tolerance": 8.0
+      }
+    },
+    {
+      "name": "similar-color-tolerance",
+      "input": {
+        "enabled": true,
+        "target": "#a1b2c3",
+        "alternatives": "",
+        "mode": "相似颜色",
+        "tolerance": 12.0
+      },
+      "expected": {
+        "enabled": true,
+        "colors": ["#A1B2C3"],
+        "exact": false,
+        "tolerance": 12.0
+      }
+    },
+    {
+      "name": "disabled-region",
+      "input": {
+        "enabled": false,
+        "target": "not-a-color",
+        "alternatives": "",
+        "mode": "精准 HEX",
+        "tolerance": 8.0
+      },
+      "expected": {
+        "enabled": false,
+        "colors": [],
+        "exact": true,
+        "tolerance": 0
+      }
+    }
+  ]
+}

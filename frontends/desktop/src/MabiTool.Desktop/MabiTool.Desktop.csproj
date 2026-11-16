@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <Description>MabiTool 桌面主窗口与浮窗前端。</Description>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <!-- exe 图标与窗口、任务栏图标共用解压版入口的同一份 packaging/Moongate.ico。 -->
+    <ApplicationIcon>../../../../packaging/Moongate.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../sdk/csharp/MabiTool.Client.csproj" />
+    <ProjectReference Include="../../../../src/ModuleSdk/MabiTool.ModuleSdk.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/**" />
+    <AvaloniaResource Include="../../../../packaging/Moongate.ico" Link="Assets/Moongate.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="MabiTool.Desktop.Tests" />
+  </ItemGroup>
+</Project>

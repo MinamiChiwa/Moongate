@@ -1,0 +1,2838 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "messageId",
+    "requestId",
+    "kind",
+    "runId",
+    "bindingRevision",
+    "fencingToken",
+    "payload"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "const": 1
+    },
+    "messageId": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/uint64"
+        },
+        {
+          "not": {
+            "const": "0"
+          }
+        }
+      ]
+    },
+    "requestId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kind": {
+      "enum": [
+        "hello",
+        "ready",
+        "ping",
+        "pong",
+        "request",
+        "accepted",
+        "event",
+        "result",
+        "error",
+        "cancel",
+        "cancelled",
+        "shutdown",
+        "bye",
+        "command",
+        "commandResult"
+      ]
+    },
+    "runId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "bindingRevision": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/uint64"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "fencingToken": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/uint64"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "$id": "urn:mabitool:worker:observation:v1",
+  "title": "Game Observation Worker v1",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "hello",
+              "ready",
+              "ping",
+              "pong",
+              "shutdown",
+              "bye"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "requestId": {
+            "type": "null"
+          },
+          "runId": {
+            "type": "null"
+          },
+          "bindingRevision": {
+            "type": "null"
+          },
+          "fencingToken": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "requestId": {
+            "$ref": "#/$defs/id"
+          },
+          "runId": {
+            "$ref": "#/$defs/id"
+          },
+          "bindingRevision": {
+            "$ref": "#/$defs/uint64"
+          },
+          "fencingToken": {
+            "$ref": "#/$defs/uint64"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "hello"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "workerId",
+              "pid",
+              "token",
+              "minimumVersion",
+              "maximumVersion"
+            ],
+            "properties": {
+              "workerId": {
+                "const": "game-observation"
+              },
+              "pid": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "token": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+              },
+              "minimumVersion": {
+                "const": 1
+              },
+              "maximumVersion": {
+                "const": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "workerId"
+            ],
+            "properties": {
+              "workerId": {
+                "const": "game-observation"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "request"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "method",
+                  "arguments"
+                ],
+                "properties": {
+                  "method": {
+                    "const": "observation.channels"
+                  },
+                  "arguments": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [],
+                    "properties": {
+                      "processId": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "processStartTime": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "dependentRequired": {
+                      "processId": [
+                        "processStartTime"
+                      ],
+                      "processStartTime": [
+                        "processId"
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "method",
+                  "arguments"
+                ],
+                "properties": {
+                  "method": {
+                    "const": "observation.capture"
+                  },
+                  "arguments": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "gameSessionId",
+                      "region",
+                      "processId",
+                      "processStartTime",
+                      "channelId",
+                      "profile"
+                    ],
+                    "properties": {
+                      "gameSessionId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "region": {
+                        "const": "TW"
+                      },
+                      "processId": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "processStartTime": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "channelId": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "profile": {
+                        "enum": [
+                          "tw-music-v1",
+                          "tw-combat-20261110-v1",
+                          "tw-combat-20261110-v2",
+                          "tw-combat-20261110-v3"
+                        ]
+                      },
+                      "anyAddress": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "method",
+                  "arguments"
+                ],
+                "properties": {
+                  "method": {
+                    "const": "inventory.prepare"
+                  },
+                  "arguments": {
+                    "$ref": "#/$defs/inventoryClientRequest"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "method",
+                  "arguments"
+                ],
+                "properties": {
+                  "method": {
+                    "const": "inventory.catalog"
+                  },
+                  "arguments": {
+                    "$ref": "#/$defs/inventoryClientRequest"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "method",
+                  "arguments"
+                ],
+                "properties": {
+                  "method": {
+                    "const": "observation.channels.detect"
+                  },
+                  "arguments": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "processId",
+                      "processStartTime",
+                      "durationMs"
+                    ],
+                    "properties": {
+                      "processId": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "processStartTime": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "durationMs": {
+                        "type": "integer",
+                        "minimum": 5000,
+                        "maximum": 60000
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "result"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "channels"
+                ],
+                "properties": {
+                  "channels": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "description",
+                        "addresses"
+                      ],
+                      "properties": {
+                        "id": {
+                          "$ref": "#/$defs/id"
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 512
+                        },
+                        "addresses": {
+                          "type": "array",
+                          "maxItems": 32,
+                          "items": {
+                            "type": "string",
+                            "format": "ipv4"
+                          }
+                        },
+                        "loopback": {
+                          "type": [
+                            "boolean",
+                            "null"
+                          ]
+                        },
+                        "gameConnections": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 32
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "prepared"
+                ],
+                "properties": {
+                  "prepared": {
+                    "$ref": "#/$defs/inventoryPrepared"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "detection"
+                ],
+                "properties": {
+                  "detection": {
+                    "$ref": "#/$defs/channelDetection"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "catalogAsset"
+                ],
+                "properties": {
+                  "catalogAsset": {
+                    "$ref": "#/$defs/inventoryAsset"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "report"
+                ],
+                "properties": {
+                  "report": {
+                    "type": "object",
+                    "required": [
+                      "value",
+                      "sequence",
+                      "running",
+                      "monotonicMs",
+                      "observedAt",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value": {
+                        "$ref": "#/$defs/gameObservation"
+                      },
+                      "sequence": {
+                        "$ref": "#/$defs/positiveUint64"
+                      },
+                      "running": {
+                        "type": "boolean"
+                      },
+                      "monotonicMs": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "observedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 128
+                      },
+                      "source": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/$defs/source"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "combat"
+                ],
+                "properties": {
+                  "combat": {
+                    "$ref": "#/$defs/combatReport"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "interestsApplied"
+                ],
+                "properties": {
+                  "interestsApplied": {
+                    "$ref": "#/$defs/captureInterests"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "inventory"
+                ],
+                "properties": {
+                  "inventory": {
+                    "$ref": "#/$defs/inventoryReport"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "inventoryAsset"
+                ],
+                "properties": {
+                  "inventoryAsset": {
+                    "$ref": "#/$defs/inventoryAsset"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "captureDiagnostics"
+                ],
+                "properties": {
+                  "captureDiagnostics": {
+                    "$ref": "#/$defs/captureDiagnostics"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "detection"
+                ],
+                "properties": {
+                  "detection": {
+                    "$ref": "#/$defs/channelDetection"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "ping"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "pong"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "cancel"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "cancelled"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "shutdown"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "bye"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "accepted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "command"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/interestCommand"
+              },
+              {
+                "$ref": "#/$defs/inventoryPrepareCommand"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "commandResult"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/interestResult"
+              },
+              {
+                "$ref": "#/$defs/inventoryPrepareResult"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "channelDetection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "elapsedSeconds",
+        "channels",
+        "winnerChannelId",
+        "reason",
+        "final"
+      ],
+      "properties": {
+        "elapsedSeconds": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 120
+        },
+        "channels": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "channelId",
+              "description",
+              "opened",
+              "packets",
+              "payloadBytes",
+              "issue"
+            ],
+            "properties": {
+              "channelId": {
+                "$ref": "#/$defs/id"
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "opened": {
+                "type": "boolean"
+              },
+              "packets": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 200000
+              },
+              "payloadBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "issue": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 128
+              }
+            }
+          }
+        },
+        "winnerChannelId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        },
+        "final": {
+          "type": "boolean"
+        }
+      }
+    },
+    "captureDiagnostics": {
+      "description": "可选事件：Host 以启动环境 MABITOOL_OBSERVATION_DIAGNOSTICS=1 声明受理后，Worker 在捕获运行中至多每秒发送一次变化后的累计计数，结束前补发最终值。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "connections", "packets", "queues", "reassembly", "frames"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "connections": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["current", "opened", "closed"],
+          "properties": {
+            "current": { "$ref": "#/$defs/uint64" },
+            "opened": { "$ref": "#/$defs/uint64" },
+            "closed": { "$ref": "#/$defs/uint64" }
+          }
+        },
+        "packets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["received", "bytes", "filtered", "truncated", "driverDropped", "readLimitHits"],
+          "properties": {
+            "received": { "$ref": "#/$defs/uint64" },
+            "bytes": { "$ref": "#/$defs/uint64" },
+            "filtered": { "$ref": "#/$defs/uint64" },
+            "truncated": { "$ref": "#/$defs/uint64" },
+            "driverDropped": { "$ref": "#/$defs/uint64" },
+            "readLimitHits": { "$ref": "#/$defs/uint64" }
+          }
+        },
+        "queues": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["combatDepth", "combatPeak", "inventoryDepth", "inventoryPeak", "inventoryLaneRejected"],
+          "properties": {
+            "combatDepth": { "$ref": "#/$defs/uint64" },
+            "combatPeak": { "$ref": "#/$defs/uint64" },
+            "inventoryDepth": { "$ref": "#/$defs/uint64" },
+            "inventoryPeak": { "$ref": "#/$defs/uint64" },
+            "inventoryLaneRejected": { "$ref": "#/$defs/uint64" }
+          }
+        },
+        "reassembly": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["segments", "bytes", "outOfOrder", "retransmitted", "resets"],
+          "properties": {
+            "segments": { "$ref": "#/$defs/uint64" },
+            "bytes": { "$ref": "#/$defs/uint64" },
+            "outOfOrder": { "$ref": "#/$defs/uint64" },
+            "retransmitted": { "$ref": "#/$defs/uint64" },
+            "resets": {
+              "type": "object",
+              "maxProperties": 14,
+              "propertyNames": {
+                "enum": ["unknown", "payloadTooLarge", "pendingCapacity", "gapTimeout", "conflictingRetransmission", "bufferCapacity",
+                  "invalidFrameHeader", "decodeFailure", "connectionRemoved", "captureDrops", "truncatedPacket", "connectionSyn",
+                  "connectionClosed", "connectionReset"]
+              },
+              "additionalProperties": { "$ref": "#/$defs/uint64" }
+            }
+          }
+        },
+        "frames": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["total", "dispatched", "decompressFailures", "rejected", "types", "otherFrames"],
+          "properties": {
+            "total": { "$ref": "#/$defs/uint64" },
+            "dispatched": { "$ref": "#/$defs/uint64" },
+            "decompressFailures": { "$ref": "#/$defs/uint64" },
+            "rejected": {
+              "type": "object",
+              "maxProperties": 3,
+              "propertyNames": { "enum": ["combat", "music", "inventory"] },
+              "additionalProperties": { "$ref": "#/$defs/uint64" }
+            },
+            "types": {
+              "type": "object",
+              "maxProperties": 24,
+              "propertyNames": { "pattern": "^(?:0|[1-9][0-9]{0,9})(?![\\s\\S])" },
+              "additionalProperties": { "$ref": "#/$defs/uint64" }
+            },
+            "otherFrames": { "$ref": "#/$defs/uint64" }
+          }
+        },
+        "prearm": {
+          "description": "可选：新连接预缓冲（端点过滤器）的包计数，不含地址、端口或内容。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["buffered", "delivered", "expired", "foreign", "budget"],
+          "properties": {
+            "buffered": { "$ref": "#/$defs/uint64" },
+            "delivered": { "$ref": "#/$defs/uint64" },
+            "expired": { "$ref": "#/$defs/uint64" },
+            "foreign": { "$ref": "#/$defs/uint64" },
+            "budget": { "$ref": "#/$defs/uint64" }
+          }
+        }
+      }
+    },
+    "positiveUint64": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/uint64"
+        },
+        {
+          "not": {
+            "const": "0"
+          }
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "providerVersion",
+        "region",
+        "gameBuild"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "providerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "region": {
+          "const": "TW"
+        },
+        "gameBuild": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "characterId",
+        "realmId",
+        "nickname",
+        "actorId"
+      ],
+      "properties": {
+        "characterId": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "realmId": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^(?:0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "nickname": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "actorId": {
+          "$ref": "#/$defs/positiveUint64"
+        }
+      }
+    },
+    "concert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "hostCharacterId",
+        "members"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "hostCharacterId": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "orderedCharacterIds": {
+          "description": "已停用的加入顺序字段：当前 Worker 不填写（null 或省略）；旧 Worker 填写时与 members 的角色 ID 逐项一致。",
+          "type": [
+            "array",
+            "null"
+          ],
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/positiveUint64"
+          }
+        },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/identity"
+          }
+        }
+      }
+    },
+    "duration": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 604800
+    },
+    "music": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "concertId",
+        "performerCharacterId",
+        "hostCharacterId",
+        "title",
+        "isLoop",
+        "selectedChannels",
+        "scoreSha256",
+        "wholeScoreDurationSeconds",
+        "selectedDurationSeconds",
+        "estimatedStartMonotonicMs",
+        "timingSource",
+        "playbackTimingVerified",
+        "issue"
+      ],
+      "properties": {
+        "concertId": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "performerCharacterId": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "hostCharacterId": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "isLoop": {
+          "type": "boolean"
+        },
+        "selectedChannels": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 127
+          }
+        },
+        "scoreSha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-fA-F]{64}(?![\\s\\S])"
+        },
+        "wholeScoreDurationSeconds": {
+          "$ref": "#/$defs/duration"
+        },
+        "selectedDurationSeconds": {
+          "$ref": "#/$defs/duration"
+        },
+        "estimatedStartMonotonicMs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "timingSource": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "playbackTimingVerified": {
+          "const": false
+        },
+        "issue": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        }
+      }
+    },
+    "gameObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "captureGeneration",
+        "identity",
+        "concert",
+        "music",
+        "packets",
+        "detail"
+      ],
+      "properties": {
+        "captureGeneration": {
+          "$ref": "#/$defs/id"
+        },
+        "identity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/identity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "concert": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/concert"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "music": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/music"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "packets": {
+          "$ref": "#/$defs/uint64"
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "location": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/location"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "channelSheetId",
+        "mapName",
+        "mapSheetId",
+        "mapReason",
+        "permanentChannel",
+        "permanentChannelIndex",
+        "channelReason"
+      ],
+      "properties": {
+        "channelSheetId": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "not": {
+            "const": 0
+          }
+        },
+        "mapName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "mapSheetId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "mapReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "permanentChannel": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "permanentChannelIndex": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "channelReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}(?![\\s\\S])"
+    },
+    "uint64": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)(?![\\s\\S])",
+      "maxLength": 20
+    },
+    "entityKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gameSessionId",
+        "observationGeneration",
+        "rawInstanceId",
+        "spawnGeneration"
+      ],
+      "properties": {
+        "gameSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "observationGeneration": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "rawInstanceId": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "spawnGeneration": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "breakGauge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "maximum", "observedAt", "quality"],
+      "properties": {
+        "current": { "type": ["number", "null"], "minimum": 0 },
+        "maximum": { "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }] },
+        "observedAt": { "type": "string", "format": "date-time", "pattern": "(?:Z|\\+00:00)(?![\\s\\S])" },
+        "quality": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])" },
+        "stale": { "type": "boolean" },
+        "reason": { "type": ["string", "null"], "maxLength": 128, "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])" }
+      }
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "rawName",
+        "displayName",
+        "role",
+        "ownerKey",
+        "ownerConfirmed",
+        "inScope",
+        "quality"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/entityKey"
+        },
+        "rawName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "ownerKey": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/entityKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerConfirmed": {
+          "type": "boolean"
+        },
+        "inScope": {
+          "type": "boolean"
+        },
+        "quality": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "breakGauge": {
+          "oneOf": [{ "$ref": "#/$defs/breakGauge" }, { "type": "null" }]
+        }
+      }
+    },
+    "damage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventId",
+        "source",
+        "sourceEntity",
+        "targetEntity",
+        "skillId",
+        "amount",
+        "amountKind",
+        "observedAt",
+        "monotonicMs",
+        "sequence",
+        "subEventIndex",
+        "critical",
+        "hit",
+        "quality"
+      ],
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "sourceEntity": {
+          "$ref": "#/$defs/entityKey"
+        },
+        "targetEntity": {
+          "$ref": "#/$defs/entityKey"
+        },
+        "skillId": {
+          "$ref": "#/$defs/uint64"
+        },
+        "amount": {
+          "$ref": "#/$defs/uint64"
+        },
+        "amountKind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(?:Z|\\+00:00)(?![\\s\\S])"
+        },
+        "monotonicMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sequence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subEventIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "critical": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "hit": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "quality": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "skillCasterKey": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/entityKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skillResolved": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "chain": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "powerfulHit": { "type": ["boolean", "null"] },
+        "rapidHit": { "type": ["boolean", "null"] },
+        "doubleHit": { "type": ["boolean", "null"] },
+        "classification": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "breakedHit": { "type": ["boolean", "null"] },
+        "breakOccurred": { "type": ["boolean", "null"] },
+        "firstAttack": { "type": ["boolean", "null"] },
+        "defaultAttack": { "type": ["boolean", "null"] },
+        "multiHit": { "type": ["boolean", "null"] },
+        "additionalHit": { "type": ["boolean", "null"] },
+        "elements": {
+          "type": ["array", "null"],
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[^\\u0000-\\u001f]+(?![\\s\\S])"
+          }
+        }
+      }
+    },
+    "effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "entityKey",
+        "effectId",
+        "instanceId",
+        "casterKey",
+        "durationKind",
+        "durationMs",
+        "stacks",
+        "category",
+        "aggregated",
+        "observedAt",
+        "monotonicMs",
+        "quality"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "entityKey": {
+          "$ref": "#/$defs/entityKey"
+        },
+        "effectId": {
+          "$ref": "#/$defs/uint64"
+        },
+        "instanceId": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "casterKey": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/entityKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationKind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "durationMs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "stacks": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "category": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "aggregated": {
+          "type": "boolean"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(?:Z|\\+00:00)(?![\\s\\S])"
+        },
+        "monotonicMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "quality": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityKey",
+        "complete",
+        "effects"
+      ],
+      "properties": {
+        "entityKey": {
+          "$ref": "#/$defs/entityKey"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "effects": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/effect"
+          }
+        }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "fromMs",
+        "toMs",
+        "droppedEvents"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "fromMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "toMs": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "droppedEvents": {
+          "$ref": "#/$defs/uint64"
+        }
+      }
+    },
+    "combatState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "observedAt",
+        "monotonicMs",
+        "sequence"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(?:Z|\\+00:00)(?![\\s\\S])"
+        },
+        "monotonicMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sequence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "heal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventId",
+        "direction",
+        "targetEntity",
+        "flags",
+        "amount",
+        "effectiveAmount",
+        "overheal",
+        "receiptMerged",
+        "observedAt",
+        "monotonicMs",
+        "sequence",
+        "quality"
+      ],
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "direction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "targetEntity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/entityKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flags": {
+          "$ref": "#/$defs/uint64"
+        },
+        "amount": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "effectiveAmount": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "overheal": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receiptMerged": {
+          "type": "boolean"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(?:Z|\\+00:00)(?![\\s\\S])"
+        },
+        "monotonicMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sequence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quality": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "effectiveReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        }
+      }
+    },
+    "combatFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "source",
+        "gameSessionId",
+        "generation",
+        "sequence",
+        "observedAt",
+        "monotonicMs",
+        "entities",
+        "damage",
+        "effects",
+        "reconciliations",
+        "gaps"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "gameSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "generation": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "sequence": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(?:Z|\\+00:00)(?![\\s\\S])"
+        },
+        "monotonicMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "entities": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/entity"
+          }
+        },
+        "damage": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/damage"
+          }
+        },
+        "effects": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/effect"
+          }
+        },
+        "reconciliations": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/reconciliation"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/gap"
+          }
+        },
+        "observationResumed": {
+          "type": "boolean"
+        },
+        "encounterEnded": {
+          "type": "boolean"
+        },
+        "healing": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/heal"
+          }
+        },
+        "combatStates": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/combatState"
+          }
+        }
+      }
+    },
+    "combatReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "interestId",
+        "localEntity",
+        "frame"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "interestId": {
+          "$ref": "#/$defs/id"
+        },
+        "localEntity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/entity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "frame": {
+          "$ref": "#/$defs/combatFrame"
+        }
+      }
+    },
+    "combatInterest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "profile",
+        "damageEnabled",
+        "selfEffectsEnabled",
+        "monsterEffectsEnabled"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "damageEnabled": {
+          "type": "boolean"
+        },
+        "selfEffectsEnabled": {
+          "type": "boolean"
+        },
+        "monsterEffectsEnabled": {
+          "type": "boolean"
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "damageEnabled": {
+              "const": true
+            }
+          }
+        },
+        {
+          "properties": {
+            "selfEffectsEnabled": {
+              "const": true
+            }
+          }
+        },
+        {
+          "properties": {
+            "monsterEffectsEnabled": {
+              "const": true
+            }
+          }
+        }
+      ]
+    },
+    "captureInterests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "musicEnabled",
+        "combat"
+      ],
+      "properties": {
+        "musicEnabled": {
+          "type": "boolean"
+        },
+        "combat": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/combatInterest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inventory": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/inventoryInterest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "interestCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commandId",
+        "method",
+        "arguments"
+      ],
+      "properties": {
+        "commandId": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "method": {
+          "const": "observation.interests"
+        },
+        "arguments": {
+          "$ref": "#/$defs/captureInterests"
+        }
+      }
+    },
+    "interestResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commandId",
+        "accepted",
+        "code",
+        "interests"
+      ],
+      "properties": {
+        "commandId": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "accepted": {
+          "type": "boolean"
+        },
+        "code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interests": {
+          "$ref": "#/$defs/captureInterests"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "accepted": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "code": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "combat.buildUnsupported",
+                  "inventory.buildUnsupported"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "inventoryIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountId",
+        "characterId",
+        "rawName",
+        "displayName"
+      ],
+      "properties": {
+        "accountId": {
+          "description": "游戏账户编号（170631）；只读出账户主角色时为 master-<主角色 ID>；二者都没有时为 character-<角色 ID>。字段集合不变，读模型按 masterCharacterId 与编号归并账户。",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "characterId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "rawName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "masterCharacterId": {
+          "description": "登录数据 AccountProfile.MasterCharacterId（账户主角色 ID）；没有读出时为空或省略。",
+          "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }]
+        }
+      }
+    },
+    "inventoryItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "container",
+        "key",
+        "typeId",
+        "instanceId",
+        "quantity",
+        "attributes"
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "container": {
+          "enum": [
+            "backpack",
+            "character-storage",
+            "account-storage"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "typeId": {
+          "$ref": "#/$defs/uint64"
+        },
+        "instanceId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quantity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attributes": {
+          "type": "object"
+        },
+        "sheet": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "equipped": {
+          "type": "boolean"
+        }
+      }
+    },
+    "inventoryDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "item"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "upsert",
+            "remove"
+          ]
+        },
+        "item": {
+          "$ref": "#/$defs/inventoryItem"
+        }
+      }
+    },
+    "inventoryCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "container",
+        "complete"
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "container": {
+          "enum": [
+            "backpack",
+            "character-storage",
+            "account-storage"
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "inventoryResourceChange": {
+      "description": "钱包资源的一次观察：变化消息给出的新值、增减通知的变化量或上次补充时间；名称、说明与补充间隔取自客户端表。refillCap 只随完整同步给出：银币、魔族貢品的补充上限，登录数据明确没有生效会员时为客户端表基础上限；有生效会员或会员无法判定时为空。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "moneyType"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_:]+(?![\\s\\S])" },
+        "moneyType": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_]+(?![\\s\\S])" },
+        "value": { "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }] },
+        "increase": { "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }] },
+        "decrease": { "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }] },
+        "refilledAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "refillNotified": { "type": "boolean" },
+        "rawName": { "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 64 }, { "type": "null" }] },
+        "description": { "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 256 }, { "type": "null" }] },
+        "refillIntervalSeconds": { "oneOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "type": "null" }] },
+        "refillCap": { "oneOf": [{ "type": "integer", "minimum": 1, "maximum": 1000000 }, { "type": "null" }] }
+      }
+    },
+    "inventoryFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "source",
+        "gameSessionId",
+        "generation",
+        "sequence",
+        "observedAt",
+        "monotonicMs",
+        "kind",
+        "identity",
+        "items",
+        "changes",
+        "coverage",
+        "bindingRevision"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "gameSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "generation": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "sequence": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(?:Z|\\+00:00)(?![\\s\\S])"
+        },
+        "monotonicMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "kind": {
+          "enum": [
+            "full",
+            "delta",
+            "invalidated"
+          ]
+        },
+        "identity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/inventoryIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "items": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/inventoryItem"
+          }
+        },
+        "changes": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/inventoryDelta"
+          }
+        },
+        "coverage": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 384,
+          "items": {
+            "$ref": "#/$defs/inventoryCoverage"
+          }
+        },
+        "gold": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uint64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bodySha256": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bindingRevision": {
+          "$ref": "#/$defs/uint64"
+        },
+        "resources": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/inventoryResourceChange"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "full"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "$ref": "#/$defs/inventoryIdentity"
+              },
+              "changes": {
+                "maxItems": 0
+              },
+              "coverage": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "delta"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "maxItems": 0
+              },
+              "coverage": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "invalidated"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "items": {
+                "maxItems": 0
+              },
+              "changes": {
+                "maxItems": 0
+              },
+              "coverage": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "inventoryReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "interestId",
+        "frame"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "interestId": {
+          "$ref": "#/$defs/id"
+        },
+        "frame": {
+          "$ref": "#/$defs/inventoryFrame"
+        }
+      }
+    },
+    "inventoryAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fileName",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "fileName": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}\\.json(?![\\s\\S])"
+        },
+        "bytes": {
+          "type": "string",
+          "pattern": "^(?:[1-9][0-9]{0,6}|[1-5][0-9]{7}|6[0-6][0-9]{6}|670[0-9]{5}|6710[0-7][0-9]{3}|67108[0-7][0-9]{2}|671088[0-5][0-9]{1}|6710886[0-3]|67108864)(?![\\s\\S])",
+          "maxLength": 8
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}(?![\\s\\S])"
+        }
+      }
+    },
+    "inventoryClientRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gameSessionId",
+        "processId",
+        "processStartTime"
+      ],
+      "properties": {
+        "gameSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "processId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "processStartTime": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(?:Z|\\+00:00)(?![\\s\\S])"
+        },
+        "region": {
+          "const": "TW"
+        }
+      }
+    },
+    "inventoryProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "assemblySha256",
+        "metadataSha256",
+        "categories",
+        "fullInventory",
+        "incrementalInventory"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "assemblySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}(?![\\s\\S])"
+        },
+        "metadataSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}(?![\\s\\S])"
+        },
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+          }
+        },
+        "fullInventory": {
+          "type": "boolean"
+        },
+        "incrementalInventory": {
+          "type": "boolean"
+        },
+        "simulation": {
+          "type": "boolean"
+        }
+      }
+    },
+    "inventoryPrepared": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile"
+      ],
+      "properties": {
+        "profile": {
+          "$ref": "#/$defs/inventoryProfile"
+        }
+      }
+    },
+    "inventoryInterest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "profile"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+        }
+      }
+    },
+    "inventoryPrepareCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commandId",
+        "method",
+        "arguments"
+      ],
+      "properties": {
+        "commandId": {
+          "$ref": "#/$defs/positiveUint64"
+        },
+        "method": {
+          "const": "inventory.prepare"
+        },
+        "arguments": {
+          "$ref": "#/$defs/inventoryClientRequest"
+        }
+      }
+    },
+    "inventoryPrepareResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commandId",
+            "prepared"
+          ],
+          "properties": {
+            "commandId": {
+              "$ref": "#/$defs/positiveUint64"
+            },
+            "prepared": {
+              "$ref": "#/$defs/inventoryPrepared"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commandId",
+            "code"
+          ],
+          "properties": {
+            "commandId": {
+              "$ref": "#/$defs/positiveUint64"
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

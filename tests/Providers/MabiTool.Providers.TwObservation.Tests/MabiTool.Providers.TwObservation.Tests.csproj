@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <ProjectReference Include="../../../src/Providers/TwObservation/MabiTool.Providers.TwObservation.csproj" />
+    <ProjectReference Include="../../../src/Modules/CombatObservation/MabiTool.Modules.CombatObservation.csproj" />
+    <ProjectReference Include="../../../scripts/maintenance/CombatEvidenceInspector/MabiTool.CombatEvidenceInspector.csproj" ReferenceOutputAssembly="false" />
+    <EmbeddedResource Include="../../../contracts/fixtures/combat-tw-current-identity.v1.json" LogicalName="MabiTool.CurrentCombatIdentity" />
+    <EmbeddedResource Include="Fixtures/tw-music-20261114.json" LogicalName="MabiTool.TwMusicFixture" />
+    <EmbeddedResource Include="../../../contracts/fixtures/tw-map-channel-20261114.json" LogicalName="MabiTool.TwMapChannelFixture" />
+  </ItemGroup>
+</Project>

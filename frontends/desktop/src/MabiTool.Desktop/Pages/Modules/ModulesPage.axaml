@@ -1,0 +1,207 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:modules="using:MabiTool.Desktop.Pages.Modules"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             xmlns:sys="using:System"
+             x:Class="MabiTool.Desktop.Pages.Modules.ModulesPage"
+             x:DataType="modules:ModulesPageModel"
+             controls:Card.PageId="modules">
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
+      <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+      <DockPanel Margin="{DynamicResource TitleReserve}">
+        <controls:CardGridEditBar DockPanel.Dock="Right" Target="{Binding #CardsGrid}" VerticalAlignment="Center" Margin="12,0,8,0" />
+        <TextBlock Classes="h1" Margin="0" Text="{DynamicResource X.Title}" />
+      </DockPanel>
+      <controls:ReflowPanel MinItemWidth="260" Spacing="12" Margin="0,4,0,0">
+        <TextBlock Classes="body muted" VerticalAlignment="Center" Text="{DynamicResource X.Status}" />
+        <WrapPanel HorizontalAlignment="Right">
+          <Button x:Name="ImportAssetsButton" Margin="0,0,8,6" Content="{DynamicResource X.ImportAssets}"
+                  Command="{Binding ImportAssetsCommand}" />
+          <Button x:Name="InstallExtensionButton" Margin="0,0,0,6" Content="{DynamicResource X.Install}"
+                  Command="{Binding InstallExtensionCommand}" IsEnabled="{Binding Data.CanInstall}" />
+        </WrapPanel>
+      </controls:ReflowPanel>
+      <!-- 后端没有安装接口时写明停用原因；有接口后隐藏且不占位。 -->
+      <TextBlock Classes="note" HorizontalAlignment="Right" TextWrapping="Wrap" Margin="0,2,0,0"
+                 Text="{DynamicResource X.InstallUnavailable}" IsVisible="{Binding !Data.CanInstall}" />
+    </StackPanel>
+
+    <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <!-- 卡片网格：已安装两列宽、接入位置一列宽，同一行等高；可替换的图像全宽。都随内容。 -->
+      <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
+        <controls:Card x:Name="InstalledPanel" CardId="installed" Title="{DynamicResource X.Installed}" Size="TwoByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="12">
+            <TextBlock Classes="note" Text="{DynamicResource X.Disconnected}" IsVisible="{Binding Disconnected}" />
+            <ItemsControl controls:StableItems.Source="{Binding Cards}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="260" Spacing="10" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="modules:ModuleCard">
+                  <Border Classes="inset" CornerRadius="18" Padding="14,12" Background="{DynamicResource ControlBrush}">
+                    <StackPanel Spacing="6">
+                      <DockPanel>
+                        <controls:IconTile DockPanel.Dock="Left" Margin="0,0,10,0" VerticalAlignment="Center" Slot="{Binding Slot}"
+                                           Fallback="{Binding Glyph}" Accent="{Binding Accent}" />
+                        <Button DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
+                                Content="{Binding ToggleLabel}" IsEnabled="{Binding CanToggle}" IsVisible="{Binding ShowsToggle}"
+                                Command="{Binding $parent[UserControl].((modules:ModulesPageModel)DataContext).IntentCommand}"
+                                CommandParameter="{Binding ToggleIntent}" />
+                        <!-- 核心模块没有停用入口，只写明始终启用。 -->
+                        <TextBlock DockPanel.Dock="Right" Classes="note confirmed" FontWeight="Bold" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   Text="{Binding ToggleLabel}" IsVisible="{Binding IsEssential}" />
+
+                        <StackPanel VerticalAlignment="Center">
+                          <TextBlock Classes="name strong" Text="{Binding Name}" />
+                          <TextBlock Classes="name muted" FontSize="12" Text="{Binding Source}" />
+                        </StackPanel>
+                      </DockPanel>
+                      <TextBlock Classes="body muted" FontSize="13" Text="{Binding Description}" IsVisible="{Binding HasDescription}" />
+                      <TextBlock Classes="body" FontSize="13" Text="{Binding State}" />
+                      <TextBlock Classes="note" Text="{Binding Adds}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </controls:Card>
+
+        <!-- 接入位置与素材的内容在页面显示后的下一个调度帧里建立，不占用切换页面的那一帧；卡片外壳先占位。 -->
+          <controls:Card x:Name="ExtensionPointsPanel" CardId="extension-points" Title="{DynamicResource X.Points}" Size="OneByAuto"
+                         AllowedSizes="HalfByAuto,FullWidth">
+            <controls:DeferredContent PlaceholderHeight="300"><DataTemplate x:DataType="modules:ModulesPageModel">
+            <StackPanel Spacing="8">
+              <ItemsControl controls:StableItems.Source="{Binding ExtensionPoints}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="modules:ExtensionPoint">
+                    <DockPanel Margin="0,0,0,8">
+                      <TextBlock DockPanel.Dock="Left" Classes="name strong" Width="76" Margin="0,0,12,0" Text="{Binding Name}" />
+                      <TextBlock Classes="body muted" Text="{Binding Description}" />
+                    </DockPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            </DataTemplate></controls:DeferredContent>
+          </controls:Card>
+        <!-- 扩展：安装预览、已安装扩展与投放位置里的待安装包；数据与模块状态同一轮读取。 -->
+        <controls:Card x:Name="ExtensionsPanel" CardId="extensions" Title="{DynamicResource X.Extensions}" Size="TwoByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="note" TextWrapping="Wrap" Text="{DynamicResource X.InstallUnavailable}" IsVisible="{Binding ExtensionsUnavailable}" />
+            <TextBlock Classes="note" TextWrapping="Wrap" Text="{DynamicResource X.ExtensionsHint}" IsVisible="{Binding ExtensionsAvailable}" />
+            <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap" Text="{Binding ExtensionMessage}" IsVisible="{Binding HasExtensionMessage}" />
+            <Border Classes="inset" Padding="12,10" IsVisible="{Binding HasPreview}">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="name strong" Text="{DynamicResource X.PreviewTitle}" />
+                <ItemsControl controls:StableItems.Source="{Binding PreviewRows}" />
+                <WrapPanel HorizontalAlignment="Right">
+                  <Button Classes="chip" Margin="0,0,8,0" Content="{DynamicResource X.CancelInstall}" Command="{Binding CancelPreviewCommand}" />
+                  <Button Classes="chip" Content="{DynamicResource X.ConfirmInstall}" Command="{Binding ConfirmInstallCommand}"
+                          IsEnabled="{Binding CanConfirm}" />
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+            <TextBlock Classes="note" Text="{DynamicResource X.NoExtensions}" IsVisible="{Binding NoExtensions}" />
+            <ItemsControl controls:StableItems.Source="{Binding ExtensionRows}" IsVisible="{Binding HasExtensions}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="260" Spacing="10" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="modules:ExtensionRow">
+                  <Border Classes="inset" CornerRadius="18" Padding="14,12" Background="{DynamicResource ControlBrush}">
+                    <StackPanel Spacing="6">
+                      <StackPanel>
+                        <TextBlock Classes="name strong" Text="{Binding Name}" />
+                        <TextBlock Classes="name muted" FontSize="12" Text="{Binding Meta}" />
+                      </StackPanel>
+                      <TextBlock Classes="body muted" FontSize="13" TextWrapping="Wrap" Text="{Binding Description}" IsVisible="{Binding HasDescription}" />
+                      <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap" Text="{Binding State}" />
+                      <TextBlock Classes="note" Text="{Binding Contents}" />
+                      <WrapPanel>
+                        <Button Classes="chip" Margin="0,0,8,0" Content="{Binding ToggleLabel}" IsEnabled="{Binding CanToggle}"
+                                Command="{Binding $parent[UserControl].((modules:ModulesPageModel)DataContext).ToggleExtensionCommand}"
+                                CommandParameter="{Binding Id}" />
+                        <Button Classes="chip" Margin="0,0,8,0" Content="{DynamicResource X.UseAssetPack}" IsVisible="{Binding CanUsePack}"
+                                Command="{Binding $parent[UserControl].((modules:ModulesPageModel)DataContext).UseAssetPackCommand}"
+                                CommandParameter="{Binding Id}" />
+                        <Button Classes="chip" Content="{Binding UninstallLabel}"
+                                Command="{Binding $parent[UserControl].((modules:ModulesPageModel)DataContext).UninstallExtensionCommand}"
+                                CommandParameter="{Binding Id}" />
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <StackPanel Spacing="6" IsVisible="{Binding HasPending}">
+              <TextBlock Classes="name strong" Text="{DynamicResource X.PendingTitle}" />
+              <ItemsControl controls:StableItems.Source="{Binding PendingRows}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="modules:PendingRow">
+                    <DockPanel Margin="0,0,0,6">
+                      <Button DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center" Content="{DynamicResource X.Inspect}"
+                              Command="{Binding $parent[UserControl].((modules:ModulesPageModel)DataContext).InspectPendingCommand}"
+                              CommandParameter="{Binding Name}" />
+                      <TextBlock DockPanel.Dock="Right" Classes="note" VerticalAlignment="Center" Text="{Binding Size}" />
+                      <TextBlock Classes="body" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                    </DockPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <Button HorizontalAlignment="Left" Classes="chip" Content="{DynamicResource X.OpenExtensionsFolder}"
+                    Command="{Binding OpenExtensionsFolderCommand}" IsEnabled="{Binding CanOpenExtensionsFolder}" />
+          </StackPanel>
+        </controls:Card>
+
+          <controls:Card x:Name="AssetSlotsPanel" CardId="asset-slots" Title="{DynamicResource X.Assets}" AllowedSizes="TwoByAuto,HalfByAuto">
+            <controls:DeferredContent PlaceholderHeight="300"><DataTemplate x:DataType="modules:ModulesPageModel">
+            <StackPanel Spacing="10">
+              <ItemsControl controls:StableItems.Source="{Binding AssetSlots}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="120" Spacing="10" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="modules:AssetSlot">
+                    <StackPanel Spacing="4">
+                      <Border Classes="slot">
+                        <TextBlock Classes="name muted" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Text="{Binding Current}" />
+                      </Border>
+                      <TextBlock Classes="name strong" Text="{Binding Name}" />
+                      <TextBlock Classes="note" Text="{Binding Note}" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Classes="note" Text="{DynamicResource X.AssetsHint}" />
+              <Border Classes="inset" Padding="12,10" x:Name="AssetPackBlock">
+                <StackPanel Spacing="6">
+                  <DockPanel>
+                    <Button x:Name="RemoveAssetsButton" DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
+                            Content="{DynamicResource X.RemoveAssets}" Command="{Binding RemoveAssetsCommand}"
+                            IsEnabled="{Binding HasPack}" />
+                    <TextBlock Classes="name strong" VerticalAlignment="Center" Text="{Binding PackStatus}" />
+                  </DockPanel>
+                  <TextBlock Classes="note" Text="{Binding PackPath}" IsVisible="{Binding HasPack}" />
+                  <TextBlock Classes="body" FontSize="13" Text="{Binding PackMessage}" IsVisible="{Binding HasPackMessage}" />
+                  <ItemsControl controls:StableItems.Source="{Binding SkippedEntries}" IsVisible="{Binding HasSkipped}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="sys:String">
+                        <TextBlock Classes="note unconfirmed" Text="{Binding}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBlock Classes="note" Text="{DynamicResource X.AssetsPersist}" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+            </DataTemplate></controls:DeferredContent>
+          </controls:Card>
+      </controls:CardGrid>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

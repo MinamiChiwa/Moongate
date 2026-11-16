@@ -1,0 +1,87 @@
+{
+  "mabisync": {
+    "settings.json": {
+      "endpoint": "ws://127.0.0.1:8766",
+      "publicProvider": "lan",
+      "lanEndpoint": "ws://192.0.2.1:8766",
+      "nickname": "測試者",
+      "countdownMs": 12000,
+      "timingOffsetMs": -25,
+      "musicDurationMs": 12345,
+      "musicTailHoldMs": 1500,
+      "musicStopRule": "first-cycle",
+      "hideFromCapture": true,
+      "overlayOpacity": 0.8,
+      "bindings": {
+        "emote": {
+          "Start": { "type": "chat-draft" },
+          "Stop": { "type": "key", "Key": 32 }
+        },
+        "independent": {
+          "Start": { "type": "key", "Key": 65, "Control": true },
+          "Stop": { "type": "key", "Key": 65, "Control": true }
+        }
+      },
+      "startInputKinds": { "emote": 2, "independent": 0, "ensemble": 0 },
+      "window": { "processId": 9876, "handle": "18446744073709551615" },
+      "restoreToken": "synthetic-expired-token"
+    }
+  },
+  "color-studio": {
+    "settings.json": {
+      "server": "tw",
+      "language": "繁體中文",
+      "search_strategy": "native",
+      "screenshot_default_revision": 1,
+      "overlay_position": [-120, 100],
+      "overlay_alpha": 0.92
+    },
+    "profile.json": {
+      "schema": 1,
+      "search_strategy": "native",
+      "screenshot_default_revision": 1,
+      "priority_order": [2, 0, 1],
+      "regions": [
+        { "enabled": true, "target": "#ff0000", "alt": "#00FF00，#0000FF", "mode": "精准 HEX", "tolerance": 8 },
+        { "enabled": true, "target": "202020", "alt": "", "mode": "相似颜色", "tolerance": 12.5 },
+        { "enabled": false, "target": "#AABBCC", "alt": "", "mode": "精准 HEX", "tolerance": 5 }
+      ]
+    },
+    "presets.json": {
+      "schema": 1,
+      "screenshot_default_revision": 1,
+      "presets": [
+        {
+          "id": "legacy-preset",
+          "name": "晴天",
+          "profile": {
+            "schema": 1,
+            "search_strategy": "screenshot",
+            "priority_order": [0, 2, 1],
+            "regions": [
+              { "enabled": true, "target": "#202020", "alt": "", "mode": "精准 HEX", "tolerance": 8 },
+              { "enabled": false, "target": "#808080", "alt": "", "mode": "相似颜色", "tolerance": 10 },
+              { "enabled": false, "target": "#FFFFFF", "alt": "", "mode": "精准 HEX", "tolerance": 8 }
+            ]
+          }
+        }
+      ]
+    },
+    "history.json": [
+      {
+        "time": "2026-11-08 21:00:00",
+        "outcome": "compromise",
+        "restored": false,
+        "region_count": 3,
+        "regions": [
+          { "region": 1, "color": "#FF0101", "enabled": true, "available": true, "targets": ["#FF0000"], "delta": 2.4 },
+          { "region": 2, "color": "#202020", "enabled": true, "available": true, "targets": ["#202020"], "delta": 0 },
+          { "region": 3, "color": null, "enabled": false, "available": false, "targets": [], "delta": null }
+        ],
+        "maximum": 2.4,
+        "average": 1.2,
+        "best": { "region_count": 3, "regions": [], "maximum": 1.5, "average": 0.75 }
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../../contracts/fixtures/combat-tw-current-identity.v1.json" LogicalName="MabiTool.CurrentCombatIdentity" />
+    <Compile Include="../../Providers/MabiTool.Updates.Tests/SignedReleaseFixture.cs" Link="Fixtures/SignedReleaseFixture.cs" />
+    <Compile Include="../../Providers/MabiTool.Updates.Tests/UpdateTestWorkspace.cs" Link="Fixtures/UpdateTestWorkspace.cs" />
+    <Compile Include="../../EndToEnd/ObservationProbe/CoexistenceInventoryFixture.cs" Link="Fixtures/CoexistenceInventoryFixture.cs" />
+    <Compile Include="../../../src/PortableLauncher/LaunchPlan.cs" Link="Fixtures/PortableLauncherPlan.cs" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <ProjectReference Include="../../../src/Host/MabiTool.Host.csproj" />
+    <ProjectReference Include="../../../scripts/build/ReleaseBuilder/MabiTool.ReleaseBuilder.csproj" />
+    <ProjectReference Include="../../../workers/game-observation/MabiTool.Observation.Worker.csproj" />
+    <ProjectReference Include="../../EndToEnd/PersistenceProbe/MabiTool.PersistenceProbe.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../EndToEnd/ObservationProbe/MabiTool.ObservationProbe.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../EndToEnd/InventoryObservationProbe/MabiTool.InventoryObservationProbe.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <Import Project="../../../scripts/build/contract-generation.targets" />
+</Project>

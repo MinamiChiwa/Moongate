@@ -1,0 +1,300 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:overlay="using:MabiTool.Desktop.Overlay"
+             xmlns:combat="using:MabiTool.Desktop.Pages.Combat"
+             xmlns:color="using:MabiTool.Desktop.Pages.Dyeing"
+             xmlns:infra="using:MabiTool.Desktop.Infrastructure"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Overlay.OverlayWidgetView"
+             x:DataType="overlay:OverlayWidgetModel"
+             Foreground="White" FontSize="13">
+  <!--
+    元件内容随外框尺寸重新排版：名称在自己的宽度内截断，列表放不下时在元件内滚动，元件越大显示越多。
+    外框的宽高由画布按版面里的尺寸给出，这里不写固定宽度。
+  -->
+  <UserControl.Resources>
+    <!-- 效果条目：与 DPS 页同一自绘控件，素材包有该效果的图片时盖在色标位置。 -->
+    <DataTemplate x:Key="EffectIcon" DataType="combat:EffectRow">
+      <!-- 紧凑的效果行：与 DPS 页同一自绘条目（色标、星标、名称、层数、剩余与倒计时进度）。 -->
+      <Panel Margin="0,0,0,1">
+        <combat:EffectLine Row="{Binding}" Compact="True" Overlay="True" />
+        <controls:PackImage Kind="Effect" Key="{Binding EffectId}" Radius="3" Width="12" Height="12" Margin="4,0,0,0"
+                            HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False" />
+      </Panel>
+    </DataTemplate>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="TextBlock.dim">
+      <Setter Property="Foreground" Value="{DynamicResource OverlayMutedBrush}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.state.ready">
+      <Setter Property="Foreground" Value="{DynamicResource OverlayReadyBrush}" />
+    </Style>
+    <Style Selector="TextBlock.state.waiting">
+      <Setter Property="Foreground" Value="{DynamicResource OverlayWaitingBrush}" />
+    </Style>
+    <Style Selector="TextBlock.state.muted">
+      <Setter Property="Foreground" Value="{DynamicResource OverlayMutedBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+    <!-- 依赖的展示主题缺失：编辑页标“台服暂不支持”，其他原因显示“暂不可用：原因码”；游戏浮窗里台服不支持时整个元件不显示。 -->
+    <!-- 说明较长而元件较小时在元件内滚动。 -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasNotice}">
+      <StackPanel Spacing="2">
+        <TextBlock x:Name="NoticeTitle" FontWeight="Bold" TextTrimming="CharacterEllipsis" Text="{Binding NoticeTitle}"
+                   IsVisible="{Binding ShowNoticeTitle}" />
+        <TextBlock x:Name="NoticeText" Classes="dim" TextWrapping="Wrap" Text="{Binding NoticeText}" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel Spacing="4" IsVisible="{Binding IsNowPlaying}">
+      <TextBlock FontSize="12" FontWeight="Bold" Foreground="{DynamicResource OverlayAccentBrush}" Text="{DynamicResource O.NowPlaying}" />
+      <TextBlock FontSize="18" FontWeight="Black" TextTrimming="CharacterEllipsis" Text="{Binding NowPlayingTitle}" />
+      <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding NowPlayingNote}" />
+    </StackPanel>
+
+    <DockPanel IsVisible="{Binding IsNearby}" VerticalAlignment="Center">
+      <TextBlock DockPanel.Dock="Left" Classes="dim" Margin="0,0,8,0" VerticalAlignment="Center" Text="{DynamicResource O.Next}" />
+      <TextBlock FontSize="15" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding UpcomingTitle}" />
+    </DockPanel>
+
+    <!--
+      合奏信息浮窗：标题行（房间码与连接状态）、阶段、倒计时进度、总指挥乐谱与播放进度、按组分块的成员（放不下时在元件内滚动）、
+      按钮行（“开始”固定在左列、“就绪”固定在右列，两列同宽，按较长的文字定宽）。
+    -->
+    <Grid x:Name="RoomInfo" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Grid.IsSharedSizeScope="True" IsVisible="{Binding IsReadiness}">
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="0,0,0,4">
+        <TextBlock x:Name="RoomTitleText" FontSize="15" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                   Text="{Binding RoomTitle}" />
+        <TextBlock x:Name="RoomConnectionText" Grid.Column="1" Classes="state" FontSize="12" FontWeight="Bold" Margin="10,0,0,0"
+                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding RoomConnection}"
+                   Classes.ready="{Binding RoomConnected}" Classes.waiting="{Binding RoomDisconnected}" />
+      </Grid>
+      <TextBlock x:Name="RoomPhaseText" Grid.Row="1" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,2" TextWrapping="Wrap" MaxLines="2"
+                 TextTrimming="CharacterEllipsis" Text="{Binding RoomStatus.Phase}" IsVisible="{Binding InRoom}" />
+      <!-- 倒计时进度（与合奏页状态卡相同）：距离同步开始为强调色，距离统一停止为就绪绿；没有时间基准时只有“正在校时”。 -->
+      <StackPanel x:Name="RoomCountdownPanel" Grid.Row="2" Margin="0,0,0,2" Spacing="2" IsVisible="{Binding HasRoomCountdown}">
+        <DockPanel>
+          <TextBlock x:Name="RoomCountdownValue" DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding RoomCountdownValue}" />
+          <TextBlock x:Name="RoomCountdownLabel" Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding RoomCountdownLabel}" />
+        </DockPanel>
+        <Panel>
+          <controls:MeterBar Value="{Binding RoomCountdownFraction}" Fill="{DynamicResource OverlayAccentBrush}" Track="#40FFFFFF"
+                             IsVisible="{Binding RoomCountdownStarting}" />
+          <controls:MeterBar Value="{Binding RoomCountdownFraction}" Fill="{DynamicResource OverlayReadyBrush}" Track="#40FFFFFF"
+                             IsVisible="{Binding RoomCountdownStopping}" />
+        </Panel>
+      </StackPanel>
+      <StackPanel Grid.Row="3" Margin="0,0,0,2" Spacing="2">
+        <TextBlock Classes="dim" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                   Text="{Binding RoomStatus.ScoreCard}" IsVisible="{Binding HasRoomScore}" />
+        <!-- 总指挥乐谱的估计播放进度，按本机单调时钟换算。 -->
+        <StackPanel x:Name="RoomScoreProgress" Spacing="2" IsVisible="{Binding HasRoomScoreProgress}">
+          <controls:MeterBar Value="{Binding RoomScoreFraction}" Fill="#FF9C7F" Track="#40FFFFFF" IsVisible="{Binding HasRoomScoreFraction}" />
+          <TextBlock x:Name="RoomScoreProgressText" Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding RoomScoreProgressText}" />
+        </StackPanel>
+      </StackPanel>
+      <ScrollViewer x:Name="RoomMemberScroller" Grid.Row="4" Margin="0,4,0,0" VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl x:Name="RoomGroupList" controls:StableItems.Source="{Binding RoomGroups}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="overlay:ReadinessGroup">
+              <StackPanel Margin="0,0,0,6">
+                <TextBlock Classes="dim" FontWeight="Bold" Foreground="{DynamicResource OverlayAccentBrush}" Margin="0,0,0,2"
+                           TextTrimming="CharacterEllipsis" Text="{Binding Title}" />
+                <ItemsControl controls:StableItems.Source="{Binding Members}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="overlay:ReadinessMember">
+                      <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,1">
+                        <TextBlock Classes="dim" MinWidth="18" VerticalAlignment="Center" Text="{Binding Order}" IsVisible="{Binding HasOrder}" />
+                        <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                          <Run FontWeight="SemiBold" Text="{Binding Nickname}" />
+                          <Run FontSize="12" Foreground="{DynamicResource OverlayMutedBrush}" Text="{Binding Detail}" />
+                          <Run FontSize="12" FontWeight="Bold" Foreground="{DynamicResource OverlayAccentBrush}" Text="{Binding ConductorMark}" />
+                        </TextBlock>
+                        <TextBlock Grid.Column="2" Classes="state" FontSize="12" FontWeight="Bold" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   TextAlignment="Right" Text="{Binding State}"
+                                   Classes.ready="{Binding IsReady}" Classes.waiting="{Binding IsWaiting}" Classes.muted="{Binding IsMuted}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+      <!-- 按钮行带 overlayactions：元件上锁（鼠标穿透）时整行隐藏，见 OverlayCanvas。 -->
+      <Panel Grid.Row="5" Classes="overlayactions">
+        <Grid Margin="0,6,0,0" IsVisible="{Binding InRoom}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" SharedSizeGroup="RoomButton" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" SharedSizeGroup="RoomButton" />
+          </Grid.ColumnDefinitions>
+          <Button x:Name="OverlayStartButton" Classes="overlaybutton start" HorizontalAlignment="Stretch"
+                  Content="{DynamicResource R.Start}" Command="{Binding IntentCommand}" CommandParameter="rooms.start"
+                  IsVisible="{Binding ShowRoomStart}" IsEnabled="{Binding RoomStatus.CanStart}" />
+          <Button x:Name="OverlayStopButton" Classes="overlaybutton stop" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  Content="{DynamicResource R.OverlayStop}" Command="{Binding IntentCommand}" CommandParameter="{Binding RoomStopIntent}"
+                  IsVisible="{Binding ShowRoomStop}" IsEnabled="{Binding CanRoomStop}" />
+          <Button x:Name="OverlayReadyButton" Grid.Column="2" Classes="overlaybutton" HorizontalAlignment="Stretch"
+                  Classes.stop="{Binding RoomReadyOff}" Classes.ready="{Binding RoomReadyOn}"
+                  Command="{Binding IntentCommand}" CommandParameter="{Binding RoomReadyIntent}"
+                  IsVisible="{Binding ShowRoomReady}" IsEnabled="{Binding RoomStatus.CanReady}">
+            <Panel>
+              <TextBlock HorizontalAlignment="Center" Text="{DynamicResource R.Ready}" Opacity="{Binding ReadyOffOpacity}" />
+              <TextBlock HorizontalAlignment="Center" Text="{DynamicResource R.ReadyOn}" Opacity="{Binding ReadyOnOpacity}" />
+            </Panel>
+          </Button>
+          <Button x:Name="OverlayLocalStopButton" Grid.Column="2" Classes="overlaybutton stop" HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Center" Command="{Binding IntentCommand}" CommandParameter="rooms.local-stop"
+                  IsVisible="{Binding ShowRoomLocalStop}" IsEnabled="{Binding RoomStatus.CanLocalStop}">
+            <TextBlock Text="{Binding RoomLocalStopLabel}" />
+          </Button>
+        </Grid>
+      </Panel>
+    </Grid>
+
+    <DockPanel IsVisible="{Binding IsColor}">
+      <TextBlock DockPanel.Dock="Top" FontWeight="Bold" Margin="0,0,0,4" TextTrimming="CharacterEllipsis" Text="{Binding Color.Status}" />
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl controls:StableItems.Source="{Binding Color.OverlayRows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="color:ColorOverlayRow">
+              <DockPanel Margin="0,0,0,4">
+                <controls:SegmentBar DockPanel.Dock="Left" Width="44" Height="22" Radius="6" Gap="0" Margin="0,0,8,0"
+                                     Segments="{Binding Swatch}" Outline="#55FFFFFF" />
+                <TextBlock Classes="dim" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Text}" />
+              </DockPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </DockPanel>
+
+    <!-- 每秒伤害：主要 DPS 大字，下方是其余指标，元件越高显示越多。 -->
+    <DockPanel IsVisible="{Binding IsDps}">
+      <!-- 标题行：左“DPS”，右为战斗状态（与 DPS 页状态标签同一来源），同占一行，元件最小时不另占高度。 -->
+      <DockPanel DockPanel.Dock="Top">
+        <TextBlock DockPanel.Dock="Right" Classes="dim" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" Text="{Binding CombatState}" />
+        <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{DynamicResource O.Dps}" />
+      </DockPanel>
+      <TextBlock DockPanel.Dock="Top" FontSize="34" FontWeight="Black" TextTrimming="CharacterEllipsis" Text="{Binding PrimaryDps}" />
+      <ScrollViewer VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl controls:StableItems.Source="{Binding OtherKpis}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="combat:KpiTile">
+              <DockPanel Margin="0,0,0,2">
+                <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding Value}" />
+                <TextBlock Classes="dim" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Label}" />
+              </DockPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </DockPanel>
+
+    <!-- 定时测量：空闲（设定与最近结果、开始）、等待首次伤害（设定时长、取消）、计时（剩余与进度、伤害与 DPS、取消）。 -->
+    <DockPanel x:Name="MeasurementWidget" IsVisible="{Binding IsMeasurement}">
+      <TextBlock DockPanel.Dock="Top" Classes="dim" TextTrimming="CharacterEllipsis" Text="{DynamicResource C.ScopeMeasurement}" />
+      <Grid DockPanel.Dock="Bottom" Margin="0,6,0,0" Classes="overlayactions">
+        <Button x:Name="MeasureStartButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="{DynamicResource C.StartTimer}"
+                Command="{Binding IntentCommand}" CommandParameter="combat.measure.start" IsEnabled="{Binding CanStartMeasure}" IsVisible="{Binding MeasureIdle}" />
+        <Button x:Name="MeasureCancelButton" Classes="stop" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="{DynamicResource C.Cancel}"
+                Command="{Binding IntentCommand}" CommandParameter="combat.measure.cancel" IsVisible="{Binding !MeasureIdle}" />
+      </Grid>
+      <ScrollViewer VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel>
+          <StackPanel IsVisible="{Binding MeasureIdle}">
+            <TextBlock FontWeight="Bold" TextTrimming="CharacterEllipsis" Text="{Binding MeasureSettings}" />
+            <TextBlock Classes="dim" TextWrapping="Wrap" Text="{Binding MeasureHint}" IsVisible="{Binding HasMeasureHint}" />
+            <StackPanel Margin="0,4,0,0" IsVisible="{Binding HasMeasureResult}">
+              <TextBlock FontSize="26" FontWeight="Black" TextTrimming="CharacterEllipsis">
+                <Run Text="DPS " FontSize="13" /><Run Text="{Binding MeasureResult.Dps, FallbackValue=''}" />
+              </TextBlock>
+              <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding MeasureResultLine}" />
+              <TextBlock Foreground="{DynamicResource OverlayAccentBrush}" TextWrapping="Wrap"
+                         Text="{Binding MeasureResult.Incomplete, FallbackValue=''}" IsVisible="{Binding MeasureResultIncomplete}" />
+            </StackPanel>
+          </StackPanel>
+          <StackPanel IsVisible="{Binding MeasureWaiting}">
+            <TextBlock FontSize="30" FontWeight="Black" Text="{Binding MeasureDuration}" />
+            <TextBlock x:Name="MeasureWaitingText" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource OverlayAccentBrush}"
+                       TextWrapping="Wrap" Text="{DynamicResource C.WaitFirstHit}" />
+          </StackPanel>
+          <StackPanel IsVisible="{Binding MeasureRunning}" Spacing="2">
+            <TextBlock FontSize="30" FontWeight="Black" Text="{Binding MeasureRunningText}" />
+            <controls:MeterBar Value="{Binding MeasureProgress}" Fill="{DynamicResource OverlayAccentBrush}" Track="{DynamicResource OverlayMutedBrush}" />
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding MeasureDps}" />
+              <TextBlock Classes="dim" Text="DPS" />
+            </DockPanel>
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding MeasureDamage}" />
+              <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{DynamicResource C.BreakDamage}" />
+            </DockPanel>
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </DockPanel>
+
+    <DockPanel IsVisible="{Binding IsSkills}">
+      <TextBlock DockPanel.Dock="Top" Classes="dim" Margin="0,0,0,4" TextTrimming="CharacterEllipsis" Text="{DynamicResource O.Skills}" />
+      <TextBlock DockPanel.Dock="Top" Classes="dim" Text="{DynamicResource C.Empty}" IsVisible="{Binding NoSkills}" />
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl controls:StableItems.Source="{Binding TopSkills}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="combat:DamageRow">
+              <DockPanel Margin="0,0,0,4">
+                <TextBlock DockPanel.Dock="Right" Classes="dim" Margin="8,0,0,0" Text="{Binding Share}" />
+                <TextBlock TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+              </DockPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </DockPanel>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding IsCoverage}">
+      <ItemsControl controls:StableItems.Source="{Binding Combat.Coverage}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="combat:CoverageTile">
+            <StackPanel Margin="0,0,0,5" Spacing="2">
+              <DockPanel>
+                <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding Percent}" />
+                <TextBlock TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+              </DockPanel>
+              <controls:MeterBar Value="{Binding Ratio}" Fill="#FF9C7F" Track="#40FFFFFF" />
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+    <!-- 效果列：跟随 DPS 页对应卡片的“只显示收藏”，单列紧凑行，收藏在前；放不下时末行标“+N”（上锁时不能滚动，收藏总是可见）。 -->
+    <DockPanel IsVisible="{Binding IsSelfEffects}">
+      <TextBlock DockPanel.Dock="Top" Classes="dim" TextWrapping="Wrap" Text="{DynamicResource O.FavoriteEffectsHint}" IsVisible="{Binding SelfFavoriteHint}" />
+      <TextBlock DockPanel.Dock="Top" Classes="dim" Text="{DynamicResource O.NoEffects}" IsVisible="{Binding NoSelfEffectsShown}" />
+      <ItemsControl Classes="self" controls:StableItems.Source="{Binding SelfEffects}" ItemTemplate="{StaticResource EffectIcon}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><combat:EffectOverflowPanel /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+      </ItemsControl>
+    </DockPanel>
+
+    <DockPanel IsVisible="{Binding IsTargetEffects}">
+      <TextBlock DockPanel.Dock="Top" FontWeight="Bold" Margin="0,0,0,6" TextTrimming="CharacterEllipsis" Text="{Binding TargetName}" />
+      <TextBlock DockPanel.Dock="Top" Classes="dim" TextWrapping="Wrap" Text="{DynamicResource O.FavoriteEffectsHint}" IsVisible="{Binding TargetFavoriteHint}" />
+      <TextBlock DockPanel.Dock="Top" Classes="dim" Text="{DynamicResource O.NoEffects}" IsVisible="{Binding NoTargetEffectsShown}" />
+      <ItemsControl Classes="target" controls:StableItems.Source="{Binding TargetEffects}" ItemTemplate="{StaticResource EffectIcon}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><combat:EffectOverflowPanel /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+      </ItemsControl>
+    </DockPanel>
+  </Panel>
+</UserControl>

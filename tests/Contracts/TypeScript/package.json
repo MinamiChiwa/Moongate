@@ -1,0 +1,15 @@
+{
+  "name": "mabitool-contract-verification",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json",
+    "compile": "tsc ../../../artifacts/generated/sdk/typescript/client.ts --target es2022 --module commonjs --strict --outDir ../../../artifacts/generated/sdk/typescript/compiled",
+    "test": "npm run typecheck && npm run compile && node --test contracts.test.mjs inventory.test.mjs combat-detail.test.mjs game-control.test.mjs"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "typescript": "5.9.3"
+  }
+}

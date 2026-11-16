@@ -1,0 +1,9 @@
+{
+  "settings.json": {"gap_sec": 4.5, "advance_margin": 3, "default_inst": "鋼琴 ", "auto_sync": false, "stop_before_play": true, "ensemble": true, "ov_perf": true, "ov_scale": 125, "update_url": "https://legacy.invalid/latest.json", "cli_exe": "old-cli.exe"},
+  "scores.json": {"fetched_at": 1794096000, "items": [{"Name": "夕陽"}, {"DisplayName": "夕陽"}, {"Title": "旅程"}]},
+  "instruments.json": {"fetched_at": 1794096000, "items": [{"Name": "鋼琴 ", "IsEquipped": true, "Durability": 80}, {"Name": "未知樂器"}]},
+  "artists.json": {"artists": [{"id": "artist-old", "name": "IU", "aliases": ["I.U."]}], "assign": {"夕陽": "artist-old"}, "noise": ["自訂詞"]},
+  "playlists.json": {"folders": [{"id": "folder-old", "name": "收藏", "parent": null}, {"id": "folder-child", "name": "子目錄", "parent": "folder-old"}], "playlists": [{"id": "list-old", "name": "晚間", "folder": "folder-child", "memo": "第一行\n第二行", "items": [{"key": "夕陽#1", "title": "夕陽", "inst": "피아노"}, {"key": "夕陽#2", "title": "夕陽", "inst": "小提琴"}, "夕陽", {"key": "缺失曲目", "title": "缺失曲目", "inst": "未知樂器"}]}]},
+  "recent.json": [{"key": "夕陽#1", "title": "夕陽", "inst": "鋼琴", "ts": 1794096000}, {"title": "夕陽", "inst": "", "ts": 1794095000}],
+  "durations.json": {"夕陽": 31.25, "缺失曲目": 10}
+}

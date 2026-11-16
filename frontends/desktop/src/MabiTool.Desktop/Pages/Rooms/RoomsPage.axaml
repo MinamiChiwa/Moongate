@@ -1,0 +1,603 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rooms="using:MabiTool.Desktop.Pages.Rooms"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             xmlns:tables="using:MabiTool.Desktop.Controls.Tables"
+             xmlns:sys="using:System"
+             xmlns:shell="using:MabiTool.Desktop.Shell"
+             x:Class="MabiTool.Desktop.Pages.Rooms.RoomsPage"
+             x:DataType="rooms:RoomsPageModel"
+             controls:Card.PageId="rooms">
+  <UserControl.Resources>
+    <!-- 分段开关里的一个选项；命令由使用处给出。 -->
+    <DataTemplate x:Key="ModeOption" DataType="rooms:RoomChoice">
+      <Button Classes="segment" Classes.active="{Binding Selected}" Content="{Binding Label}" CommandParameter="{Binding Value}"
+              Command="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).ModeCommand}"
+              IsEnabled="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).Status.CanChangeMode}" />
+    </DataTemplate>
+    <DataTemplate x:Key="ProviderOption" DataType="rooms:RoomChoice">
+      <Button Classes="segment" Classes.active="{Binding Selected}" Content="{Binding Label}" CommandParameter="{Binding Value}"
+              Command="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).ProviderCommand}"
+              IsEnabled="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).CanEditConnection}" />
+    </DataTemplate>
+    <DataTemplate x:Key="StartKindOption" DataType="rooms:RoomChoice">
+      <Button Classes="segment" Classes.active="{Binding Selected}" Content="{Binding Label}" CommandParameter="{Binding Value}"
+              Command="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).StartKindCommand}"
+              IsEnabled="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).CanEditLocal}" />
+    </DataTemplate>
+    <DataTemplate x:Key="StopKindOption" DataType="rooms:RoomChoice">
+      <Button Classes="segment" Classes.active="{Binding Selected}" Content="{Binding Label}" CommandParameter="{Binding Value}"
+              Command="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).StopKindCommand}"
+              IsEnabled="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).CanEditLocal}" />
+    </DataTemplate>
+    <DataTemplate x:Key="StopRuleOption" DataType="rooms:RoomChoice">
+      <Button Classes="segment" Classes.active="{Binding Selected}" Content="{Binding Label}" CommandParameter="{Binding Value}"
+              Command="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).StopRuleCommand}"
+              IsEnabled="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).Status.CanEditHostSettings}" />
+    </DataTemplate>
+    <DataTemplate x:Key="ServerModeOption" DataType="rooms:RoomChoice">
+      <Button Classes="segment" Classes.active="{Binding Selected}" Content="{Binding Label}" CommandParameter="{Binding Value}"
+              Command="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).ServerModeCommand}" />
+    </DataTemplate>
+    <ItemsPanelTemplate x:Key="Row"><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+    <ItemsPanelTemplate x:Key="Wrap"><WrapPanel /></ItemsPanelTemplate>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Button.segment.active">
+      <Setter Property="Background" Value="{StaticResource RoomsBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.segment:disabled">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,10,0" />
+    </Style>
+    <Style Selector="Border.state">
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="6,3" />
+      <Setter Property="Margin" Value="4,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource InsetBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+    <DockPanel>
+      <!-- 标题区：身份摘要与本轮模式（原工具窗口顶部的 RoleSummary 与“本轮模式”卡）。 -->
+      <StackPanel DockPanel.Dock="Top" Margin="8,4,8,12">
+        <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+        <DockPanel Margin="{DynamicResource TitleReserve}">
+          <controls:CardGridEditBar DockPanel.Dock="Right" Target="{Binding #CardsGrid}" VerticalAlignment="Center" Margin="12,0,8,0" />
+          <TextBlock Classes="h1" Margin="0" Text="{DynamicResource R.Title}" />
+        </DockPanel>
+        <controls:ReflowPanel MinItemWidth="260" Spacing="12" Margin="0,4,0,0">
+          <TextBlock x:Name="RoleSummary" Classes="body" FontWeight="Bold" VerticalAlignment="Center" Text="{Binding Status.RoleSummary}" />
+          <controls:SelectionBorder x:Name="ModeSwitch" Classes="segmented" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    ToolTip.Tip="{Binding FlowHint}">
+            <ItemsControl controls:StableItems.Source="{Binding Modes}" ItemTemplate="{StaticResource ModeOption}" ItemsPanel="{StaticResource Row}" />
+          </controls:SelectionBorder>
+        </controls:ReflowPanel>
+      </StackPanel>
+
+      <!-- 底部状态卡（原工具 StatusCard）：反馈、阶段与下一步、本轮设置、时间微调和操作按钮。折叠后操作行仍可用。 -->
+      <Border x:Name="StatusCard" DockPanel.Dock="Bottom" Classes="panel" Padding="14,12" Margin="0,12,0,0">
+        <DockPanel>
+          <DockPanel DockPanel.Dock="Top">
+            <!-- 状态卡自己排版（收起后操作行仍在），折叠按钮与状态存取同卡片外壳（CardToggle、CardStateStore）。 -->
+            <controls:CardToggle x:Name="StatusToggle" DockPanel.Dock="Right" Classes="sectionhead" VerticalAlignment="Top" Width="40" MinHeight="32"
+                                IsChecked="{Binding StatusExpanded, Mode=TwoWay}"
+                                ToolTip.Tip="{DynamicResource R.Toggle}" AutomationProperties.Name="{DynamicResource R.StatusCard}">
+              <Panel Width="10" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Path Data="M0,0 L5,4 L0,8 Z" Fill="{DynamicResource MutedBrush}" IsVisible="{Binding !StatusExpanded}" />
+                <Path Data="M0,1 L8,1 L4,6 Z" Fill="{DynamicResource MutedBrush}" IsVisible="{Binding StatusExpanded}" />
+              </Panel>
+            </controls:CardToggle>
+            <StackPanel>
+              <TextBlock x:Name="PhaseText" Classes="body" FontSize="22" FontWeight="Black" Text="{Binding Status.Phase}"
+                         Classes.confirmed="{Binding PhaseSuccess}" Classes.error="{Binding PhaseError}" />
+              <TextBlock x:Name="NextStepText" Classes="note" Margin="0,2,0,0" Text="{Binding Status.NextStep}" />
+              <!-- 倒计时进度（原工具 CountdownPanel）：距离同步开始为蓝色，距离统一停止为绿色。 -->
+              <DockPanel x:Name="CountdownPanel" Margin="0,6,0,0" IsVisible="{Binding HasCountdown}">
+                <TextBlock x:Name="CountdownLabel" DockPanel.Dock="Left" Classes="label" Text="{Binding CountdownLabel}" />
+                <TextBlock x:Name="CountdownValue" DockPanel.Dock="Right" Classes="body strong" Margin="10,0,0,0" VerticalAlignment="Center"
+                           Text="{Binding CountdownValue}" />
+                <Panel VerticalAlignment="Center">
+                  <controls:MeterBar Value="{Binding CountdownFraction}" Fill="{DynamicResource OverlayBrush}" Track="{DynamicResource TrackBrush}"
+                                     IsVisible="{Binding CountdownStarting}" />
+                  <controls:MeterBar Value="{Binding CountdownFraction}" Fill="{DynamicResource ConfirmedBrush}" Track="{DynamicResource TrackBrush}"
+                                     IsVisible="{Binding CountdownStopping}" />
+                </Panel>
+              </DockPanel>
+              <TextBlock Classes="note" Margin="0,2,0,0" Text="{Binding OffsetSummary}" IsVisible="{Binding !StatusExpanded}" />
+            </StackPanel>
+          </DockPanel>
+          <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" Spacing="4">
+            <WrapPanel x:Name="StatusActions">
+              <StackPanel Orientation="Horizontal" Margin="0,0,10,6" IsVisible="{Binding ShowCountdown}">
+                <TextBlock Classes="label" Text="{DynamicResource R.Countdown}" />
+                <TextBox x:Name="CountdownBox" Classes="field" Width="76" MinHeight="36" Text="{Binding CountdownText}"
+                         IsEnabled="{Binding Status.CanEditHostSettings}" AutomationProperties.Name="{DynamicResource R.Countdown}" />
+                <TextBlock Classes="label" Margin="6,0,0,0" Text="{DynamicResource R.Seconds}" />
+              </StackPanel>
+              <Button x:Name="ReadyButton" Margin="0,0,8,6" MinWidth="120" MinHeight="40" Command="{Binding ReadyCommand}"
+                      IsVisible="{Binding Status.ShowReady}" IsEnabled="{Binding Status.CanReady}"
+                      Classes.stop="{Binding !Status.ReadyOn}" Classes.ready="{Binding Status.ReadyOn}">
+                <Panel>
+                  <TextBlock Text="{DynamicResource R.Ready}" IsVisible="{Binding !Status.ReadyOn}" />
+                  <TextBlock Text="{DynamicResource R.ReadyOn}" IsVisible="{Binding Status.ReadyOn}" />
+                </Panel>
+              </Button>
+              <Button x:Name="StartButton" Classes="primary" Margin="0,0,8,6" MinWidth="96" MinHeight="40" Content="{DynamicResource R.Start}"
+                      Command="{Binding StartCommand}" IsVisible="{Binding Status.ShowStart}" IsEnabled="{Binding Status.CanStart}" />
+              <Button x:Name="CancelButton" Margin="0,0,8,6" MinHeight="40" Content="{DynamicResource R.Cancel}" Command="{Binding IntentCommand}"
+                      CommandParameter="rooms.cancel" IsVisible="{Binding Status.ShowCancel}" IsEnabled="{Binding Status.CanCancel}" />
+              <Button x:Name="LocalStopButton" Margin="0,0,8,6" MinHeight="40" Command="{Binding IntentCommand}" CommandParameter="rooms.local-stop"
+                      IsVisible="{Binding Status.ShowLocalStop}" IsEnabled="{Binding Status.CanLocalStop}" ToolTip.Tip="{Binding InputState}">
+                <TextBlock Text="{Binding Status.LocalStopLabel}" />
+              </Button>
+              <Button x:Name="StopAllButton" Classes="stop" Margin="0,0,8,6" MinHeight="40" Content="{DynamicResource R.StopAll}"
+                      Command="{Binding IntentCommand}" CommandParameter="rooms.stop-all"
+                      IsVisible="{Binding Status.ShowStopAll}" IsEnabled="{Binding Status.CanStopAll}" />
+              <Button x:Name="ReportButton" Margin="0,0,8,6" MinHeight="40" Content="{DynamicResource R.ReportLeader}"
+                      Command="{Binding IntentCommand}" CommandParameter="rooms.interrupt"
+                      IsVisible="{Binding Status.ShowReport}" IsEnabled="{Binding Status.CanReport}" />
+              <Button x:Name="ContinueButton" Margin="0,0,8,6" MinHeight="40" Command="{Binding IntentCommand}" CommandParameter="rooms.continue"
+                      IsVisible="{Binding Status.ShowContinue}" IsEnabled="{Binding Status.CanContinue}">
+                <TextBlock Text="{Binding Status.ContinueLabel}" />
+              </Button>
+            </WrapPanel>
+            <TextBlock x:Name="StartHintText" Classes="note unconfirmed" Text="{Binding StartHint}" IsVisible="{Binding HasStartHint}" />
+          </StackPanel>
+          <ScrollViewer x:Name="StatusDetails" MaxHeight="150" Margin="0,6,0,0"
+                        VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" controls:EdgeFade.IsEnabled="True">
+            <StackPanel Spacing="8">
+              <Border x:Name="ExitNotice" Classes="banner" IsVisible="{Binding HasExitNotice}">
+                <StackPanel>
+                  <TextBlock Classes="body" FontSize="13" Text="{DynamicResource R.ExitKicked}" IsVisible="{Binding RemovedByHost}" />
+                  <TextBlock Classes="body" FontSize="13" Text="{DynamicResource R.ExitRoomClosed}" IsVisible="{Binding ClosedByHost}" />
+                </StackPanel>
+              </Border>
+              <Border x:Name="FeedbackBanner" Classes="banner" IsVisible="{Binding HasFeedback}"
+                      Classes.success="{Binding FeedbackSuccess}" Classes.error="{Binding FeedbackError}" Classes.warning="{Binding FeedbackWarning}">
+                <TextBlock x:Name="FeedbackText" Classes="body" FontSize="13" Text="{Binding FeedbackText}"
+                           Classes.confirmed="{Binding FeedbackSuccess}" Classes.error="{Binding FeedbackError}" Classes.unconfirmed="{Binding FeedbackWarning}" />
+              </Border>
+              <!-- 输入说明行预留固定位置：失焦提交出错时不插入新行、不把下方按钮挤开（点击丢失）。 -->
+              <TextBlock x:Name="CountdownErrorText" Classes="note error" Text="{Binding CountdownError}" IsVisible="{Binding ShowCountdown}" />
+              <TextBlock x:Name="CapabilityNotice" Classes="note" Text="{Binding CapabilityNotice}" IsVisible="{Binding HasCapabilityNotice}" />
+              <controls:ExpandPanel IsExpanded="{Binding StatusExpanded, Mode=OneWay}">
+              <StackPanel x:Name="StatusExtra" Spacing="8">
+              <TextBlock Classes="note" Text="{Binding CountdownNote}" IsVisible="{Binding HasCountdownNote}" />
+              <TextBlock x:Name="MusicStatusText" Classes="body" FontSize="13" Text="{Binding Status.MusicStatus}"
+                         IsVisible="{Binding Status.MusicStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <Border x:Name="ScoreCard" Classes="inset" Padding="12,7"
+                      IsVisible="{Binding Status.ScoreCard, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="body" FontSize="13" Text="{Binding Status.ScoreCard}" />
+                  <!-- 乐谱播放进度：开始后经过的时间按本机单调时钟估计。 -->
+                  <StackPanel x:Name="ScoreProgress" Spacing="4" IsVisible="{Binding HasScoreProgress}">
+                    <controls:MeterBar Value="{Binding ScoreFraction}" Fill="{DynamicResource RoomsBrush}" Track="{DynamicResource TrackBrush}"
+                                       IsVisible="{Binding HasScoreFraction}" />
+                    <TextBlock x:Name="ScoreProgressText" Classes="note" Text="{Binding ScoreProgressText}" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+              <!-- 停止方式：合奏且（未入房或房主）可设置；成员只看到尾音保留的本轮值。 -->
+              <StackPanel x:Name="StopControls" Spacing="6" IsVisible="{Binding ShowStopControls}">
+                <WrapPanel>
+                  <TextBlock Classes="label" Margin="0,0,10,6" Text="{DynamicResource R.StopRule}" ToolTip.Tip="{Binding LeaderPurpose}" />
+                  <controls:SelectionBorder Classes="segmented" Margin="0,0,10,6">
+                    <ItemsControl controls:StableItems.Source="{Binding StopRules}" ItemTemplate="{StaticResource StopRuleOption}" ItemsPanel="{StaticResource Wrap}" />
+                  </controls:SelectionBorder>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,6" IsVisible="{Binding ShowDuration}">
+                    <TextBlock Classes="label" Text="{DynamicResource R.Duration}" />
+                    <TextBox x:Name="DurationBox" Classes="field" Width="90" MinHeight="36" Text="{Binding DurationText}"
+                             IsEnabled="{Binding Status.CanEditHostSettings}" AutomationProperties.Name="{DynamicResource R.Duration}" />
+                    <TextBlock Classes="label" Margin="6,0,0,0" Text="{DynamicResource R.Seconds}" />
+                  </StackPanel>
+                </WrapPanel>
+                <TextBlock Classes="note" Text="{Binding LeaderPurpose}" />
+                <TextBlock x:Name="DurationErrorText" Classes="note error" Text="{Binding DurationError}" />
+              </StackPanel>
+              <StackPanel x:Name="TailControls" Spacing="4" IsVisible="{Binding ShowTail}">
+                <WrapPanel>
+                  <TextBlock Classes="label" Text="{DynamicResource R.TailHold}" ToolTip.Tip="{DynamicResource R.TailHint}" />
+                  <StackPanel Orientation="Horizontal" IsVisible="{Binding EditTail}">
+                    <TextBox x:Name="TailBox" Classes="field" Width="76" MinHeight="36" Text="{Binding TailText}"
+                             AutomationProperties.Name="{DynamicResource R.TailHold}" />
+                    <TextBlock Classes="label" Margin="6,0,0,0" Text="{DynamicResource R.Seconds}" />
+                  </StackPanel>
+                  <TextBlock Classes="body" VerticalAlignment="Center" Text="{Binding Status.TailRoundText}" IsVisible="{Binding ShowTailRound}" />
+                </WrapPanel>
+                <TextBlock Classes="note" Text="{DynamicResource R.TailHint}" />
+                <TextBlock x:Name="TailErrorText" Classes="note error" Text="{Binding TailError}" />
+              </StackPanel>
+              <!-- 本机时间微调：−2000～+2000 毫秒，负数提前、正数延后；进行中锁定。 -->
+              <StackPanel x:Name="OffsetControls" Spacing="4">
+                <TextBlock Classes="name strong" Text="{Binding OffsetSummary}" />
+                <WrapPanel>
+                  <Slider x:Name="OffsetSlider" Width="220" Minimum="-2000" Maximum="2000" SmallChange="1" LargeChange="10"
+                          Value="{Binding OffsetValue}" IsEnabled="{Binding Status.CanEditLocal}" Margin="0,0,10,0"
+                          ToolTip.Tip="{DynamicResource R.OffsetTip}" AutomationProperties.Name="{Binding OffsetSummary}" />
+                  <TextBox x:Name="OffsetBox" Classes="field" Width="84" MinHeight="36" Text="{Binding OffsetText, Mode=OneWay}"
+                           IsEnabled="{Binding Status.CanEditLocal}" AutomationProperties.Name="{Binding OffsetSummary}" />
+                  <TextBlock Classes="label" Margin="6,0,10,0" Text="ms" />
+                  <TextBlock Classes="label" Text="{DynamicResource R.OffsetHint}" />
+                  <Button Classes="chip" Content="{DynamicResource R.Reset}" Command="{Binding ResetOffsetCommand}"
+                          IsEnabled="{Binding Status.CanEditLocal}" VerticalAlignment="Center" />
+                </WrapPanel>
+              </StackPanel>
+              </StackPanel>
+              </controls:ExpandPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+
+      <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                    VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <!-- 卡片网格：四张卡片缺省都是全宽随内容；顺序与尺寸档在“编辑布局”里调整。底部状态卡是操作条，在网格之外。 -->
+        <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
+          <!-- 1 连接房间（原工具 RoomSection）。 -->
+          <controls:Card x:Name="ConnectionPanel" CardId="connection" Title="{DynamicResource R.Connection}" Padding="16,12" AllowedSizes="HalfByAuto">
+            <controls:Card.Status>
+              <TextBlock Classes="name muted" Text="{Binding ConnectionSummary}" />
+            </controls:Card.Status>
+            <StackPanel Spacing="10">
+              <!-- 未入房：昵称、联机方式、建房与加入。 -->
+              <StackPanel x:Name="JoinForm" Spacing="10" IsVisible="{Binding NotInRoom}">
+                <controls:ReflowPanel MinItemWidth="260" Spacing="10">
+                  <!-- 昵称来源：抓包昵称（只读，随识别更新；未识别时下方写明原因）或自定义昵称（可编辑，保存到本机设置）。 -->
+                  <StackPanel Spacing="4">
+                    <DockPanel>
+                      <TextBlock DockPanel.Dock="Left" Classes="label" Text="{DynamicResource R.Nickname}" />
+                      <ComboBox x:Name="NicknameSourceBox" DockPanel.Dock="Left" Width="128" Margin="0,0,8,0" VerticalAlignment="Center"
+                                ItemsSource="{Binding NicknameSources}" SelectedItem="{Binding NicknameSource}" IsEnabled="{Binding CanEditConnection}"
+                                AutomationProperties.Name="{DynamicResource R.Nickname}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate DataType="rooms:NicknameSourceOption"><TextBlock Text="{Binding Label}" /></DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                      <TextBox x:Name="NicknameBox" Classes="field" MaxLength="20" Text="{Binding Nickname}" IsEnabled="{Binding CanEditConnection}"
+                               IsReadOnly="{Binding NicknameReadOnly}" PlaceholderText="{Binding NicknamePlaceholder}"
+                               AutomationProperties.Name="{DynamicResource R.Nickname}" />
+                    </DockPanel>
+                    <TextBlock x:Name="NicknameNote" Classes="note" TextWrapping="Wrap" Text="{Binding NicknameNote}" IsVisible="{Binding HasNicknameNote}" />
+                  </StackPanel>
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Classes="label" Text="{DynamicResource R.Provider}" />
+                    <controls:SelectionBorder x:Name="ProviderSwitch" Classes="segmented" HorizontalAlignment="Left">
+                      <ItemsControl controls:StableItems.Source="{Binding Providers}" ItemTemplate="{StaticResource ProviderOption}" ItemsPanel="{StaticResource Wrap}" />
+                    </controls:SelectionBorder>
+                  </DockPanel>
+                </controls:ReflowPanel>
+                <TextBlock x:Name="ProviderHint" Classes="note" Text="{Binding ProviderHint}" />
+                <DockPanel x:Name="LanRow" IsVisible="{Binding IsLan}">
+                  <TextBlock DockPanel.Dock="Left" Classes="label" Text="{DynamicResource R.LanAddress}" />
+                  <Button x:Name="LanGuideButton" DockPanel.Dock="Right" Margin="8,0,0,0" Content="{DynamicResource R.LanGuide}"
+                          Command="{Binding ToggleCommand}" CommandParameter="lan-guide" />
+                  <ComboBox x:Name="LanAddressBox" IsEditable="True" HorizontalAlignment="Stretch" MinHeight="40" ItemsSource="{Binding LanEndpoints}"
+                            Text="{Binding LanAddress}" IsEnabled="{Binding CanEditConnection}" ToolTip.Tip="{DynamicResource R.LanAddressHint}"
+                            AutomationProperties.Name="{DynamicResource R.LanAddress}" />
+                </DockPanel>
+                <DockPanel>
+                  <Button x:Name="CreateButton" DockPanel.Dock="Right" Classes="primary" Margin="8,0,0,0" MinHeight="40"
+                          Command="{Binding CreateCommand}" IsEnabled="{Binding CanEditConnection}">
+                    <TextBlock Text="{Binding CreateLabel}" />
+                  </Button>
+                  <Button x:Name="JoinButton" DockPanel.Dock="Right" Margin="8,0,0,0" MinHeight="40" Command="{Binding JoinCommand}"
+                          IsEnabled="{Binding CanEditConnection}">
+                    <TextBlock Text="{Binding JoinLabel}" />
+                  </Button>
+                  <TextBox x:Name="InvitationBox" Classes="field" Text="{Binding InvitationText}" PlaceholderText="{Binding InvitationHint}"
+                           IsEnabled="{Binding CanEditConnection}" AutomationProperties.Name="{DynamicResource R.CodeOrInvite}" />
+                </DockPanel>
+              </StackPanel>
+              <!-- 已入房：房间码与连接状态、复制邀请、重新连接、关闭或离开。 -->
+              <StackPanel x:Name="RoomInfo" Spacing="8" IsVisible="{Binding InRoom}">
+                <TextBlock x:Name="RoomTitle" Classes="body strong" Text="{Binding RoomTitle}" />
+                <TextBlock Classes="note" Text="{Binding ProviderHint}" />
+                <WrapPanel>
+                  <Button x:Name="CopyInviteButton" Margin="0,0,8,6" Content="{DynamicResource R.CopyInvite}" Command="{Binding IntentCommand}"
+                          CommandParameter="rooms.copy-invite" IsVisible="{Binding ShowCopyInvite}" />
+                  <Button x:Name="ReconnectButton" Margin="0,0,8,6" Content="{DynamicResource R.Reconnect}" Command="{Binding IntentCommand}"
+                          CommandParameter="rooms.reconnect" IsVisible="{Binding ShowReconnect}" />
+                  <Button x:Name="LeaveButton" Margin="0,0,8,6" Command="{Binding IntentCommand}" CommandParameter="rooms.leave">
+                    <TextBlock Text="{Binding LeaveLabel}" />
+                  </Button>
+                </WrapPanel>
+                <TextBlock x:Name="CopiedText" Classes="note confirmed" Text="{DynamicResource R.Copied}" IsVisible="{Binding InvitationCopied}" />
+                <StackPanel Spacing="4" IsVisible="{Binding HasFallbackInvitation}">
+                  <TextBlock Classes="note" Text="{DynamicResource R.FallbackHint}" />
+                  <TextBox x:Name="FallbackInvitationBox" Classes="field" IsReadOnly="True" TextWrapping="Wrap" Text="{Binding FallbackInvitation}" />
+                </StackPanel>
+              </StackPanel>
+              <Button x:Name="AdvancedButton" HorizontalAlignment="Left" Command="{Binding ToggleCommand}" CommandParameter="advanced"
+                      ToolTip.Tip="{DynamicResource R.AdvancedHint}">
+                <TextBlock Text="{DynamicResource R.Advanced}" />
+              </Button>
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 2 本机动作（原工具 LocalActionCard）：未入房也可设置，改动即保存。 -->
+          <controls:Card x:Name="LocalPanel" CardId="local" Title="{DynamicResource R.Local}" Padding="16,12" AllowedSizes="HalfByAuto">
+            <controls:Card.Status>
+              <TextBlock Classes="name muted" Text="{Binding LocalSummary}" />
+            </controls:Card.Status>
+            <StackPanel Spacing="10">
+              <TextBlock x:Name="RoleLine" Classes="body" Text="{Binding Status.RoleLine}"
+                         IsVisible="{Binding Status.RoleLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <!-- 抓包识别的本机角色与当前乐谱（只读，游戏原文）；抓包状态在窗口左上角。 -->
+              <StackPanel x:Name="ObservedPanel" Spacing="2" IsVisible="{Binding HasObserved}">
+                <TextBlock x:Name="ObservedSelfText" Classes="note confirmed" TextWrapping="Wrap">
+                  <Run Text="{DynamicResource R.ObservedSelf}" /><Run Text="{Binding ObservedNickname}" />
+                </TextBlock>
+                <TextBlock x:Name="ObservedScoreText" Classes="note" TextWrapping="Wrap" IsVisible="{Binding HasObservedScore}">
+                  <Run Text="{DynamicResource R.ObservedScore}" /><Run Text="{Binding ObservedScoreTitle}" /><Run Text="{Binding ObservedScoreDuration}" />
+                </TextBlock>
+              </StackPanel>
+              <WrapPanel>
+                <CheckBox x:Name="OperateGameBox" Margin="0,0,18,6" IsChecked="{Binding OperateGame, Mode=OneWay}"
+                          Command="{Binding OperateGameCommand}" IsEnabled="{Binding CanToggleOperateGame}"
+                          Content="{DynamicResource R.OperateGame}" ToolTip.Tip="{DynamicResource R.OperateGameTip}" />
+                <TextBlock Classes="body" VerticalAlignment="Center" Margin="0,0,10,6" Text="{Binding GameWindowText}" />
+                <Button x:Name="PickWindowButton" Classes="chip" Margin="0,0,0,6" Content="{DynamicResource R.PickWindow}"
+                        Command="{Binding $parent[Window].((shell:ShellViewModel)DataContext).GamePicker.OpenCommand}" />
+              </WrapPanel>
+              <TextBlock Classes="note" Text="{DynamicResource R.OperateGameNote}" />
+              <!-- 开始：快捷键、游戏按钮，表情另有预填指令。 -->
+              <Border Classes="inset" Padding="12,10">
+                <StackPanel Spacing="6">
+                  <WrapPanel>
+                    <TextBlock Classes="label" Width="90" Margin="0,0,10,6" Text="{DynamicResource R.StartRow}" />
+                    <controls:SelectionBorder x:Name="StartKindSwitch" Classes="segmented" Margin="0,0,10,6">
+                      <ItemsControl controls:StableItems.Source="{Binding StartKinds}" ItemTemplate="{StaticResource StartKindOption}" ItemsPanel="{StaticResource Wrap}" />
+                    </controls:SelectionBorder>
+                    <Button x:Name="StartKeyButton" Margin="0,0,8,6" MinWidth="150" Command="{Binding RecordCommand}" CommandParameter="start"
+                            IsVisible="{Binding StartIsKey}" IsEnabled="{Binding CanEditLocal}" Classes.primary="{Binding RecordingStart}">
+                      <TextBlock Classes="name" Text="{Binding StartKeyText}" />
+                    </Button>
+                    <Button x:Name="PickStartButton" Margin="0,0,8,6" Content="{DynamicResource R.PickButton}" Command="{Binding PickCommand}"
+                            CommandParameter="start" IsVisible="{Binding StartIsButton}" IsEnabled="{Binding CanEditLocal}"
+                            ToolTip.Tip="{DynamicResource R.PickButtonTip}" />
+                  </WrapPanel>
+                  <TextBlock x:Name="StartButtonText" Classes="note" Text="{Binding StartButtonText}" IsVisible="{Binding StartIsButton}" />
+                  <TextBlock Classes="note" Text="{Binding ChatHint}" IsVisible="{Binding StartIsChat}" />
+                  <TextBlock x:Name="JoinerHint" Classes="note unconfirmed" Text="{DynamicResource R.JoinerHint}" IsVisible="{Binding Status.Joiner}" />
+                </StackPanel>
+              </Border>
+              <!-- 停止演奏：只在合奏。 -->
+              <Border Classes="inset" Padding="12,10" IsVisible="{Binding IsEnsemble}">
+                <StackPanel Spacing="6">
+                  <WrapPanel>
+                    <TextBlock Classes="label" Width="90" Margin="0,0,10,6" Text="{DynamicResource R.StopRow}" />
+                    <controls:SelectionBorder x:Name="StopKindSwitch" Classes="segmented" Margin="0,0,10,6">
+                      <ItemsControl controls:StableItems.Source="{Binding StopKinds}" ItemTemplate="{StaticResource StopKindOption}" ItemsPanel="{StaticResource Wrap}" />
+                    </controls:SelectionBorder>
+                    <Button x:Name="StopKeyButton" Margin="0,0,8,6" MinWidth="150" Command="{Binding RecordCommand}" CommandParameter="stop"
+                            IsVisible="{Binding StopIsKey}" IsEnabled="{Binding CanEditLocal}" Classes.primary="{Binding RecordingStop}">
+                      <TextBlock Classes="name" Text="{Binding StopKeyText}" />
+                    </Button>
+                    <Button x:Name="PickStopButton" Margin="0,0,8,6" Content="{DynamicResource R.PickButton}" Command="{Binding PickCommand}"
+                            CommandParameter="stop" IsVisible="{Binding StopIsButtonKind}" IsEnabled="{Binding CanEditLocal}"
+                            ToolTip.Tip="{DynamicResource R.PickButtonTip}" />
+                  </WrapPanel>
+                  <TextBlock Classes="note" Text="{Binding StopButtonText}" IsVisible="{Binding StopIsButtonKind}" />
+                </StackPanel>
+              </Border>
+              <TextBlock Classes="note" Text="{Binding ShortcutHint}" IsVisible="{Binding IsRecording}" />
+              <TextBlock x:Name="BindingError" Classes="body error" FontSize="13" Text="{Binding Status.BindingError}"
+                         IsVisible="{Binding Status.BindingError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock x:Name="InputState" Classes="note" Text="{Binding InputState}" />
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 3 成员表（原工具 RosterCard）：只在房间里。 -->
+          <controls:Card x:Name="RosterPanel" CardId="roster" Title="{Binding RosterTitle}" Padding="16,12" IsVisible="{Binding InRoom}">
+            <StackPanel Spacing="10">
+              <TextBlock Classes="note" Text="{Binding RosterHint}" IsVisible="{Binding IsEnsemble}" />
+              <!-- 成员表：行的先后代表分组与顺位，不提供排序、筛选与列顺序；可调列宽、多选与复制，行可拖动调整分组与顺序。 -->
+              <!-- 合奏：组、顺序、乐器、合奏身份、参与、昵称、状态、加入状态。 -->
+              <tables:DataTable x:Name="EnsembleRows" TableId="rooms.ensemble" ItemsSource="{Binding Rows}" IsVisible="{Binding IsEnsemble}"
+                                AllowSort="False" AllowFilter="False" AllowReorder="False" AllowColumnMenu="False" BodyMaxHeight="Infinity" Virtualize="False">
+                <tables:TableColumn Id="group" HeaderKey="R.ColGroup" Path="GroupText" Width="84" MinWidth="64" Kind="Number">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <Grid Margin="0,4">
+                        <Border Background="{Binding GroupBrush}" CornerRadius="10" Margin="0,-2" />
+                        <Border Width="4" HorizontalAlignment="Left" Background="{Binding GroupStripe}" CornerRadius="2" Margin="4,2" />
+                        <tables:TableInput Margin="14,0,4,0" Tag="group" Text="{Binding GroupText}" IsReadOnly="{Binding ReadOnly}" TextAlignment="Center"
+                                           Committed="OnCellCommitted" AutomationProperties.Name="{DynamicResource R.ColGroup}" />
+                      </Grid>
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+                <tables:TableColumn Id="order" HeaderKey="R.ColOrder" Path="OrderText" Width="64" MinWidth="56" Kind="Number">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <tables:TableInput Margin="2,4" Tag="order" Text="{Binding OrderText}" IsReadOnly="{Binding ReadOnly}" TextAlignment="Center"
+                                         Committed="OnCellCommitted" AutomationProperties.Name="{DynamicResource R.ColOrder}" />
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+                <tables:TableColumn Id="instrument" HeaderKey="R.ColInstrument" Path="Instrument" Width="160" MinWidth="90">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <tables:TableChoice ItemsSource="{Binding Instruments}" SelectedItem="{Binding Instrument}" IsEnabled="{Binding CanEdit}"
+                                          AutomationProperties.Name="{DynamicResource R.ColInstrument}" />
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+                <tables:TableColumn Id="role" HeaderKey="R.ColRole" Path="Role" Width="140" MinWidth="90">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <tables:TableChoice ItemsSource="{Binding Roles}" SelectedIndex="{Binding RoleIndex}" IsEnabled="{Binding CanEdit}"
+                                          AutomationProperties.Name="{DynamicResource R.ColRole}" />
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+                <tables:TableColumn Id="selected" HeaderKey="R.ColSelected" Path="SelectedText" Width="64" MinWidth="52">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <CheckBox HorizontalAlignment="Center" IsChecked="{Binding Selected}"
+                                IsEnabled="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).CanSelect}"
+                                AutomationProperties.Name="{DynamicResource R.ColSelected}" />
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+                <tables:TableColumn Id="name" HeaderKey="R.ColName" Path="Nickname" Width="200" MinWidth="100" Fill="True">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <DockPanel Margin="6,0" VerticalAlignment="Center" ToolTip.Tip="{Binding Tip}">
+                        <Border DockPanel.Dock="Right" Classes="state" IsVisible="{Binding IsSelf}">
+                          <TextBlock FontSize="12" FontWeight="Bold" Text="{DynamicResource R.Self}" />
+                        </Border>
+                        <TextBlock Classes="name" Classes.strong="{Binding IsSelf}" Text="{Binding Nickname}" />
+                      </DockPanel>
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+                <tables:TableColumn Id="state" HeaderKey="R.ColState" Path="State" Width="100" MinWidth="80">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <Border Classes="state" HorizontalAlignment="Center">
+                        <TextBlock FontSize="13" FontWeight="Bold" Text="{Binding State}"
+                                   Classes.confirmed="{Binding StateReady}" Classes.error="{Binding StateWaiting}" Classes.muted="{Binding StateNeutral}" />
+                      </Border>
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+                <tables:TableColumn Id="menu" Header="" Width="56" MinWidth="52">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <Button Classes="chip" MinWidth="44" Padding="6,0" HorizontalAlignment="Center" Content="···" Click="OnRowMenu"
+                              ToolTip.Tip="{DynamicResource R.RowMenu}" AutomationProperties.Name="{DynamicResource R.RowMenu}" />
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+              </tables:DataTable>
+              <!-- 表情动作：参与、昵称、角色、状态。 -->
+              <tables:DataTable x:Name="EmoteRows" TableId="rooms.emote" ItemsSource="{Binding Rows}" IsVisible="{Binding IsEmote}"
+                                AllowSort="False" AllowFilter="False" AllowReorder="False" AllowColumnMenu="False" BodyMaxHeight="Infinity" Virtualize="False">
+                <tables:TableColumn Id="selected" HeaderKey="R.ColSelected" Path="SelectedText" Width="64" MinWidth="52">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <CheckBox HorizontalAlignment="Center" IsChecked="{Binding Selected}"
+                                IsEnabled="{Binding $parent[UserControl].((rooms:RoomsPageModel)DataContext).CanSelect}"
+                                AutomationProperties.Name="{DynamicResource R.ColSelected}" />
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+                <tables:TableColumn Id="name" HeaderKey="R.ColName" Path="Nickname" Width="200" MinWidth="100" Fill="True">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <DockPanel Margin="6,0" VerticalAlignment="Center">
+                        <Border DockPanel.Dock="Right" Classes="state" IsVisible="{Binding IsSelf}">
+                          <TextBlock FontSize="12" FontWeight="Bold" Text="{DynamicResource R.Self}" />
+                        </Border>
+                        <TextBlock Classes="name" Text="{Binding Nickname}" />
+                      </DockPanel>
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+                <tables:TableColumn Id="roomRole" HeaderKey="R.ColRoomRole" Path="RoomRole" Width="96" MinWidth="70" />
+                <tables:TableColumn Id="state" HeaderKey="R.ColState" Path="State" Width="110" MinWidth="80">
+                  <tables:TableColumn.CellTemplate>
+                    <DataTemplate DataType="rooms:RosterRow">
+                      <Border Classes="state" HorizontalAlignment="Center">
+                        <TextBlock FontSize="13" FontWeight="Bold" Text="{Binding State}"
+                                   Classes.confirmed="{Binding StateReady}" Classes.error="{Binding StateWaiting}" Classes.muted="{Binding StateNeutral}" />
+                      </Border>
+                    </DataTemplate>
+                  </tables:TableColumn.CellTemplate>
+                </tables:TableColumn>
+              </tables:DataTable>
+              <WrapPanel x:Name="ConductorRow" IsVisible="{Binding IsEnsemble}">
+                <TextBlock Classes="label" Margin="0,0,10,6" Text="{DynamicResource R.Conductor}" ToolTip.Tip="{Binding LeaderPurpose}" />
+                <ComboBox x:Name="ConductorBox" Width="190" Margin="0,0,10,6" IsEnabled="{Binding CanSelectConductor}"
+                          ItemsSource="{Binding ConductorChoices}" SelectedItem="{Binding Conductor}"
+                          PlaceholderText="{DynamicResource R.ConductorNone}" AutomationProperties.Name="{DynamicResource R.Conductor}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate DataType="rooms:RoomConductorChoice"><TextBlock Classes="name" Text="{Binding Nickname}" /></DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </WrapPanel>
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 4 执行记录与诊断（默认收起）。 -->
+          <controls:Card x:Name="DiagnosticsPanel" CardId="diagnostics" Title="{DynamicResource R.Diagnostics}" Padding="16,10" DefaultExpanded="False" AllowedSizes="HalfByAuto">
+            <StackPanel Spacing="6">
+              <TextBlock x:Name="ClockText" Classes="note" Text="{Binding ClockText}" />
+              <TextBlock Classes="note" Text="{DynamicResource R.NoReceipts}" IsVisible="{Binding NoReceipts}" />
+              <ItemsControl x:Name="ReceiptList" controls:StableItems.Source="{Binding Receipts}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="sys:String">
+                    <TextBlock Classes="body" FontSize="13" Text="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </controls:Card>
+        </controls:CardGrid>
+      </ScrollViewer>
+    </DockPanel>
+
+    <!-- 二级层：局域网连接教程。 -->
+    <Panel x:Name="LanGuideLayer" IsVisible="{Binding LanGuideOpen}">
+      <Border Background="Transparent" PointerPressed="OnLayerBackdrop" />
+      <Border x:Name="LanGuidePanel" Classes="panel popup" Classes.open="{Binding LanGuideOpen}" MaxWidth="560" Margin="24"
+              HorizontalAlignment="Center" VerticalAlignment="Center" Padding="18,14">
+        <DockPanel>
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <Button DockPanel.Dock="Right" Classes="chip" Content="{DynamicResource R.GotIt}" Command="{Binding CloseLayerCommand}" />
+            <TextBlock Classes="h2" Text="{DynamicResource R.LanGuideTitle}" />
+          </DockPanel>
+          <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto" controls:EdgeFade.IsEnabled="True">
+            <TextBlock x:Name="LanGuideText" Classes="body" FontSize="13" Text="{Binding LanGuideText}" />
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </Panel>
+
+    <!-- 二级层：高级连接（手动服务地址、启动本机服务、公网连接状态）。 -->
+    <Panel x:Name="AdvancedLayer" IsVisible="{Binding AdvancedOpen}">
+      <Border Background="Transparent" PointerPressed="OnLayerBackdrop" />
+      <Border x:Name="AdvancedPanel" Classes="panel popup" Classes.open="{Binding AdvancedOpen}" MaxWidth="600" Margin="24"
+              HorizontalAlignment="Center" VerticalAlignment="Center" Padding="18,14">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" controls:EdgeFade.IsEnabled="True">
+        <StackPanel Spacing="10">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Classes="chip" Content="{DynamicResource R.Close}" Command="{Binding CloseLayerCommand}" />
+            <TextBlock Classes="h2" Text="{DynamicResource R.Advanced}" />
+          </DockPanel>
+          <TextBlock Classes="note" Text="{DynamicResource R.AdvancedHint}" />
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Left" Classes="label" Text="{DynamicResource R.Endpoint}" />
+            <TextBox x:Name="EndpointBox" Classes="field" Text="{Binding ManualEndpoint}" IsEnabled="{Binding CanEditConnection}"
+                     PlaceholderText="ws://127.0.0.1:3132/" AutomationProperties.Name="{DynamicResource R.Endpoint}" />
+          </DockPanel>
+          <WrapPanel>
+            <Button x:Name="AdvancedCreateButton" Margin="0,0,8,6" Content="{DynamicResource R.CreateRoom}" Command="{Binding AdvancedCreateCommand}"
+                    IsEnabled="{Binding CanEditConnection}" />
+            <Button x:Name="AdvancedJoinButton" Margin="0,0,8,6" Content="{DynamicResource R.JoinRoom}" Command="{Binding AdvancedJoinCommand}"
+                    IsEnabled="{Binding CanEditConnection}" />
+          </WrapPanel>
+          <WrapPanel>
+            <controls:SelectionBorder Classes="segmented" Margin="0,0,8,6">
+              <ItemsControl controls:StableItems.Source="{Binding ServerModes}" ItemTemplate="{StaticResource ServerModeOption}" ItemsPanel="{StaticResource Row}" />
+            </controls:SelectionBorder>
+            <Button x:Name="StartServerButton" Margin="0,0,8,6" Content="{DynamicResource R.StartServer}" Command="{Binding StartServerCommand}"
+                    IsEnabled="{Binding Data.Connected}" />
+          </WrapPanel>
+          <TextBlock x:Name="ServerState" Classes="body" FontSize="13" Text="{Binding Data.Server.StateText}" />
+          <TextBlock x:Name="TunnelState" Classes="note" Text="{Binding Data.Server.TunnelText}" />
+        </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Panel>
+  </Panel>
+</UserControl>
