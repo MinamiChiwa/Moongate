@@ -33,6 +33,8 @@ public sealed record GameCaptureReport(GameObservationValue Value, UInt64String 
 /// <param name="Npcap">Npcap 是否已安装：installed、missing（系统目录下没有 <c>Npcap\wpcap.dll</c>）；宿主只检查文件、不加载 DLL，无法判定时为空。</param>
 public sealed record GameObservationRuntime(bool Installed, string State, int SubscriberCount, int? WorkerProcessId,
     int MaximumSubscribers, int MaximumConnections, string? Reason, string? Npcap = null);
+/// <param name="GameSessionId">捕获所属的游戏会话；捕获只在游戏会话变化（进程退出或更换、地区或构建变化）时结束。</param>
+/// <param name="BindingRevision">捕获启动时的绑定修订，Worker 调用与库存帧携带同一值；之后窗口几何变化递增绑定修订但不重启捕获，此值保持不变。</param>
 public sealed record GameObservationSnapshot(string BackendEpoch, UInt64String Revision, string? CaptureId, string State,
     string? GameSessionId, UInt64String? BindingRevision, string? ChannelId, string? Profile,
     int SubscriberCount, Observation<GameObservationValue>? Latest, string? Reason, GameCaptureAutomation? Automation = null);

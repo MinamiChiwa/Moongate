@@ -62,13 +62,15 @@
     <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <!--
-        卡片网格：物品 2×4（表格在卡片内滚动），右侧一列叠放概况 1×1.5 与资源 1×2.5，两者合起来与物品等高；
-        其下读取范围与道具名称目录各一列、随内容。顺序与尺寸档在“编辑布局”里调整。
+        卡片网格：物品 2×4（表格在表内滚动，卡片外壳不滚动），右侧一列叠放概况 1×1.5 与资源 1×2.5，两者合起来与物品等高；
+        其下读取范围与道具名称目录各一列、随内容。顺序与尺寸档在“编辑布局”里调整。一张卡片同一方向只有一个滚动区。
       -->
       <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
         <controls:Card x:Name="ItemsPanel" CardId="items" Title="{DynamicResource I.Items}" Size="TwoByFour"
-                       AllowedSizes="TwoByThree,TwoByAuto,FullWidth">
-          <StackPanel Spacing="10">
+                       AllowedSizes="TwoByThree,TwoByAuto,FullWidth" ScrollsBody="False">
+          <!-- 说明行停靠在底部，表格占满其余高度、在表内滚动；随内容档时表体最高 470。 -->
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Bottom" Classes="note" Margin="0,10,0,0" Text="{DynamicResource I.TableHint}" />
             <tables:DataTable x:Name="ItemsTable" TableId="inventory.items" ColumnsSource="{Binding Columns}" ItemsSource="{Binding Rows}"
                               EmptyText="{DynamicResource I.NoItems}" CanExport="True" ExportFileName="{Binding ExportFileName}"
                               BodyMaxHeight="470">
@@ -80,8 +82,7 @@
                 </StackPanel>
               </tables:DataTable.CornerContent>
             </tables:DataTable>
-            <TextBlock Classes="note" Text="{DynamicResource I.TableHint}" />
-          </StackPanel>
+          </DockPanel>
         </controls:Card>
 
           <!-- 概况：固定高度。角色行与金币、银币、魔族貢品跟随资源区所选角色，与资源区读同一份数据；银币与贡品带补充倒计时（全页一个每秒节拍，只改倒计时文字）。
@@ -121,24 +122,23 @@
               </StackPanel>
             </StackPanel>
           </controls:Card>
-          <!-- 资源：账户级（客户端 AccountWallet 的成员）跟随账号下拉；角色级按所选账户下的角色分开（金币、银币、贡品在概况）。每项一行，明细在悬停提示；各组最高 200，超出组内滚动；未读取折叠。 -->
+          <!-- 资源：账户级（客户端 AccountWallet 的成员）跟随账号下拉；角色级按所选账户下的角色分开（金币、银币、贡品在概况）。每项一行，明细在悬停提示；
+               两组列表随内容展开，固定高度档由卡片外壳统一滚动（组内不再各自限高滚动）；未读取折叠。 -->
           <controls:Card x:Name="ResourcesPanel" CardId="resources" Title="{DynamicResource I.Resources}" Size="OneByTwoAndHalf"
                          AllowedSizes="OneByThree,OneByFour,OneByAuto,HalfByAuto">
             <StackPanel Spacing="6">
               <TextBlock Classes="note" Text="{DynamicResource I.ResourcesHint}" TextWrapping="Wrap" />
               <TextBlock Classes="label" Margin="0,4,0,0" Text="{DynamicResource I.AccountResources}" />
-              <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <ItemsControl x:Name="AccountResourceList" controls:StableItems.Source="{Binding AccountResources}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="inventory:InventoryResourceRow">
-                      <Grid Height="26" Background="Transparent" ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Tip}">
-                        <TextBlock Classes="body" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
-                        <TextBlock Grid.Column="1" Classes="body" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Value}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </ScrollViewer>
+              <ItemsControl x:Name="AccountResourceList" controls:StableItems.Source="{Binding AccountResources}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="inventory:InventoryResourceRow">
+                    <Grid Height="26" Background="Transparent" ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Tip}">
+                      <TextBlock Classes="body" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                      <TextBlock Grid.Column="1" Classes="body" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Value}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
               <Button x:Name="UnreadAccountResourcesToggle" Classes="bare" HorizontalAlignment="Left" IsVisible="{Binding HasUnreadAccountResources}"
                       Command="{Binding ToggleUnreadAccountCommand}" Content="{Binding UnreadAccountResourcesText}" />
               <controls:ExpandPanel IsExpanded="{Binding UnreadAccountExpanded, Mode=OneWay}">
@@ -166,18 +166,16 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <ItemsControl x:Name="CharacterResourceList" controls:StableItems.Source="{Binding CharacterResources}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="inventory:InventoryResourceRow">
-                      <Grid Height="26" Background="Transparent" ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Tip}">
-                        <TextBlock Classes="body" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
-                        <TextBlock Grid.Column="1" Classes="body" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Value}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </ScrollViewer>
+              <ItemsControl x:Name="CharacterResourceList" controls:StableItems.Source="{Binding CharacterResources}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="inventory:InventoryResourceRow">
+                    <Grid Height="26" Background="Transparent" ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Tip}">
+                      <TextBlock Classes="body" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                      <TextBlock Grid.Column="1" Classes="body" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Value}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
               <Button x:Name="UnreadCharacterResourcesToggle" Classes="bare" HorizontalAlignment="Left" IsVisible="{Binding HasUnreadCharacterResources}"
                       Command="{Binding ToggleUnreadCharacterCommand}" Content="{Binding UnreadCharacterResourcesText}" />
               <controls:ExpandPanel IsExpanded="{Binding UnreadCharacterExpanded, Mode=OneWay}">

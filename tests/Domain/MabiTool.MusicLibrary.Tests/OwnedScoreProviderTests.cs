@@ -96,7 +96,7 @@ public sealed class OwnedScoreProviderTests
     {
         var model = Model(Item(1)); GameSession? binding = Binding;
         var workspace = model.Value.Workspace!;
-        if (kind == "binding") binding = Binding with { BindingRevision = new(99) };
+        if (kind == "binding") binding = Binding with { Id = "other-game" };
         if (kind == "source") workspace = workspace with { Source = Source with { GameBuild = "other" } };
         if (kind == "identity") workspace = workspace with { Identity = null };
         if (kind == "gap") workspace = workspace with { Current = false, Reasons = ["inventory.sequenceGap"] };
@@ -156,7 +156,7 @@ public sealed class OwnedScoreProviderTests
             Assert.Equal("inventory.planStale", (await Assert.ThrowsAsync<OperationException>(() => provider.QueryAsync(new(PageSize: 1, Cursor: first.NextCursor), Binding))).Code);
         }
         model.Value = initial;
-        Assert.Equal("inventory.planStale", (await Assert.ThrowsAsync<OperationException>(() => provider.QueryAsync(new(PageSize: 1, Cursor: first.NextCursor), Binding with { BindingRevision = new(9) }))).Code);
+        Assert.Equal("inventory.planStale", (await Assert.ThrowsAsync<OperationException>(() => provider.QueryAsync(new(PageSize: 1, Cursor: first.NextCursor), Binding with { Id = "other-game" }))).Code);
         Assert.Equal("inventory.planStale", (await Assert.ThrowsAsync<OperationException>(() => new OwnedScoreProvider(model, "next-epoch").QueryAsync(new(PageSize: 1, Cursor: first.NextCursor), Binding))).Code);
     }
 
@@ -187,7 +187,7 @@ public sealed class OwnedScoreProviderTests
         var model = new Waiting(Model(Item(1))); GameSession? binding = Binding;
         var provider = new OwnedScoreProvider(model, "epoch");
         var pending = provider.QueryAsync(new(), () => binding);
-        await model.Ready.Task; binding = Binding with { BindingRevision = new(8) }; model.Release.TrySetResult();
+        await model.Ready.Task; binding = Binding with { Id = "other-game" }; model.Release.TrySetResult();
         Assert.False((await pending).Current);
         var cancelled = new Waiting(Model(Item(1))); using var cts = new CancellationTokenSource();
         var read = new OwnedScoreProvider(cancelled, "epoch").QueryAsync(new(), Binding, cts.Token);

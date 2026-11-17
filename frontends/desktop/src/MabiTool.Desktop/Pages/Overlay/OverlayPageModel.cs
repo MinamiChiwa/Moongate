@@ -21,8 +21,8 @@ public sealed record LibraryItem(string WidgetId, string Title, string Group, IB
 public sealed record SkinOption(string Id, string Label, bool Selected);
 
 /// <summary>
-/// 浮窗版面编辑页的状态：版面列表、元件库和所选元件的外观设置。
-/// 所有改动直接写进 <see cref="OverlayLayoutStore"/>，画布和游戏浮窗随之更新。
+/// 浮窗版面页的状态：版面列表、元件库、所选元件的设置，以及在屏幕上编辑浮窗的入口与显示器说明。
+/// 所有改动直接写进 <see cref="OverlayLayoutStore"/>，各显示器的游戏浮窗随之更新；元件的位置与尺寸在实际屏幕上编辑。
 /// </summary>
 public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifecycle
 {
@@ -84,7 +84,7 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
             Store.Unplace(widget);
             SelectedWidgetId = null;
         });
-        // 与画布上锁左侧的“－／＋”同一规则：步进 0.1，限制在 0.5–2。
+        // 与浮窗上锁左侧的“－／＋”同一规则：步进 0.1，限制在 0.5–2。
         ScaleCommand = new RelayCommand(step => Edit(placement => placement.Scale = WidgetPlacement.Step(placement.Scale, step is "+")));
         // 不透明度步进 0.1，限制在 0.2–1；游戏浮窗上元件的不透明度按钮改的是同一个值。
         OpacityCommand = new RelayCommand(step => Edit(placement => placement.Opacity = WidgetPlacement.StepOpacity(placement.Opacity, step is "+")));
@@ -105,6 +105,16 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
         {
             Store.HideWhenGameMinimized = !Store.HideWhenGameMinimized;
             Store.Commit();
+        });
+        EditCommand = new RelayCommand(_ =>
+        {
+            if (Store.IsEditing) controller.FinishEdit();
+            else controller.Edit();
+        });
+        MoveAllToPrimaryCommand = new RelayCommand(_ => Store.MoveAllToPrimary());
+        ResetPositionCommand = new RelayCommand(_ =>
+        {
+            if (Selected is { } placement) Store.ResetPosition(placement);
         });
         OpenGameDataCommand = new RelayCommand(_ => IsGameDataOpen = true);
         CloseGameDataCommand = new RelayCommand(_ => IsGameDataOpen = false);
@@ -141,6 +151,33 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     public ICommand ToggleLockCommand { get; }
     public ICommand ToggleCaptureCommand { get; }
     public ICommand ToggleHideWithGameCommand { get; }
+    public ICommand EditCommand { get; }
+    public ICommand MoveAllToPrimaryCommand { get; }
+    public ICommand ResetPositionCommand { get; }
+
+    private IReadOnlyList<ScreenInfo> screens = [];
+
+    /// <summary>当前的显示器（由页面按窗口的显示器信息写入）；显示器说明与所选元件所在的显示器据此写出。</summary>
+    public IReadOnlyList<ScreenInfo> Screens
+    {
+        get => screens;
+        set
+        {
+            if (value.SequenceEqual(screens)) return;
+            screens = value;
+            Raise(nameof(MonitorsText));
+            Raise(nameof(SelectedDetails));
+        }
+    }
+
+    /// <summary>各显示器的说明，例如“主显示器（1920×1080 · 100%）、左侧显示器（1920×1080 · 125%）”。</summary>
+    public string MonitorsText => OverlayArea.Caption(screens);
+
+    /// <summary>版面处于在屏幕上编辑的状态。</summary>
+    public bool IsEditing => Store.IsEditing;
+
+    /// <summary>编辑入口的文字：未编辑时“编辑位置”，编辑中“完成编辑”。</summary>
+    public string EditAction => IsEditing ? UiText.Pick("完成编辑", "完成編輯") : UiText.Pick("编辑位置", "編輯位置");
 
     public string? SelectedWidgetId
     {
@@ -189,6 +226,7 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
             var details = new List<KeyValue>
             {
                 new(UiText.Pick("位置", "位置"), UiText.Pick($"横向 {placement.X:P0}，纵向 {placement.Y:P0}", $"橫向 {placement.X:P0}，縱向 {placement.Y:P0}")),
+                new(UiText.Pick("显示器", "顯示器"), OverlayArea.Where(screens, placement.Screen)),
                 new(UiText.Pick("来自", "來自"), item?.Group ?? string.Empty)
             };
             if (SizeOf(placement) is { } size)
@@ -247,10 +285,11 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     /// <summary>“游戏最小化时隐藏”开关；缺省关闭，浮窗始终显示。</summary>
     public bool HideWithGame => Store.HideWhenGameMinimized;
 
-    public string StatusLine => string.Join(UiText.Pick("，", "，"),
-        Selected is null ? UiText.Pick("点元件库加入元件，在画面上拖动摆放", "點元件庫加入元件，在畫面上拖動擺放")
-            : UiText.Pick($"已选取：{SelectedTitle}", $"已選取：{SelectedTitle}"),
-        UiText.Pick("对齐格线 8 px", "對齊格線 8 px"));
+    public string StatusLine => IsEditing
+        ? UiText.Pick("正在编辑：元件显示在各显示器上，拖动摆放（可拖到其他显示器），拖右下角改尺寸，对齐格线 8 px；完成后保存",
+            "正在編輯：元件顯示在各顯示器上，拖動擺放（可拖到其他顯示器），拖右下角改尺寸，對齊格線 8 px；完成後保存")
+        : UiText.Pick("按“编辑位置”后元件直接显示在屏幕上，可以拖到任意显示器；关闭或看不见的元件也会显示出来",
+            "按「編輯位置」後元件直接顯示在螢幕上，可以拖到任意顯示器；關閉或看不見的元件也會顯示出來");
 
     public void Dispose()
     {

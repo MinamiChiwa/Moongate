@@ -33,7 +33,7 @@ public sealed partial class GameObservationService
                 {
                     if (worker is null || state is not ("running" or "starting"))
                         throw new OperationException("observation.channelUnavailable", "请先选择网卡并启动共享游戏观察");
-                    if (game?.Id != request.GameSessionId || controls.Bindings.Current?.Session != game)
+                    if (game?.Id != request.GameSessionId || !SameGameSession(controls.Bindings.Current?.Session, game))
                         throw new OperationException("input.bindingChanged", "共享观察的游戏绑定已变化");
                     if (!controls.Simulation && game.GameBuild != configured.Source.GameBuild)
                         throw new OperationException("combat.buildUnsupported", "战斗来源与当前构建不匹配");
@@ -60,7 +60,7 @@ public sealed partial class GameObservationService
             Authorize(principal);
             if (!auth.HasPermission(principal, ApiPermissions.CombatControl))
                 throw new OperationException("permission.denied", "战斗控制授权已撤销");
-            if (controls.Bindings.Current?.Session != game)
+            if (!SameGameSession(controls.Bindings.Current?.Session, game))
                 throw new OperationException("input.bindingChanged", "等待战斗身份时游戏绑定已变化");
             ct.ThrowIfCancellationRequested();
             onInterestsReady?.Invoke();
@@ -74,13 +74,13 @@ public sealed partial class GameObservationService
                 if (subscription.Ready.IsCompleted) break;
                 Authorize(principal);
                 if (!auth.HasPermission(principal, ApiPermissions.CombatControl)) throw new OperationException("permission.denied", "战斗控制授权已撤销");
-                if (controls.Bindings.Current?.Session != game) throw new OperationException("input.bindingChanged", "等待战斗身份时游戏绑定已变化");
+                if (!SameGameSession(controls.Bindings.Current?.Session, game)) throw new OperationException("input.bindingChanged", "等待战斗身份时游戏绑定已变化");
                 if (!pendingReported && onIdentityPending is not null) { pendingReported = true; await onIdentityPending(); }
             }
             await subscription.Ready;
             Authorize(principal);
             if (!auth.HasPermission(principal, ApiPermissions.CombatControl)) throw new OperationException("permission.denied", "战斗控制授权已撤销");
-            if (controls.Bindings.Current?.Session != game) throw new OperationException("input.bindingChanged", "等待战斗身份时游戏绑定已变化");
+            if (!SameGameSession(controls.Bindings.Current?.Session, game)) throw new OperationException("input.bindingChanged", "等待战斗身份时游戏绑定已变化");
             Notify(); return subscription;
         }
         catch

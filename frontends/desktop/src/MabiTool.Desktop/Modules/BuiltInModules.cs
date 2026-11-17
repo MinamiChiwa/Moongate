@@ -52,7 +52,7 @@ public static class BuiltInModules
         catalog.Register(new ModuleDescriptor("inventory", "背包", "包", Color.Parse("#0E8C7D"), ModuleOrigin.BuiltIn,
             () => new InventoryPage { DataContext = new InventoryPageModel(backend) }));
         catalog.Register(new ModuleDescriptor("presentation", new("浮窗版面", "浮窗版面"), "窗", Color.Parse("#2A6FD6"),
-            ModuleOrigin.BuiltIn, () => OverlayPage.Create(new OverlayPageModel(catalog, overlay), backend)));
+            ModuleOrigin.BuiltIn, () => OverlayPage.Create(new OverlayPageModel(catalog, overlay))));
         catalog.Register(new ModuleDescriptor("shell.modules", new("模块与扩展", "模組與擴充"), "模", Color.Parse("#5F6B85"),
             ModuleOrigin.Shell, () => new ModulesPage { DataContext = new ModulesPageModel(backend, catalog) }));
         catalog.Register(new ModuleDescriptor("shell.settings", new("设置", "設定"), new("设", "設"), Color.Parse("#5F6B85"),

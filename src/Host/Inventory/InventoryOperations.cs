@@ -397,7 +397,7 @@ public sealed class InventoryOperations(OperationStore operations, InventoryHist
                 subscription = await observation.OpenInventoryAsync(job.Owner.ClientId, job.Id, request, ct, job.Resident);
                 await foreach (var frame in subscription.ReadAsync(ct))
                 {
-                    if (controls.Bindings.Current?.Session != job.Binding) throw new OperationException("input.bindingChanged", "库存观察绑定已变化");
+                    if (!GameObservationService.SameGameSession(controls.Bindings.Current?.Session, job.Binding)) throw new OperationException("input.bindingChanged", "库存观察的游戏会话已变化");
                     var value = await ApplyAsync(job, frame, ct);
                     TraceSync(frame, value);
                     await operations.UpdateInventoryObservationAsync(job.Id, Status(job, value), ct);
@@ -409,7 +409,7 @@ public sealed class InventoryOperations(OperationStore operations, InventoryHist
     }
     /// <summary>
     /// 读模型拒绝的帧记录 warning 诊断（问题码与校验分支）。帧校验拒绝（带校验分支，读模型已按原因使当前工作区失效）只丢弃该帧，
-    /// 观察继续，下一次完整同步恢复；绑定修订变化与其余失败（持久化、预算）照常结束本次观察。
+    /// 观察继续，下一次完整同步恢复；其余失败（持久化、预算）照常结束本次观察。
     /// </summary>
     private async Task<InventoryWorkspace?> ApplyAsync(Job job, InventoryFrame frame, CancellationToken ct)
     {
@@ -420,7 +420,7 @@ public sealed class InventoryOperations(OperationStore operations, InventoryHist
             trace?.Emit(DiagnosticEvents.InventoryFrameRejected, new DiagnosticFields().Value("kind", frame.Kind.KnownValue?.ToString().ToLowerInvariant())
                 .Value("code", error.Code).Value("branch", branch)
                 .Count("items", frame.Items?.Count ?? 0).Count("changes", frame.Changes?.Count ?? 0));
-            if (branch is null || branch == "bindingRevision") throw;
+            if (branch is null) throw;
             return history.Workspace();
         }
     }
@@ -481,7 +481,7 @@ public sealed class InventoryOperations(OperationStore operations, InventoryHist
             foreach (var job in jobs.Values)
             {
                 var permission = job.Kind == "inventory.observe" ? ApiPermissions.InventoryControl : ApiPermissions.InventoryEdit;
-                if (!auth.HasPermission(job.Owner.ClientId, permission) || job.Binding is not null && controls.Bindings.Current?.Session != job.Binding)
+                if (!auth.HasPermission(job.Owner.ClientId, permission) || job.Binding is not null && !GameObservationService.SameGameSession(controls.Bindings.Current?.Session, job.Binding))
                     job.Cancel();
             }
             await ResidentTickAsync(ct);

@@ -14,7 +14,7 @@
     </Style>
   </UserControl.Styles>
   <UserControl.Resources>
-    <!-- 记录行：时间、级别、模块、事件码、component；fields 一行；有文字详情时可展开，详情在容器内滚动。 -->
+    <!-- 记录行：时间、级别、模块、事件码、component；fields 一行；有文字详情时可展开，详情自动换行、随所在列表滚动（卡片内同一方向只有一个滚动区）。 -->
     <DataTemplate x:Key="RecordTemplate" DataType="diag:RecordRow">
       <Border Classes="tablerow" Padding="0,8">
         <StackPanel Spacing="3">
@@ -31,9 +31,7 @@
                   Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" />
           <controls:ExpandPanel IsExpanded="{Binding Expanded, Mode=OneWay}">
           <Border Classes="inset" Padding="10,8">
-            <ScrollViewer MaxHeight="220" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-              <TextBlock Classes="mono" Text="{Binding Detail}" />
-            </ScrollViewer>
+            <TextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding Detail}" />
           </Border>
           </controls:ExpandPanel>
         </StackPanel>
@@ -245,9 +243,7 @@
                       <Button Classes="chip" HorizontalAlignment="Left" Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" />
                       <controls:ExpandPanel IsExpanded="{Binding Expanded, Mode=OneWay}">
                       <Border Classes="inset" Padding="10,8">
-                        <ScrollViewer MaxHeight="220" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                          <TextBlock Classes="mono" Text="{Binding Detail}" />
-                        </ScrollViewer>
+                        <TextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding Detail}" />
                       </Border>
                       </controls:ExpandPanel>
                     </StackPanel>

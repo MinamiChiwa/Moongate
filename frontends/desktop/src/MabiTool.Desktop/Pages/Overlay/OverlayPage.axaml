@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:page="using:MabiTool.Desktop.Pages.Overlay"
-             xmlns:overlay="using:MabiTool.Desktop.Overlay"
              xmlns:controls="using:MabiTool.Desktop.Controls"
              x:Class="MabiTool.Desktop.Pages.Overlay.OverlayPage"
              x:DataType="page:OverlayPageModel"
@@ -62,20 +61,22 @@
 
     <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <!-- 卡片网格：版面预览两列宽、选中元件设置一列宽，同一行等高；元件库全宽。都随内容。 -->
+      <!-- 卡片网格：屏幕上摆放两列宽、选中元件设置一列宽，同一行等高；元件库全宽。都随内容。元件的位置与尺寸在实际屏幕上编辑，页面里没有预览画布。 -->
       <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
-          <controls:Card x:Name="CanvasPanel" CardId="canvas" Title="{DynamicResource O.Canvas}" Padding="14" Size="TwoByAuto" AllowedSizes="FullWidth">
+          <controls:Card x:Name="ScreenPanel" CardId="screen" Title="{DynamicResource O.ScreenTitle}" Size="TwoByAuto" AllowedSizes="FullWidth">
             <StackPanel Spacing="10">
-              <Border CornerRadius="16" ClipToBounds="True" Background="#5B7468">
-                <Panel>
-                  <!-- 画布显示的是哪几块显示器（只画摆有元件的显示器），由代码后置按显示器信息写出。 -->
-                  <TextBlock x:Name="CanvasLabel" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#DCE6E0" FontSize="13"
-                             TextWrapping="Wrap" TextAlignment="Center" Text="{DynamicResource O.GameArea}" />
-                  <overlay:OverlayCanvas x:Name="Canvas" IsEditing="True" AspectRatio="1.7778"
-                                         SelectedWidgetId="{Binding SelectedWidgetId, Mode=TwoWay}" />
-                </Panel>
-              </Border>
-              <TextBlock Classes="note" Text="{Binding StatusLine}" />
+              <TextBlock x:Name="EditStatus" Classes="note" TextWrapping="Wrap" Text="{Binding StatusLine}" />
+              <WrapPanel>
+                <!-- 进入编辑后各元件在实际屏幕上可拖动、改尺寸；再按一次（或浮窗上的“完成编辑”）退出并保存。 -->
+                <Button x:Name="EditButton" Classes="chip" Classes.active="{Binding IsEditing}" Margin="0,0,6,6"
+                        Content="{Binding EditAction}" Command="{Binding EditCommand}" ToolTip.Tip="{DynamicResource O.EditHint}" />
+                <Button x:Name="MoveAllToPrimaryButton" Classes="chip" Margin="0,0,0,6" Content="{DynamicResource O.MoveAllToPrimary}"
+                        Command="{Binding MoveAllToPrimaryCommand}" ToolTip.Tip="{DynamicResource O.MoveAllToPrimaryHint}" />
+              </WrapPanel>
+              <controls:PairRow>
+                <TextBlock Classes="muted" Text="{DynamicResource O.Monitors}" />
+                <TextBlock x:Name="MonitorsText" Classes="body" TextWrapping="Wrap" TextAlignment="Right" Text="{Binding MonitorsText}" />
+              </controls:PairRow>
               <WrapPanel>
                 <!-- 选中表示当前版面的元件都已上锁；有元件解锁时按下全部上锁，否则全部解锁。 -->
                 <Button x:Name="LockAllButton" Classes="chip" Classes.active="{Binding AllLocked}" Margin="0,0,6,6"
@@ -144,8 +145,12 @@
                   <Button Classes="chip" HorizontalAlignment="Left" Content="{DynamicResource O.PickImage}" Click="OnPickImage" />
                 </StackPanel>
               </Border>
-              <Button x:Name="RemoveWidgetButton" HorizontalAlignment="Left" Content="{DynamicResource O.RemoveWidget}"
-                      Command="{Binding RemoveWidgetCommand}" />
+              <WrapPanel>
+                <Button x:Name="ResetPositionButton" Margin="0,0,8,6" Content="{DynamicResource O.ResetPosition}"
+                        Command="{Binding ResetPositionCommand}" />
+                <Button x:Name="RemoveWidgetButton" Margin="0,0,0,6" Content="{DynamicResource O.RemoveWidget}"
+                        Command="{Binding RemoveWidgetCommand}" />
+              </WrapPanel>
             </StackPanel>
             <TextBlock Classes="note" Text="{DynamicResource O.SettingsHint}" />
           </StackPanel>

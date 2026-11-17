@@ -47,7 +47,7 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     private bool editing;
 
     /// <param name="topic">元件依赖的展示接口主题；为空时元件始终显示。</param>
-    /// <param name="title">元件名称；编辑画布上主题缺失时与说明一起显示。</param>
+    /// <param name="title">元件名称；编辑状态下主题缺失时与说明一起显示。</param>
     public OverlayWidgetModel(string widgetId, IDesktopBackend backend, string? topic = null, LocalizedText? title = null)
     {
         WidgetId = widgetId;
@@ -72,7 +72,7 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
 
     public string WidgetId { get; }
 
-    /// <summary>画布处于版面编辑状态；编辑时依赖缺失主题的元件也要留在画面上，以便标注与摆放。</summary>
+    /// <summary>版面处于在屏幕上编辑的状态；编辑时依赖缺失主题的元件也要留在屏幕上，以便标注与摆放。</summary>
     public bool Editing
     {
         get => editing;
@@ -87,13 +87,13 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
 
     /// <summary>
     /// 外框是否显示：台服没有该数据来源（provider.unavailable）时，游戏浮窗里整个元件不显示；
-    /// 编辑页和其他缺失原因下保留外框。
+    /// 编辑状态下和其他缺失原因下保留外框。
     /// </summary>
     public bool FrameVisible => Notice is not { PlatformUnsupported: true } || editing;
     public bool HasNotice => Notice is not null && FrameVisible;
     public string NoticeText => Notice?.Text ?? string.Empty;
 
-    /// <summary>编辑画布上，缺失主题的元件在说明上方显示自己的名称；游戏浮窗里只有说明。</summary>
+    /// <summary>编辑状态下，缺失主题的元件在说明上方显示自己的名称；平时游戏浮窗里只有说明。</summary>
     public bool ShowNoticeTitle => HasNotice && editing;
     public string NoticeTitle => title?.Current ?? WidgetId;
     private bool Live => Notice is null;

@@ -33,38 +33,72 @@ public sealed partial class LiveBackend
             if (run is not null && colorRunSeen?.RunId != run.Id) colorRunSeen = (run.Id, DateTimeOffset.Now);
             seen = colorRunSeen?.SeenAt ?? DateTimeOffset.Now;
         }
-        var active = run is { Result: null, StopReason: null };
+        // 截图寻色出一局结果后仍在等待重试，运行是否进行中只看宿主写入的终态阶段，不看结果是否已有。
+        var active = run is not null && ColorRunText.IsActive(run);
         var draft = library.Draft;
         var best = run?.BestMeasured ?? run?.Result?.BestMeasured;
         var latest = run?.CurrentVerified ?? run?.Result?.CurrentVerified ?? run?.LastMeasured ?? run?.Result?.LastMeasured;
+        // 进行中的“当前”取引擎最新读数（精准寻色的实际回读、细化时的实测），与运行栏说明行同一来源。
+        var live = active ? run!.Progress?.Reading : null;
         var marks = Judgements(best);
         var readings = draft.Regions.ToDictionary(region => region.Id, region => new ColorReading(
-            latest?.HexByRegion.GetValueOrDefault(region.Id), best?.HexByRegion.GetValueOrDefault(region.Id),
-            best?.DeltaByRegion.GetValueOrDefault(region.Id),
+            live is not null && live.HexByRegion.TryGetValue(region.Id, out var hex) ? hex : latest?.HexByRegion.GetValueOrDefault(region.Id),
+            best?.HexByRegion.GetValueOrDefault(region.Id), best?.DeltaByRegion.GetValueOrDefault(region.Id),
             best is null ? null : ColorMark.Of(marks, region.Id, region.Enabled)));
         // 本局区域可用性只在寻色进行中采用：结束后可能已换了服装，旧的“本局不可用”不再限制区域开关。
         var available = active ? run!.AvailableByRegion : null;
         var bound = current.Binding?.Binding is not null;
         var blocker = active ? null : StartBlocker(page.Capabilities?.FirstOrDefault(item => item.Id == CapabilityIds.ColorSearch),
             current.Binding?.Binding);
-        var (status, tone) = run is null
-            ? (bound ? Pick("就绪", "就緒") : Pick("就绪 · 请先选择游戏窗口和目标颜色", "就緒 · 請先選擇遊戲視窗和目標顏色"), ColorTone.Idle)
-            : active
-                ? (ColorStages.Name(run.Progress?.Stage ?? run.Phase), ColorTone.Live)
-                : (Pick("寻色已结束：", "尋色已結束：") + ColorStages.Outcome(run.Result?.Outcome ?? run.StopReason), ColorTone.Idle);
+        var status = run is null
+            ? new ColorRunStatus(bound ? Pick("就绪", "就緒") : Pick("就绪 · 请先选择游戏窗口和目标颜色", "就緒 · 請先選擇遊戲視窗和目標顏色"),
+                bound ? Pick("在游戏内打开染色界面后点「开始」；F9 可随时停止。", "在遊戲內打開染色介面後點「開始」；F9 可隨時停止。") : string.Empty,
+                ColorTone.Idle)
+            : ColorRunText.Describe(run);
         var connected = current.Connected;
         return new(
             new(draft.Strategy.RawValue, draft.Regions.Select(region => new ColorRegionView(region.Id, region.TargetHex,
                 region.AlternativeHex, region.MatchMode.RawValue, region.Tolerance, region.Priority, region.Enabled,
                 available?.GetValueOrDefault(region.Id, true) ?? true)).ToList(),
                 draft.Revision.ToString()),
-            readings, status, tone, best?.Accepted,
+            readings, status.Title, status.Tone, best?.Accepted,
             active && run!.Candidates is { } batch ? Candidates(run, batch) : [],
             library.Profiles.Select(Row).ToList(),
             new(connected && !active, connected && !active && blocker is null, active, active && run!.Interaction is { RetryEnabled: true },
                 connected && !active),
             Progress: active && run!.Progress is { } progress ? Progress(run.Id, progress, seen) : null,
-            StartBlocker: blocker ?? string.Empty);
+            StartBlocker: blocker ?? string.Empty, Detail: status.Detail);
+    }
+
+    /// <summary>
+    /// 寻色交互租约的续约循环：开始寻色后每秒续约一次，与页面刷新分开，任何一轮读取变慢或断线重连都不会让续约间隔超过后端的 5 秒期限。
+    /// 运行进入终态、换成另一次寻色、后端回复运行已结束或已不存在时退出。
+    /// </summary>
+    private void StartColorPresence()
+    {
+        string? runId;
+        lock (gate) runId = colorRunId;
+        if (runId is not null) _ = Task.Run(() => RenewColorPresenceAsync(runId, lifetime.Token));
+    }
+
+    private async Task RenewColorPresenceAsync(string runId, CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            lock (gate)
+                if (colorRunId != runId || colorRun is { } run && run.Id == runId && !ColorRunText.IsActive(run)) return;
+            if (client is { } api)
+                try
+                {
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    timeout.CancelAfter(TimeSpan.FromSeconds(2));
+                    await api.RenewColorPresenceAsync(runId, timeout.Token);
+                }
+                catch (MabiToolApiException error) when (error.Status == 404 || error.Problem?.Code == "color.runInactive") { return; }
+                catch (Exception error) when (error is MabiToolApiException or HttpRequestException or IOException or OperationCanceledException) { }
+            try { await Task.Delay(TimeSpan.FromSeconds(1), token); }
+            catch (OperationCanceledException) { return; }
+        }
     }
 
     /// <summary>

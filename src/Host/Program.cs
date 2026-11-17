@@ -3,6 +3,8 @@ using MabiTool.Infrastructure;
 using MabiTool.Host.Updates;
 using MabiTool.Host.Color;
 
+// 游戏窗口绑定、截图与鼠标坐标统一用物理像素：在任何窗口与线程创建前声明每显示器 DPI 感知 v2（WindowsDpiAwareness）。
+if (OperatingSystem.IsWindows()) MabiTool.Platform.Windows.WindowsDpiAwareness.EnablePerMonitorV2();
 // 记录监听端口与是否已开始监听：启动失败按端口、数据目录与未知错误分别给出原因与退出码（HostStartupFailure）。
 var started = false;
 var port = 0;

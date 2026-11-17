@@ -198,10 +198,19 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
             {
                 if (trace is not null)
                 {
-                    string? state = null;
-                    try { state = operations.Get(job.Id, "owner", true).State.RawValue; }
+                    // 终态、停止原因、细分原因、精准准备停在的步骤与错误码，都是原因码，不含路径或游戏数据。
+                    string? state = null, reason = job.StopReason, detail = null, stage = null, problem = null;
+                    try
+                    {
+                        var operation = operations.Get(job.Id, "owner", true);
+                        var ended = OperationStore.ReadColor(operation);
+                        state = operation.State.RawValue; problem = operation.Problem?.Code;
+                        reason ??= ended.StopReason ?? ended.Result?.StopReason;
+                        detail = ended.Result?.StopDetail; stage = ended.Result?.FailedStage;
+                    }
                     catch (Exception error) when (error is OperationException or StorageException) { }
-                    trace.Emit(DiagnosticEvents.ColorRunEnded, new DiagnosticFields().Value("state", state).Value("reason", job.StopReason), operationId: job.Id);
+                    trace.Emit(DiagnosticEvents.ColorRunEnded, new DiagnosticFields().Value("state", state).Value("reason", reason)
+                        .Value("detail", detail).Value("stage", stage).Value("problem", problem), operationId: job.Id);
                 }
                 lock (gate) { if (ReferenceEquals(current, job)) current = null; }
                 stop.Dispose();
@@ -266,14 +275,25 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
         }
         if (terminal?.Kind != "result")
         {
-            var raw = terminal?.Payload;
-            var code = raw is { } payload && payload.TryGetProperty("code", out var value) ? PublicCode(value.GetString()!) : "operation.executionFailed";
-            await operations.UpdateColorAsync(job.Id, value => value with { StopReason = code }, OperationState.Failed,
+            // Worker 在一局开始前就停止时只回错误码（失焦、窗口变化、时限、端口失败）；原码保留为停止原因供界面说明。
+            var raw = terminal?.Payload is { } payload && payload.TryGetProperty("code", out var value) ? value.GetString() : null;
+            var code = raw is null ? "operation.executionFailed" : PublicCode(raw);
+            var reason = raw is { Length: <= 64 } known && known.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-') ? known : code;
+            await operations.UpdateColorAsync(job.Id, value => value with { StopReason = reason },
+                code is "input.focusChanged" or "input.bindingChanged" ? OperationState.Interrupted : OperationState.Failed,
                 ApiErrors.Create(code, "染色引擎未完成运行", job.Id));
             return;
         }
         var result = ColorWorkerResults.ReadResult(terminal, run.RulesSnapshot, active!.Source, active.Generation);
-        await operations.UpdateColorAsync(job.Id, value => WithResult(value, result), OperationState.Succeeded);
+        var (state, problem) = ColorRunTermination.Classify(result.StopReason, result.StopDetail,
+            result.CurrentVerified is not null || result.BestMeasured is not null);
+        await operations.UpdateColorAsync(job.Id, value => WithResult(value, result), state,
+            problem is null ? null : ApiErrors.Create(problem, "染色运行未完成", job.Id, new Dictionary<string, JsonElement>
+            {
+                ["stopReason"] = JsonSerializer.SerializeToElement(result.StopReason),
+                ["detail"] = JsonSerializer.SerializeToElement(result.StopDetail),
+                ["stage"] = JsonSerializer.SerializeToElement(result.FailedStage)
+            }));
     }
 
     [SupportedOSPlatform("windows")]
@@ -291,12 +311,13 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
     {
         var kind = frame.Payload.GetProperty("kind").GetString();
         var data = frame.Payload.GetProperty("data");
+        // 运行中的一局结果只更新读数；截图寻色出结果后仍在等待重试，运行停止原因到终态才写入。
         if (kind is "screenshot_result" or "native_result" && data.TryGetProperty("measurements", out _))
             return WithResult(run, ColorWorkerResults.ReadResult(frame with { Kind = "result", Payload = data },
-                run.RulesSnapshot, active.Source, active.Generation));
+                run.RulesSnapshot, active.Source, active.Generation)) with { StopReason = run.StopReason };
         if (kind == "finished" && data.TryGetProperty("result", out var raw))
             return WithResult(run, ColorWorkerResults.ReadResult(frame with { Kind = "result", Payload = raw },
-                run.RulesSnapshot, active.Source, active.Generation));
+                run.RulesSnapshot, active.Source, active.Generation)) with { StopReason = run.StopReason };
         if (kind == "native_candidate_ready")
         {
             var batch = ColorWorkerResults.ReadCandidates(frame, run.RulesSnapshot, clock.GetUtcNow());
@@ -345,9 +366,44 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
             int? total = Count(data, "total") is > 0 and var value ? value : null;
             int? current = total is null ? null : Count(data, "current") ?? 0;
             if (current > total) throw new WorkerException("worker.resultInvalid");
-            progress = new(stage, total is null && same ? progress!.Current : current, total ?? (same ? progress!.Total : null),
+            // 每条阶段事件带本阶段的完整说明（原 ui_progress.progress_text 只看当前事件），没有说明时界面按阶段给默认说明。
+            var status = Text(data, "refinement_status", 32);
+            var verified = Flag(data, "verified") && Flag(data, "screenshot_verified");
+            progress = new ColorRunProgress(stage, total is null && same ? progress!.Current : current, total ?? (same ? progress!.Total : null),
                 same ? progress!.StageStartedMonotonicMs : now, same ? progress!.StageStartedAt : at,
-                progress?.DeadlineMonotonicMs, now, at);
+                progress?.DeadlineMonotonicMs, now, at)
+            {
+                Message = Text(data, "message", 512), Status = status,
+                Reading = verified ? Reading(run, data, "current_colors", "current_deltas") : null,
+                Retained = status is "trial" or "restoring" or "recovering" ? Reading(run, data, "retained_colors", "retained_deltas") : null
+            };
+            changed = true;
+        }
+        else if (kind == "native_colors" && Reading(run, data, "colors", null) is { } observed)
+        {
+            // 精准寻色的实际回读：只更新读数，阶段与说明不变。
+            progress = (progress ?? new(null, null, null, now, at, null, now, at)) with { Reading = observed, UpdatedMonotonicMs = now, UpdatedAt = at };
+            changed = true;
+        }
+        else if (kind == "native_retry_available" && Flag(data, "waiting_for_retry"))
+        {
+            // 本轮已出结果、等待重试（原工具“本轮寻色已完成”）；不可重试时带原因码。
+            var verified = Flag(data, "verified") && Flag(data, "screenshot_verified");
+            progress = (progress ?? new(null, null, null, now, at, null, now, at)) with
+            {
+                Status = "retry-waiting", Reason = Flag(data, "enabled") ? null : Text(data, "reason", 64), Message = null,
+                Reading = verified ? Reading(run, data, "current_colors", "current_deltas") : progress?.Reading, Retained = null,
+                UpdatedMonotonicMs = now, UpdatedAt = at
+            };
+            changed = true;
+        }
+        else if (kind == "native_retry_reset" && Text(data, "status", 32) is { } reset && reset is "zooming" or "searching" or "rejected")
+        {
+            progress = (progress ?? new(null, null, null, now, at, null, now, at)) with
+            {
+                Status = "retry-" + reset, Reason = Text(data, "reason", 64), Message = null, Retained = null,
+                UpdatedMonotonicMs = now, UpdatedAt = at
+            };
             changed = true;
         }
         var budget = data.TryGetProperty("budget", out var nested) && nested.ValueKind == JsonValueKind.Object ? nested : default;
@@ -370,6 +426,38 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
     private static double? Finite(JsonElement row, string key) =>
         row.ValueKind == JsonValueKind.Object && row.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Number &&
         value.GetDouble() is var number && double.IsFinite(number) ? number : null;
+
+    private static string? Text(JsonElement row, string key, int maximum) =>
+        row.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 } text &&
+        text.Length <= maximum && !text.Any(char.IsControl) ? text : null;
+
+    private static bool Flag(JsonElement row, string key) =>
+        row.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.True;
+
+    /// <summary>
+    /// 按规则区域顺序读一组色码与色差，只用于显示：色码统一为大写 #RRGGBB，不是色码的项为空，多出区域数的项忽略；
+    /// 读数不影响运行，格式不符时不拒绝整帧。
+    /// </summary>
+    private static ColorRunReading? Reading(ColorRun run, JsonElement row, string colorsKey, string? deltasKey)
+    {
+        if (!row.TryGetProperty(colorsKey, out var colors) || colors.ValueKind != JsonValueKind.Array) return null;
+        var regions = run.RulesSnapshot.Regions;
+        var count = Math.Min(colors.GetArrayLength(), regions.Count);
+        if (count == 0) return null;
+        JsonElement? deltas = deltasKey is not null && row.TryGetProperty(deltasKey, out var found) && found.ValueKind == JsonValueKind.Array ? found : null;
+        var hex = new Dictionary<string, string?>(StringComparer.Ordinal);
+        var delta = new Dictionary<string, double?>(StringComparer.Ordinal);
+        for (var i = 0; i < count; i++)
+        {
+            var color = colors[i].ValueKind == JsonValueKind.String ? colors[i].GetString()?.ToUpperInvariant() : null;
+            if (color is not null && !System.Text.RegularExpressions.Regex.IsMatch(color, @"\A#[0-9A-F]{6}\z")) color = null;
+            double? value = deltas is { } values && i < values.GetArrayLength() && values[i].ValueKind == JsonValueKind.Number &&
+                values[i].GetDouble() is var number && double.IsFinite(number) && number >= 0 ? number : null;
+            hex[regions[i].Id] = color;
+            delta[regions[i].Id] = value;
+        }
+        return new(hex, delta);
+    }
 
     private static int? Count(JsonElement row, string key) =>
         row.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number) && number >= 0 ? number : null;

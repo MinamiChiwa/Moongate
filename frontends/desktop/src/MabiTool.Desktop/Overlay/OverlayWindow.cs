@@ -169,7 +169,8 @@ public sealed class OverlayWindow : Window
         var handle = NativeHandle;
         if (handle == IntPtr.Zero) return;
         IReadOnlyList<PixelRect>? region = canvas.IsManipulating ? null : OverlayHitRegion.Painted(areas, scaling, size);
-        if (InteractiveRegion.Count > 0) cursorWatch.Start();
+        // 拖动中不停：元件跨到别的显示器后本窗口可能没有可接收鼠标的元件，仍要按光标位置接着拖动并发现松开。
+        if (InteractiveRegion.Count > 0 || canvas.IsManipulating) cursorWatch.Start();
         else cursorWatch.Stop();
         FollowCursor();
         if (region is null ? appliedRegion is null : appliedRegion is not null && region.SequenceEqual(appliedRegion)) return;
@@ -196,13 +197,18 @@ public sealed class OverlayWindow : Window
     {
         var handle = NativeHandle;
         if (handle == IntPtr.Zero) return;
-        if (canvas.IsManipulating && (GetAsyncKeyState(GetSystemMetrics(SwapButtons) != 0 ? RightButton : LeftButton) & 0x8000) == 0)
-            canvas.FinishManipulation();
-        // 同一次取到的光标位置也决定悬停的元件（显示它的锁与调整控件）：物理像素减去窗口位置，再按窗口缩放比例换成逻辑像素。
-        // 浮窗铺满虚拟桌面并固定打开时的缩放比例，所以任一显示器上的光标都按同一比例换算。
         var located = GetCursorPos(out var cursor);
+        // 光标位置：物理像素减去窗口位置，再按本窗口（所在显示器）的缩放比例换成逻辑像素；别的显示器上的光标同样换算，落在窗口之外。
         var local = new PixelPoint(cursor.X - Position.X, cursor.Y - Position.Y);
-        canvas.HoverAt(located ? new Point(local.X / RenderScaling, local.Y / RenderScaling) : null);
+        var point = new Point(local.X / RenderScaling, local.Y / RenderScaling);
+        if (canvas.IsManipulating)
+        {
+            // 光标移到别的显示器后本窗口可能收不到指针移动：按轮询到的位置接着拖动（与指针事件算出的位置相同）。
+            if (located) canvas.DragTo(point);
+            if ((GetAsyncKeyState(GetSystemMetrics(SwapButtons) != 0 ? RightButton : LeftButton) & 0x8000) == 0) canvas.FinishManipulation();
+        }
+        // 同一次取到的光标位置也决定悬停的元件（显示它的锁与调整控件）。
+        canvas.HoverAt(located ? point : null);
         var inside = canvas.IsManipulating || located && OverlayHitRegion.Accepts(InteractiveRegion, local);
         var transparent = !inside;
         if (appliedTransparent == transparent) return;
@@ -255,7 +261,8 @@ public sealed class OverlayWindow : Window
 
 /// <summary>
 /// 浮窗的显示与隐藏。显示时主显示器先开一个窗口，打开后按读到的显示器为其余每块显示器各开一个；显示器布局变化时增减。
-/// 版面编辑页与快捷键都通过它控制；显隐与全部上锁的结果写进活动胶囊（<see cref="IDesktopBackend.ReportNotice"/>）。
+/// 版面页与快捷键都通过它控制；显隐与全部上锁的结果写进活动胶囊（<see cref="IDesktopBackend.ReportNotice"/>）。
+/// 版面页的“编辑位置”经 <see cref="Edit"/> 进入在屏幕上编辑的状态，隐藏浮窗或浮窗关闭时退出编辑并保存。
 /// </summary>
 public sealed class OverlayController(OverlayLayoutStore store, ModuleCatalog catalog, IDesktopBackend backend)
 {
@@ -281,6 +288,7 @@ public sealed class OverlayController(OverlayLayoutStore store, ModuleCatalog ca
         primary.Closed += (_, _) =>
         {
             primary = null;
+            store.EndEdit();
             CloseOthers();
             Changed?.Invoke(this, EventArgs.Empty);
         };
@@ -289,6 +297,16 @@ public sealed class OverlayController(OverlayLayoutStore store, ModuleCatalog ca
     }
 
     public void Hide() => primary?.Close();
+
+    /// <summary>在屏幕上编辑浮窗：浮窗未显示时先显示，再进入编辑状态。</summary>
+    public void Edit()
+    {
+        Show();
+        store.BeginEdit();
+    }
+
+    /// <summary>退出编辑状态并保存版面。</summary>
+    public void FinishEdit() => store.EndEdit();
 
     // 其余显示器各一个窗口：已有的保留，拔掉的显示器的窗口关闭；元件记住的显示器不在时由主显示器的窗口显示。
     private void SyncScreens()

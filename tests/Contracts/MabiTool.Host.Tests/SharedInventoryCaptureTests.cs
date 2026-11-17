@@ -76,7 +76,15 @@ public sealed class SharedInventoryCaptureTests
         await using var cleanup = new StopApplication(app); await app.StartAsync(); using var client = GameObservationApiTests.Area.Owner(app); using var sdk = Sdk(client);
         var music = await GameObservationApiTests.BeginCapture(client, area, "inventory-generation-music");
         var operation = await sdk.StartInventoryObservationAsync(new(area.Bindings.Current!.Session.Id), "inventory-generation");
-        await Current(sdk, operation.Id, app.Services.GetRequiredService<GameObservationService>());
+        var service = app.Services.GetRequiredService<GameObservationService>();
+        await Current(sdk, operation.Id, service);
+        // 窗口几何变化只递增绑定修订：共享捕获、库存观察与当前背包保持，之后的帧照常处理。
+        var pid = service.Runtime().WorkerProcessId;
+        area.ChangeWindowGeometry();
+        await Task.Delay(1000);
+        Assert.Equal(pid, service.Runtime().WorkerProcessId);
+        Assert.True((await sdk.GetInventorySnapshotAsync()).Data!.Current);
+        Assert.False(SqliteStore.IsTerminal((await sdk.GetInventoryObservationAsync(operation.Id)).State.KnownValue));
         await File.WriteAllTextAsync(Path.Combine(area.Root, "inject-fault"), "1");
         await Wait(async () => (await sdk.GetInventorySnapshotAsync()).Data?.Items.FirstOrDefault()?.Item.Quantity?.Value == 2);
         var snapshot = (await sdk.GetInventorySnapshotAsync()).Data!;

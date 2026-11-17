@@ -204,11 +204,14 @@ public enum ColorTone { Idle, Live, Warn }
 /// <summary>
 /// 染色页数据。<see cref="Readings"/> 按区域标识索引；<see cref="Accepted"/> 是后端最佳实测的整体达标标记，没有实测时为空。
 /// <see cref="StartBlocker"/> 是“开始寻色”不可用的具体原因（组件缺失、未绑定游戏窗口、窗口最小化等），可以开始或正在寻色时为空。
+/// <see cref="Status"/> 与 <see cref="Detail"/> 是运行栏的状态行与说明行（<see cref="ColorRunText"/>），游戏浮窗的染色元件取同一对文字。
 /// </summary>
 public sealed record ColorPageData(ColorDraftView? Draft, IReadOnlyDictionary<string, ColorReading> Readings, string Status,
     ColorTone Tone, bool? Accepted, IReadOnlyList<ColorCandidateCard> Candidates, IReadOnlyList<ColorProfileRow> Profiles,
-    ColorActions Actions, string Notice = "", ColorProgressView? Progress = null, string StartBlocker = "")
+    ColorActions Actions, string Notice = "", ColorProgressView? Progress = null, string StartBlocker = "", string Detail = "")
 {
+    public bool HasDetail => Detail.Length > 0;
+
     /// <summary>游戏浮窗“当前颜色”元件：启用的区域按顺序各一行，目标色与实测色各占色块一半，后接实测 HEX 与色差。</summary>
     public IReadOnlyList<ColorOverlayRow> OverlayRows => Draft?.Regions.Select((region, index) => (region, index))
         .Where(pair => pair.region.Enabled).Select(pair =>
@@ -278,6 +281,8 @@ public static class ColorStages
         "matched" => UiText.Pick("目标达标", "目標達標"),
         "compromise" => UiText.Pick("妥协结果", "妥協結果"),
         "unverified" => UiText.Pick("未完成复核", "未完成複核"),
+        "stopped" => UiText.Pick("已停止", "已停止"),
+        "not_found" => UiText.Pick("未找到达标方案", "未找到達標方案"),
         "input.focusChanged" => UiText.Pick("游戏窗口不在前台", "遊戲視窗不在前景"),
         "input.bindingChanged" => UiText.Pick("游戏窗口已变化", "遊戲視窗已變化"),
         "resource.busy" => UiText.Pick("游戏输入被其他操作占用", "遊戲輸入被其他操作佔用"),

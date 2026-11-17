@@ -281,4 +281,46 @@ public sealed class CardGridTests
             window.Close();
         }
     }
+
+    [AvaloniaFact]
+    public void EveryCardScrollsInOnePlacePerDirection()
+    {
+        // 0.1.0 预览包：背包资源卡片取固定档时，外壳滚动区里又有两组各自限高的列表滚动区，几条纵向滚动条叠在卡片右侧。
+        // 每页每张卡片在它适用的任一尺寸档下，同一方向上滚动区不嵌套：外壳会滚动时内容里没有同方向可滚动的滚动区，内容里的滚动区也不互相嵌套。
+        var window = LayoutProbe.Open(new SampleBackend(), 1280, 860);
+        try
+        {
+            var report = new List<string>();
+            foreach (var module in new[]
+                     {
+                         "combat-observation", "rooms", "music-library", "inventory", "color", "presentation",
+                         "shell.modules", "shell.settings", "shell.diagnostics"
+                     })
+            {
+                LayoutProbe.Select(window, module);
+                LayoutProbe.Render(window);
+                foreach (var card in window.GetVisualDescendants().OfType<Card>().Where(card => card.Grid is not null && card.Body is not null))
+                {
+                    var shell = card.ScrollsBody && card.Sizes.Any(CardGrid.IsFixedHeight);
+                    var scrollers = card.Body!.GetSelfAndVisualDescendants().OfType<ScrollViewer>()
+                        .Where(scroller => scroller.TemplatedParent is not TextBox && scroller.IsEffectivelyVisible).ToList();
+                    foreach (var (name, axis, outer) in new (string, Func<ScrollViewer, ScrollBarVisibility>, bool)[]
+                             {
+                                 ("纵向", scroller => scroller.VerticalScrollBarVisibility, shell),
+                                 ("横向", scroller => scroller.HorizontalScrollBarVisibility, false)
+                             })
+                    {
+                        var scrolling = scrollers.Where(scroller => axis(scroller) is ScrollBarVisibility.Auto or ScrollBarVisibility.Visible).ToList();
+                        var nested = scrolling.Count(scroller => outer || scrolling.Any(other => other != scroller && other.IsVisualAncestorOf(scroller)));
+                        if (nested > 0) report.Add($"{module}/{card.CardId}：{name}嵌套的滚动区 {nested} 个（外壳滚动 {outer}）");
+                    }
+                }
+            }
+            Assert.Empty(report);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
 }

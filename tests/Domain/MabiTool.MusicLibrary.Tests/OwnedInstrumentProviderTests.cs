@@ -51,12 +51,12 @@ public sealed class OwnedInstrumentProviderTests
         Assert.Equal(MusicInstrumentMappingState.Unknown, item.Mapping.KnownValue); Assert.Equal(ObservationQuality.Partial, item.Quality.KnownValue);
     }
     [Theory]
-    [InlineData("none")][InlineData("revision")][InlineData("region")][InlineData("build")][InlineData("stale")][InlineData("source")]
+    [InlineData("none")][InlineData("session")][InlineData("region")][InlineData("build")][InlineData("stale")][InlineData("source")]
     public async Task BindingAndObservationValidityGateCurrent(string kind)
     {
         var model = Model(Item("a")); GameSession? binding = Binding;
         if (kind == "none") binding = null;
-        if (kind == "revision") binding = Binding with { BindingRevision = new(9) };
+        if (kind == "session") binding = Binding with { Id = "other-game" };
         if (kind == "region") binding = Binding with { Region = "KR" };
         if (kind == "build") binding = Binding with { GameBuild = "other" };
         if (kind == "stale") model.Value = model.Value with { Workspace = model.Value.Workspace! with { Current = false, Reasons = ["inventory.sequenceGap"] } };
@@ -125,7 +125,7 @@ public sealed class OwnedInstrumentProviderTests
             Assert.Equal("inventory.planStale", (await Assert.ThrowsAsync<OperationException>(() => provider.QueryAsync(new(PageSize: 1, Cursor: cursor), Binding))).Code);
         }
         model.Value = original;
-        Assert.Equal("inventory.planStale", (await Assert.ThrowsAsync<OperationException>(() => provider.QueryAsync(new(PageSize: 1, Cursor: cursor), Binding with { BindingRevision = new(9) }))).Code);
+        Assert.Equal("inventory.planStale", (await Assert.ThrowsAsync<OperationException>(() => provider.QueryAsync(new(PageSize: 1, Cursor: cursor), Binding with { Id = "other-game" }))).Code);
         Assert.Single((await provider.QueryAsync(new(Container: InventoryContainer.Backpack, PageSize: 1), Binding)).Items);
     }
     private sealed class Waiting : IInventoryReadModel
@@ -170,7 +170,7 @@ public sealed class OwnedInstrumentProviderTests
     {
         var model = new Delayed(Model(Item("a"))); GameSession? binding = Binding;
         var request = new OwnedInstrumentProvider(model, "epoch").QueryAsync(new(), () => binding);
-        await model.Ready.Task; binding = Binding with { BindingRevision = new(99) }; model.Release.SetResult();
+        await model.Ready.Task; binding = Binding with { Id = "other-game" }; model.Release.SetResult();
         var page = await request; Assert.False(page.Current); Assert.Contains("inventory.bindingChanged", page.Reasons);
     }
     [Fact]

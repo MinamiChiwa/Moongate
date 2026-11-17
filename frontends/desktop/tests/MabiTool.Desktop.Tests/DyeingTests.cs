@@ -766,6 +766,61 @@ public sealed class DyeingTests
         Assert.Null(LiveBackend.StartBlocker(Capability(CapabilityStatus.Available, "available"), bound));
     }
 
+    /// <summary>运行栏状态：引擎发出的阶段码都有中文名，等待与重试给出指引，各种结束情形给出结论、原因与下一步。</summary>
+    [Fact]
+    public void RunStatusNamesEveryStageAndExplainsEachEnding()
+    {
+        var session = new GameSession("s", "TW", 1, DateTimeOffset.UnixEpoch, new(500), new(1), null);
+        var profile = new ColorProfile("p", 1, "方案", ColorStrategy.Precise,
+            [new ColorRegion("r0", "#202020", [], ColorMatchMode.ExactHex, 8, 1, true), new ColorRegion("r1", "#303030", [], ColorMatchMode.Similar, 8, 2, true)], new(1));
+        var at = DateTimeOffset.UnixEpoch;
+        ColorRun Run(string phase) => new("run", "op", session, profile, phase, 0, null, null, null, null, null);
+        ColorRunProgress Stage(string stage) => new(stage, null, null, 0, at, null, 0, at);
+
+        foreach (var stage in new[] { "waiting", "discovery", "native_validate", "binding", "capture", "search", "observe",
+                     "position", "restore", "verify", "refinement" })
+            Assert.NotEqual(stage, ColorStages.Name(stage));
+        Assert.Equal("new_stage", ColorRunText.Describe(Run("new_stage") with { Progress = Stage("new_stage") }).Title);
+
+        var waiting = ColorRunText.Describe(Run("waiting") with { Progress = Stage("waiting") with { Message = "寻色已就绪，请进入染色界面；工具正在等待活动色板。F9 可停止。" } });
+        Assert.Equal(("等待染色界面", ColorTone.Live), (waiting.Title, waiting.Tone));
+        Assert.Contains("请进入染色界面", waiting.Detail);
+        Assert.Contains("请在游戏内进入染色", ColorRunText.Describe(Run("waiting") with { Progress = Stage("waiting") }).Detail);
+
+        // 截图寻色出一局结果后等待重试：运行仍在进行，说明不能重试的原因与当前实测。
+        var reading = new ColorRunReading(new Dictionary<string, string?> { ["r0"] = "#202020", ["r1"] = "#313131" },
+            new Dictionary<string, double?> { ["r0"] = 0, ["r1"] = 1.5 });
+        var retry = Run("waiting-user") with
+        {
+            Result = new("run", 2, "compromise", "time_used", null, null, null),
+            Progress = Stage("refinement") with { Status = "retry-waiting", Reason = "insufficient_retry_time", Reading = reading }
+        };
+        Assert.True(ColorRunText.IsActive(retry));
+        var waitingRetry = ColorRunText.Describe(retry);
+        Assert.Equal("本轮寻色已完成", waitingRetry.Title);
+        Assert.Contains("区域 2  #313131 · ΔE 1.50", waitingRetry.Detail);
+        Assert.Contains("剩余时间不足以完成重试", waitingRetry.Detail);
+
+        var denied = ColorRunText.Describe(Run("failed") with
+        {
+            StopReason = "unavailable",
+            Result = new ColorRunResult("run", 0, "stopped", "unavailable", null, null, null) { StopDetail = "process_access", FailedStage = "game_build" }
+        });
+        Assert.Equal(("无法读取游戏进程（权限被拒绝）", ColorTone.Warn), (denied.Title, denied.Tone));
+        Assert.Contains("以管理员身份运行", denied.Detail);
+        Assert.EndsWith("停在：核对游戏版本", denied.Detail);
+
+        var palette = ColorRunText.Describe(Run("failed") with
+        {
+            StopReason = "no_active_palette_timeout", Result = new ColorRunResult("run", 0, "stopped", "no_active_palette_timeout", null, null, null)
+        });
+        Assert.Equal("等待染色界面超时", palette.Title);
+        Assert.Equal("游戏失去焦点，已停止寻色", ColorRunText.Describe(Run("interrupted") with { StopReason = "input.focusChanged" }).Title);
+        Assert.Equal("界面失联，寻色已停止", ColorRunText.Describe(Run("cancelled") with { StopReason = "frontend-lost" }).Title);
+        Assert.Equal("已停止寻色", ColorRunText.Describe(Run("cancelled") with { StopReason = "user" }).Title);
+        Assert.Contains("原因码 worker.portFailed", ColorRunText.Describe(Run("failed") with { StopReason = "worker.portFailed" }).Detail);
+    }
+
     [AvaloniaFact]
     public void PresetsSaveLoadAndDeleteThroughTheBackend()
     {

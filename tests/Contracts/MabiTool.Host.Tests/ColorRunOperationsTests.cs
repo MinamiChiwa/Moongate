@@ -98,6 +98,53 @@ public sealed class ColorRunOperationsTests
         Assert.Equal("worker.resultInvalid", Assert.Throws<WorkerException>(() => ColorRunOperations.WithRegionCount(run, 4)).Code);
     }
 
+    /// <summary>只有完成搜索的一局是成功；准备失败、未开始与中途打断各有终态与公开错误码，用户停止为取消。</summary>
+    [Theory]
+    [InlineData(null, null, true, OperationState.Succeeded, null)]
+    [InlineData("target_observed", null, true, OperationState.Succeeded, null)]
+    [InlineData("not_found_in_budget", null, false, OperationState.Succeeded, null)]
+    [InlineData("unavailable", "process_access", false, OperationState.Failed, "permission.missing")]
+    [InlineData("unavailable", "gameBuild.incompatible", false, OperationState.Failed, "gameBuild.incompatible")]
+    [InlineData("unavailable", "coordinate_mapping", false, OperationState.Failed, "operation.executionFailed")]
+    [InlineData("not_started", null, false, OperationState.Failed, "operation.executionFailed")]
+    [InlineData("no_active_palette_timeout", null, false, OperationState.Failed, "operation.executionFailed")]
+    [InlineData("insufficient_time", null, true, OperationState.Succeeded, null)]
+    [InlineData("interrupted", "focus_lost", true, OperationState.Interrupted, "input.focusChanged")]
+    [InlineData("interrupted", "window_changed", false, OperationState.Interrupted, "input.bindingChanged")]
+    [InlineData("palette_ended", null, true, OperationState.Interrupted, "operation.executionFailed")]
+    [InlineData("interrupted", "stop_key_detected", true, OperationState.Cancelled, null)]
+    public void EngineStopReasonsMapToTerminalStateAndProblem(string? stop, string? detail, bool verified, OperationState state, string? problem) =>
+        Assert.Equal((state, problem), ColorRunTermination.Classify(stop, detail, verified));
+
+    [Fact]
+    public void ProgressCarriesEngineGuidanceRetryStateAndReadings()
+    {
+        using var area = new Area();
+        var run = new ColorRun("run", "operation", area.Bindings.Current!.Session, Profile, "waiting", 400_000, null, null, null, null, null);
+        var at = DateTimeOffset.UnixEpoch;
+        JsonElement Data(object value) => JsonSerializer.SerializeToElement(value);
+        const string waiting = "寻色已就绪，请进入染色界面；工具正在等待活动色板。F9 可停止。";
+        run = ColorRunOperations.ProjectProgress(run, "native_progress", Data(new { stage = "waiting", message = waiting }), 50, 400_000, 1000, at);
+        Assert.Equal(("waiting", waiting), (run.Progress!.Stage, run.Progress.Message));
+        run = ColorRunOperations.ProjectProgress(run, "native_colors", Data(new { colors = new[] { "#112233", null } }), 50, 400_000, 1500, at);
+        Assert.Equal(waiting, run.Progress!.Message);
+        Assert.Equal(new Dictionary<string, string?> { ["region-0"] = "#112233", ["region-1"] = null }, run.Progress.Reading!.HexByRegion);
+        run = ColorRunOperations.ProjectProgress(run, "screenshot_progress", Data(new
+        {
+            stage = "refinement", refinement_status = "trial", verified = true, screenshot_verified = true,
+            current_colors = new[] { "#202020", "#212121" }, current_deltas = new double?[] { 0.5, null },
+            retained_colors = new[] { "#202021", "#212122" }, retained_deltas = new double?[] { 1.25, 2 }
+        }), 50, 400_000, 2000, at);
+        Assert.Equal(("refinement", "trial", (string?)null), (run.Progress!.Stage, run.Progress.Status, run.Progress.Message));
+        Assert.Equal(0.5, run.Progress.Reading!.DeltaByRegion["region-0"]);
+        Assert.Equal(1.25, run.Progress.Retained!.DeltaByRegion["region-0"]);
+        run = ColorRunOperations.ProjectProgress(run, "native_retry_available",
+            Data(new { enabled = false, waiting_for_retry = true, reason = "insufficient_retry_time" }), 50, 400_000, 3000, at);
+        Assert.Equal(("retry-waiting", "insufficient_retry_time", "refinement"), (run.Progress!.Status, run.Progress.Reason, run.Progress.Stage));
+        run = ColorRunOperations.ProjectProgress(run, "native_colors", Data(new { colors = new[] { "#abcdef", "112233" } }), 50, 400_000, 4000, at);
+        Assert.Equal(new Dictionary<string, string?> { ["region-0"] = "#ABCDEF", ["region-1"] = null }, run.Progress!.Reading!.HexByRegion);
+    }
+
     [Trait("Category", "Slow")]
     [Fact]
     public async Task HttpLifecycleUsesRealWorkerAndRejectsStaleCommandsAndReleasesResources()

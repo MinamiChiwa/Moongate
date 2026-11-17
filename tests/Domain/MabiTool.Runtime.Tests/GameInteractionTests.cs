@@ -23,10 +23,10 @@ public sealed class GameInteractionTests
         public Action? OnCapture { get; set; }
         public GameCapture? Frame { get; set; }
 
-        public Fixture(TimeProvider? clock = null)
+        public Fixture(TimeProvider? clock = null, PhysicalWindowRect? bounds = null, double dpi = 96)
         {
             Binding = Bindings.Update(new("TW", 100, DateTimeOffset.UtcNow, new(500), "test",
-                new(100, 200, 800, 600), 96, 96, false));
+                bounds ?? new(100, 200, 800, 600), dpi, dpi, false));
             Lease = Leases.Acquire(new("color", "op", Binding.Session.Id, Binding.Session.BindingRevision,
                 ["foreground-input", "activity-control:" + Binding.Session.Id], TimeSpan.FromMinutes(2)));
             Broker = new(Leases, Bindings, this);
@@ -107,6 +107,25 @@ public sealed class GameInteractionTests
             absolute ? "absolute:115,221" : "relative:2,3", "up:MouseRight" }, f.Trace);
         Assert.True(f.Leases.Validate(f.Lease.Id, "foreground-input", f.Lease.FencingToken,
             f.Binding.Session.Id, f.Binding.Session.BindingRevision));
+    }
+
+    /// <summary>
+    /// 绑定是物理像素：游戏在 125%／150% 的副屏、副屏在主屏左侧或上方（负坐标）时，客户区点按“绑定原点 + 客户区坐标”换成屏幕点，
+    /// 超出逻辑尺寸（物理宽度 ÷ 缩放）的客户区点照常有效。
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0, 1920, 1080, 96)]
+    [InlineData(-2400, -300, 2400, 1350, 120)]
+    [InlineData(3840, -1620, 2880, 1620, 144)]
+    public async Task PhysicalClientPointsMapToScreenOnScaledAndNegativeMonitors(int x, int y, int width, int height, double dpi)
+    {
+        using var f = new Fixture(bounds: new(x, y, width, height), dpi: dpi);
+        var far = new PhysicalScreenPoint(width - 1, height - 1);
+        var gesture = new PointerGesture("path", [new(0, 0), far], false, true, 0, Timing);
+        Assert.True(await f.Session.ExecuteAsync(gesture));
+        Assert.Equal(new[] { $"absolute:{x},{y}", "down:MouseLeft", $"absolute:{x + width - 1},{y + height - 1}", "up:MouseLeft" }, f.Trace);
+        await Assert.ThrowsAsync<GameInputException>(() => f.Session.ExecuteAsync(
+            new PointerGesture("path", [new(0, 0), new(width, 0)], false, true, 0, Timing)));
     }
 
     [Fact]

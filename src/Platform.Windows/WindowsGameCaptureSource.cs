@@ -7,8 +7,8 @@ namespace MabiTool.Platform.Windows;
 
 /// <summary>
 /// 截取绑定游戏窗口的客户区（与原工具 Color Studio <c>Game.capture</c> 相同：按屏幕区域截取，所见即所得）。
-/// 截屏在每显示器 DPI 感知 v2 上下文按物理像素进行；返回的画面尺寸与绑定的客户区尺寸一致，
-/// 绑定坐标为宿主进程 DPI 虚拟化后的逻辑尺寸时按面积平均缩到该尺寸，使截图、手势坐标与绑定处于同一坐标系。
+/// 截屏在每显示器 DPI 感知 v2 上下文按物理像素进行，绑定的客户区同样是物理像素（<see cref="WindowsDpiAwareness"/>），
+/// 画面逐像素对应游戏实际画面与手势坐标；客户区尺寸与绑定不一致时窗口已改变，按绑定变化结束本次截图。
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class WindowsGameCaptureSource : IGameCaptureSource
@@ -27,9 +27,9 @@ public sealed class WindowsGameCaptureSource : IGameCaptureSource
             if (!IsWindow(window)) throw new GameInputException("input.bindingChanged");
             if (IsIconic(window)) throw new GameInputException("input.bindingChanged");
             var area = ClientArea(window);
-            if (area.Width <= 0 || area.Height <= 0 || area.Width > MaximumSide || area.Height > MaximumSide ||
-                area.Width < binding.Bounds.Width || area.Height < binding.Bounds.Height)
+            if (area.Width <= 0 || area.Height <= 0 || area.Width > MaximumSide || area.Height > MaximumSide)
                 throw new GameInputException("capture.frameInvalid");
+            if (area != binding.Bounds) throw new GameInputException("input.bindingChanged");
             screen = GetDC(0);
             if (screen == 0) throw new GameInputException("capture.sourceFailed");
             memory = CreateCompatibleDC(screen);
@@ -47,10 +47,7 @@ public sealed class WindowsGameCaptureSource : IGameCaptureSource
             token.ThrowIfCancellationRequested();
             var bgra = new byte[checked(area.Width * area.Height * 4)];
             Marshal.Copy(bits, bgra, 0, bgra.Length);
-            var rgb = area.Width == binding.Bounds.Width && area.Height == binding.Bounds.Height
-                ? ToRgb(bgra, area.Width, area.Height)
-                : Downsample(bgra, area.Width, area.Height, binding.Bounds.Width, binding.Bounds.Height);
-            return ValueTask.FromResult(new GameCapture(binding.Bounds.Width, binding.Bounds.Height, rgb));
+            return ValueTask.FromResult(new GameCapture(area.Width, area.Height, ToRgb(bgra, area.Width, area.Height)));
         }
         finally
         {
@@ -75,42 +72,6 @@ public sealed class WindowsGameCaptureSource : IGameCaptureSource
         var rgb = new byte[checked(width * height * 3)];
         for (int source = 0, target = 0; target < rgb.Length; source += 4)
         { rgb[target++] = bgra[source + 2]; rgb[target++] = bgra[source + 1]; rgb[target++] = bgra[source]; }
-        return rgb;
-    }
-
-    /// <summary>按源像素覆盖面积加权平均缩小，纯色区域的颜色保持不变。</summary>
-    private static byte[] Downsample(byte[] bgra, int width, int height, int targetWidth, int targetHeight)
-    {
-        var rgb = new byte[checked(targetWidth * targetHeight * 3)];
-        var scaleX = (double)width / targetWidth;
-        var scaleY = (double)height / targetHeight;
-        var sums = new double[3];
-        for (var y = 0; y < targetHeight; y++)
-        {
-            var top = y * scaleY; var bottom = top + scaleY;
-            for (var x = 0; x < targetWidth; x++)
-            {
-                var left = x * scaleX; var right = left + scaleX;
-                sums[0] = sums[1] = sums[2] = 0;
-                var total = 0d;
-                for (var sy = (int)top; sy < Math.Min(height, (int)Math.Ceiling(bottom)); sy++)
-                {
-                    var wy = Math.Min(bottom, sy + 1) - Math.Max(top, sy);
-                    if (wy <= 0) continue;
-                    for (var sx = (int)left; sx < Math.Min(width, (int)Math.Ceiling(right)); sx++)
-                    {
-                        var weight = wy * (Math.Min(right, sx + 1) - Math.Max(left, sx));
-                        if (weight <= 0) continue;
-                        var offset = (sy * width + sx) * 4;
-                        sums[0] += bgra[offset + 2] * weight; sums[1] += bgra[offset + 1] * weight; sums[2] += bgra[offset] * weight;
-                        total += weight;
-                    }
-                }
-                var target = (y * targetWidth + x) * 3;
-                for (var channel = 0; channel < 3; channel++)
-                    rgb[target + channel] = (byte)Math.Clamp((int)Math.Round(sums[channel] / total), 0, 255);
-            }
-        }
         return rgb;
     }
 

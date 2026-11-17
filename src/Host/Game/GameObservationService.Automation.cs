@@ -10,8 +10,8 @@ namespace MabiTool.Host.Game;
 
 /// <summary>
 /// 常驻抓包：开启“自动抓包”后，绑定到已核验的台服构建且能确定网卡时由宿主自行启动共享捕获并保持运行，
-/// 不等待模块需求；模块仍以需求/兴趣登记要解码的数据。绑定失效或更换时按原规则停止，新绑定后重新启动；
-/// 失败按 5、15、30、60 秒退避重试，绑定或设置修订变化时立即重试。关闭开关时停止捕获且不再自动启动。
+/// 不等待模块需求；模块仍以需求/兴趣登记要解码的数据。游戏会话结束或更换时停止，新会话绑定后重新启动；窗口几何变化不影响捕获。
+/// 失败按 5、15、30、60 秒退避重试，游戏会话或设置修订变化时立即重试。关闭开关时停止捕获且不再自动启动。
 /// </summary>
 public sealed partial class GameObservationService
 {
@@ -22,7 +22,7 @@ public sealed partial class GameObservationService
     private string autoState = "off";
     private string? autoReason;
     private bool? lastAutomaticCapture;
-    private (string SessionId, ulong Binding, ulong Settings)? attemptKey;
+    private (string SessionId, ulong Settings)? attemptKey;
     private int attemptFailures;
     private long? nextAttemptAt;
     private DateTimeOffset? nextAttemptUtc;
@@ -128,7 +128,7 @@ public sealed partial class GameObservationService
         if (binding is null) { SetAutomation("waiting", "input.bindingUnavailable"); return; }
         if (binding.Region != "TW" || binding.GameBuild != TwClientFingerprint.GameBuild) { SetAutomation("waiting", "gameBuild.incompatible"); return; }
         if (options() is null) { SetAutomation("waiting", "observation.workerUnavailable"); return; }
-        var key = (binding.Id, binding.BindingRevision.Value, settings.Revision.Value);
+        var key = (binding.Id, settings.Revision.Value);
         if (attemptKey != key) { attemptKey = key; attemptFailures = 0; nextAttemptAt = null; }
         if (nextAttemptAt is { } at && clock.GetTimestamp() < at) return;
         SetAutomation("starting", null);
@@ -160,7 +160,7 @@ public sealed partial class GameObservationService
             ScheduleRetry(code);
         }
     }
-    /// <summary>自动启动失败或常驻捕获故障后按退避时间再试；绑定或设置修订变化时由 <see cref="AutomateAsync"/> 立即重试。</summary>
+    /// <summary>自动启动失败或常驻捕获故障后按退避时间再试；游戏会话或设置修订变化时由 <see cref="AutomateAsync"/> 立即重试。</summary>
     private void ScheduleRetry(string code)
     {
         var delay = RetryDelays[Math.Min(attemptFailures, RetryDelays.Length - 1)];

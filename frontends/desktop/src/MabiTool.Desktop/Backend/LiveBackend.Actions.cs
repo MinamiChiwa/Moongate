@@ -66,6 +66,7 @@ public sealed partial class LiveBackend
                         reference.Type.Contains("color", StringComparison.OrdinalIgnoreCase))?.Id;
                     colorRun = null;
                 }
+                StartColorPresence();
                 return null;
             }
             case "color.stop":
@@ -125,7 +126,7 @@ public sealed partial class LiveBackend
         lock (gate) return colorRun ?? throw new InvalidOperationException(Pick("目前没有进行中的寻色", "目前沒有進行中的尋色"));
     }
 
-    // 寻色进行中每秒读取一次运行状态并续约交互租约；租约断开五秒后端会自行取消寻色。
+    // 寻色进行中随页面刷新读取运行状态；交互租约由独立的续约循环维持（StartColorPresence），不受这一轮其他读取的快慢影响。
     private async Task RefreshColorRunAsync(MabiToolClient api, CancellationToken token)
     {
         string? runId;
@@ -134,7 +135,6 @@ public sealed partial class LiveBackend
         try
         {
             var run = await api.GetColorRunAsync(runId, token);
-            if (run.Result is null && run.StopReason is null) await api.RenewColorPresenceAsync(runId, token);
             lock (gate) colorRun = run;
             Notify();
         }

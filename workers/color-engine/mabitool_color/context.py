@@ -46,6 +46,7 @@ class ColorEngineContext:
         self._choice = None
         self._retry_enabled = False
         self._retry_deadline = None
+        self._last_stage = None
 
     def _interaction(self):
         active = self._state == 'running' and not self.stop.is_set()
@@ -145,6 +146,8 @@ class ColorEngineContext:
                     self._choice = None
                 self._interaction_revision += 1
                 data['interaction'] = self._interaction()
+            if kind == 'native_progress' and isinstance(data.get('stage'), str):
+                self._last_stage = data['stage']
             if kind in ('screenshot_result', 'native_result'):
                 annotate(data)
             elif kind == 'finished':
@@ -153,6 +156,17 @@ class ColorEngineContext:
             self._emit(dict(run_id=self.run_id, sequence=self._sequence,
                             at_monotonic=time.monotonic(), kind=kind,
                             data=copy.deepcopy(data)))
+
+    def _preparation_stage(self):
+        """精准寻色没有结果时停在的步骤：准备未完成时取准备记录的步骤，否则取最后一个进度阶段。"""
+        try:
+            import json
+            stage = json.loads((self.folder / 'native-preparation.json').read_text(encoding='utf8')).get('stage')
+        except (OSError, ValueError, AttributeError):
+            stage = None
+        if stage == 'complete' or not isinstance(stage, str):
+            stage = self._last_stage
+        return stage if isinstance(stage, str) and 1 <= len(stage) <= 64 else None
 
     def request_stop(self, source='user_stop'):
         self.stop.request(source)
@@ -205,6 +219,8 @@ class ColorEngineContext:
                 result = run_native_search(
                     self, self.rules, target=self.binding.get('target'),
                     server=self.binding.get('server'), runtime=native_runtime)
+                if result.get('stop_reason') != 'interrupted' and not result.get('verified'):
+                    result['preparation_stage'] = self._preparation_stage()
             with self._lock:
                 self._state = 'stopped' if self.stop.is_set() or result.get('stop_reason') == 'interrupted' else 'completed'
             self.event('finished', state=self.state, result=result)

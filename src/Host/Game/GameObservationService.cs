@@ -166,7 +166,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
             if (requestedProfile == Tw20261110CombatProtocol.CaptureProfile && binding.GameBuild != Tw20261110CombatProtocol.GameBuild)
                 throw new OperationException("gameBuild.incompatible", "当前战斗观察需要已核验的台服构建");
             lock (gate)
-                if (worker is not null && (game?.Id != binding.Id || game.BindingRevision != binding.BindingRevision ||
+                if (worker is not null && (!SameGameSession(binding, game) ||
                     request.ChannelId is not null && channelId != request.ChannelId || request.Profile is not null && profile != request.Profile ||
                     state is "stopping" or "faulted"))
                     throw new OperationException("resource.busy", "当前捕获使用其他绑定或通道，请先释放已有需求");
@@ -189,7 +189,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
                 }
             }
             Authorize(owner);
-            if (controls.Bindings.Current?.Session != binding)
+            if (!SameGameSession(controls.Bindings.Current?.Session, binding))
             {
                 await StopCoreAsync("input.bindingChanged");
                 throw new OperationException("input.bindingChanged", "捕获启动期间游戏绑定已变化");
@@ -374,7 +374,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
                     if (latest is not null && latest.Quality.KnownValue != ObservationQuality.Stale && Mono() - latest.MonotonicMs > latest.ValidForMs)
                     { latest = latest with { Quality = ObservationQuality.Stale }; changed = true; }
                     failure = worker is null ? null : state == "faulted" ? reason ?? "observation.captureFailed" :
-                        controls.Bindings.Current?.Session != game ? "input.bindingChanged" :
+                        !SameGameSession(controls.Bindings.Current?.Session, game) ? "input.bindingChanged" :
                         state == "starting" && clock.GetElapsedTime(startingAt) >= TimeSpan.FromSeconds(30) ? "observation.readyTimeout" : null;
                 }
                 await ReleaseUnauthorizedCombatAsync();
@@ -414,6 +414,13 @@ public sealed partial class GameObservationService(GameControlContext controls, 
         var code = frame.Payload.TryGetProperty("code", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
         return new(code is not null && ApiErrors.Definitions.Any(value => value.Code == code) ? code : "observation.captureFailed", "游戏观测组件未完成请求");
     }
+    /// <summary>
+    /// 抓包、观察 Worker 与各兴趣只读网络数据，归属按游戏会话判定（进程 ID、启动时间、地区、构建，见
+    /// <see cref="GameSessionBindingTracker"/>）。窗口移动、缩放、换显示器、DPI、最小化与恢复只递增绑定修订，
+    /// 不结束捕获，已识别的本机身份与已同步的背包、战斗状态因此保留；输入与截图仍按修订核对。
+    /// </summary>
+    internal static bool SameGameSession(GameSession? current, GameSession? captured) =>
+        current is not null && captured is not null && current.Id == captured.Id;
     private double Mono() => clock.GetTimestamp() * (1000d / clock.TimestampFrequency);
     private void Notify() => Changed?.Invoke();
 

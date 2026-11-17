@@ -1,8 +1,8 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using MabiTool.Desktop.Backend;
 using MabiTool.Desktop.Overlay;
 
 namespace MabiTool.Desktop.Pages.Overlay;
@@ -10,6 +10,7 @@ namespace MabiTool.Desktop.Pages.Overlay;
 public sealed partial class OverlayPage : UserControl
 {
     private OverlayPageModel? watched;
+    private Screens? screens;
 
     public OverlayPage()
     {
@@ -19,27 +20,36 @@ public sealed partial class OverlayPage : UserControl
             if (watched is not null) watched.PropertyChanged -= OnModelChanged;
             watched = DataContext as OverlayPageModel;
             if (watched is not null) watched.PropertyChanged += OnModelChanged;
-            UpdateReferenceSize();
+            UpdateScreens();
         };
-        AttachedToVisualTree += (_, _) => UpdateReferenceSize();
     }
 
-    // 编辑画布只画摆有元件的显示器（都没有时为主显示器），以主显示器的缩放比例为参照等比缩小，元件画在各自的显示器上。
-    // 此前画整个虚拟桌面：两块显示器时元件只有约 1/5 大（1920 + 1920@125% 时 DPS 元件在 760 宽的画布上 34×35），看起来像没有元件。
-    private void UpdateReferenceSize()
+    // 显示器说明随显示器布局（插拔、排列、分辨率、缩放）更新。
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        if (watched is null) return;
-        var area = OverlayArea.ForEditor(OverlayArea.Describe(TopLevel.GetTopLevel(this)?.Screens),
-            watched.Store.Active.Widgets.Select(widget => widget.Screen));
-        Canvas.ReferenceSize = area?.Logical ?? OverlayArea.FallbackLogical;
-        Canvas.Monitors = area?.Monitors ?? [];
-        CanvasLabel.Text = OverlayArea.Caption(area?.Screens);
+        base.OnAttachedToVisualTree(e);
+        screens = TopLevel.GetTopLevel(this)?.Screens;
+        if (screens is not null) screens.Changed += OnScreensChanged;
+        UpdateScreens();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        if (screens is not null) screens.Changed -= OnScreensChanged;
+        screens = null;
+    }
+
+    private void OnScreensChanged(object? sender, EventArgs e) => UpdateScreens();
+
+    private void UpdateScreens()
+    {
+        if (watched is not null) watched.Screens = OverlayArea.Describe(screens ?? TopLevel.GetTopLevel(this)?.Screens);
     }
 
     // 打开时焦点落在层内的关闭按钮，关闭后回到入口按钮。
     private void OnModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        UpdateReferenceSize();
         if (e.PropertyName != nameof(OverlayPageModel.IsGameDataOpen) || watched is null) return;
         // 层的可见性随绑定更新，等布局完成后再移焦点。
         var open = watched.IsGameDataOpen;
@@ -50,26 +60,20 @@ public sealed partial class OverlayPage : UserControl
         }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
-    private void OnGameDataOutsidePressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    private void OnGameDataOutsidePressed(object? sender, PointerPressedEventArgs e)
     {
         watched?.CloseGameDataCommand.Execute(null);
         e.Handled = true;
     }
 
-    private void OnGameDataKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    private void OnGameDataKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Avalonia.Input.Key.Escape || watched is not { IsGameDataOpen: true }) return;
+        if (e.Key != Key.Escape || watched is not { IsGameDataOpen: true }) return;
         watched.CloseGameDataCommand.Execute(null);
         e.Handled = true;
     }
 
-    /// <summary>画布与页面模型读同一份版面，所以画布上的拖动立即反映到右侧设置。</summary>
-    public static OverlayPage Create(OverlayPageModel model, IDesktopBackend backend)
-    {
-        var page = new OverlayPage { DataContext = model };
-        page.Canvas.Attach(model.Store, model.Catalog, backend);
-        return page;
-    }
+    public static OverlayPage Create(OverlayPageModel model) => new() { DataContext = model };
 
     private async void OnPickImage(object? sender, RoutedEventArgs e)
     {

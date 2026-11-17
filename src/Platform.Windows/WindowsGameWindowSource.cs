@@ -103,8 +103,10 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
             if (!processes.Contains(process.ProcessName)) return null;
             var start = new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero);
             if (expected is not null && (expected.ProcessId != (int)pid || expected.ProcessStartTime != start)) return null;
-            if (!GetClientRect(window, out var rect)) return null;
-            var point = new Point(); if (!ClientToScreen(window, ref point)) return null;
+            // 客户区原点与尺寸取物理像素（见 WindowsDpiAwareness），与截图和鼠标坐标处于同一坐标系，负坐标的副屏照常。
+            var rect = default(Rect); var point = new Point();
+            using (var physical = WindowsDpiAwareness.Enter())
+                if (!physical.Physical || !GetClientRect(window, out rect) || !ClientToScreen(window, ref point)) return null;
             var minimized = IsIconic(window); var width = rect.Right - rect.Left; var height = rect.Bottom - rect.Top;
             if (width <= 0 || height <= 0)
             {

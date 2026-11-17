@@ -33,8 +33,13 @@ public sealed class WindowsGameInputDevice : IGameInputDevice
             try { Release(control); } catch (Win32Exception error) { failure = error; }
         if (failure is not null) throw failure;
     }
+    /// <summary>绝对位置按物理屏幕像素设置，与绑定的客户区坐标一致，不受宿主进程 DPI 感知影响。</summary>
     public void MovePointer(PhysicalScreenPoint point)
-    { if (!SetCursorPos(point.X, point.Y)) throw new Win32Exception(Marshal.GetLastWin32Error()); }
+    {
+        using var physical = WindowsDpiAwareness.Enter();
+        if (!physical.Physical) throw new GameInputException("input.deviceFailure");
+        if (!SetCursorPos(point.X, point.Y)) throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
     public void MovePointerRelative(PhysicalScreenPoint delta) => SendMouse(0x0001, delta.X, delta.Y, 0);
     public void Wheel(int delta) => SendMouse(0x0800, 0, 0, unchecked((uint)delta));
     private static void Send(InputControl control, bool release)

@@ -29,12 +29,12 @@ public sealed class OwnedInstrumentProvider(IInventoryReadModel? inventory, stri
         var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new {
             backendEpoch, snapshot.Revision, CatalogRevision = snapshot.Catalog.Revision, CatalogId = snapshot.Catalog.Data?.Id,
             WorkspaceId = workspace?.Id, workspace?.Identity, workspace?.GameSessionId, workspace?.BindingRevision,
-            workspace?.Generation, WorkspaceRevision = workspace?.Revision, workspace?.Current, workspace?.Source, binding,
+            workspace?.Generation, WorkspaceRevision = workspace?.Revision, workspace?.Current, workspace?.Source, BindingSession = binding?.Id, BindingRegion = binding?.Region, BindingBuild = binding?.GameBuild,
             Query = query with { Cursor = null }
         }, ContractJson.Options)));
         var offset = query.Cursor is null ? 0 : Decode(query.Cursor, fingerprint);
         var matches = workspace is not null && binding is not null && workspace.GameSessionId == binding.Id &&
-            workspace.BindingRevision == binding.BindingRevision && workspace.Source is { } source &&
+            workspace.Source is { } source &&
             source.Region == binding.Region && source.GameBuild == binding.GameBuild;
         var current = workspace?.Current == true && workspace.Identity is not null && matches && Usable(workspace.Quality);
         var reasons = workspace?.Reasons.ToList() ?? [];

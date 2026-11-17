@@ -65,7 +65,7 @@ public sealed class WidgetPlacement
     /// 那块显示器已不在时也回到主显示器（<see cref="OverlayArea.Locate"/>）。
     /// </summary>
     public string? Screen { get; set; }
-    /// <summary>在浮窗上按了关闭：浮窗不再显示它，摆放数据保留；在版面编辑页的元件库再点一次即重新显示。</summary>
+    /// <summary>在浮窗上按了关闭：浮窗不再显示它，摆放数据保留；在版面页的元件库再点一次、或编辑状态下再按它的关闭按钮即重新显示。</summary>
     public bool Closed { get; set; }
 
     public void Normalize()
@@ -119,6 +119,15 @@ public sealed class OverlayLayoutStore
     public static string DefaultPath => Infrastructure.DesktopFiles.File("overlay-layouts.json");
 
     public event EventHandler? Changed;
+
+    /// <summary>拖动中元件的位置或所属显示器变了（不保存）：各显示器的浮窗据此重排，元件跨到别的显示器时由那块显示器的浮窗接着显示。</summary>
+    public event EventHandler? Moved;
+
+    /// <summary>
+    /// 在屏幕上编辑浮窗：所有元件（包括关闭的与展示主题缺失的）显示在各自的显示器上，不论锁状态都可以拖动、改尺寸与缩放。
+    /// 只在内存里，重新启动后不处于编辑状态。
+    /// </summary>
+    public bool IsEditing { get; private set; }
 
     public List<OverlayLayout> Layouts { get; }
     public OverlayLayout Active { get; private set; }
@@ -192,6 +201,40 @@ public sealed class OverlayLayoutStore
     public void ToggleLock(WidgetPlacement placement)
     {
         placement.Locked = !placement.Locked;
+        Commit();
+    }
+
+    /// <summary>进入编辑状态。</summary>
+    public void BeginEdit()
+    {
+        if (IsEditing) return;
+        IsEditing = true;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>退出编辑状态并保存版面。</summary>
+    public void EndEdit()
+    {
+        if (!IsEditing) return;
+        IsEditing = false;
+        Commit();
+    }
+
+    /// <summary>拖动过程中的位置变化：通知各浮窗重排，不保存（松开时 <see cref="Commit"/>）。</summary>
+    public void NotifyMoved() => Moved?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>当前版面的元件全部改属主显示器，比例位置不变（找回在别的显示器上看不见的元件）。</summary>
+    public void MoveAllToPrimary()
+    {
+        foreach (var widget in Active.Widgets) widget.Screen = null;
+        Commit();
+    }
+
+    /// <summary>元件回到内建版面里同一元件的位置（没有时为主显示器正中），尺寸、缩放与外观不变。</summary>
+    public void ResetPosition(WidgetPlacement placement)
+    {
+        var fallback = Defaults().SelectMany(layout => layout.Widgets).FirstOrDefault(widget => widget.WidgetId == placement.WidgetId);
+        (placement.X, placement.Y, placement.Screen) = (fallback?.X ?? 0.5, fallback?.Y ?? 0.5, null);
         Commit();
     }
 

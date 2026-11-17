@@ -169,13 +169,22 @@ public sealed class Card : Control
     }
 
     /// <summary>
-    /// 在网格里取固定高度的尺寸档时，内容放不下由卡片外壳提供纵向滚动（缺省）；内容自己安排滚动区的卡片（效果列表）设为假，
-    /// 内容按卡片给出的固定高度排版。
+    /// 在网格里取固定高度的尺寸档时，内容放不下由卡片外壳提供纵向滚动（缺省）；内容自己安排滚动区的卡片（效果列表、表格）设为假，
+    /// 内容按卡片给出的固定高度排版。一张卡片同一方向只有一个滚动区：外壳滚动时内容里不再放限高的滚动区，反之外壳不滚动。
     /// </summary>
     public bool ScrollsBody { get => GetValue(ScrollsBodyProperty); set => SetValue(ScrollsBodyProperty, value); }
 
-    /// <summary>网格给出固定高度时为真：内容区占满标题行以下的高度。</summary>
-    internal bool FillsHeight { get => expander.Fill; set => expander.Fill = value; }
+    /// <summary>网格给出固定高度时为真：内容区占满标题行以下的高度，外壳的滚动区纵向可滚动。</summary>
+    internal bool FillsHeight
+    {
+        get => expander.Fill;
+        set
+        {
+            if (expander.Fill == value) return;
+            expander.Fill = value;
+            ApplyScrolling();
+        }
+    }
 
     /// <summary>所在的网格，由网格在排版时写入；不在网格里时为空。</summary>
     internal CardGrid? Grid
@@ -311,6 +320,7 @@ public sealed class Card : Control
             };
             if (!ReferenceEquals(bodyHost.Child, scroller)) bodyHost.Child = scroller;
             scroller.Content = Body;
+            ApplyScrolling();
         }
         else
         {
@@ -326,6 +336,14 @@ public sealed class Card : Control
         // 与别的卡片并排时，折叠的卡片不被拉到同一行的高度。
         frame.VerticalAlignment = expanded ? VerticalAlignment.Stretch : VerticalAlignment.Top;
         if (Padding is { } padding) frame.Padding = padding; else frame.ClearValue(Decorator.PaddingProperty);
+    }
+
+    // 外壳的滚动区只在固定高度时纵向可滚动；随内容的尺寸档里内容自然撑开，不留滚动条槽位（ScrollGutter 只给可滚动的方向留槽位）。
+    private void ApplyScrolling()
+    {
+        if (scroller is null) return;
+        var visibility = FillsHeight ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
+        if (scroller.VerticalScrollBarVisibility != visibility) scroller.VerticalScrollBarVisibility = visibility;
     }
 
     // 布局菜单的占位：宽度由网格给出、高度为零，排在标题行右端的纵向中线上。

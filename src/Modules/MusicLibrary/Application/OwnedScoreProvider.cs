@@ -28,12 +28,12 @@ public sealed class OwnedScoreProvider(IInventoryReadModel? inventory, string ba
         var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new {
             backendEpoch, snapshot.Revision, WorkspaceId = workspace?.Id, workspace?.Identity,
             workspace?.GameSessionId, workspace?.BindingRevision, workspace?.Generation,
-            WorkspaceRevision = workspace?.Revision, workspace?.Current, workspace?.Quality, workspace?.Source, binding,
+            WorkspaceRevision = workspace?.Revision, workspace?.Current, workspace?.Quality, workspace?.Source, BindingSession = binding?.Id, BindingRegion = binding?.Region, BindingBuild = binding?.GameBuild,
             Query = query with { Cursor = null }
         }, ContractJson.Options)));
         var offset = query.Cursor is null ? 0 : Decode(query.Cursor, fingerprint);
         var matches = workspace is not null && binding is not null && workspace.GameSessionId == binding.Id &&
-            workspace.BindingRevision == binding.BindingRevision && workspace.Source is { } source &&
+            workspace.Source is { } source &&
             source.Region == binding.Region && source.GameBuild == binding.GameBuild;
         var identityValid = workspace?.Identity is { } identity && ValidIdentity(identity.AccountId) && ValidIdentity(identity.CharacterId) &&
             !string.IsNullOrWhiteSpace(identity.RawName) && identity.RawName.Length <= 128 && !identity.RawName.Any(char.IsControl);

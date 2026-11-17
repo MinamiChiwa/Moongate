@@ -41,7 +41,14 @@ public static class ColorWorkerResults
             var current = Read("currentVerified");
             var outcome = raw.TryGetProperty("outcome", out var value) ? value.GetString() ?? "unverified" : "unverified";
             if (current is null && outcome is "matched" or "compromise") outcome = "unverified";
-            return new(frame.RunId, count, outcome, OptionalString(raw, "stop_reason"), best, last, current);
+            // 细分原因与准备步骤只作原因码使用：引擎的错误原文可能含本机路径，不进入运行记录。
+            return new(frame.RunId, count, outcome, Code(raw, "stop_reason"), best, last, current)
+            {
+                StopDetail = Code(raw, "unavailable_reason") ?? Code(raw, "interruption_reason"),
+                FailedStage = Code(raw, "preparation_stage"),
+                BestCurrent = raw.TryGetProperty("best_current", out var kept) && kept.ValueKind is JsonValueKind.True or JsonValueKind.False
+                    ? kept.GetBoolean() : null
+            };
         }
         catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or FormatException or ArgumentException or OverflowException)
         { throw Invalid(error); }
@@ -149,6 +156,11 @@ public static class ColorWorkerResults
 
     private static string? OptionalString(JsonElement row, string key) =>
         row.TryGetProperty(key, out var value) && value.ValueKind != JsonValueKind.Null ? value.GetString() : null;
+
+    /// <summary>原因码：1–64 位字母、数字、点、下划线或连字符；其他形状不当作原因码，返回空。</summary>
+    private static string? Code(JsonElement row, string key) =>
+        OptionalString(row, key) is { Length: >= 1 and <= 64 } value &&
+        value.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-') ? value : null;
 
     private static WorkerException Invalid(Exception? error = null) => new("worker.resultInvalid", error);
 }

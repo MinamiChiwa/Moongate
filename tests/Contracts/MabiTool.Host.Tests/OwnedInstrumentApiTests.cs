@@ -125,12 +125,20 @@ public sealed class OwnedInstrumentApiTests
             oldCursor = page.NextCursor!;
             var controls = app.Services.GetRequiredService<GameControlContext>();
             var binding = controls.Bindings.Current!;
+            // 窗口移动只递增绑定修订：同一游戏会话的持有乐器仍是当前，游标继续有效。
             controls.Bindings.Update(new(binding.Session.Region, binding.Session.ProcessId, binding.Session.ProcessStartTime,
                 binding.Session.WindowIdentity, binding.Session.GameBuild, binding.Bounds with { X = binding.Bounds.X + 10 }, 96, 96, false));
             var moved = await sdk.QueryOwnedMusicInstrumentsAsync(new());
-            Assert.False(moved.Current);
-            Assert.Contains("inventory.bindingChanged", moved.Reasons);
-            Assert.All(moved.Items, item => Assert.False(item.Current));
+            Assert.True(moved.Current);
+            Assert.DoesNotContain("inventory.bindingChanged", moved.Reasons);
+            Assert.Single((await sdk.QueryOwnedMusicInstrumentsAsync(new(PageSize: 1, Cursor: oldCursor))).Items);
+            // 游戏进程重启即新的游戏会话：保留历史实例，撤销当前状态并拒绝旧游标。
+            controls.Bindings.Update(new(binding.Session.Region, binding.Session.ProcessId, binding.Session.ProcessStartTime.AddSeconds(1),
+                binding.Session.WindowIdentity, binding.Session.GameBuild, binding.Bounds, 96, 96, false));
+            var restartedGame = await sdk.QueryOwnedMusicInstrumentsAsync(new());
+            Assert.False(restartedGame.Current);
+            Assert.Contains("inventory.bindingChanged", restartedGame.Reasons);
+            Assert.All(restartedGame.Items, item => Assert.False(item.Current));
             Assert.Empty((await sdk.QueryOwnedMusicInstrumentsAsync(new(CurrentOnly: true))).Items);
             Assert.Equal("inventory.planStale", (await Assert.ThrowsAsync<MabiToolApiException>(() => sdk.QueryOwnedMusicInstrumentsAsync(
                 new(PageSize: 1, Cursor: oldCursor)))).Problem!.Code);

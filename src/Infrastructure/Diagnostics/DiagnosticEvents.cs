@@ -34,7 +34,7 @@ public static class DiagnosticEvents
     /// <summary>宿主日志的 warning/error：category 为日志类别，eventId 为日志事件号；未登记错误码的日志据此定位来源。</summary>
     public static readonly DiagnosticEventDefinition HostLog = new("host.log.entry", null, "host.log", DiagnosticLevel.Warning, ["category", "eventId"]);
     public static readonly DiagnosticEventDefinition ColorRunStarted = new("color.run.started", "color", "color.run", DiagnosticLevel.Info, []);
-    public static readonly DiagnosticEventDefinition ColorRunEnded = new("color.run.ended", "color", "color.run", DiagnosticLevel.Info, ["state", "reason"]);
+    public static readonly DiagnosticEventDefinition ColorRunEnded = new("color.run.ended", "color", "color.run", DiagnosticLevel.Info, ["state", "reason", "detail", "stage", "problem"]);
     public static readonly DiagnosticEventDefinition RoomConnection = new("room.connection.changed", "rooms", "rooms.session", DiagnosticLevel.Info, ["state", "roomOwner"]);
     public static readonly DiagnosticEventDefinition DebugCaptureStarted = new("diagnostics.capture.started", "core", "diagnostics.capture", DiagnosticLevel.Info,
         ["level", "modules", "durationSeconds", "includeDetail"]);

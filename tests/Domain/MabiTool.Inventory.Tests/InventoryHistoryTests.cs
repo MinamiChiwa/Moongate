@@ -146,6 +146,16 @@ public sealed class InventoryHistoryTests
         await store.ApplyFrameAsync(Frame(4,account:InventoryResources.MasterAccountPrefix+"m"));
         Assert.DoesNotContain(store.Accounts().Items,a=>a.AccountId==fallback);
     }
+    /// <summary>窗口几何变化只递增绑定修订：同一游戏会话内修订不同的完整帧照常成为当前，随后的增量接续。</summary>
+    [Fact] public async Task FullFrameWithANewBindingRevisionInTheSameSessionBecomesCurrent()
+    {
+        using var area=new Area();using var lease=area.Lease();await using var db=SqliteStore.Open(lease,[InventoryHistoryStore.Migration]);var store=new InventoryHistoryStore(db,"epoch");
+        await store.ApplyFrameAsync(Frame(1) with {BindingRevision=new(1)});
+        var moved=await store.ApplyFrameAsync(Frame(2,items:[Item(count:5)]) with {BindingRevision=new(8)});
+        Assert.True(moved!.Current);Assert.Equal((8UL,5UL),(moved.BindingRevision!.Value.Value,moved.Items.Single().Item.Quantity!.Value.Value));
+        var delta=await store.ApplyFrameAsync(Frame(3,InventoryFrameKind.Delta,[],[new(InventoryDeltaKind.Upsert,Item(count:6))]) with {BindingRevision=new(8)});
+        Assert.True(delta!.Current);Assert.Equal(6UL,delta.Items.Single().Item.Quantity!.Value.Value);
+    }
     [Fact] public async Task DeltaGapInvalidatesAndRestartKeepsHistory()
     {
         using var area=new Area();using var lease=area.Lease();await using var db=SqliteStore.Open(lease,[InventoryHistoryStore.Migration]);var store=new InventoryHistoryStore(db,"epoch");

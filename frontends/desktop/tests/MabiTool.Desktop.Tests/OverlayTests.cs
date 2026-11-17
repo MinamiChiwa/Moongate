@@ -30,7 +30,7 @@ using static MabiTool.Desktop.Tests.TestUi;
 
 namespace MabiTool.Desktop.Tests;
 
-/// <summary>浮窗版面页与游戏浮窗：元件编辑、拖动对齐、多套版面、贴边、覆盖区域与比例、显示开关、需要游戏数据的元件、逐元件的锁、浮窗上直接拖动与缩放、接收鼠标区域。</summary>
+/// <summary>浮窗版面页与游戏浮窗：元件管理、在屏幕上编辑、拖动对齐与跨显示器、多套版面、贴边、按显示器记忆位置、显示开关、需要游戏数据的元件、逐元件的锁、浮窗上直接拖动与缩放、接收鼠标区域。</summary>
 public sealed class OverlayTests
 {
     [AvaloniaFact]
@@ -39,13 +39,15 @@ public sealed class OverlayTests
         var window = LayoutProbe.Open(new SampleBackend(), 1280, 860, "presentation");
         var page = window.GetVisualDescendants().OfType<OverlayPage>().Single();
         var model = (OverlayPageModel)page.DataContext!;
-        var canvas = page.GetVisualDescendants().OfType<OverlayCanvas>().Single();
-        Assert.Equal(["rooms.readiness"], canvas.WidgetIds);
+        // 版面页没有预览画布，元件在实际屏幕上摆放。
+        Assert.Empty(page.GetVisualDescendants().OfType<OverlayCanvas>());
+        List<string> Placed() => model.Store.Active.Widgets.Select(widget => widget.WidgetId).ToList();
+        Assert.Equal(["rooms.readiness"], Placed());
 
         Button Library(string id) => page.GetVisualDescendants().OfType<Button>()
             .Single(button => button.CommandParameter as string == id && button.Classes.Contains("tile"));
         Click(window, Library("combat.dps"));
-        Assert.Contains("combat.dps", canvas.WidgetIds);
+        Assert.Contains("combat.dps", Placed());
         Assert.Equal("combat.dps", model.SelectedWidgetId);
         Assert.True(model.HasSelection);
 
@@ -59,52 +61,9 @@ public sealed class OverlayTests
         Assert.Equal("solid", model.Store.Active.Widgets.Single(widget => widget.WidgetId == "combat.dps").Skin);
 
         Click(window, page.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "RemoveWidgetButton"));
-        Assert.DoesNotContain("combat.dps", canvas.WidgetIds);
+        Assert.DoesNotContain("combat.dps", Placed());
         Assert.True(model.NoSelection);
         Assert.Empty(LayoutProbe.FindTextOverflow(window));
-        window.Close();
-    }
-
-    [AvaloniaFact]
-    public void DraggingMovesWidgetOnEightPixelGridAndKeepsItInsideCanvas()
-    {
-        var window = LayoutProbe.Open(new SampleBackend(), 1280, 860, "presentation");
-        var page = window.GetVisualDescendants().OfType<OverlayPage>().Single();
-        var model = (OverlayPageModel)page.DataContext!;
-        var canvas = page.GetVisualDescendants().OfType<OverlayCanvas>().Single();
-        // 默认版面不再摆放当前演奏：先从“需要游戏数据的元件”里的元件放一个到画面中央。
-        model.Store.Place("performance.now-playing");
-        LayoutProbe.Settle();
-        var before = canvas.BoundsOf("performance.now-playing")!.Value;
-        var origin = canvas.TranslatePoint(before.Center, window)!.Value;
-
-        window.MouseDown(origin, MouseButton.Left);
-        window.MouseMove(origin + new Vector(101, 53));
-        window.MouseUp(origin + new Vector(101, 53), MouseButton.Left);
-        LayoutProbe.Settle();
-
-        var after = canvas.BoundsOf("performance.now-playing")!.Value;
-        Assert.Equal("performance.now-playing", model.SelectedWidgetId);
-        // 画布按实际浮窗等比缩小，格线是实际浮窗上的 8 px，换到画布上是 8 × 显示比例。
-        var scale = canvas.ContentScale;
-        var grid = 8 * scale;
-        Assert.InRange(after.X - before.X, 101 - grid, 101 + grid);
-        Assert.InRange(after.Y - before.Y, 53 - grid, 53 + grid);
-        // 画布上的位置经过布局取整，允许半个像素的偏差。
-        Assert.InRange(after.X - Math.Round(after.X / grid) * grid, -0.6, 0.6);
-        Assert.InRange(after.Y - Math.Round(after.Y / grid) * grid, -0.6, 0.6);
-
-        // 拖出画布时停在边缘。
-        var grab = canvas.TranslatePoint(after.Center, window)!.Value;
-        window.MouseDown(grab, MouseButton.Left);
-        window.MouseMove(grab + new Vector(5000, 5000));
-        window.MouseUp(grab + new Vector(5000, 5000), MouseButton.Left);
-        LayoutProbe.Settle();
-        var edge = canvas.BoundsOf("performance.now-playing")!.Value;
-        Assert.True(edge.Right <= canvas.Bounds.Width);
-        Assert.True(edge.Bottom <= canvas.Bounds.Height);
-        var placement = model.Store.Active.Widgets.Single(widget => widget.WidgetId == "performance.now-playing");
-        Assert.Equal((1d, 1d), (placement.X, placement.Y));
         window.Close();
     }
 
@@ -303,7 +262,7 @@ public sealed class OverlayTests
         Assert.Equal(afterClose, store.AllLocked);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void OverlayAreaCoversEveryScreenAndRemembersEachWidgetsMonitor()
     {
         var primary = new ScreenInfo(new PixelRect(0, 0, 1920, 1080), new PixelRect(0, 0, 1920, 1032), 1, true);
@@ -323,6 +282,15 @@ public sealed class OverlayTests
         Assert.Equal(primary.Key, OverlayArea.Locate(monitors, "3840,0,1920,1080@1")!.Key);
         Assert.Equal(primary.Key, OverlayArea.Locate(monitors, null)!.Key);
         Assert.Equal(primary.Key, OverlayArea.Locate(OverlayArea.Resolve([primary])!.Monitors, left.Key)!.Key);
+        // 同一位置的显示器只改了分辨率：仍认这块显示器。
+        Assert.Equal(left.Key, OverlayArea.Locate(monitors, "-2880,0,1920,1080@1.5")!.Key);
+
+        // 版面页的说明：各显示器的方位、分辨率与缩放；记住的显示器不在时写明暂时显示在主显示器。
+        UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
+        Assert.Equal("左侧显示器（2880×1620 · 150%）、主显示器（1920×1080 · 100%）", OverlayArea.Caption([primary, left]));
+        Assert.Equal("左侧显示器（2880×1620 · 150%）", OverlayArea.Where([primary, left], left.Key));
+        Assert.Equal("主显示器（1920×1080 · 100%），原显示器未连接，暂时显示在这里", OverlayArea.Where([primary], left.Key));
+        Assert.Equal("未读取到显示器信息", OverlayArea.Where([], left.Key));
     }
 
     // 混合缩放的双显示器：主显示器 1920×1080（100%），副显示器在左侧 x=-1920，1920×1080（125%）。
@@ -406,111 +374,6 @@ public sealed class OverlayTests
         }
     }
 
-    // 实际使用中的版面（摘录）：7 个元件，Screen 都为空，color.current 已在浮窗上关闭。
-    private const string UserLayoutJson = """
-        { "ActiveId": "v3", "Layouts": [ { "Id": "v3", "Name": "版面 3", "Widgets": [
-          { "WidgetId": "combat.dps", "X": 0.6550925925925926, "Y": 0.5048076923076923, "Scale": 1, "Opacity": 1, "Width": 168, "Height": 176, "Skin": "glass", "Locked": true, "Screen": null, "Closed": false },
-          { "WidgetId": "combat.skills", "X": 0.5552995391705069, "Y": 0.4557522123893805, "Scale": 1, "Opacity": 1, "Width": 160, "Height": 104, "Skin": "glass", "Locked": true, "Screen": null, "Closed": false },
-          { "WidgetId": "combat.measurement", "X": 0.6383495145631068, "Y": 0.7476190476190476, "Scale": 1, "Opacity": 0.9, "Skin": "glass", "Locked": true, "Screen": null, "Closed": false },
-          { "WidgetId": "rooms.readiness", "X": 0.6237373737373737, "Y": 0.06626506024096386, "Scale": 1, "Opacity": 1, "Skin": "glass", "Locked": true, "Screen": null, "Closed": false },
-          { "WidgetId": "combat.self-effects", "X": 0.3911917098445596, "Y": 0.2149122807017544, "Scale": 1, "Opacity": 1, "Skin": "glass", "Locked": true, "Screen": null, "Closed": false },
-          { "WidgetId": "combat.target-effects", "X": 0.3963730569948187, "Y": 0.06756756756756757, "Scale": 1, "Opacity": 1, "Skin": "glass", "Locked": true, "Screen": null, "Closed": false },
-          { "WidgetId": "color.current", "X": 0.5, "Y": 0.5, "Scale": 1, "Opacity": 1, "Skin": "glass", "Locked": true, "Screen": null, "Closed": true } ] } ] }
-        """;
-
-    [AvaloniaFact]
-    public void EditorCanvasKeepsItsWidgetsAfterTheRetainedPageLeavesAndReturns()
-    {
-        // 版面编辑页被保留后离开再回来，画布离开视觉树时丢了版面来源，回来后一个元件也没有。
-        var path = Path.Combine(Path.GetTempPath(), "moongate-user-layout-" + Guid.NewGuid().ToString("N") + ".json");
-        File.WriteAllText(path, UserLayoutJson);
-        UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
-        UiMotion.Enabled = false;
-        var backend = new SampleBackend();
-        var window = App.CreateMainWindow(backend, new OverlayLayoutStore(path));
-        window.Width = 1280;
-        window.Height = 860;
-        window.Show();
-        try
-        {
-            LayoutProbe.Select(window, "presentation");
-            LayoutProbe.Select(window, "rooms");
-            LayoutProbe.Select(window, "presentation");
-            LayoutProbe.Render(window);
-            var canvas = window.GetVisualDescendants().OfType<OverlayPage>().Single().Canvas;
-            AssertReadable(canvas, 7);
-        }
-        finally
-        {
-            window.Close();
-            File.Delete(path);
-        }
-    }
-
-    [AvaloniaFact]
-    public void EditorCanvasOnTheUsersMonitorsShowsEveryWidgetAndRearrangesWhenItGetsItsSize()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "moongate-user-layout-" + Guid.NewGuid().ToString("N") + ".json");
-        File.WriteAllText(path, UserLayoutJson);
-        var backend = new SampleBackend();
-        var catalog = BuiltInModules.CreateCatalog(backend);
-        var store = new OverlayLayoutStore(path);
-        var canvas = new OverlayCanvas { IsEditing = true, AspectRatio = 1.7778 };
-        var area = OverlayArea.ForEditor(UserScreens, store.Active.Widgets.Select(widget => widget.Screen))!;
-        canvas.ReferenceSize = area.Logical;
-        canvas.Monitors = area.Monitors;
-        canvas.Attach(store, catalog, backend);
-        // 先以 0 宽度排版（页面分块放出前、保留页面重新挂上时的首次测量），再给出页面里的实际宽度。
-        var holder = new Border { Width = 0, Child = canvas };
-        var window = new Window { Width = 760, Height = 600, Content = holder };
-        window.Show();
-        try
-        {
-            LayoutProbe.Render(window);
-            holder.Width = 682;
-            LayoutProbe.Render(window);
-            Assert.Equal(new Size(1920, 1080), area.Logical);
-            Assert.Equal("主显示器（1920×1080 · 100%）", OverlayArea.Caption(area.Screens));
-            AssertReadable(canvas, 7);
-        }
-        finally
-        {
-            window.Close();
-            File.Delete(path);
-        }
-    }
-
-    // 每个元件都建出、在画布里、按“缩放前尺寸 × 画布比例”显示且边长不小于 32 px；关闭的元件变淡。
-    private static void AssertReadable(OverlayCanvas canvas, int count)
-    {
-        Assert.Equal(count, canvas.WidgetIds.Count);
-        Assert.True(canvas.ContentScale > 0.3, canvas.ContentScale.ToString());
-        var report = string.Join("; ", canvas.WidgetIds.Select(id => $"{id} {canvas.BoundsOf(id)}"));
-        foreach (var id in canvas.WidgetIds)
-        {
-            var bounds = canvas.BoundsOf(id)!.Value;
-            Assert.True(canvas.FrameOf(id)!.IsEffectivelyVisible, id);
-            Assert.True(bounds.X >= 0 && bounds.Y >= 0 && bounds.Right <= canvas.Bounds.Width + 0.5 && bounds.Bottom <= canvas.Bounds.Height + 0.5, $"{id} {bounds} in {canvas.Bounds}");
-            Assert.True(Math.Min(bounds.Width, bounds.Height) >= 32, report);
-            if (canvas.SizeOf(id) is { } size)
-                Assert.InRange(bounds.Width - size.Width * canvas.ContentScale, -1, 1);
-        }
-        Assert.Equal(0.4, canvas.FrameOf("color.current")!.Opacity, 2);
-        Console.WriteLine("editor canvas " + canvas.Bounds + " scale " + canvas.ContentScale + ": " + report);
-    }
-
-    [Fact]
-    public void EditorCoversOnlyMonitorsThatHoldWidgets()
-    {
-        // 编辑画布此前画整个虚拟桌面（3840 宽），元件只有约 1/5；现在只画摆有元件的显示器。
-        Assert.Equal(new Size(1920, 1080), OverlayArea.ForEditor(UserScreens, [null, null])!.Logical);
-        var both = OverlayArea.ForEditor(UserScreens, [null, UserScreens[1].Key])!;
-        Assert.Equal(new Size(3840, 1080), both.Logical);
-        Assert.Equal(2, both.Monitors.Count);
-        // 记住的显示器已不在：回到主显示器。
-        Assert.Equal(new Size(1920, 1080), OverlayArea.ForEditor(UserScreens, ["3840,0,1920,1080@1"])!.Logical);
-    }
-
     [AvaloniaFact]
     public void WidgetsSitOnTheirRememberedMonitorAtThatMonitorsScale()
     {
@@ -541,47 +404,194 @@ public sealed class OverlayTests
             store.Commit();
             LayoutProbe.Render(window);
             var onSecond = window.Canvas.BoundsOf("combat.dps")!.Value;
-            Assert.Equal(960 + 12, onSecond.X, 1);
+            // 边距 12 按那块显示器的逻辑像素计，在本窗口里同样放大 1.5 倍。
+            Assert.Equal(960 + 12 * 1.5, onSecond.X, 1);
             // 副显示器的缩放比例是主显示器的 1.5 倍，元件在窗口里放大 1.5 倍，物理大小一致。
             Assert.Equal(onPrimary.Width * 1.5, onSecond.Width, 1);
         }
         finally { window.Close(); }
     }
 
-    [Fact]
-    public void PreviewScaleIsCanvasWidthOverAreaWidth()
+    // 两块显示器各一个浮窗窗口（无界面窗口按给定的逻辑尺寸），画布拿到以本窗口为原点与比例的全部显示器。
+    private static (OverlayWindow Primary, OverlayWindow Secondary) OpenMonitorWindows(OverlayLayoutStore store, ModuleCatalog catalog, SampleBackend backend)
     {
-        Assert.Equal(1d / 3, OverlayCanvas.PreviewScale(640, new Size(1920, 1080)), 6);
-        Assert.Equal(0.25, OverlayCanvas.PreviewScale(640, new Size(2560, 1440)), 6);
-        Assert.Equal(1, OverlayCanvas.PreviewScale(640, default));
-        Assert.Equal(1, OverlayCanvas.PreviewScale(double.PositiveInfinity, new Size(1920, 1080)));
+        var primary = new OverlayWindow(store, catalog, backend);
+        var secondary = new OverlayWindow(store, catalog, backend, UserScreens[1].Key);
+        foreach (var (window, screen) in new[] { (primary, UserScreens[0]), (secondary, UserScreens[1]) })
+        {
+            window.Show();
+            var area = OverlayArea.ForScreen(UserScreens, screen, screen.Scaling);
+            window.Width = area.Logical.Width;
+            window.Height = area.Logical.Height;
+            window.Canvas.Monitors = area.Monitors;
+            window.Canvas.OwnMonitorKey = screen.Key;
+            LayoutProbe.Render(window);
+        }
+        return (primary, secondary);
+    }
+
+    // 元件外框换成物理像素（虚拟桌面坐标）：窗口所在显示器的左上角加上逻辑坐标乘以窗口的缩放比例。
+    private static Rect Physical(OverlayWindow window, ScreenInfo screen, string widgetId)
+    {
+        var bounds = window.Canvas.BoundsOf(widgetId)!.Value;
+        return new Rect(screen.Bounds.X + bounds.X * screen.Scaling, screen.Bounds.Y + bounds.Y * screen.Scaling,
+            bounds.Width * screen.Scaling, bounds.Height * screen.Scaling);
     }
 
     [AvaloniaFact]
-    public void EditorCanvasShowsWidgetsAtTheirRealRelativeSize()
+    public void WidgetDragsAcrossMonitorsWithDifferentScalingKeepsItsPlaceAndIsRememberedPerMonitor()
     {
-        // 编辑画布按浮窗覆盖的范围（全部显示器拼成的虚拟桌面）等比缩小；游戏窗口不影响画布。
-        var backend = new SampleBackend { GameWindowBounds = new PixelRect(0, 0, 3840, 2160) };
-        var window = LayoutProbe.Open(backend, 1280, 860, "presentation");
-        var canvas = window.GetVisualDescendants().OfType<OverlayPage>().Single().Canvas;
-        var placement = canvas.WidgetIds[0];
-        var desktop = OverlayArea.Resolve(OverlayArea.Describe(window.Screens))?.Logical ?? OverlayArea.FallbackLogical;
-        Assert.Equal(desktop, canvas.ReferenceSize);
-        Assert.Equal(canvas.Bounds.Width / desktop.Width, canvas.ContentScale, 6);
-        // 画布取覆盖范围的宽高比。
-        Assert.Equal(desktop.Width / desktop.Height, canvas.Bounds.Width / canvas.Bounds.Height, 2);
+        // 0.1.0 预览包：元件只能放在主显示器。拖动按光标位置跨显示器（主显示器 100%、左侧副显示器 125%），不中断、不漂移，松开后按显示器保存。
+        UiMotion.Enabled = false;
+        var path = Path.Combine(Path.GetTempPath(), "moongate-monitors-" + Guid.NewGuid().ToString("N") + ".json");
+        var backend = new SampleBackend();
+        var catalog = BuiltInModules.CreateCatalog(backend);
+        var store = new OverlayLayoutStore(path);
+        store.Select("raid");
+        var dps = store.Active.Widgets.Single(widget => widget.WidgetId == "combat.dps");
+        (dps.X, dps.Y, dps.Locked) = (0.5, 0.5, false);
+        store.Commit();
+        var (primary, secondary) = OpenMonitorWindows(store, catalog, backend);
+        try
+        {
+            // 先在主显示器上拖到格线上的一点，作为来回拖动的起点。
+            Drag(primary, primary.Canvas.BoundsOf("combat.dps")!.Value.Center, new Vector(101, 53));
+            var (x, y) = (dps.X, dps.Y);
+            Assert.Null(dps.Screen);
+            var start = primary.Canvas.BoundsOf("combat.dps")!.Value;
+            var press = start.Center;
+            var size = start.Size;
 
-        // 元件的实际大小：画布上的宽度除以显示比例，等于浮窗上 1:1 的宽度。
-        var overlay = new OverlayWindow(canvasStore(window), ((ShellViewModel)window.DataContext!).Catalog, backend) { Width = desktop.Width, Height = desktop.Height };
-        overlay.Show();
-        LayoutProbe.Settle();
-        var real = overlay.Canvas.BoundsOf(placement)!.Value.Width;
-        // 画布上的尺寸经过布局取整，缩小后的半个像素换回实际尺寸约 2%。
-        Assert.InRange(canvas.BoundsOf(placement)!.Value.Width / canvas.ContentScale / real, 0.97, 1.03);
-        overlay.Close();
-        window.Close();
+            // 按住拖进左侧副显示器（本窗口坐标为负）：元件改属副显示器，由副显示器的窗口显示，抓取点留在光标下，逻辑大小不变。
+            primary.MouseDown(press, MouseButton.Left);
+            var cursor = new Point(-800, 400);
+            primary.MouseMove(cursor);
+            LayoutProbe.Render(primary);
+            LayoutProbe.Render(secondary);
+            Assert.Equal(UserScreens[1].Key, dps.Screen);
+            Assert.True(primary.Canvas.IsManipulating);
+            Assert.True(secondary.Canvas.FrameOf("combat.dps")!.IsVisible);
+            var onSecond = Physical(secondary, UserScreens[1], "combat.dps");
+            Assert.Equal(size.Width * 1.25, onSecond.Width, 0);
+            // 发起拖动的窗口算出的位置与副显示器窗口画出的位置一致（物理像素）。
+            var fromPrimary = Physical(primary, UserScreens[0], "combat.dps");
+            Assert.InRange(onSecond.X - fromPrimary.X, -1, 1);
+            Assert.InRange(onSecond.Y - fromPrimary.Y, -1, 1);
+            // 光标仍在按下时的相对位置上（允许副显示器上一格 10 px 的对齐）。
+            Assert.InRange(onSecond.X + onSecond.Width * (press.X - start.X) / start.Width - cursor.X, -10, 10);
+            Assert.InRange(onSecond.Y + onSecond.Height * (press.Y - start.Y) / start.Height - cursor.Y, -10, 10);
 
-        static OverlayLayoutStore canvasStore(Window window) => ((ShellViewModel)window.DataContext!).Catalog.Overlay!.Store;
+            // 再拖到副显示器的另一处，最后回到按下的位置松开：回到主显示器原来的比例位置，没有累积偏差。
+            primary.MouseMove(new Point(-1500, 200));
+            primary.MouseMove(press);
+            primary.MouseUp(press, MouseButton.Left);
+            LayoutProbe.Render(primary);
+            LayoutProbe.Render(secondary);
+            Assert.Equal(UserScreens[0].Key, dps.Screen);
+            Assert.Equal((x, y), (dps.X, dps.Y));
+            Assert.Equal(start, primary.Canvas.BoundsOf("combat.dps")!.Value);
+            Assert.False(secondary.Canvas.FrameOf("combat.dps")!.IsVisible);
+
+            // 拖到副显示器上松开：留在那里并保存；重新读取版面后仍在副显示器的同一位置。
+            Drag(primary, press, cursor - press);
+            LayoutProbe.Render(secondary);
+            Assert.Equal(UserScreens[1].Key, dps.Screen);
+            Assert.False(primary.Canvas.FrameOf("combat.dps")!.IsVisible);
+            var saved = new OverlayLayoutStore(path).Active.Widgets.Single(widget => widget.WidgetId == "combat.dps");
+            Assert.Equal((UserScreens[1].Key, dps.X, dps.Y), (saved.Screen, saved.X, saved.Y));
+        }
+        finally
+        {
+            primary.Close();
+            secondary.Close();
+            File.Delete(path);
+        }
+    }
+
+    [AvaloniaFact]
+    public void EditingOnScreenMovesLockedAndClosedWidgetsAndSavesWhenFinished()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "moongate-editing-" + Guid.NewGuid().ToString("N") + ".json");
+        var backend = new SampleBackend();
+        var store = new OverlayLayoutStore(path);
+        var placement = store.Active.Widgets.Single(widget => widget.WidgetId == "rooms.readiness");
+        store.Close(placement);
+        var window = App.CreateMainWindow(backend, store);
+        window.Width = 1280;
+        window.Height = 860;
+        UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
+        UiMotion.Enabled = false;
+        window.Show();
+        var controller = ((ShellViewModel)window.DataContext!).Catalog.Overlay!;
+        try
+        {
+            LayoutProbe.Select(window, "presentation");
+            var page = window.GetVisualDescendants().OfType<OverlayPage>().Single();
+            var model = (OverlayPageModel)page.DataContext!;
+            var edit = Named<Button>(page, "EditButton");
+            Assert.Equal("编辑位置", edit.Content);
+            Assert.False(controller.IsShown);
+
+            // “编辑位置”：浮窗显示并进入编辑状态；已上锁、已关闭的元件也显示（变淡），整块可拖动，控件常显，提示条在顶部。
+            Click(window, edit);
+            Assert.True(controller.IsShown);
+            Assert.True(store.IsEditing);
+            Assert.Equal("完成编辑", edit.Content);
+            var overlay = controller.Windows[0];
+            if (overlay.Area is null) (overlay.Width, overlay.Height) = (960, 540);
+            LayoutProbe.Render(overlay);
+            var canvas = overlay.Canvas;
+            Assert.True(placement.Locked);
+            Assert.True(canvas.FrameOf("rooms.readiness")!.IsVisible);
+            Assert.Equal(0.4, canvas.FrameOf("rooms.readiness")!.Opacity, 2);
+            Assert.True(canvas.HandleOf("rooms.readiness")!.IsVisible);
+            Assert.True(canvas.ControlsShown("rooms.readiness"));
+            Assert.True(canvas.Banner.IsEffectivelyVisible);
+            var frame = canvas.BoundsOf("rooms.readiness")!.Value;
+            Assert.True(OverlayHitRegion.Accepts(overlay.InteractiveRegion, new PixelPoint((int)frame.Center.X, (int)frame.Center.Y)));
+            Assert.True(OverlayHitRegion.Accepts(overlay.InteractiveRegion,
+                new PixelPoint((int)canvas.Banner.Bounds.Center.X, (int)canvas.Banner.Bounds.Center.Y)));
+
+            // 编辑状态下按关闭按钮重新显示关闭的元件；拖动上锁的元件（按在内容上也是拖动），锁状态不变。
+            PressAt(overlay, Center(canvas.CloseOf("rooms.readiness")!, overlay));
+            Assert.False(placement.Closed);
+            LayoutProbe.Render(overlay);
+            Drag(overlay, frame.Center, new Vector(-120, 64));
+            Assert.InRange(canvas.BoundsOf("rooms.readiness")!.Value.X - frame.X, -128, -112);
+            Assert.True(placement.Locked);
+
+            // 浮窗上的“完成编辑”：退出编辑并保存；元件回到上锁的行为（只有锁与关闭接收鼠标）。
+            Click(overlay, Named<Button>(overlay, "FinishEditButton"));
+            LayoutProbe.Render(overlay);
+            Assert.False(store.IsEditing);
+            Assert.Equal("编辑位置", edit.Content);
+            Assert.False(canvas.Banner.IsVisible);
+            Assert.False(canvas.HandleOf("rooms.readiness")!.IsVisible);
+            var moved = canvas.BoundsOf("rooms.readiness")!.Value;
+            Assert.False(OverlayHitRegion.Accepts(overlay.InteractiveRegion, new PixelPoint((int)moved.Center.X, (int)moved.Center.Y)));
+            var saved = new OverlayLayoutStore(path).Active.Widgets.Single(widget => widget.WidgetId == "rooms.readiness");
+            Assert.Equal((placement.X, placement.Y, false, true), (saved.X, saved.Y, saved.Closed, saved.Locked));
+
+            // 恢复默认位置回到内建版面里的位置；全部移回主显示器清掉记住的显示器。
+            model.SelectedWidgetId = "rooms.readiness";
+            placement.Screen = UserScreens[1].Key;
+            Click(window, Named<Button>(page, "ResetPositionButton"));
+            Assert.Equal((1d, 0d, (string?)null), (placement.X, placement.Y, placement.Screen));
+            placement.Screen = UserScreens[1].Key;
+            Click(window, Named<Button>(page, "MoveAllToPrimaryButton"));
+            Assert.Null(placement.Screen);
+
+            // 编辑中隐藏浮窗同样退出编辑并保存。
+            Click(window, edit);
+            Assert.True(store.IsEditing);
+            controller.Hide();
+            Assert.False(store.IsEditing);
+        }
+        finally
+        {
+            window.Close();
+            File.Delete(path);
+        }
     }
 
     [AvaloniaFact]
@@ -981,7 +991,7 @@ public sealed class OverlayTests
     }
 
     [AvaloniaFact]
-    public void UnlockedWidgetDragsOnTheOverlayAndTheEditorFollows()
+    public void UnlockedWidgetDragsOnTheOverlayAndTheDetailsFollow()
     {
         var backend = new SampleBackend();
         var main = LayoutProbe.Open(backend, 1280, 860, "presentation");
@@ -1003,10 +1013,9 @@ public sealed class OverlayTests
             store.ToggleLock(placement);
             LayoutProbe.Render(overlay);
             Assert.True(canvas.HandleOf("rooms.readiness")!.IsVisible);
-            // 编辑页详情与画布上的锁同步显示已解锁。
+            // 版面页详情同步显示已解锁。
             LayoutProbe.Render(main);
             Assert.Equal("已解锁", Named<TextBlock>(page, "LockStateText").Text);
-            Assert.Contains("open", LockFace(page.Canvas, "rooms.readiness").Classes);
 
             // 向左下拖动 (-101, 53)：跟随指针并对齐 8 px 格线，比例坐标随之改变。
             Drag(overlay, start.Center, new Vector(-101, 53));
@@ -1019,17 +1028,12 @@ public sealed class OverlayTests
             Assert.InRange(placement.Y, 0.01, 0.99);
             Assert.False(canvas.IsManipulating);
 
-            // 写回同一份版面：编辑画布按同一比例坐标摆放，所选元件的详情显示新的比例。
+            // 写回同一份版面：所选元件的详情显示新的比例。
             LayoutProbe.Render(main);
-            var editor = page.Canvas;
-            var shown = editor.BoundsOf("rooms.readiness")!.Value;
-            var inset = 12 * editor.ContentScale;
-            Assert.Equal(placement.X, (shown.X - inset) / (editor.Bounds.Width - shown.Width - inset * 2), 2);
-            Assert.Equal(placement.Y, (shown.Y - inset) / (editor.Bounds.Height - shown.Height - inset * 2), 2);
             var expected = $"横向 {placement.X:P0}，纵向 {placement.Y:P0}";
             Assert.Contains(model.SelectedDetails, row => row.Value == expected);
 
-            // 编辑页的改动同样立即反映在浮窗上。
+            // 版面数据的改动同样立即反映在浮窗上。
             placement.X = 0;
             store.Commit();
             LayoutProbe.Settle();
@@ -1114,7 +1118,7 @@ public sealed class OverlayTests
     }
 
     [AvaloniaFact]
-    public void EditorHandleChangesTheSizeAndDetailsFollow()
+    public void DetailsToggleTheSelectedWidgetsLock()
     {
         var backend = new SampleBackend();
         var window = LayoutProbe.Open(backend, 1280, 860, "presentation");
@@ -1122,46 +1126,6 @@ public sealed class OverlayTests
         {
             var page = window.GetVisualDescendants().OfType<OverlayPage>().Single();
             var model = (OverlayPageModel)page.DataContext!;
-            var canvas = page.Canvas;
-            var placement = model.Store.Active.Widgets.Single(widget => widget.WidgetId == "rooms.readiness");
-            model.SelectedWidgetId = "rooms.readiness";
-            LayoutProbe.Render(window);
-            var size = canvas.SizeOf("rooms.readiness")!.Value;
-            Assert.Contains(model.SelectedDetails, row => row.Value == $"{size.Width:0} × {size.Height:0}");
-
-            // 编辑画布上的手柄同样改变尺寸：拖动距离按实际浮窗像素换算。
-            var handle = canvas.HandleOf("rooms.readiness")!;
-            Drag(window, Center(handle, window), new Vector(16 * canvas.ContentScale * 8, 0));
-            Assert.Equal(size.Width + 128, placement.Width!.Value, 0);
-            Assert.Equal(1, placement.Scale);
-            Assert.Contains(model.SelectedDetails, row => row.Value == $"{size.Width + 128:0} × {placement.Height:0}");
-
-            // 画布上的“＋”与详情里的缩放控件改的是同一个倍率。
-            var plus = canvas.ZoomButtonOf("rooms.readiness", true)!;
-            Assert.True(plus.IsEffectivelyVisible);
-            PressAt(window, Center(plus, window));
-            Assert.Equal(1.1, placement.Scale, 3);
-            Assert.Equal("110%", model.ScaleText.Replace(" ", string.Empty));
-            model.ScaleCommand.Execute("-");
-            Assert.Equal(1, placement.Scale, 3);
-        }
-        finally { window.Close(); }
-    }
-
-    [AvaloniaFact]
-    public void EditorShowsLockIconsAndTogglesTheSelectedWidgetsLock()
-    {
-        var backend = new SampleBackend();
-        var window = LayoutProbe.Open(backend, 1280, 860, "presentation");
-        try
-        {
-            var page = window.GetVisualDescendants().OfType<OverlayPage>().Single();
-            var model = (OverlayPageModel)page.DataContext!;
-            var canvas = page.Canvas;
-            var lockIcon = canvas.LockOf("rooms.readiness")!;
-            // 画布上的锁只作示意：可见，不接收点击。
-            Assert.True(lockIcon.IsEffectivelyVisible);
-            Assert.False(lockIcon.IsHitTestVisible);
             Assert.False(Named<Button>(page, "LockToggleButton").IsEffectivelyVisible);
 
             Click(window, page.GetVisualDescendants().OfType<Button>()
@@ -1175,19 +1139,7 @@ public sealed class OverlayTests
             Assert.False(placement.Locked);
             Assert.Equal("已解锁", Named<TextBlock>(page, "LockStateText").Text);
             Assert.Equal("上锁", toggle.Content);
-            Assert.Contains("open", LockFace(canvas, "rooms.readiness").Classes);
             Assert.Empty(LayoutProbe.FindTextOverflow(window));
-
-            // 编辑画布上的拖动不受锁状态限制。
-            model.Store.ToggleLock(placement);
-            LayoutProbe.Render(window);
-            var before = canvas.BoundsOf("rooms.readiness")!.Value;
-            // 点详情里的按钮时页面滚动过，先让画布回到视野里。
-            canvas.BringIntoView();
-            LayoutProbe.Render(window);
-            Drag(window, canvas.TranslatePoint(before.Center, window)!.Value, new Vector(-120, 60));
-            Assert.NotEqual(before, canvas.BoundsOf("rooms.readiness")!.Value);
-            Assert.True(placement.Locked);
         }
         finally { window.Close(); }
     }
@@ -1209,7 +1161,7 @@ public sealed class OverlayTests
         view.GetVisualDescendants().OfType<TextBlock>().Where(text => text.IsEffectivelyVisible && !string.IsNullOrEmpty(text.Text))
             .Select(text => text.Text).ToList();
 
-    private static (Window Window, OverlayPage Page, OverlayPageModel Model, OverlayCanvas Canvas) OpenEditor(
+    private static (Window Window, OverlayPage Page, OverlayPageModel Model) OpenEditor(
         SampleBackend backend, double width, double height, UiLanguage language = UiLanguage.SimplifiedChinese,
         UiThemeChoice theme = UiThemeChoice.Light, bool placed = false)
     {
@@ -1221,7 +1173,7 @@ public sealed class OverlayTests
             model.Store.Place("performance.nearby");
             LayoutProbe.Settle();
         }
-        return (window, page, model, page.GetVisualDescendants().OfType<OverlayCanvas>().Single());
+        return (window, page, model);
     }
 
     [AvaloniaFact]
@@ -1251,10 +1203,10 @@ public sealed class OverlayTests
     public void LayerMarksUnsupportedWidgetAndStillAddsItToTheLayout(UiLanguage language)
     {
         var backend = new SampleBackend { PresentationNotices = NearbyUnsupported };
-        var (window, page, model, canvas) = OpenEditor(backend, 1280, 860, language);
+        var (window, page, model) = OpenEditor(backend, 1280, 860, language);
         try
         {
-            Assert.DoesNotContain("performance.nearby", canvas.WidgetIds);
+            Assert.DoesNotContain(model.Store.Active.Widgets, widget => widget.WidgetId == "performance.nearby");
             Click(window, Named<Button>(page, "GameDataButton"));
             Assert.True(model.IsGameDataOpen);
             Assert.True(Named<Panel>(page, "GameDataLayer").IsEffectivelyVisible);
@@ -1264,13 +1216,19 @@ public sealed class OverlayTests
             Assert.Equal("performance.nearby", tile.CommandParameter);
             Assert.Contains(Unsupported(language), VisibleTexts(tile));
 
-            // 仍可从层内加入版面：画布上显示元件名称加标注，选取、缩放照常。
+            // 仍可从层内加入版面：详情写明标注，编辑状态下浮窗上显示元件名称加标注，选取、缩放照常。
             Click(window, tile);
-            Assert.Contains("performance.nearby", canvas.WidgetIds);
+            Assert.Contains(model.Store.Active.Widgets, widget => widget.WidgetId == "performance.nearby");
             Assert.Equal("performance.nearby", model.SelectedWidgetId);
-            Assert.Equal(["附近演奏字幕", Unsupported(language)], VisibleTexts(WidgetView(canvas, "performance.nearby")));
-            Assert.True(canvas.BoundsOf("performance.nearby")!.Value.Width > 0);
             Assert.Contains(model.SelectedDetails, row => row.Value == Unsupported(language));
+            model.Store.BeginEdit();
+            var overlay = new OverlayWindow(model.Store, model.Catalog, backend) { Width = 960, Height = 540 };
+            overlay.Show();
+            LayoutProbe.Render(overlay);
+            Assert.Equal(["附近演奏字幕", Unsupported(language)], VisibleTexts(WidgetView(overlay, "performance.nearby")));
+            Assert.True(overlay.Canvas.BoundsOf("performance.nearby")!.Value.Width > 0);
+            model.Store.EndEdit();
+            overlay.Close();
             var scale = model.Store.Active.Widgets.Single(widget => widget.WidgetId == "performance.nearby").Scale;
             model.ScaleCommand.Execute("+");
             Assert.True(model.Store.Active.Widgets.Single(widget => widget.WidgetId == "performance.nearby").Scale > scale);
@@ -1287,13 +1245,12 @@ public sealed class OverlayTests
             PresentationNotices = topic => topic == PresentationTopics.Nearby
                 ? TopicNoticeText.Describe(new(topic, CapabilityStatus.Unavailable, "provider.unconfigured")) : null
         };
-        var (window, page, model, canvas) = OpenEditor(backend, 1280, 860, placed: true);
+        var (window, page, model) = OpenEditor(backend, 1280, 860, placed: true);
         try
         {
             Click(window, Named<Button>(page, "GameDataButton"));
             var tile = NearbyTile(page);
             Assert.Contains("暂不可用：provider.unconfigured", VisibleTexts(tile));
-            Assert.Contains("暂不可用：provider.unconfigured", VisibleTexts(WidgetView(canvas, "performance.nearby")));
 
             backend.PresentationNotices = null;
             backend.RaiseChanged();
@@ -1301,9 +1258,6 @@ public sealed class OverlayTests
             Assert.All(model.GameDataLibrary, item => Assert.False(item.HasNotice));
             tile = NearbyTile(page);
             Assert.DoesNotContain(VisibleTexts(tile), text => text!.Contains("暂不"));
-            var shown = VisibleTexts(WidgetView(canvas, "performance.nearby"));
-            Assert.NotEmpty(shown);
-            Assert.DoesNotContain(shown, text => text!.Contains("暂不"));
             Assert.All(model.GameDataLibrary, item => Assert.False(item.HasNotice));
             Assert.Empty(LayoutProbe.FindTextOverflow(window));
         }
@@ -1313,7 +1267,7 @@ public sealed class OverlayTests
     [AvaloniaFact]
     public void GameDataLayerClosesWithEscapeOrOutsideClickAndFocusReturnsToTheEntry()
     {
-        var (window, page, model, _) = OpenEditor(new SampleBackend { PresentationNotices = NearbyUnsupported }, 1280, 860);
+        var (window, page, model) = OpenEditor(new SampleBackend { PresentationNotices = NearbyUnsupported }, 1280, 860);
         try
         {
             var entry = Named<Button>(page, "GameDataButton");

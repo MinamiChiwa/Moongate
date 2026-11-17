@@ -402,6 +402,8 @@
                 <StackPanel Spacing="6">
                   <TextBlock x:Name="StatusLine" Classes="body" FontWeight="SemiBold" Text="{Binding StatusText}"
                              Classes.unconfirmed="{Binding StatusWarn}" />
+                  <!-- 说明行（原工具状态下的 detail）：阶段指引、等待用户操作的提示、引擎读数与色差、结束原因与下一步。 -->
+                  <TextBlock x:Name="DetailLine" Classes="note" TextWrapping="Wrap" Text="{Binding DetailText}" IsVisible="{Binding HasDetailText}" />
                   <!-- 寻色进度（原工具浮窗）：步骤“当前/总数”、剩余时间（剩 10 秒内琥珀色）、已用与本阶段时间，每秒更新。 -->
                   <WrapPanel x:Name="ProgressRow" IsVisible="{Binding HasProgress}">
                     <Border Classes="inset" Padding="7,1" CornerRadius="6" Margin="0,0,8,4" VerticalAlignment="Center"

@@ -12,17 +12,16 @@ using MabiTool.Desktop.Modules;
 namespace MabiTool.Desktop.Overlay;
 
 /// <summary>
-/// 按版面摆放浮窗元件的画布，游戏浮窗和版面编辑页共用。
-/// 编辑状态（版面编辑页）下可以点选、拖动元件，并拖右下角的把手改变元件尺寸；位置对齐 8 像素格线。
-/// 游戏浮窗上每个元件的右上角有一把锁：已上锁的元件只有锁图标接收鼠标；已解锁的元件可以直接拖动、拖右下角把手改变尺寸、
-/// 按锁左侧的“－／＋”缩放、按“－／＋”左侧的不透明度按钮调整不透明度，元件内的控件也接收输入。编辑画布上的锁图标只作示意。
-/// 游戏浮窗上锁、不透明度按钮、“－／＋”与尺寸手柄只在光标位于元件上时显示（<see cref="HoverAt"/>，由浮窗按光标位置调用），
+/// 游戏浮窗里按版面摆放元件的画布，每块显示器的浮窗一个。
+/// 每个元件的右上角有一把锁：已上锁的元件只有锁图标与关闭按钮接收鼠标；已解锁的元件可以直接拖动、拖右下角把手改变尺寸、
+/// 按锁左侧的“－／＋”缩放、按“－／＋”左侧的不透明度按钮调整不透明度，元件内的控件也接收输入。
+/// 锁、不透明度按钮、“－／＋”与尺寸手柄只在光标位于元件上时显示（<see cref="HoverAt"/>，由浮窗按光标位置调用），
 /// 不论元件是否上锁；隐藏的锁仍在原处接收鼠标，光标移到元件上即显示，可以解锁。
+/// 编辑状态（<see cref="OverlayLayoutStore.IsEditing"/>，版面页的“编辑位置”）下全部元件显示并可拖动、改尺寸与缩放，不受锁状态限制，
+/// 元件内容不接收输入；显示器顶部有编辑提示条与“完成编辑”。
 /// 手柄改变的是元件外框的宽高（缩放前的逻辑像素，<see cref="WidgetPlacement.Width"/>、<see cref="WidgetPlacement.Height"/>），
-/// 内容按新的尺寸重新排版；缩放倍率只由“－／＋”与编辑页的缩放控件改变。
+/// 内容按新的尺寸重新排版；缩放倍率只由“－／＋”与版面页的缩放控件改变。拖动按光标位置跨显示器（<see cref="DragTo"/>）。
 /// 元件的内容由模块声明的 <see cref="WidgetDescriptor.CreateView"/> 提供。
-/// 设了 <see cref="ReferenceSize"/>（浮窗实际覆盖区域的逻辑尺寸）时，画布取该区域的宽高比，元件、边距与格线按
-/// “画布宽度 ÷ 区域宽度”等比缩小，画布上的相对大小与位置和实际浮窗一致；格线与缩放手柄仍以实际浮窗像素计。
 /// </summary>
 public sealed class OverlayCanvas : Panel
 {
@@ -42,17 +41,6 @@ public sealed class OverlayCanvas : Panel
     public const double CloseSize = 18;
 
     private static readonly Geometry CloseGlyph = Geometry.Parse("M8 8L16 16M16 8L8 16");
-
-    public static readonly StyledProperty<bool> IsEditingProperty =
-        AvaloniaProperty.Register<OverlayCanvas, bool>(nameof(IsEditing));
-    public static readonly StyledProperty<string?> SelectedWidgetIdProperty =
-        AvaloniaProperty.Register<OverlayCanvas, string?>(nameof(SelectedWidgetId));
-    /// <summary>画布按这个宽高比决定自己的高度；为 0 时填满可用空间（游戏浮窗）。</summary>
-    public static readonly StyledProperty<double> AspectRatioProperty =
-        AvaloniaProperty.Register<OverlayCanvas, double>(nameof(AspectRatio));
-    /// <summary>浮窗实际覆盖区域的逻辑尺寸；为空时按 1:1 显示（游戏浮窗本身）。</summary>
-    public static readonly StyledProperty<Size> ReferenceSizeProperty =
-        AvaloniaProperty.Register<OverlayCanvas, Size>(nameof(ReferenceSize));
 
     // 开锁与闭锁画在 24×24 画板上：锁体相同，闭锁的锁梁两端都插进锁体，开锁的锁梁抬起、右端离开锁体。
     private static readonly Geometry LockBody = Geometry.Parse("M7 11H17A1 1 0 0 1 18 12V19A1 1 0 0 1 17 20H7A1 1 0 0 1 6 19V12A1 1 0 0 1 7 11Z");
@@ -92,34 +80,58 @@ public sealed class OverlayCanvas : Panel
     private Slot? dragging;
     private Slot? pressedLock;
     private Point dragOrigin;
-    private Point dragStart;
+    // 按下点在外框里的位置（占外框宽高的比例）：拖动时这一点留在光标下，跨缩放比例不同的显示器也一样。
+    private Point grab;
     private Size sizeStart;
     private Slot? pressedZoom;
     private Slot? pressedClose;
     private string? pressedZoomName;
     private string? hoveredWidgetId;
     private bool resizing;
-    private double contentScale = 1;
     private IReadOnlyList<OverlayMonitor> monitors = [];
-
-    static OverlayCanvas()
-    {
-        AffectsMeasure<OverlayCanvas>(AspectRatioProperty, ReferenceSizeProperty);
-        SelectedWidgetIdProperty.Changed.AddClassHandler<OverlayCanvas>((canvas, _) => canvas.UpdateStates());
-        IsEditingProperty.Changed.AddClassHandler<OverlayCanvas>((canvas, _) => canvas.UpdateStates());
-    }
+    private readonly Border banner;
 
     public OverlayCanvas()
     {
         ClipToBounds = true;
         // 共用的按钮行为：元件上锁（游戏浮窗上鼠标穿透）时，内容里标了 overlayactions 的操作区整块隐藏，不显示成可以点的样子。
-        // 内建与扩展元件都按这个类名标出自己的操作按钮行；编辑画布不上这个类。
+        // 内建与扩展元件都按这个类名标出自己的操作按钮行；编辑状态下不上这个类。
         Styles.Add(new Style(selector => selector.OfType<Border>().Class("overlayframe").Class("locked")
             .Descendant().Class("overlayactions"))
         {
             Setters = { new Setter(IsVisibleProperty, false) }
         });
+        banner = BuildBanner();
     }
+
+    // 编辑状态的提示条：每块显示器工作区顶部正中，写明怎样摆放，右侧“完成编辑”退出编辑并保存。
+    private Border BuildBanner()
+    {
+        var finish = new Button
+        {
+            Name = "FinishEditButton", Content = Localization.UiText.Pick("完成编辑", "完成編輯"), Margin = new Thickness(12, 0, 0, 0),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Classes = { "overlaybutton", "start" }
+        };
+        finish.Click += (_, _) => store?.EndEdit();
+        DockPanel.SetDock(finish, Dock.Right);
+        var text = new TextBlock
+        {
+            Text = Localization.UiText.Pick("正在编辑浮窗：拖动元件摆放（可拖到其他显示器），拖右下角改尺寸，按锁切换上锁",
+                "正在編輯浮窗：拖動元件擺放（可拖到其他顯示器），拖右下角改尺寸，按鎖切換上鎖"),
+            Foreground = Brushes.White, FontSize = 13, TextWrapping = TextWrapping.Wrap, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        };
+        return new Border
+        {
+            Name = "EditBanner", MaxWidth = 640, Padding = new Thickness(16, 8, 12, 8), IsVisible = false,
+            Classes = { "overlayframe", "solid" }, Child = new DockPanel { Children = { finish, text } }
+        };
+    }
+
+    /// <summary>编辑状态的提示条。</summary>
+    public Control Banner => banner;
+
+    /// <summary>版面处于编辑状态（版面页的“编辑位置”）。</summary>
+    public bool IsEditing => store?.IsEditing == true;
 
     /// <summary>
     /// 浮窗覆盖范围里的各块显示器（参照尺寸的逻辑像素）。元件的比例位置取所在显示器的工作区，并按该显示器与参照的缩放比之比放大，
@@ -135,7 +147,6 @@ public sealed class OverlayCanvas : Panel
             foreach (var slot in slots) ApplyScale(slot);
             UpdateStates();
             InvalidateMeasure();
-            outlines?.InvalidateVisual();
         }
     }
 
@@ -143,7 +154,7 @@ public sealed class OverlayCanvas : Panel
 
     /// <summary>
     /// 游戏浮窗每块显示器一个窗口：这个画布只显示所在显示器（<see cref="OverlayMonitor.Key"/>）上的元件，其余元件留在各自显示器的窗口里。
-    /// 为空时显示全部元件（版面编辑画布、测试）。
+    /// 为空时显示全部元件（测试）。
     /// </summary>
     public string? OwnMonitorKey
     {
@@ -162,44 +173,14 @@ public sealed class OverlayCanvas : Panel
 
     // 元件所在显示器在画布上的矩形（扣除边距之前）与缩放倍数；没有显示器信息时是整个画布、倍数 1。
     private (Rect Area, double Dpi) RegionOf(WidgetPlacement placement, Size canvas) => MonitorOf(placement) is { } monitor
-        ? (new Rect(monitor.Area.X * contentScale, monitor.Area.Y * contentScale, monitor.Area.Width * contentScale, monitor.Area.Height * contentScale), monitor.Dpi)
+        ? (monitor.Area, monitor.Dpi)
         : (new Rect(canvas), 1);
 
-    private double Factor(Slot slot) => slot.Placement.Scale * contentScale * (MonitorOf(slot.Placement)?.Dpi ?? 1);
-
-    /// <summary>编辑画布上各显示器工作区的虚线轮廓（多于一块显示器时），画在所有元件之下，便于把元件摆到对应的显示器上。</summary>
-    private sealed class MonitorOutlines(OverlayCanvas canvas) : Control
-    {
-        public override void Render(DrawingContext context)
-        {
-            if (!canvas.IsEditing || canvas.monitors.Count < 2) return;
-            var scale = canvas.contentScale;
-            var pen = new Pen(new SolidColorBrush(Color.FromArgb(0x66, 0x80, 0x80, 0x80)), 1, new DashStyle([4, 3], 0));
-            foreach (var monitor in canvas.monitors)
-                context.DrawRectangle(null, pen, new Rect(monitor.Area.X * scale + 0.5, monitor.Area.Y * scale + 0.5,
-                    Math.Max(0, monitor.Area.Width * scale - 1), Math.Max(0, monitor.Area.Height * scale - 1)));
-        }
-    }
-
-    private MonitorOutlines? outlines;
-
-    public bool IsEditing { get => GetValue(IsEditingProperty); set => SetValue(IsEditingProperty, value); }
-    public string? SelectedWidgetId { get => GetValue(SelectedWidgetIdProperty); set => SetValue(SelectedWidgetIdProperty, value); }
-    public double AspectRatio { get => GetValue(AspectRatioProperty); set => SetValue(AspectRatioProperty, value); }
-    public Size ReferenceSize { get => GetValue(ReferenceSizeProperty); set => SetValue(ReferenceSizeProperty, value); }
-
-    /// <summary>画布上的显示比例：画布宽度 ÷ 覆盖区域宽度；没有设覆盖区域时为 1。</summary>
-    public double ContentScale => contentScale;
+    private double Factor(Slot slot) => slot.Placement.Scale * (MonitorOf(slot.Placement)?.Dpi ?? 1);
 
     /// <summary>正在拖动或缩放元件；开始与结束时触发 <see cref="ManipulationChanged"/>。</summary>
     public bool IsManipulating => dragging is not null;
     public event EventHandler? ManipulationChanged;
-
-    /// <summary>画布宽度为 <paramref name="canvasWidth"/> 时元件的显示比例。</summary>
-    public static double PreviewScale(double canvasWidth, Size reference) =>
-        reference.Width > 0 && reference.Height > 0 && canvasWidth > 0 && !double.IsInfinity(canvasWidth)
-            ? canvasWidth / reference.Width
-            : 1;
 
     /// <summary>当前显示的元件标识，按版面里的先后顺序。</summary>
     public IReadOnlyList<string> WidgetIds => slots.Select(slot => slot.Placement.WidgetId).ToList();
@@ -210,12 +191,17 @@ public sealed class OverlayCanvas : Panel
         suspended = null;
         (store, catalog, backend) = (layouts, modules, source);
         layouts.Changed += OnStoreChanged;
+        layouts.Moved += OnStoreMoved;
         Rebuild();
     }
 
     public void Detach()
     {
-        if (store is not null) store.Changed -= OnStoreChanged;
+        if (store is not null)
+        {
+            store.Changed -= OnStoreChanged;
+            store.Moved -= OnStoreMoved;
+        }
         store = null;
         ClearWidgets();
     }
@@ -276,19 +262,26 @@ public sealed class OverlayCanvas : Panel
 
     /// <summary>
     /// 各元件的外框、上锁时仍接收鼠标的矩形（锁图标与它右侧的关闭按钮）、“－／＋”矩形与锁状态；
-    /// 因展示主题缺失或在浮窗上关闭而隐藏的元件标为不可见。
+    /// 因展示主题缺失或在浮窗上关闭而隐藏的元件标为不可见。编辑状态下元件都按解锁计（整块接收鼠标），另加编辑提示条。
     /// </summary>
-    public IReadOnlyList<WidgetHitArea> HitAreas => slots
-        .Select(slot => new WidgetHitArea(slot.Frame.Bounds,
-            slot.Close.IsVisible ? slot.Lock.Bounds.Union(slot.Close.Bounds) : slot.Lock.Bounds, slot.Placement.Locked, slot.Frame.IsVisible,
-            slot.Zoom.IsVisible ? slot.Zoom.Bounds : default))
-        .ToList();
+    public IReadOnlyList<WidgetHitArea> HitAreas
+    {
+        get
+        {
+            var editing = IsEditing;
+            var areas = slots
+                .Select(slot => new WidgetHitArea(slot.Frame.Bounds,
+                    slot.Close.IsVisible ? slot.Lock.Bounds.Union(slot.Close.Bounds) : slot.Lock.Bounds, slot.Placement.Locked && !editing,
+                    slot.Frame.IsVisible, slot.Zoom.IsVisible ? slot.Zoom.Bounds : default))
+                .ToList();
+            if (banner.IsVisible) areas.Add(new WidgetHitArea(banner.Bounds, default, false, true));
+            return areas;
+        }
+    }
 
     private Slot? Find(string widgetId) => slots.FirstOrDefault(slot => slot.Placement.WidgetId == widgetId);
 
     // 离开视觉树时释放元件（元件模型退订后端），但记住版面来源；重新挂上时重建。
-    // 页面保留（PageHost 只让当前页留在视觉树、空闲预建会先建页面）后，版面编辑页的画布离开再回来是常态；
-    // 此前离开时连来源一起丢掉，回来后画布再也没有元件（表现为编辑画布一片空白）。
     private (OverlayLayoutStore Store, ModuleCatalog Catalog, IDesktopBackend Backend)? suspended;
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -309,28 +302,20 @@ public sealed class OverlayCanvas : Panel
 
     protected override Size MeasureOverride(Size availableSize)
     {
-        var reference = ReferenceSize;
-        var scale = PreviewScale(availableSize.Width, reference);
-        if (scale != contentScale)
-        {
-            contentScale = scale;
-            foreach (var slot in slots) ApplyScale(slot);
-        }
         foreach (var child in Children) child.Measure(Size.Infinity);
-        var aspect = reference is { Width: > 0, Height: > 0 } ? reference.Width / reference.Height : AspectRatio;
-        if (aspect <= 0 || double.IsInfinity(availableSize.Width)) return availableSize;
-        return new Size(availableSize.Width, availableSize.Width / aspect);
+        return new Size(double.IsInfinity(availableSize.Width) ? 0 : availableSize.Width,
+            double.IsInfinity(availableSize.Height) ? 0 : availableSize.Height);
     }
 
+    // 锁、关闭按钮、“－／＋”与手柄都随元件缩放，留在外框内。
     private void ApplyScale(Slot slot)
     {
         var factor = Factor(slot);
         Scale(slot.Frame, factor);
         Scale(slot.Lock, factor);
         Scale(slot.Close, factor);
-        // 编辑画布上的手柄与“－／＋”保持实际像素大小，元件缩得很小时仍便于操作；游戏浮窗上它们随元件缩放，留在外框内。
-        Scale(slot.Handle, IsEditing ? 1 : factor);
-        Scale(slot.Zoom, IsEditing ? 1 : factor);
+        Scale(slot.Handle, factor);
+        Scale(slot.Zoom, factor);
         ApplySize(slot);
     }
 
@@ -374,18 +359,6 @@ public sealed class OverlayCanvas : Panel
         return new Rect(right - width, frame.Top + LockInset * factor, width, ZoomSize * factor);
     }
 
-    /// <summary>
-    /// 编辑画布上“－／＋”的位置：保持实际像素大小，贴在外框右上角的外侧上方，不盖住缩小后的元件；
-    /// 上方放不下时放在外框下方，并让开右下角的尺寸手柄。
-    /// </summary>
-    private static Rect EditorZoomRect(Rect frame, Size canvas)
-    {
-        var width = ZoomRowWidth;
-        if (frame.Top - ZoomGap - ZoomSize >= 0)
-            return new Rect(Math.Max(0, frame.Right - width), frame.Top - ZoomGap - ZoomSize, width, ZoomSize);
-        return new Rect(Math.Max(0, frame.Right - width - HandleSize), Math.Min(frame.Bottom + ZoomGap, canvas.Height - ZoomSize), width, ZoomSize);
-    }
-
     /// <summary>游戏浮窗上尺寸手柄的位置：外框内的右下角，同样落在外框右侧为锁留出的一列里。</summary>
     public static Rect HandleRect(Rect frame, double factor) =>
         new(frame.Right - (HandleInset + HandleSize) * factor, frame.Bottom - (HandleInset + HandleSize) * factor,
@@ -393,26 +366,31 @@ public sealed class OverlayCanvas : Panel
 
     protected override Size ArrangeOverride(Size finalSize)
     {
-        var inset = Inset * contentScale;
-        outlines?.Arrange(new Rect(finalSize));
         foreach (var slot in slots)
         {
             var size = slot.Frame.DesiredSize;
-            // 比例位置取元件所在显示器的工作区（没有显示器信息时是整个画布），四周留同样的边距。
-            var (area, _) = RegionOf(slot.Placement, finalSize);
+            // 比例位置取元件所在显示器的工作区（没有显示器信息时是整个画布），四周留同样的边距（按那块显示器的逻辑像素计）。
+            var (area, dpi) = RegionOf(slot.Placement, finalSize);
+            var inset = Inset * dpi;
             var free = new Size(Math.Max(0, area.Width - size.Width - inset * 2), Math.Max(0, area.Height - size.Height - inset * 2));
             var rect = new Rect(area.X + inset + free.Width * slot.Placement.X, area.Y + inset + free.Height * slot.Placement.Y, size.Width, size.Height);
             slot.Frame.Arrange(rect);
             var factor = Factor(slot);
             slot.Lock.Arrange(LockRect(rect, factor));
             slot.Close.Arrange(CloseRect(rect, factor));
-            slot.Zoom.Arrange(IsEditing ? EditorZoomRect(rect, finalSize) : ZoomRect(rect, factor));
-            slot.Handle.Arrange(IsEditing
-                ? new Rect(rect.Right - 5, rect.Bottom - 5, HandleSize, HandleSize)
-                : HandleRect(rect, factor));
+            slot.Zoom.Arrange(ZoomRect(rect, factor));
+            slot.Handle.Arrange(HandleRect(rect, factor));
         }
+        // 提示条在本显示器工作区顶部正中。
+        var own = monitors.FirstOrDefault(monitor => monitor.Key == ownMonitor)?.Area
+                  ?? OverlayArea.Locate(monitors, null)?.Area ?? new Rect(finalSize);
+        var bar = banner.DesiredSize;
+        banner.Arrange(new Rect(own.X + Math.Max(0, (own.Width - bar.Width) / 2), own.Y + Inset, bar.Width, bar.Height));
         return finalSize;
     }
+
+    // 拖动中的位置变化（可能来自另一块显示器的浮窗）：只重排，不重建。
+    private void OnStoreMoved(object? sender, EventArgs e) => Refresh();
 
     private void OnStoreChanged(object? sender, EventArgs e)
     {
@@ -455,7 +433,7 @@ public sealed class OverlayCanvas : Panel
                 button.PointerReleased -= OnZoomReleased;
                 button.PointerWheelChanged -= OnOpacityWheel;
             }
-            // 只释放元件自己的模型：外框继承的 DataContext 可能是版面编辑页的页面模型，不能随画布重建被释放。
+            // 只释放元件自己的模型：外框继承的 DataContext 不属于元件，不能随画布重建被释放。
             slot.Model?.Dispose();
         }
         slots.Clear();
@@ -484,7 +462,7 @@ public sealed class OverlayCanvas : Panel
             // 提供元件的模块已卸载时跳过，摆放数据保留，重新安装后恢复。
             if (descriptor is null) continue;
             var model = descriptor.CreateView is null
-                ? new OverlayWidgetModel(placement.WidgetId, backend, descriptor.PresentationTopic, descriptor.Title) { Editing = IsEditing }
+                ? new OverlayWidgetModel(placement.WidgetId, backend, descriptor.PresentationTopic, descriptor.Title) { Editing = store.IsEditing }
                 : null;
             var view = descriptor.CreateView?.Invoke(backend) ?? new OverlayWidgetView { DataContext = model };
             // 外框按元件尺寸固定宽高并裁掉超出的内容；内容自己按尺寸排版（截断、滚动或显示更多行）。
@@ -558,13 +536,13 @@ public sealed class OverlayCanvas : Panel
             slots.Add(slot);
             ApplyScale(slot);
         }
-        // 显示器轮廓在最下层；锁图标、“－／＋”与手柄画在所有外框之上，元件重叠时也不被别的元件盖住。
-        Children.Add(outlines ??= new MonitorOutlines(this) { IsHitTestVisible = false });
+        // 锁图标、“－／＋”与手柄画在所有外框之上，元件重叠时也不被别的元件盖住；编辑提示条在最上层。
         foreach (var slot in slots) Children.Add(slot.Frame);
         foreach (var slot in slots) Children.Add(slot.Lock);
         foreach (var slot in slots) Children.Add(slot.Close);
         foreach (var slot in slots) Children.Add(slot.Zoom);
         foreach (var slot in slots) Children.Add(slot.Handle);
+        Children.Add(banner);
         builtLayout = store.Active;
         builtPlacements = store.Active.Widgets.Select(placement => (placement, placement.Skin, placement.Image)).ToList();
         UpdateStates();
@@ -589,10 +567,11 @@ public sealed class OverlayCanvas : Panel
         catch (Exception error) when (error is IOException or ArgumentException or InvalidOperationException) { return null; }
     }
 
+
     /// <summary>
-    /// 按编辑状态、选取与锁状态更新各元件：编辑画布上整块可选取拖动，锁图标只作示意，手柄跟随选取；
-    /// 游戏浮窗上已上锁的元件只有锁图标接收鼠标，已解锁的元件整块接收鼠标并显示手柄与“－／＋”。
-    /// 编辑画布上“－／＋”与手柄一样跟随选取，不受锁状态限制。外框按元件的不透明度显示。
+    /// 按编辑状态与锁状态更新各元件：已上锁的元件只有锁图标与关闭按钮接收鼠标，已解锁的元件整块接收鼠标并显示手柄与“－／＋”。
+    /// 编辑状态下全部元件（包括关闭的与展示主题缺失的）显示、整块可拖动并显示手柄与“－／＋”，内容不接收输入。
+    /// 外框按元件的不透明度显示，编辑状态下关闭的元件变淡。拖动中的元件在发起拖动的画布上一直画着，跨到别的显示器时那块显示器的画布同时显示它。
     /// </summary>
     private void UpdateStates()
     {
@@ -600,32 +579,33 @@ public sealed class OverlayCanvas : Panel
         foreach (var slot in slots)
         {
             if (slot.Model is { } model) model.Editing = editing;
-            // 在浮窗上关闭的元件只在编辑画布上留着（变淡），游戏浮窗不显示。
+            // 在浮窗上关闭的元件只在编辑状态下留着（变淡），其余时候不显示。
             var closed = slot.Placement.Closed;
-            slot.Frame.IsVisible = (slot.Model?.FrameVisible ?? true) && (editing || !closed) && OnThisCanvas(slot.Placement);
+            slot.Frame.IsVisible = (slot.Model?.FrameVisible ?? true) && (editing || !closed) && (OnThisCanvas(slot.Placement) || slot == dragging);
             var visible = slot.Frame.IsVisible;
             var locked = slot.Placement.Locked;
-            slot.Skin.Classes.Set("selected", editing && slot.Placement.WidgetId == SelectedWidgetId);
-            // 上锁时内容里的操作区（overlayactions）隐藏；编辑画布不隐藏。
+            var movable = editing || !locked;
+            slot.Skin.Classes.Set("selected", editing);
+            // 上锁时内容里的操作区（overlayactions）隐藏；编辑状态下不隐藏，但内容整块不接收输入，按哪里都是拖动。
             slot.Skin.Classes.Set("locked", locked && !editing);
-            slot.Frame.IsHitTestVisible = editing || !locked;
+            if (slot.Skin.Child is { } content) content.IsHitTestVisible = !editing;
+            slot.Frame.IsHitTestVisible = movable;
             slot.LockFace.Classes.Set("open", !locked);
             slot.Lock.IsVisible = visible;
-            slot.Lock.IsHitTestVisible = !editing;
-            slot.Close.IsVisible = visible && !editing;
+            slot.Close.IsVisible = visible;
             ApplyScale(slot);
-            var adjustable = visible && (editing ? slot.Placement.WidgetId == SelectedWidgetId : !locked);
-            slot.Handle.IsVisible = adjustable;
-            slot.Zoom.IsVisible = adjustable;
+            slot.Handle.IsVisible = visible && movable;
+            slot.Zoom.IsVisible = visible && movable;
             slot.Frame.Opacity = editing && closed ? slot.Placement.Opacity * 0.4 : slot.Placement.Opacity;
         }
+        banner.IsVisible = editing;
         UpdateControls();
         InvalidateArrange();
     }
 
     /// <summary>
-    /// 游戏浮窗上锁、不透明度按钮、“－／＋”与尺寸手柄只在光标位于元件上（或正在拖动该元件）时显示，其余时候完全透明；
-    /// 只改不透明度，接收鼠标的范围不变，隐藏的锁照样可以点。编辑画布上始终按原规则显示。
+    /// 锁、不透明度按钮、“－／＋”与尺寸手柄只在光标位于元件上（或正在拖动该元件、或处于编辑状态）时显示，其余时候完全透明；
+    /// 只改不透明度，接收鼠标的范围不变，隐藏的锁照样可以点。
     /// </summary>
     private void UpdateControls()
     {
@@ -644,10 +624,13 @@ public sealed class OverlayCanvas : Panel
     {
         (dragging, resizing) = (slot, resize);
         dragOrigin = e.GetPosition(this);
-        dragStart = slot.Frame.Bounds.Position;
+        var frame = slot.Frame.Bounds;
+        grab = frame is { Width: > 0, Height: > 0 }
+            ? new Point((dragOrigin.X - frame.X) / frame.Width, (dragOrigin.Y - frame.Y) / frame.Height)
+            : default;
         // 尺寸按缩放前的逻辑像素计：当前外框尺寸除以显示倍率。
         var factor = Factor(slot);
-        sizeStart = EffectiveSize(slot) ?? new Size(slot.Frame.Bounds.Width / factor, slot.Frame.Bounds.Height / factor);
+        sizeStart = EffectiveSize(slot) ?? new Size(frame.Width / factor, frame.Height / factor);
         // 指针交给按下的部件：拖出元件或窗口区域时仍收到移动与松开。
         e.Pointer.Capture(captureTarget);
         e.Handled = true;
@@ -658,8 +641,7 @@ public sealed class OverlayCanvas : Panel
     {
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         if (slots.FirstOrDefault(item => item.Frame == sender) is not { } slot) return;
-        if (IsEditing) SelectedWidgetId = slot.Placement.WidgetId;
-        else if (slot.Placement.Locked || InScrollableList(e.Source as Visual, slot.Frame)) return;
+        if (!IsEditing && (slot.Placement.Locked || InScrollableList(e.Source as Visual, slot.Frame))) return;
         BeginManipulation(slot, false, e, slot.Frame);
     }
 
@@ -679,22 +661,29 @@ public sealed class OverlayCanvas : Panel
     {
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         if (slots.FirstOrDefault(item => item.Handle == sender) is not { } slot) return;
-        var allowed = IsEditing ? slot.Placement.WidgetId == SelectedWidgetId : !slot.Placement.Locked;
-        if (allowed) BeginManipulation(slot, true, e, slot.Handle);
+        if (IsEditing || !slot.Placement.Locked) BeginManipulation(slot, true, e, slot.Handle);
     }
 
-    private void OnPointerMovedWhileDragging(object? sender, PointerEventArgs e)
+    private void OnPointerMovedWhileDragging(object? sender, PointerEventArgs e) => DragTo(e.GetPosition(this));
+
+    /// <summary>
+    /// 拖动或改尺寸到光标位置（本画布坐标，逻辑像素，可以在画布之外、落在别的显示器上）。指针事件与浮窗的光标轮询都调用它：
+    /// 光标移出本窗口后收不到指针移动时，轮询按 GetCursorPos 换算的位置接着拖动。
+    /// 位置每次按光标的绝对位置与按下时的抓取点重新计算，不累加增量，来回拖动不漂移。
+    /// 光标所在的显示器就是元件的显示器；元件在那里的大小、边距与 8 px 格线都按那块显示器的逻辑像素计（乘以它与本窗口的缩放比之比）。
+    /// 元件跨到别的显示器后，那块显示器的浮窗随拖动通知显示它，本画布继续处理移动直到松开。
+    /// </summary>
+    public void DragTo(Point point)
     {
         if (dragging is not { } slot) return;
         var placement = slot.Placement;
-        var delta = e.GetPosition(this) - dragOrigin;
         if (resizing)
         {
             // 手柄改变外框在缩放前的宽高：拖动距离除以显示倍率，对齐 8 px，不小于元件的最小尺寸，也不超出所在显示器的工作区。
+            var delta = point - dragOrigin;
             var factor = Factor(slot);
-            var (area, _) = RegionOf(placement, Bounds.Size);
-            var room = new Size(Math.Max(0, area.Width - Inset * contentScale * 2) / factor,
-                Math.Max(0, area.Height - Inset * contentScale * 2) / factor);
+            var (area, dpi) = RegionOf(placement, Bounds.Size);
+            var room = new Size(Math.Max(0, area.Width - Inset * dpi * 2) / factor, Math.Max(0, area.Height - Inset * dpi * 2) / factor);
             double Side(double start, double moved, double minimum, double limit) =>
                 Math.Max(minimum, Math.Min(Math.Round((start + moved / factor) / Grid) * Grid, Math.Max(minimum, limit)));
             placement.Width = Side(sizeStart.Width, delta.X, slot.MinimumSize.Width, room.Width);
@@ -703,39 +692,30 @@ public sealed class OverlayCanvas : Panel
             InvalidateMeasure();
             return;
         }
-        // 边距与 8 px 格线都按实际浮窗像素换算到画布上。
-        var (inset, grid) = (Inset * contentScale, Grid * contentScale);
-        double Snap(double value) => Math.Round(value / grid) * grid;
-        var target = new Point(Snap(dragStart.X + delta.X), Snap(dragStart.Y + delta.Y));
-        // 拖到另一块显示器上时元件改属那块显示器：按外框中心所在的显示器换算比例位置，跨缩放比例不同的显示器时外框随之换算大小。
-        if (MonitorAt(new Point(target.X + slot.Frame.Bounds.Width / 2, target.Y + slot.Frame.Bounds.Height / 2)) is { } monitor
-            && monitor.Key != MonitorOf(placement)?.Key)
-        {
-            placement.Screen = monitor.Key;
-            ApplyScale(slot);
-        }
-        var (region, _) = RegionOf(placement, Bounds.Size);
-        var free = new Size(region.Width - slot.Frame.Bounds.Width - inset * 2, region.Height - slot.Frame.Bounds.Height - inset * 2);
-        placement.X = free.Width <= 0 ? 0 : Math.Clamp((target.X - region.X - inset) / free.Width, 0, 1);
-        placement.Y = free.Height <= 0 ? 0 : Math.Clamp((target.Y - region.Y - inset) / free.Height, 0, 1);
-        // 拖到别的显示器：元件改由那块显示器的浮窗显示。这里结束拖动并保存（比例位置已按那块显示器换算），另一个窗口随版面变化显示它。
-        if (!OnThisCanvas(placement))
-        {
-            FinishManipulation();
-            UpdateStates();
-            return;
-        }
-        InvalidateArrange();
+        var screen = placement.Screen;
+        if (MonitorAt(point) is { } monitor && monitor.Key != MonitorOf(placement)?.Key) placement.Screen = monitor.Key;
+        var (region, scale) = RegionOf(placement, Bounds.Size);
+        var size = new Size(sizeStart.Width * placement.Scale * scale, sizeStart.Height * placement.Scale * scale);
+        var (inset, grid) = (Inset * scale, Grid * scale);
+        // 抓取点留在光标下；外框左上角相对工作区对齐格线。
+        var left = region.X + Math.Round((point.X - grab.X * size.Width - region.X) / grid) * grid;
+        var top = region.Y + Math.Round((point.Y - grab.Y * size.Height - region.Y) / grid) * grid;
+        var free = new Size(region.Width - size.Width - inset * 2, region.Height - size.Height - inset * 2);
+        var (x, y) = (free.Width <= 0 ? 0 : Math.Clamp((left - region.X - inset) / free.Width, 0, 1),
+            free.Height <= 0 ? 0 : Math.Clamp((top - region.Y - inset) / free.Height, 0, 1));
+        if (x.Equals(placement.X) && y.Equals(placement.Y) && screen == placement.Screen) return;
+        (placement.X, placement.Y) = (x, y);
+        // 各显示器的浮窗（包括本画布）随之重排；元件跨到另一块显示器时由那块显示器的浮窗接着显示。
+        if (store is not null) store.NotifyMoved();
+        else Refresh();
     }
 
     // 画布上某一点所在的显示器；点落在显示器之间的空隙里时取距离最近的一块。
     private OverlayMonitor? MonitorAt(Point point)
     {
         if (monitors.Count == 0) return null;
-        Rect Scaled(OverlayMonitor monitor) => new(monitor.Area.X * contentScale, monitor.Area.Y * contentScale,
-            monitor.Area.Width * contentScale, monitor.Area.Height * contentScale);
         double Distance(Rect rect) => Math.Max(Math.Max(rect.X - point.X, point.X - rect.Right), 0) + Math.Max(Math.Max(rect.Y - point.Y, point.Y - rect.Bottom), 0);
-        return monitors.FirstOrDefault(monitor => Scaled(monitor).Contains(point)) ?? monitors.MinBy(monitor => Distance(Scaled(monitor)));
+        return monitors.FirstOrDefault(monitor => monitor.Area.Contains(point)) ?? monitors.MinBy(monitor => Distance(monitor.Area));
     }
 
     private void OnPointerReleasedAfterDragging(object? sender, PointerReleasedEventArgs e)
@@ -757,16 +737,18 @@ public sealed class OverlayCanvas : Panel
         if (dragging is not null) EndManipulation();
     }
 
+    // 松开后保存；拖到别的显示器的元件此后只留在那块显示器的浮窗里。
     private void EndManipulation()
     {
         dragging = null;
         ManipulationChanged?.Invoke(this, EventArgs.Empty);
-        store?.Commit();
+        if (store is not null) store.Commit();
+        else UpdateStates();
     }
 
     private void OnLockPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (IsEditing || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         pressedLock = slots.FirstOrDefault(item => item.Lock == sender);
         if (pressedLock is null) return;
         e.Pointer.Capture(pressedLock.Lock);
@@ -784,10 +766,11 @@ public sealed class OverlayCanvas : Panel
         if (new Rect(slot.Lock.Bounds.Size).Contains(e.GetPosition(slot.Lock))) store?.ToggleLock(slot.Placement);
     }
 
-    // 关闭按钮：游戏浮窗上不论锁状态都接收鼠标；按下并在按钮上松开才关闭（元件从浮窗上消失，摆放保留）。
+    // 关闭按钮：不论锁状态都接收鼠标；按下并在按钮上松开才生效。平时关闭元件（从浮窗上消失，摆放保留），
+    // 编辑状态下按在已关闭（变淡）的元件上则重新显示它。
     private void OnClosePressed(object? sender, PointerPressedEventArgs e)
     {
-        if (IsEditing || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         pressedClose = slots.FirstOrDefault(item => item.Close == sender);
         if (pressedClose is null) return;
         e.Pointer.Capture(pressedClose.Close);
@@ -801,15 +784,17 @@ public sealed class OverlayCanvas : Panel
         if (slot is null || slot.Close != sender) return;
         e.Pointer.Capture(null);
         e.Handled = true;
-        if (new Rect(slot.Close.Bounds.Size).Contains(e.GetPosition(slot.Close))) store?.Close(slot.Placement);
+        if (!new Rect(slot.Close.Bounds.Size).Contains(e.GetPosition(slot.Close))) return;
+        if (slot.Placement.Closed) store?.Reopen(slot.Placement);
+        else store?.Close(slot.Placement);
     }
 
-    // “－／＋”：游戏浮窗上只在元件解锁时显示并接收鼠标，编辑画布上跟随选取；按下并在同一按钮上松开才改变缩放。
+    // “－／＋”：只在元件解锁或处于编辑状态时显示并接收鼠标；按下并在同一按钮上松开才改变缩放。
     private void OnZoomPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is not Control button || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         var slot = slots.FirstOrDefault(item => ((StackPanel)item.Zoom.Child!).Children.Contains(button));
-        if (slot is null || (IsEditing ? slot.Placement.WidgetId != SelectedWidgetId : slot.Placement.Locked)) return;
+        if (slot is null || (!IsEditing && slot.Placement.Locked)) return;
         (pressedZoom, pressedZoomName) = (slot, button.Name);
         e.Pointer.Capture(button);
         e.Handled = true;
@@ -840,7 +825,7 @@ public sealed class OverlayCanvas : Panel
     {
         if (sender is not Control button || e.Delta.Y == 0) return;
         var slot = slots.FirstOrDefault(item => ((StackPanel)item.Zoom.Child!).Children.Contains(button));
-        if (slot is null || (IsEditing ? slot.Placement.WidgetId != SelectedWidgetId : slot.Placement.Locked)) return;
+        if (slot is null || (!IsEditing && slot.Placement.Locked)) return;
         e.Handled = true;
         var next = WidgetPlacement.StepOpacity(slot.Placement.Opacity, e.Delta.Y > 0);
         if (next.Equals(slot.Placement.Opacity)) return;

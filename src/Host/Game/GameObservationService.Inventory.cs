@@ -33,7 +33,7 @@ public sealed partial class GameObservationService
                 if (worker is null || call is null || state is not ("running" or "starting"))
                     throw new OperationException("observation.channelUnavailable", "请先选择网卡并启动共享游戏观察");
                 binding = game ?? throw new OperationException("input.bindingUnavailable", "共享捕获没有游戏绑定");
-                if (binding.Id != request.GameSessionId || controls.Bindings.Current?.Session != binding)
+                if (binding.Id != request.GameSessionId || !SameGameSession(controls.Bindings.Current?.Session, binding))
                     throw new OperationException("input.bindingChanged", "共享观察绑定已变化");
                 if (TotalDemands >= 8 || inventoryDemands.ContainsKey(observationId))
                     throw new OperationException("resource.capacityExceeded", "共享库存观察需求达到上限");
@@ -61,7 +61,7 @@ public sealed partial class GameObservationService
             }
             ct.ThrowIfCancellationRequested();
             Authorize(principal); InventoryPermission(principal, ApiPermissions.InventoryControl);
-            if (controls.Bindings.Current?.Session != binding) throw new OperationException("input.bindingChanged", "库存准备期间绑定已变化");
+            if (!SameGameSession(controls.Bindings.Current?.Session, binding)) throw new OperationException("input.bindingChanged", "库存准备期间绑定已变化");
             lock (gate)
             {
                 var interestId = appliedInterests.Inventory?.Id ?? Guid.NewGuid().ToString("N");
@@ -227,7 +227,7 @@ public sealed partial class GameObservationService
             var asset = value.Deserialize<InventoryCatalogArtifact>(ContractJson.Options) ?? throw new WorkerException("worker.frameInvalid");
             var data = await InventoryWorkerAssets.ReadAsync<InventoryCatalogData>(root, asset.FileName, asset.Bytes, asset.Sha256, deadline.Token);
             InventoryPermission(principal, ApiPermissions.InventoryEdit);
-            if (controls.Bindings.Current?.Session != binding) throw new OperationException("input.bindingChanged", "目录读取期间游戏绑定已变化");
+            if (!SameGameSession(controls.Bindings.Current?.Session, binding)) throw new OperationException("input.bindingChanged", "目录读取期间游戏绑定已变化");
             return data;
         }
         catch (WorkerException error) { throw new OperationException("inventory.sourceUnavailable", error.Code); }

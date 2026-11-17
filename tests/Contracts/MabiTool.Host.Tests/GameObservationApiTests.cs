@@ -129,7 +129,17 @@ public sealed class GameObservationApiTests
     {
         using var area = new Area(); await using var app = area.Build(); await app.StartAsync(); using var client = Client(app);
         await Post<GameObservationSubscription>(client, ApiContract.StartGameObservation.Path, Request(area), "binding-capture", (await Read(client)).ETag);
-        await WaitSnapshot(client, value => value.State == "running");
+        var running = await WaitSnapshot(client, value => value.State == "running" && value.Latest?.Value.Identity is not null);
+        var pid = app.Services.GetRequiredService<GameObservationService>().Runtime().WorkerProcessId;
+        // 窗口几何变化不结束捕获：同一 Worker 继续运行，已识别的本机身份保留。
+        area.ChangeWindowGeometry();
+        await Task.Delay(1000);
+        var kept = (await Read(client)).Snapshot;
+        Assert.Equal(("running", running.CaptureId, running.BindingRevision), (kept.State, kept.CaptureId, kept.BindingRevision));
+        Assert.Equal(pid, app.Services.GetRequiredService<GameObservationService>().Runtime().WorkerProcessId);
+        Assert.NotNull(kept.Latest?.Value.Identity);
+        Assert.Single(Directory.GetFiles(area.Root, "capture-start-*"));
+        // 游戏进程更换（启动时间与构建变化）是新的游戏会话：结束旧捕获并撤销其证据。
         var old = area.Bindings.Current!;
         area.Bindings.Update(new("TW", old.Session.ProcessId, old.Session.ProcessStartTime.AddSeconds(1), old.Session.WindowIdentity,
             "new-fixture", old.Bounds, old.DpiX, old.DpiY, false));
@@ -299,6 +309,17 @@ public sealed class GameObservationApiTests
             return executable;
         }
         public void Dispose() { if (Directory.Exists(Root)) Directory.Delete(Root, true); }
+        /// <summary>同一游戏进程的窗口几何连续变化（拖到另一块屏幕：移动、换 DPI、最小化再恢复），每步递增绑定修订、游戏会话不变。</summary>
+        public void ChangeWindowGeometry()
+        {
+            var old = Bindings.Current!; var session = old.Session;
+            foreach (var (bounds, dpi, minimized) in new[] { (old.Bounds with { X = old.Bounds.X + 1920 }, 96d, false),
+                (old.Bounds with { X = old.Bounds.X + 1920, Width = old.Bounds.Width * 3 / 2 }, 144d, false),
+                (old.Bounds with { X = old.Bounds.X + 1920, Width = old.Bounds.Width * 3 / 2 }, 144d, true), (old.Bounds, old.DpiX, false) })
+                Bindings.Update(new(session.Region, session.ProcessId, session.ProcessStartTime, session.WindowIdentity, session.GameBuild, bounds, dpi, dpi, minimized));
+            Assert.Equal(session.Id, Bindings.Current!.Session.Id);
+            Assert.Equal(session.BindingRevision.Value + 4, Bindings.Current.Session.BindingRevision.Value);
+        }
         /// <summary>无界面测试不枚举真实窗口。</summary>
         private sealed class NoWindows : IGameWindowSource
         {

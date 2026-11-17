@@ -105,8 +105,7 @@ public sealed partial class InventoryHistoryStore : IInventoryReadModel
             if (frame.Kind.KnownValue == InventoryFrameKind.Delta && existing?.Identity is { } old &&
                 ((merged.Contains(old.AccountId) ? identity.AccountId : old.AccountId) != identity.AccountId || old.CharacterId != identity.CharacterId))
             { await InvalidateCoreAsync("inventory.identityConflict", ct); return Workspace(); }
-            if(existing is not null && existing.GameSessionId == frame.GameSessionId && existing.BindingRevision != frame.BindingRevision)
-            { await InvalidateCoreAsync("inventory.bindingChanged",ct); throw Rejected("bindingRevision","库存绑定修订已变化","inventory.planStale"); }
+            // 帧按游戏会话归属：同一会话内绑定修订（窗口几何）不同的完整帧照常成为当前，增量的连续性由代次与序号判定。
             if(accounts.TryGetValue(identity.AccountId,out var knownAccount) && knownAccount.Characters.TryGetValue(identity.CharacterId,out var knownCharacter) && knownCharacter.Identity.RawName != identity.RawName)
             { await InvalidateCoreAsync("inventory.identityConflict",ct); throw Rejected("identityName","角色名称与已保存身份冲突","inventory.identityConflict"); }
             var revision = Next(previous.Revision);
