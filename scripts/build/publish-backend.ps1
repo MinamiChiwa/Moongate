@@ -1,11 +1,10 @@
 ﻿param(
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+\z')]
     [string]$Version = '0.1.0',
-    [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+\z')]
-    [string]$MinimumUpdaterVersion = '0.1.0',
-    [string]$StableLauncherPackage,
     [string]$ReleaseId,
-    [long]$ReleaseSequence = 1,
+    # 发行身份里登记的 GitHub 仓库，宿主从这里的 Releases 检查更新。
+    [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z')]
+    [string]$Repository = 'MinamiChiwa/Moongate',
     [ValidateSet('stable', 'preview')]
     [string]$Channel = 'preview',
     [string]$OutputDirectory,
@@ -19,13 +18,6 @@
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$releaseParts = $Version.Split('.')
-$minimumParts = $MinimumUpdaterVersion.Split('.')
-for ($index = 0; $index -lt 3; $index++) {
-    $comparison = [System.Numerics.BigInteger]::Parse($minimumParts[$index]).CompareTo([System.Numerics.BigInteger]::Parse($releaseParts[$index]))
-    if ($comparison -gt 0) { throw '最低更新器版本高于本次发行的 updater 版本' }
-    if ($comparison -lt 0) { break }
-}
 if ($IncludeColor -and (-not $TesseractDirectory -or -not $TesseractLicenseDirectory)) {
     throw '染色组件随包 Tesseract：须指定 -TesseractDirectory 与 -TesseractLicenseDirectory'
 }
@@ -42,8 +34,8 @@ if ($IncludeColor) {
     if ($missingLicenses.Count) { throw "-TesseractLicenseDirectory 缺少 $($missingLicenses.Count) 份许可文字：$($missingLicenses -join '、')" }
 }
 if (-not $ReleaseId) { $ReleaseId = "mabitool-$Version-win-x64" }
-if ($ReleaseId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' -or $ReleaseSequence -lt 1) {
-    throw '发行身份或序列无效'
+if ($ReleaseId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') {
+    throw '发行目录名无效'
 }
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repositoryRoot "artifacts/packages/$ReleaseId" }
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
@@ -58,11 +50,6 @@ $archivePath = Join-Path $packagesRoot "Moongate-v$displayVersion-Windows-x64.zi
 if ((Test-Path -LiteralPath $archivePath) -or (Test-Path -LiteralPath "$archivePath.sha256")) { throw "解压版 zip 已存在：$archivePath" }
 for ($checkedPath = [IO.DirectoryInfo]::new([IO.Path]::GetDirectoryName($outputRoot)); $checkedPath; $checkedPath = $checkedPath.Parent) {
     if ($checkedPath.Exists -and ($checkedPath.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw '发行输出包含链接目录' }
-}
-if ($StableLauncherPackage) {
-    $StableLauncherPackage = [IO.Path]::GetFullPath($StableLauncherPackage)
-    & $PythonExecutable -I -S -B -X utf8 (Join-Path $repositoryRoot 'scripts/build/package-inventory.py') --repository $repositoryRoot --package $outputRoot --version $Version --minimum-updater-version $MinimumUpdaterVersion --runtime-version $RuntimeVersion --release-id $ReleaseId --release-sequence $ReleaseSequence --channel $Channel --stable-launcher-package $StableLauncherPackage --verify-stable-launcher
-    if ($LASTEXITCODE -ne 0) { throw '稳定 launcher 原包核验失败' }
 }
 $workRoot = Join-Path $repositoryRoot ('artifacts/tmp/publish-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $workRoot -Force | Out-Null
@@ -111,32 +98,21 @@ try {
     }
     $projects = [ordered]@{
         'core' = 'src/Host/MabiTool.Host.csproj'
-        'updater' = 'src/Updater/MabiTool.Updater.csproj'
-        'launcher' = 'src/Launcher/MabiTool.Launcher.csproj'
         'room-server' = 'src/RoomServer/MabiTool.RoomServer.csproj'
         'desktop' = 'frontends/desktop/src/MabiTool.Desktop/MabiTool.Desktop.csproj'
     }
-    if ($StableLauncherPackage) {
-        & $PythonExecutable -I -S -B -X utf8 scripts/build/package-inventory.py --repository $repositoryRoot --package $workRoot --version $Version --minimum-updater-version $MinimumUpdaterVersion --runtime-version $RuntimeVersion --release-id $ReleaseId --release-sequence $ReleaseSequence --channel $Channel --stable-launcher-package $StableLauncherPackage --copy-stable-launcher
-        if ($LASTEXITCODE -ne 0) { throw '稳定 launcher 复制或复验失败' }
-    }
     if ($IncludeObservation) { $projects['observation-worker'] = 'workers/game-observation/MabiTool.Observation.Worker.csproj' }
     foreach ($component in $projects.Keys) {
-        if ($component -eq 'launcher' -and $StableLauncherPackage) { continue }
         $componentOutput = Join-Path $workRoot "components/$component"
         # 桌面前端保留 apphost（窗口程序，入口以随包运行时的 DOTNET_ROOT 启动它）。
-        $appHost = if ($component -in @('observation-worker', 'updater', 'desktop')) { 'true' } else { 'false' }
-        $selfContained = if ($component -eq 'updater') { 'true' } else { 'false' }
-        $arguments = @('publish', $projects[$component], '-c', 'Release', '--nologo', '--self-contained', $selfContained,
+        $appHost = if ($component -in @('observation-worker', 'desktop')) { 'true' } else { 'false' }
+        $arguments = @('publish', $projects[$component], '-c', 'Release', '--nologo', '--self-contained', 'false',
             "-p:UseAppHost=$appHost", '-p:RestoreLockedMode=true', "-p:Version=$Version", "-p:RuntimeFrameworkVersion=$RuntimeVersion",
             "-p:ArtifactsPath=$(Join-Path $workRoot 'build')",
             '-maxcpucount:1', '-nodeReuse:false', '-o', $componentOutput)
         if ($component -eq 'core') {
             $arguments += @('-r', 'win-x64', '-p:PublishReadyToRun=true',
                 '-p:PublishReadyToRunComposite=false', '-p:PublishTrimmed=false')
-        }
-        if ($component -eq 'updater') {
-            $arguments += @('-r', 'win-x64', '-p:PublishReadyToRun=false', '-p:PublishTrimmed=false', '-p:PublishSingleFile=false')
         }
         if ($component -eq 'desktop') {
             # RuntimeIdentifier=win-x64 由前端目录的 Directory.Build.props 固定；命令行 -r 会传给引用项目并破坏其锁定还原。
@@ -147,13 +123,8 @@ try {
         if ($NoRestore) { $arguments += '--no-restore' }
         & $dotnetCommand @arguments
         if ($LASTEXITCODE -ne 0) { throw "组件 $component 发布失败" }
-        if ($component -eq 'updater') {
-            $nugetRoot = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.nuget/packages' }
-            $runtimePack = Join-Path $nugetRoot "microsoft.netcore.app.runtime.win-x64/$RuntimeVersion"
-            foreach ($licenseName in @('LICENSE.TXT', 'THIRD-PARTY-NOTICES.TXT')) {
-                Copy-Item -LiteralPath (Join-Path $runtimePack $licenseName) -Destination (Join-Path $componentOutput $licenseName)
-            }
-        }
+        # 发行物不带调试符号：本项目与依赖包复制出的 .pdb 都在这里移除，package-inventory.py 再次拒绝残留。
+        Get-ChildItem -LiteralPath $componentOutput -Filter '*.pdb' -File -Recurse | Remove-Item -Force
         $nativeRuntimes = Join-Path $componentOutput 'runtimes'
         if (Test-Path -LiteralPath $nativeRuntimes -PathType Container) {
             foreach ($runtimeDirectory in Get-ChildItem -LiteralPath $nativeRuntimes -Directory) {
@@ -165,12 +136,6 @@ try {
             }
         }
     }
-    $packageDotnet = Join-Path $runtimeTarget 'dotnet.exe'
-    $targetText = & $packageDotnet (Join-Path $workRoot 'components/core/MabiTool.Host.dll') --print-install-target framework-dependent
-    if ($LASTEXITCODE -ne 0) { throw '随包运行时无法读取实际安装目标' }
-    $target = $targetText | ConvertFrom-Json
-    if ($target.hostVersion -ne $Version) { throw '安装目标版本与发行版本不符' }
-    [IO.File]::WriteAllText((Join-Path $workRoot 'components/core/install-target.json'), ($targetText -join [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
     if ($IncludeColor) {
         & $PythonExecutable -I -S -B -X utf8 scripts/build/package-color-runtime.py --python $PythonExecutable --output (Join-Path $workRoot 'components/color-engine') --tesseract-directory ([IO.Path]::GetFullPath($TesseractDirectory)) --tesseract-licenses ([IO.Path]::GetFullPath($TesseractLicenseDirectory))
         if ($LASTEXITCODE -ne 0) { throw '染色运行时构建失败' }
@@ -194,8 +159,8 @@ try {
     foreach ($entry in @('launch-backend.ps1', 'launch-backend.cmd')) {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot ('packaging/' + $entry)) -Destination (Join-Path $workRoot ('components/core/' + $entry))
     }
-    & $PythonExecutable -I -S -B -X utf8 scripts/build/package-inventory.py --repository $repositoryRoot --package $workRoot --version $Version --minimum-updater-version $MinimumUpdaterVersion --runtime-version $RuntimeVersion --release-id $ReleaseId --release-sequence $ReleaseSequence --channel $Channel
-    if ($LASTEXITCODE -ne 0) { throw '发行来源、许可或 SBOM 构建失败' }
+    & $PythonExecutable -I -S -B -X utf8 scripts/build/package-inventory.py --repository $repositoryRoot --package $workRoot --version $Version --runtime-version $RuntimeVersion --release-id $ReleaseId --channel $Channel --repository-name $Repository
+    if ($LASTEXITCODE -ne 0) { throw '发行身份、来源、许可或 SBOM 构建失败' }
     $buildRecord = [ordered]@{
         schemaVersion = 1
         evidenceKind = 'local-directory-package-build'
@@ -221,21 +186,11 @@ try {
             readyToRun = $false
             trimmed = $false
         }
-        updaterPublication = [ordered]@{
-            runtimeIdentifier = 'win-x64'
-            runtimeVersion = $RuntimeVersion
-            selfContained = $true
-            readyToRun = $false
-            singleFile = $false
-            trimmed = $false
-            useAppHost = $true
-        }
-        stableLauncherSource = $(if ($StableLauncherPackage) { Get-Content -LiteralPath (Join-Path $workRoot 'components/core/stable-launcher-source.json') -Raw | ConvertFrom-Json } else { $null })
         releaseId = $ReleaseId
         version = $Version
         displayVersion = $displayVersion
         distribution = 'portable-zip'
-        minUpdaterVersion = $MinimumUpdaterVersion
+        repository = $Repository
         components = @($projects.Keys) + @('dotnet-runtime') + $(if ($IncludeColor) { @('color-engine') } else { @() })
         cleanWindowsVerification = 'pending'
     }

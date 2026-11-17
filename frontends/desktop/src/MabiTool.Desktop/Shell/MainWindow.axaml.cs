@@ -14,6 +14,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        AppIcon.Apply(this);
         UiMotion.Attach(this);
         void ApplyTransition() => PageHost.PageTransition = UiMotion.PageTransition;
         ApplyTransition();

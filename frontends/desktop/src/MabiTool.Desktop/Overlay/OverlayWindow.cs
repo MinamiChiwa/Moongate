@@ -40,6 +40,7 @@ public sealed class OverlayWindow : Window
         ShowActivated = false;
         CanResize = false;
         Content = canvas;
+        Shell.AppIcon.Apply(this);
         UiMotion.Attach(this);
         canvas.Attach(store, catalog, backend);
         backend.Changed += OnBackendChanged;

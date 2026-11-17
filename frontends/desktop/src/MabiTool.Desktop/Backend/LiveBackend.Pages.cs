@@ -234,21 +234,67 @@ public sealed partial class LiveBackend
                 new(Pick("游戏数据", "遊戲資料"), current.Simulation ? Pick("模拟", "模擬") : Pick("真实游戏", "真實遊戲"))
             ],
             ShortcutRows(current, page, Chord),
-            page.Update is not { } update ? [new(Pick("状态", "狀態"), Pick("未知", "未知"))] :
-            [
-                new(Pick("当前版本", "目前版本"), update.InstalledReleaseId ?? Pick("未知", "未知")),
-                new(Pick("状态", "狀態"), Code(update.State)),
-                new(Pick("更新来源", "更新來源"), update.Configured ? Pick("已配置", "已設定") : Pick("未配置", "未設定")),
-                new(Pick("可用更新", "可用更新"), update.Available?.ReleaseId ?? Pick("没有", "沒有"))
-            ],
-            current.Connected && page.Update is { Configured: true },
-            current.Connected && page.Update?.Available is { PlanId: not null } && page.Update.State is not ("downloaded" or "ready"),
-            current.Connected && page.Update is { Available.PlanId: not null, State: "downloaded" or "ready" },
+            UpdateRows(page.Update),
+            current.Connected && page.Update is { Configured: true } && !UpdateBusy(page.Update),
+            current.Connected && page.Update is { State: "available", Available.PlanId: not null },
+            current.Connected && page.Update is { State: "ready", Available.PlanId: not null },
             current.Connected && page.Policy?.Policy is { } policy
                 ? new UpdatePolicyView(policy.AutomaticChecks, policy.CheckIntervalHours, policy.DownloadConcurrency, policy.MaximumBytesPerSecond)
                 : null,
             current.Connected ? page.Update?.Available?.ReleaseId : null, current.Connected);
     }
+
+    // 更新卡片固定五行，状态变化只改文字：当前版本、状态、可用更新、下载进度、上次安装。
+    private static List<KeyValue> UpdateRows(UpdateStateSnapshot? update)
+    {
+        var unknown = Pick("未知", "未知");
+        if (update is null)
+            return [new(Pick("当前版本", "目前版本"), unknown), new(Pick("状态", "狀態"), unknown), new(Pick("可用更新", "可用更新"), unknown),
+                new(Pick("下载进度", "下載進度"), unknown), new(Pick("上次安装", "上次安裝"), unknown)];
+        var notApplicable = Pick("不适用", "不適用");
+        var state = !update.Configured
+            ? Pick("不可用：只有运行发行压缩包解压出的 Moongate 时才能检查更新", "不可用：只有執行發行壓縮檔解壓出的 Moongate 時才能檢查更新")
+            : update.State switch
+            {
+                "checking" => Pick("正在检查", "正在檢查"),
+                "available" => Pick("发现新版本", "發現新版本"),
+                "preparing" => Pick("准备下载", "準備下載"),
+                "downloading" => Pick("正在下载", "正在下載"),
+                "verifying" => Pick("正在校验", "正在校驗"),
+                "ready" => Pick("已下载并校验，可以安装", "已下載並校驗，可以安裝"),
+                "waitingForIdle" => Pick("等待演奏、染色、测量或房间活动结束", "等待演奏、染色、測量或房間活動結束"),
+                "applying" => Pick("正在安装", "正在安裝"),
+                "handedOff" => Pick("正在重启到新版本", "正在重新啟動到新版本"),
+                _ => update.Operation is { State.KnownValue: OperationState.Failed, Problem: { } problem }
+                    ? Pick("上次操作失败：", "上次操作失敗：") + problem.Code
+                    : Pick("待命", "待命")
+            };
+        var available = update.Available is { } offer
+            ? offer.ReleaseId + (offer.SizeBytes is { } size ? $"（{Megabytes(size.Value)}）" : "")
+            : update.Configured ? Pick("没有", "沒有") : notApplicable;
+        var progress = notApplicable;
+        if (update.Operation is { Kind: "update.download", Result: { ValueKind: System.Text.Json.JsonValueKind.Object } result } &&
+            result.TryGetProperty("verifiedBytes", out var verified) && ulong.TryParse(verified.GetString(), out var done) &&
+            result.TryGetProperty("totalBytes", out var total) && ulong.TryParse(total.GetString(), out var all) && all > 0)
+            progress = $"{Megabytes(done)} / {Megabytes(all)}（{done * 100 / all}%）";
+        var last = update.LastInstall switch
+        {
+            null => update.Configured ? Pick("没有", "沒有") : notApplicable,
+            { Outcome: "committed" } install => Pick("已更新到 ", "已更新到 ") + install.ReleaseId,
+            { Outcome: "rolledBack" } install => Pick($"安装 {install.ReleaseId} 失败，已回到 {install.PreviousReleaseId}（{install.FailureCode}）",
+                $"安裝 {install.ReleaseId} 失敗，已回到 {install.PreviousReleaseId}（{install.FailureCode}）"),
+            { Outcome: "aborted" } install => Pick($"{install.ReleaseId} 未安装（{install.FailureCode}）", $"{install.ReleaseId} 未安裝（{install.FailureCode}）"),
+            var install => Pick($"安装 {install.ReleaseId} 失败，旧版本也未自动恢复，请按说明手动升级", $"安裝 {install.ReleaseId} 失敗，舊版本也未自動復原，請依說明手動升級")
+        };
+        return [new(Pick("当前版本", "目前版本"), update.InstalledReleaseId ?? (update.Configured ? unknown : notApplicable)),
+            new(Pick("状态", "狀態"), state), new(Pick("可用更新", "可用更新"), available),
+            new(Pick("下载进度", "下載進度"), progress), new(Pick("上次安装", "上次安裝"), last)];
+    }
+
+    private static bool UpdateBusy(UpdateStateSnapshot update) =>
+        update.State is "checking" or "preparing" or "downloading" or "verifying" or "waitingForIdle" or "applying" or "handedOff";
+
+    private static string Megabytes(ulong bytes) => (bytes / 1048576d).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " MB";
 
     // 快捷键行：后端注册清单与可修改的动作合并；紧急停止始终列出，后端没有报告时显示未知。
     private static List<ShortcutRow> ShortcutRows(State current, PageState page, Func<ShortcutChordSnapshot, string> chord)

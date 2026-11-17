@@ -490,9 +490,6 @@ public sealed class StorageTests
             Directory.CreateDirectory(Path.Combine(package, "components", "core"));
             Directory.CreateDirectory(Path.Combine(package, "components", "desktop"));
             File.WriteAllBytes(Path.Combine(package, "components", "core", "MabiTool.Host.dll"), []);
-            var installed = Path.Combine(root, "installed");
-            Directory.CreateDirectory(Path.Combine(installed, "launcher", "stable", "components", "launcher"));
-            Directory.CreateDirectory(Path.Combine(installed, "versions", "r1", "components", "core"));
             var flat = Path.Combine(root, "flat");
             Directory.CreateDirectory(flat);
 
@@ -502,9 +499,6 @@ public sealed class StorageTests
             Assert.Equal(state, ToolRoot.FromProgramDirectory(Path.Combine(package, "components", "desktop")));
             Assert.Equal(package, ToolRoot.PackageRoot(Path.Combine(package, "components", "desktop")));
             Assert.Null(ToolRoot.PackageRoot(flat));
-            Assert.Equal(installed, ToolRoot.FromProgramDirectory(Path.Combine(installed, "versions", "r1", "components", "core")));
-            Assert.Equal(installed, ToolRoot.FromProgramDirectory(Path.Combine(installed, "versions", "r1", "components", "desktop")));
-            Assert.Equal(installed, ToolRoot.FromProgramDirectory(Path.Combine(installed, "launcher", "stable", "components", "launcher")));
             Assert.Equal(flat, ToolRoot.FromProgramDirectory(flat));
 
             // 不带参数：引导、数据、实例发现都在工具根；前端按同一规则得到同一个发现文件。

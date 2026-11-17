@@ -5,7 +5,7 @@ namespace MabiTool.Infrastructure.Updates;
 /// <summary>在 ZipArchive 分配目录对象前限制目录字节数和条目数，支持单卷 ZIP64。</summary>
 internal static class ZipPackageBounds
 {
-    internal static void Validate(Stream stream, int expectedEntries)
+    internal static void Validate(Stream stream, int maximumEntries)
     {
         var tail = new byte[(int)Math.Min(stream.Length, 65_557)];
         stream.Position = stream.Length - tail.Length;
@@ -39,12 +39,12 @@ internal static class ZipPackageBounds
             directoryEnd = zip64Offset;
         }
         else if (U16(tail, offset + 8) != entries) Reject();
-        if (entries != (ulong)expectedEntries || entries > 100_000 || directoryLength > 64 * 1024 * 1024 ||
+        if (entries == 0 || entries > (ulong)maximumEntries || entries > 100_000 || directoryLength > 64 * 1024 * 1024 ||
             directoryOffset > directoryEnd || directoryLength != directoryEnd - directoryOffset) Reject();
     }
 
     private static ushort U16(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(offset));
     private static uint U32(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset));
     private static ulong U64(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(offset));
-    private static void Reject() => throw new FileTreeException("update.packageInvalid");
+    private static void Reject() => throw new UpdatePackageException("update.packageInvalid");
 }

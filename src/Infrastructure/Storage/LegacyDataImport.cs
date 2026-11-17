@@ -31,7 +31,7 @@ public sealed partial class DataRootLease
         if (!Path.IsPathFullyQualified(legacyBootstrap) || !File.Exists(Path.Combine(legacyBootstrap, "data-root.json"))) return null;
         try { return ImportLegacyCore(bootstrap, StoragePaths.ValidateLocal(legacyBootstrap)); }
         catch (StorageException) { throw; }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException or SqliteException or FileTreeException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException or SqliteException or UpdatePackageException)
         {
             throw new StorageException("storage.legacyImportFailed", "旧位置数据迁入工具根失败，旧位置保持原样；请检查旧目录可读、工具根可写后重试", error);
         }
@@ -46,8 +46,8 @@ public sealed partial class DataRootLease
         var configPath = Path.Combine(bootstrap, "data-root.json");
         if (File.Exists(configPath)) throw new StorageException("storage.configurationConflict", "工具根已在迁入期间初始化");
         using var legacyGuard = OpenExistingLock(Path.Combine(legacyBootstrap, "bootstrap.lock"), "storage.bootstrapBusy");
-        if (DataMaintenanceJournal.HasPending(legacyBootstrap) || File.Exists(Path.Combine(legacyBootstrap, InitialInstallReference.FileName)))
-            throw new StorageException("storage.legacyImportBlocked", "旧位置有未完成的数据维护或安装记录，不能自动迁入；请先用原引导目录完成维护");
+        if (DataMaintenanceJournal.HasPending(legacyBootstrap))
+            throw new StorageException("storage.legacyImportBlocked", "旧位置有未完成的数据维护，不能自动迁入；请先用原引导目录完成维护");
         var legacy = Read<BootstrapConfiguration>(Path.Combine(legacyBootstrap, "data-root.json"));
         if (legacy.Version != 1 || legacy.Product != "MabiTool" || !Guid.TryParseExact(legacy.RootId, "N", out _))
             throw new StorageException("storage.configurationInvalid", "旧位置的数据根配置版本、产品或身份无效");
@@ -60,8 +60,6 @@ public sealed partial class DataRootLease
         VerifyIdentity(marker, legacy.RootId);
         if (marker.State != "active" || marker.AuthorityBootstrap is not null && !SamePath(marker.AuthorityBootstrap, legacyBootstrap))
             throw new StorageException("storage.legacyImportBlocked", "旧数据根不是该引导目录的活动数据根，不能自动迁入");
-        if (UpdateInstallGate.Read(source) is not null)
-            throw new StorageException("storage.legacyImportBlocked", "旧数据根有未完成的安装维护，不能自动迁入");
 
         if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any())
         {

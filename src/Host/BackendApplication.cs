@@ -40,14 +40,6 @@ namespace MabiTool.Host;
 public static class BackendApplication
 {
     internal static string HostVersion => typeof(BackendApplication).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
-    internal static InstallTargetDescriptor InstallationTarget(string runtimeMode)
-    {
-        var migrations = SqliteStore.MigrationTargets(DatabaseMigrations);
-        return new(1, "mabitool", HostVersion, ApiContract.Version,
-            migrations.Where(item => item.ModuleId == "core").Max(item => item.Version), runtimeMode, InstallTargetDescriptor.Entry(runtimeMode),
-            migrations, BuiltInModules.CreateCatalog().Registrations.Values.OrderBy(item => item.Definition.Id, StringComparer.Ordinal)
-                .Select(item => new InstallHealthModule(item.Definition.Id, item.Definition.Version.ToString())).ToArray());
-    }
     public static IReadOnlyList<StorageDataDefinition> StorageData { get; } = Array.AsReadOnly<StorageDataDefinition>([
         MusicStorageData.Definition, ColorStorageData.Definition, RoomStorageData.Definition, CombatStorageData.Definition, InventoryStorageData.Definition,
         new("core", ["platform_assets", "platform_asset_references", "core_module_configuration", "platform_shortcut_settings", "platform_shortcut_receipts"])]);
@@ -57,20 +49,18 @@ public static class BackendApplication
             InventoryHistoryStore.Migration, TemporaryStorageRegistry.Migration, StorageControlStore.Migration, DataBackupStore.Migration, StorageMaintenancePlanStore.Migration,
             StorageModuleDataStore.Migration]);
     public static WebApplication Build(LocalApiOptions options, TimeProvider? clock = null, StorageOptions? storage = null, bool mock = false,
-        UpdateInstallationOptions? updateInstallation = null, Func<IServiceProvider, ColorRunWorkerFactory>? colorFactory = null,
+        Func<IServiceProvider, ColorRunWorkerFactory>? colorFactory = null,
         IDesktopCaptureSource? desktopCapture = null, Func<PathService, ColorWorkerOptions?>? colorPreviewOptions = null,
         IGlobalShortcutSource? shortcutSource = null, Func<IServiceProvider, GameControlContext>? gameControls = null,
         IGameWindowSource? gameWindowSource = null, Func<IServiceProvider, ICombatObservationSource>? combatSource = null,
-        Func<HttpMessageHandler>? updateHttpHandler = null, bool updateCandidate = false, DataRootLease? updateLease = null,
+        Func<HttpMessageHandler>? updateHttpHandler = null,
         QuickTunnelFactory? roomTunnels = null, IRoomServerListenerFactory? roomListeners = null,
-        Func<PathService?, WorkerProcessOptions?>? observationOptions = null, bool gameAutomation = false)
+        Func<PathService?, WorkerProcessOptions?>? observationOptions = null, bool gameAutomation = false,
+        PortableInstallation? portableUpdate = null, System.Diagnostics.Process? ownerProcess = null)
     {
         options.Validate();
-        if (updateCandidate && (storage is null || mock || options.RuntimeDirectory is not null))
-            throw new ArgumentException("候选健康宿主需要正式数据根且不发布本机发现");
-        updateInstallation?.Validate();
-        if (updateInstallation is not null && (storage is null || mock))
-            throw new ArgumentException("发行更新配置需要持久化正式宿主");
+        if (portableUpdate is not null && (storage is null || mock))
+            throw new ArgumentException("解压版更新需要持久化正式宿主");
         if (mock && (storage?.PortableRoot is null || storage.DataRoot is not null ||
             !Path.IsPathFullyQualified(storage.PortableRoot) ||
             Path.GetFullPath(storage.BootstrapDirectory) != Path.GetFullPath(Path.Combine(storage.PortableRoot, "bootstrap")) ||
@@ -90,7 +80,7 @@ public static class BackendApplication
         builder.Logging.ClearProviders();
         void AddBackground<T>(Func<IServiceProvider, T>? factory = null) where T : class, IHostedService
         {
-            if (!updateCandidate) builder.Services.AddHostedService(factory ?? (sp => ActivatorUtilities.CreateInstance<T>(sp)));
+            builder.Services.AddHostedService(factory ?? (sp => ActivatorUtilities.CreateInstance<T>(sp)));
         }
         builder.WebHost.ConfigureKestrel(server =>
         {
@@ -165,7 +155,7 @@ public static class BackendApplication
                 new HashSet<string>(["environment.read"]), [])], clock));
         if (storage is not null)
         {
-            builder.Services.AddSingleton(_ => updateCandidate && updateLease is not null ? updateLease : DataRootLease.Open(storage));
+            builder.Services.AddSingleton(_ => DataRootLease.Open(storage));
             builder.Services.AddSingleton(sp => sp.GetRequiredService<DataRootLease>().Paths);
             builder.Services.AddSingleton(sp => StorageTransactionTelemetry.Attach(SqliteStore.Open(sp.GetRequiredService<DataRootLease>(),
                 DatabaseMigrations, mock: mock,
@@ -228,7 +218,7 @@ public static class BackendApplication
             builder.Services.AddSingleton<DiagnosticStore>();
             builder.Services.AddSingleton(sp => new StorageControlStore(sp.GetRequiredService<SqliteStore>(), sp.GetRequiredService<PathService>(),
                 [sp.GetRequiredService<AssetStore>(), sp.GetRequiredService<DiagnosticStore>(), sp.GetRequiredService<DataBackupStore>(),
-                    new PhysicalStorageMaintenance(sp.GetRequiredService<SqliteStore>(), sp.GetRequiredService<PathService>(), updateInstallation?.CacheRoot)],
+                    new PhysicalStorageMaintenance(sp.GetRequiredService<SqliteStore>(), sp.GetRequiredService<PathService>())],
                 info.InstanceId, sp.GetRequiredService<TimeProvider>(), () => new Dictionary<string, long>
                 {
                     ["cache"] = 512L * 1024 * 1024,
@@ -237,11 +227,11 @@ public static class BackendApplication
                 }));
             AddBackground<StorageRetentionLifetime>();
             builder.Services.AddSingleton<DiagnosticRecorder>();
-            if (!updateCandidate) builder.Services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<DiagnosticRecorder>());
+            builder.Services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<DiagnosticRecorder>());
             AddBackground(sp => sp.GetRequiredService<DiagnosticRecorder>());
             builder.Services.AddSingleton(sp => new DiagnosticCaptureService(sp.GetRequiredService<DiagnosticTrace>(), sp.GetRequiredService<DiagnosticStore>(),
                 sp.GetRequiredService<DiagnosticRuntimeService>(), sp.GetRequiredService<StateEventHub>(), sp.GetRequiredService<PathService>(),
-                sp.GetRequiredService<TimeProvider>(), sp.GetService<MaintenanceShutdownContext>(), updateInstallation?.InstallationRoot));
+                sp.GetRequiredService<TimeProvider>(), sp.GetService<MaintenanceShutdownContext>(), portableUpdate?.PackageRoot));
             AddBackground(sp => sp.GetRequiredService<DiagnosticCaptureService>());
             builder.Services.AddSingleton<DiagnosticExportOperations>();
             AddBackground(sp => sp.GetRequiredService<DiagnosticExportOperations>());
@@ -250,7 +240,6 @@ public static class BackendApplication
             AddBackground<FileTransferLifetime>();
             builder.Services.AddSingleton<FileExportOperations>();
             AddBackground(sp => sp.GetRequiredService<FileExportOperations>());
-            builder.Services.AddSingleton<UpdateHostHealthCheck>();
             AddBackground<StateOutboxPublisher>();
             builder.Services.AddSingleton(sp => new OperationStore(sp.GetRequiredService<SqliteStore>(), clock));
             builder.Services.AddSingleton(sp => new CombatHistoryStore(sp.GetRequiredService<SqliteStore>(), sp.GetRequiredService<OperationStore>(), info.InstanceId, clock));
@@ -283,27 +272,18 @@ public static class BackendApplication
             AddBackground(sp => sp.GetRequiredService<ShortcutService>());
             builder.Services.AddSingleton<ModuleConfigurationOperations>();
             AddBackground(sp => sp.GetRequiredService<ModuleConfigurationOperations>());
-            builder.Services.AddSingleton(_ => updateHttpHandler is null
-                ? new ReleaseIndexSourceProvider(clock) : new ReleaseIndexSourceProvider(updateHttpHandler(), clock, retryCount: 0));
-            builder.Services.AddSingleton<ReleaseUpdateCheckService>(sp =>
-            {
-                if (updateInstallation is not null)
-                    UpdatePaths.RequireDisjoint(updateInstallation.StateRoot, updateInstallation.VersionsRoot,
-                        updateInstallation.StagingRoot, sp.GetRequiredService<PathService>().DataRoot);
-                return new ReleaseUpdateCheckService(updateInstallation, sp.GetRequiredService<ReleaseIndexSourceProvider>(), clock);
-            });
-            builder.Services.AddSingleton<IUpdateCheckService>(sp => sp.GetRequiredService<ReleaseUpdateCheckService>());
-            builder.Services.AddSingleton<IUpdateDownloadService>(sp => new ReleaseUpdateDownloadService(updateInstallation,
-                sp.GetRequiredService<ReleaseUpdateCheckService>(), sp.GetRequiredService<ReleaseIndexSourceProvider>(),
+            builder.Services.AddSingleton(_ => new GitHubReleaseSource(updateHttpHandler?.Invoke(), clock, retryCount: updateHttpHandler is null ? 2 : 0));
+            builder.Services.AddSingleton(sp => new PortableUpdateService(portableUpdate, sp.GetRequiredService<GitHubReleaseSource>(),
+                sp.GetRequiredService<SqliteStore>(), sp.GetRequiredService<OperationStore>(),
                 () => sp.GetRequiredService<UpdatePolicyStore>().Get().Policy, sp.GetRequiredService<ActivityBarrier>(),
-                createHandler: updateHttpHandler, spaceReservations: sp.GetRequiredService<VolumeSpaceReservations>()));
-            builder.Services.AddSingleton<IUpdateInstallService>(sp => new UpdateInstallService(updateInstallation,
-                sp.GetRequiredService<ReleaseUpdateCheckService>(), sp.GetRequiredService<SqliteStore>(), sp.GetRequiredService<DataRootLease>(),
-                sp.GetRequiredService<OperationStore>(), sp.GetRequiredService<ModuleRuntime>(), sp.GetRequiredService<ModuleCatalog>(),
-                sp.GetRequiredService<IHostApplicationLifetime>(), sp.GetRequiredService<MaintenanceShutdownContext>()));
+                sp.GetRequiredService<IHostApplicationLifetime>(), sp.GetRequiredService<MaintenanceShutdownContext>(),
+                sp.GetRequiredService<TimeProvider>(), ownerProcess, updateHttpHandler));
+            builder.Services.AddSingleton<IUpdateCheckService>(sp => sp.GetRequiredService<PortableUpdateService>());
+            builder.Services.AddSingleton<IUpdateDownloadService>(sp => sp.GetRequiredService<PortableUpdateService>());
+            builder.Services.AddSingleton<IUpdateInstallService>(sp => sp.GetRequiredService<PortableUpdateService>());
             builder.Services.AddSingleton<UpdateCheckOperations>();
             AddBackground(sp => sp.GetRequiredService<UpdateCheckOperations>());
-            builder.Services.AddSingleton(sp => new UpdateApiService(updateInstallation, sp.GetRequiredService<IUpdateDownloadService>(),
+            builder.Services.AddSingleton(sp => new UpdateApiService(portableUpdate, sp.GetRequiredService<IUpdateDownloadService>(),
                 sp.GetRequiredService<OperationStore>(), sp.GetRequiredService<UpdatePolicyStore>(), sp.GetRequiredService<TimeProvider>()));
         }
         if (mock)
@@ -348,7 +328,6 @@ public static class BackendApplication
             AddBackground<LocalDiscoveryService>();
         }
         var app = builder.Build();
-        if (updateCandidate) return app;
         app.UseMiddleware<LocalApiMiddleware>(options);
         GameEndpoints.Map(app);
         GameControlEndpoints.Map(app);

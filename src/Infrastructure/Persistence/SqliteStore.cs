@@ -108,13 +108,6 @@ public sealed partial class SqliteStore : IAsyncDisposable
         try
         {
             connection.Open();
-            if (existed && lease.PendingInitialDatabaseId is not null)
-            {
-                using var schema = connection.CreateCommand();
-                schema.CommandText = "SELECT count(*) FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'";
-                // 仅未封库的初装日志可恢复尚未提交业务 schema 的 SQLite 容器。
-                if ((long)schema.ExecuteScalar()! == 0) existed = false;
-            }
             string databaseId;
             if (existed)
             {
@@ -128,7 +121,7 @@ public sealed partial class SqliteStore : IAsyncDisposable
             }
             else
             {
-                databaseId = lease.PendingInitialDatabaseId ?? Guid.NewGuid().ToString("N");
+                databaseId = Guid.NewGuid().ToString("N");
                 using var tx = connection.BeginTransaction();
                 using var initialize = connection.CreateCommand();
                 initialize.Transaction = tx;
@@ -182,7 +175,6 @@ public sealed partial class SqliteStore : IAsyncDisposable
                 if (pragma.ExecuteScalar() is not null) throw new StorageException("storage.databaseDamaged", "数据库外键完整性检查失败");
             }
             lease.SealDatabaseId(databaseId);
-            lease.ClearPendingInitialDatabaseId();
             return new(lease.Paths, connection, activityBarrier ?? new(), ownership, space, clock);
         }
         catch (Exception error)

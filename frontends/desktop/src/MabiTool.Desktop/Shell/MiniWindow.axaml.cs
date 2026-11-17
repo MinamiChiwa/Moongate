@@ -12,6 +12,7 @@ public sealed partial class MiniWindow : Window
     public MiniWindow()
     {
         InitializeComponent();
+        AppIcon.Apply(this);
         UiMotion.Attach(this);
         AddHandler(PointerPressedEvent, OnCaptionPressed, RoutingStrategies.Bubble);
         FocusRelease.Attach(this);

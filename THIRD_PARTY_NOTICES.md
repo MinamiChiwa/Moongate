@@ -43,7 +43,7 @@ Moongate 以 [MIT 许可](LICENSE)发布。本文件列出 Moongate 移植或并
 | pefile | 2024.8.26 | MIT |
 | capstone | 5.0.9 | BSD-3-Clause |
 
-文字识别随包附带 Tesseract OCR 5.4.0.20240606（Apache-2.0，UB Mannheim Windows 构建）与英文识别数据，以及它依赖的 Leptonica、libarchive、libjpeg-turbo、libpng、libtiff、libwebp、OpenJPEG、OpenSSL、zlib、Zstandard、GNU libiconv、GCC 运行库等。各组件的版本、来源与许可登记在 `workers/color-engine/tesseract-lock.json`，原文随包放在染色组件的许可目录中。
+文字识别随包附带 Tesseract OCR 5.4.0.20240606（Apache-2.0，UB Mannheim Windows 构建）与英文识别数据，以及它依赖的 Leptonica、libarchive、libjpeg-turbo、libpng、libtiff、libwebp、OpenJPEG、OpenSSL、zlib、Zstandard、GNU libiconv、GCC 运行库等。各组件的版本、来源与许可登记在 `workers/color-engine/tesseract-lock.json`，原文随包放在染色组件的许可目录中。随包的 `tesseract.exe` 与 `libtesseract-5.dll` 移除了调试信息（`.debug_*` 节、COFF 符号表与随之失效的签名），代码与数据未改动。
 
 ## 界面资源
 

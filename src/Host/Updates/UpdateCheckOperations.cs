@@ -38,7 +38,7 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
     private async Task<OperationSnapshot> SubmitPlanAsync(string principal, string planId, string? key, string? ifMatch,
         UpdateAction action, CancellationToken token)
     {
-        if (downloader is null) throw new UpdateSourceException("update.sourceNotConfigured", []);
+        if (downloader is null) throw new UpdatePackageException("update.sourceNotConfigured");
         // 先读取原始计划供持久幂等裁决；签名和期限在真正执行时重验。
         var plan = await downloader.ReadPlanAsync(planId, token);
         await admission.WaitAsync(token);
@@ -137,7 +137,7 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
                             await Task.Delay(50, cancellation.Token);
                         }
                         transferred = await installer.TransferAsync(id, work.Plan, operations.RequireUpdateMaintenance(id), cancellation.Token);
-                        if (!transferred) throw new UpdatePlanException("update.installationFailed");
+                        if (!transferred) throw new UpdatePackageException("update.installationFailed");
                     }
                     else throw new InvalidOperationException("更新动作没有执行器");
                 }
@@ -145,14 +145,14 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
                 {
                     var cancelled = await operations.CancelAsync(id, "system-updates", true, stoppingToken.IsCancellationRequested ? "backend-stopping" : "update-cancelled");
                     if (cancelled.Cancellation.State.KnownValue == CancellationState.Deferred)
-                        problem = ApiErrors.Create("update.installationFailed", "安装移交已取消", id);
+                        problem = ApiErrors.Create("update.installationFailed", "安装交接已取消", id);
                 }
-                catch (Exception error) when (error is UpdateSourceException or TrustValidationException or UpdatePlanException or FileTreeException or AssetDownloadException or ActivityBarrierException or OperationException or IOException or UnauthorizedAccessException)
+                catch (Exception error) when (error is UpdateSourceException or UpdatePackageException or AssetDownloadException or ActivityBarrierException or OperationException or StorageException or IOException or UnauthorizedAccessException)
                 {
                     var code = error switch
                     {
-                        UpdateSourceException source => source.Code, TrustValidationException trust => trust.Code,
-                        UpdatePlanException plan => plan.Code, FileTreeException file => file.Code,
+                        UpdateSourceException source => source.Code, UpdatePackageException package => package.Code,
+                        StorageException storage => storage.Code,
                         AssetDownloadException asset => asset.Code, ActivityBarrierException activity => activity.Code,
                         OperationException operation => operation.Code,
                         _ => "update.storageUnavailable"

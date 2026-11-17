@@ -32,8 +32,6 @@
     "Modules",
     "Providers",
     "RoomServer",
-    "Updater",
-    "Launcher",
     "PortableLauncher"
   ],
   "testAreas": [

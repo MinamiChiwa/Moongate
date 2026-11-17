@@ -1,4 +1,4 @@
-"""按实际目录包生成来源、许可、SPDX 2.3 和签名发行输入。"""
+"""按实际目录包生成发行身份、来源、许可与 SPDX 2.3 清单。"""
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -28,114 +28,40 @@ def identifier(value):
     return "SPDXRef-" + re.sub(r"[^A-Za-z0-9.-]", "-", value)
 
 
-def launcher_version(component):
-    libraries = read(component / "MabiTool.Launcher.deps.json")["libraries"]
-    versions = [name.split("/", 1)[1] for name in libraries if name.startswith("MabiTool.Launcher/")]
-    if len(versions) != 1 or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", versions[0]):
-        raise ValueError("launcher 实际版本无效")
-    return versions[0]
-
-
-def launcher_files(root):
-    for path in (root, *root.parents):
+def tree_sha256(directory):
+    """组件树哈希：全部文件按相对路径（/ 分隔）的序号顺序排列，对每行“相对路径、制表符、小写 SHA-256、换行”求 SHA-256。
+    与 src/PortableLauncher/Update/ReleaseIdentity.cs 的 TreeSha256 一致。"""
+    entries = []
+    for path in directory.rglob("*"):
         if path.is_symlink() or path.is_junction():
-            raise ValueError("launcher 来源包含链接")
-    pending = [root]
-    files = {}
-    names = set()
-    while pending:
-        for path in pending.pop().iterdir():
-            if path.is_symlink() or path.is_junction():
-                raise ValueError("launcher 来源包含链接")
-            name = path.relative_to(root).as_posix()
-            if name.lower() in names:
-                raise ValueError("launcher 文件路径冲突")
-            names.add(name.lower())
-            if path.is_dir():
-                pending.append(path)
-            elif path.is_file():
-                files[name] = {"sizeBytes": path.stat().st_size, "sha256": digest(path)}
-            else:
-                raise ValueError("launcher 文件类型无效")
-            if len(names) > 100_000:
-                raise ValueError("launcher 来源文件过多")
-    return files
+            raise ValueError("组件包含链接")
+        if path.is_file():
+            entries.append((path.relative_to(directory).as_posix(), digest(path)))
+    entries.sort(key=lambda item: item[0].encode("utf-16-be"))
+    text = "".join(f"{name}\t{value}\n" for name, value in entries)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest(), len(entries)
 
 
-def stable_launcher(source, destination=None):
-    root = source / "components/launcher"
-    actual = launcher_files(root)
-    manifest = read(source / "release-input.json")
-    sbom_path = source / "sbom.spdx.json"
-    component = next(item for item in manifest["components"] if item["componentId"] == "launcher")
-    if component["directory"] != "components/launcher" or manifest["releaseSequence"] < 1 or not manifest["releaseId"]:
-        raise ValueError("稳定 launcher 发行来源无效")
-    expected = {}
-    for entry in read(sbom_path)["files"]:
-        name = entry["fileName"].removeprefix("./")
-        if name.startswith("components/launcher/"):
-            relative = name.removeprefix("components/launcher/")
-            checksums = [item["checksumValue"].lower() for item in entry["checksums"] if item["algorithm"] == "SHA256"]
-            if relative in expected or len(checksums) != 1 or not re.fullmatch(r"[0-9a-f]{64}", checksums[0]):
-                raise ValueError("稳定 launcher SBOM 身份无效")
-            expected[relative] = checksums[0]
-    if not expected or set(expected) != set(actual) or any(actual[name]["sha256"] != value for name, value in expected.items()):
-        raise ValueError("稳定 launcher 文件集合或 SHA256 与原 SBOM 不符")
-    version = launcher_version(root)
-    if version != component["version"]:
-        raise ValueError("稳定 launcher 组件版本与实际依赖元数据不符")
-    record = dict(schemaVersion=1, sourceReleaseId=manifest["releaseId"], sourceReleaseSequence=manifest["releaseSequence"],
-                  sourceManifestSha256=digest(source / "release-input.json"), sourceSbomSha256=digest(sbom_path),
-                  launcherVersion=version, lengthEvidence="read-after-source-hash-verification", files=actual)
-    if destination is not None:
-        target = destination / "components/launcher"
-        for path in (target, *target.parents):
-            if path.is_symlink() or path.is_junction():
-                raise ValueError("launcher 复制目标包含链接")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(root, target)
-        if launcher_files(target) != actual:
-            raise ValueError("稳定 launcher 复制后文件身份不符")
-        core = destination / "components/core"
-        core.mkdir(exist_ok=True)
-        write(core / "stable-launcher-source.json", record)
-    return record
-
-
-def verify_updater_runtime(component, runtime_version, nuget):
-    for name in ("MabiTool.Updater.dll", "MabiTool.Updater.exe"):
-        if not (component / name).is_file() or (component / name).stat().st_size == 0:
-            raise ValueError(f"updater 缺少 DLL 入口或 apphost：{name}")
-    options = read(component / "MabiTool.Updater.runtimeconfig.json")["runtimeOptions"]
-    expected = [{"name": "Microsoft.NETCore.App", "version": runtime_version}]
-    if options.get("includedFrameworks") != expected or options.get("framework") or options.get("frameworks"):
-        raise ValueError("updater 须包含指定版本的独立 .NET 运行时")
-    deps = read(component / "MabiTool.Updater.deps.json")
-    if not deps["runtimeTarget"]["name"].endswith("/win-x64") or not any(
-        name in (f"runtimepack.Microsoft.NETCore.App.Runtime.win-x64/{runtime_version}",
-                 f"Microsoft.NETCore.App.Runtime.win-x64/{runtime_version}") and metadata.get("type") == "runtimepack"
-        for name, metadata in deps["libraries"].items()
-    ):
-        raise ValueError("updater 运行时包版本或架构不符")
-    pack = nuget / "microsoft.netcore.app.runtime.win-x64" / runtime_version
-    for name, directory in (("hostpolicy.dll", "native"), ("coreclr.dll", "native"),
-                            ("System.Private.CoreLib.dll", "lib/net10.0"), ("System.Runtime.dll", "lib/net10.0")):
-        actual = component / name
-        source = pack / "runtimes/win-x64" / directory / name
-        if not actual.is_file() or not source.is_file() or digest(actual) != digest(source):
-            raise ValueError(f"updater 内嵌运行时内容与 {runtime_version} 不符：{name}")
-    for name in ("LICENSE.TXT", "THIRD-PARTY-NOTICES.TXT"):
-        if not (component / name).is_file() or digest(component / name) != digest(pack / name):
-            raise ValueError(f"updater 缺少原始运行时许可：{name}")
-    return pack
+def write_release_identity(package, components_root, component_ids, arguments):
+    """components/release.json：宿主据此得知自己的版本，更新时用它核对下载包与暂存目录。"""
+    components = []
+    for component in component_ids:
+        tree, count = tree_sha256(components_root / component)
+        components.append(dict(id=component, files=count, treeSha256=tree))
+    display = arguments.version + ("-preview" if arguments.channel == "preview" else "")
+    write(components_root / "release.json", dict(
+        schemaVersion=1, product="Moongate", version=arguments.version, channel=arguments.channel, displayVersion=display,
+        repository=arguments.repository_name, builtAt=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        entry=dict(path="Moongate.exe", sha256=digest(package / "Moongate.exe")), components=components))
 
 
 def inventory(repository, package, arguments):
-    minimum = arguments.minimum_updater_version
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", minimum) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", arguments.version):
-        raise ValueError("发行版本和最低更新器版本须为三段非负整数")
-    if tuple(map(int, minimum.split("."))) > tuple(map(int, arguments.version.split("."))):
-        raise ValueError("最低更新器版本高于本次发行的 updater 版本")
+    if not re.fullmatch(r"(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})", arguments.version):
+        raise ValueError("发行版本须为三段非负整数")
+    if arguments.channel not in ("stable", "preview"):
+        raise ValueError("发行渠道须为 stable 或 preview")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", arguments.repository_name):
+        raise ValueError("发行仓库须为 owner/name")
     if not package.is_relative_to(repository / "artifacts"):
         raise ValueError("发行输出须位于仓库 artifacts")
     for path in (package, *package.parents):
@@ -148,27 +74,14 @@ def inventory(repository, package, arguments):
     launcher = package / "Moongate.exe"
     if not launcher.is_file() or launcher.is_symlink():
         raise ValueError("发行目录缺少包根入口 Moongate.exe")
-    extra = sorted({path.name for path in package.iterdir()} - {"Moongate.exe", "components", "release-input.json", "sbom.spdx.json", "THIRD_PARTY_NOTICES.txt"})
+    extra = sorted({path.name for path in package.iterdir()} - {"Moongate.exe", "components", "sbom.spdx.json", "THIRD_PARTY_NOTICES.txt"})
     if extra:
         raise ValueError("发行目录根有多余内容：" + "、".join(extra))
     component_ids = sorted(path.name for path in components_root.iterdir() if path.is_dir())
-    required = {"core", "updater", "launcher", "room-server", "dotnet-runtime", "desktop"}
+    required = {"core", "room-server", "dotnet-runtime", "desktop"}
     if not required.issubset(component_ids) or set(component_ids) - required - {"observation-worker", "color-engine"}:
         raise ValueError("发行组件闭包无效")
-    target = read(components_root / "core/install-target.json")
-    if target["hostVersion"] != arguments.version or target["runtimeMode"] != "framework-dependent":
-        raise ValueError("发行目标与实际宿主不符")
     nuget = Path(arguments.nuget_packages).expanduser()
-    updater = components_root / "updater"
-    updater_runtime_pack = verify_updater_runtime(updater, arguments.runtime_version, nuget)
-    actual_launcher_version = launcher_version(components_root / "launcher")
-    stable_source_path = components_root / "core/stable-launcher-source.json"
-    stable_source = read(stable_source_path) if stable_source_path.exists() else None
-    if stable_source and (stable_source["launcherVersion"] != actual_launcher_version or
-                          stable_source["files"] != launcher_files(components_root / "launcher")):
-        raise ValueError("稳定 launcher 来源记录与实际组件不符")
-    if not stable_source and actual_launcher_version != arguments.version:
-        raise ValueError("新发布 launcher 版本与发行版本不符")
     licenses = components_root / "core/licenses"
     licenses.mkdir(exist_ok=True)
     own = repository / "packaging/licenses/MinamiChiwa-MIT.txt"
@@ -239,16 +152,6 @@ def inventory(repository, package, arguments):
                 "https://dotnet.microsoft.com/download/dotnet/10.0", "Microsoft and third-party contributors",
                 "随包共享框架，原始 LICENSE.txt 和 ThirdPartyNotices.txt 保存在 dotnet-runtime 组件")
     notices.append(runtime_text)
-
-    updater_runtime_text = (updater / "LICENSE.TXT").read_text(encoding="utf-8-sig") + "\n" + (updater / "THIRD-PARTY-NOTICES.TXT").read_text(encoding="utf-8-sig")
-    updater_runtime_license = license_reference("Dotnet-Updater-Distribution", updater_runtime_text)
-    updater_runtime_ref = add_package("Microsoft.NETCore.App.Runtime.win-x64", arguments.runtime_version, "MIT", updater_runtime_license,
-                f"https://www.nuget.org/packages/Microsoft.NETCore.App.Runtime.win-x64/{arguments.runtime_version}",
-                "Microsoft and third-party contributors", "updater 组件内嵌独立运行时；原始许可保存在组件根目录",
-                checksums=[dict(algorithm="SHA256", checksumValue=digest(updater_runtime_pack / f"microsoft.netcore.app.runtime.win-x64.{arguments.runtime_version}.nupkg"))]
-                if (updater_runtime_pack / f"microsoft.netcore.app.runtime.win-x64.{arguments.runtime_version}.nupkg").is_file() else None)
-    relationships.append(dict(spdxElementId=own_ref, relationshipType="DEPENDS_ON", relatedSpdxElement=updater_runtime_ref))
-    notices.append(updater_runtime_text)
 
     # nuspec 没有许可表达式的包按登记的人工映射标注，映射同时固定包内许可文件的哈希作为依据。
     overrides_path = repository / "packaging/licenses/nuget-license-overrides.json"
@@ -326,13 +229,17 @@ def inventory(repository, package, arguments):
             if digest(license_path) != distribution["licenseSha256"]:
                 raise ValueError(f"随包 Tesseract 许可文字与构建记录不符：{distribution['id']}")
             text = license_path.read_text(encoding="utf-8-sig", errors="replace")
+            # Apache-2.0 第 4(b) 条：修改过的文件须写明已修改。
+            stripped = [path for path in distribution["files"]
+                        if any(item["path"] == path and item.get("debugSectionsRemoved") for item in tesseract["files"])]
+            modification = "、".join(stripped) + " 已移除调试信息（.debug_* 节、COFF 符号表与签名），代码与数据未改动" if stripped else ""
             reference = add_package(distribution["name"], distribution["version"] or "NOASSERTION", distribution["license"],
                                     location=distribution["source"],
                                     comment=f"染色组件随包 Tesseract {tesseract['version']}（{tesseract['distribution']['name']}）；文件："
-                                            + "、".join(distribution["files"]))
+                                            + "、".join(distribution["files"]) + ("；" + modification if stripped else ""))
             relationships.append(dict(spdxElementId=own_ref, relationshipType="DEPENDS_ON", relatedSpdxElement=reference))
             notices.append(f"{distribution['name']} {distribution['version'] or ''}\nLicense: {distribution['license']}\n"
-                           f"Source: {distribution['source']}\n{text}")
+                           f"Source: {distribution['source']}\n" + (f"Modified: {modification}\n" if stripped else "") + text)
 
     if "desktop" in component_ids:
         # 桌面前端内嵌 Noto Sans SC/TC 子集字体（SIL OFL 1.1），许可文字随包保存并写入声明。
@@ -351,15 +258,16 @@ def inventory(repository, package, arguments):
     (components_root / "core/THIRD_PARTY_NOTICES.txt").write_text(notices_text, encoding="utf-8")
     write(components_root / "core/source-inventory.json", {"schemaVersion": 1, "ownLicense": "MIT", "sources": source_records,
           "features": source_baseline["features"],
-          "stableLauncherSource": stable_source,
-          "runtimeDistributions": [dict(componentId="dotnet-runtime", version=arguments.runtime_version, runtimeMode="framework-dependent"),
-                                   dict(componentId="updater", version=arguments.runtime_version, runtimeMode="self-contained",
-                                        runtimePackage="Microsoft.NETCore.App.Runtime.win-x64", licenseFiles=["LICENSE.TXT", "THIRD-PARTY-NOTICES.TXT"])],
+          "runtimeDistributions": [dict(componentId="dotnet-runtime", version=arguments.runtime_version, runtimeMode="framework-dependent")],
           "externalDependencies": [{"id": "npcap", "bundled": False}] if "observation-worker" in component_ids else []})
+    # 发行身份写在 SBOM 之前，自身也列入 SBOM；树哈希只覆盖组件目录，不含身份文件本身。
+    write_release_identity(package, components_root, component_ids, arguments)
     files = []
     for path in [launcher, *sorted(components_root.rglob("*"))]:
         if path.is_symlink() or path.is_junction():
             raise ValueError("组件包含链接")
+        if path.suffix.lower() == ".pdb":
+            raise ValueError("发行组件不含调试符号：" + path.relative_to(package).as_posix())
         if path.is_file():
             relative = path.relative_to(package).as_posix()
             reference = identifier(relative)
@@ -371,24 +279,6 @@ def inventory(repository, package, arguments):
           name=arguments.release_id, documentNamespace=f"https://mabitool.local/spdx/{arguments.release_id}/{uuid.uuid4()}",
           creationInfo=dict(creators=["Tool: MabiTool-package-inventory"], created=now), packages=packages,
           files=files, relationships=relationships, hasExtractedLicensingInfos=extracted))
-    schemas = {}
-    for migration in target["migrations"]:
-        schemas[migration["moduleId"]] = max(schemas.get(migration["moduleId"], 0), migration["version"])
-    component_inputs = []
-    for component in component_ids:
-        runtime_component = component == "dotnet-runtime"
-        component_inputs.append(dict(componentId=component, directory=f"components/{component}",
-            version=arguments.runtime_version if runtime_component else actual_launcher_version if component == "launcher" else arguments.version,
-            optional=component in ("color-engine", "observation-worker"), moduleApiRange=dict(minimum=1, maximum=2),
-            hostVersionRange=dict(minimum="0.1.0", maximum="1.0.0"), workerProtocolRange=dict(minimum=1, maximum=2),
-            dataSchemaRange=dict(minimum=0, maximum=max(schemas.values()) + 1),
-            dependencies=[] if runtime_component or component in ("color-engine", "updater") else [dict(componentId="dotnet-runtime", minimumVersion=arguments.runtime_version)]))
-    write(package / "release-input.json", dict(schemaVersion=1, productId="mabitool", channel=arguments.channel,
-          releaseId=arguments.release_id, version=arguments.version, releaseSequence=arguments.release_sequence, publishedAt=now,
-          minUpdaterVersion=minimum, architecture="x64", minimumOsBuild="10.0.19045", runtimeMode="framework-dependent",
-          releaseNotes="", sbomPath="sbom.spdx.json", noticesPath="THIRD_PARTY_NOTICES.txt", components=component_inputs,
-          data=[dict(moduleId=module, schemaFrom=version, schemaTo=version, oldReadableSchemaRange=dict(minimum=version, maximum=version + 1),
-                     migrationId=f"{module}-schema-{version}", requiresFullBackup=False) for module, version in sorted(schemas.items())]))
     print(f"已登记 {len(component_ids)} 个组件、{len(packages)} 项来源/依赖和 {len(files)} 个发行文件")
 
 
@@ -397,25 +287,12 @@ def main():
     parser.add_argument("--repository", required=True, type=Path)
     parser.add_argument("--package", required=True, type=Path)
     parser.add_argument("--version", required=True)
-    parser.add_argument("--minimum-updater-version", default="0.1.0")
-    parser.add_argument("--stable-launcher-package", type=Path)
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--verify-stable-launcher", action="store_true")
-    mode.add_argument("--copy-stable-launcher", action="store_true")
     parser.add_argument("--runtime-version", required=True)
     parser.add_argument("--release-id", required=True)
-    parser.add_argument("--release-sequence", required=True, type=int)
     parser.add_argument("--channel", required=True)
+    parser.add_argument("--repository-name", default="MinamiChiwa/Moongate")
     parser.add_argument("--nuget-packages", type=Path, default=Path(os.environ.get("NUGET_PACKAGES", Path.home() / ".nuget/packages")))
     arguments = parser.parse_args()
-    if arguments.verify_stable_launcher or arguments.copy_stable_launcher:
-        if arguments.stable_launcher_package is None:
-            parser.error("稳定 launcher 校验或复制须指定 --stable-launcher-package")
-        destination = arguments.package.absolute() if arguments.copy_stable_launcher else None
-        if destination is not None and not destination.is_relative_to(arguments.repository.resolve() / "artifacts"):
-            parser.error("launcher 复制输出须位于仓库 artifacts")
-        stable_launcher(arguments.stable_launcher_package.absolute(), destination)
-        return
     inventory(arguments.repository.resolve(), arguments.package.resolve(), arguments)
 
 

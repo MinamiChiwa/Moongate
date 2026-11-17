@@ -3,7 +3,6 @@ namespace MabiTool.Contracts;
 public sealed record AssetSnapshot(string Id, string ModuleId, string Scope, string MediaType, string Sha256,
     UInt64String SizeBytes, UInt64String Revision);
 public enum UpdateSourceKind { GithubDirect, GithubApi, Relay }
-public sealed record UpdateSourceSettings(string? GithubRepository, string Channel, string? ApiBaseUri, string? RelayBaseUri);
 /// <param name="MaximumBytesPerSecond">下载带宽上限；null 为不限速（默认），设定值须在 65,536–67,108,864 字节/秒。</param>
 [System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
 public sealed record UpdatePolicy(bool AutomaticChecks = true, int CheckIntervalHours = 6,
@@ -12,4 +11,7 @@ public sealed record UpdatePolicySnapshot(UpdatePolicy Policy, UInt64String Revi
 public sealed record UpdateProgress(string PlanId, string Phase, OpenEnum<UpdateSourceKind>? Source,
     UInt64String VerifiedBytes, UInt64String? TotalBytes, string? ComponentId, string? ReasonCode,
     string? OperationId = null, UInt64String? Revision = null);
-public sealed record UpdateInstallResult(string PlanId, string TransactionId, string ReleaseId, string Outcome, string? RecoverySnapshotId, string? FailureCode = null);
+/// <summary>一次安装的结果。<c>Outcome</c>：committed（已更新到 <c>ReleaseId</c>）、rolledBack（已回到 <c>PreviousReleaseId</c>）、
+/// rollbackFailed（新旧版本都没有自动启动）、aborted（未做改动）；<c>RecoverySnapshotId</c> 为安装前的数据库备份。</summary>
+public sealed record UpdateInstallResult(string PlanId, string TransactionId, string ReleaseId, string Outcome, string? RecoverySnapshotId,
+    string? FailureCode = null, string? PreviousReleaseId = null, DateTimeOffset? CompletedAt = null);

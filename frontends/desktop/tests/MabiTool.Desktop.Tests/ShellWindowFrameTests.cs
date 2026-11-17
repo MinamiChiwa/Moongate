@@ -152,6 +152,51 @@ public sealed class ShellWindowFrameTests
         main.Close();
     }
 
+    /// <summary>
+    /// 默认设置与恢复了偏好（繁体、深色、已载素材包）两种启动状态下，主窗口、迷你窗、浮窗和两个明细窗口都带同一个程序图标，
+    /// 切换主题、语言与素材包后仍是它。
+    /// </summary>
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void EveryWindowKeepsTheSharedProgramIcon(bool restoredPreferences)
+    {
+        var app = Application.Current!;
+        using var pack = new ThemeAndMotionAssetTests.ImagePack();
+        UiText.Apply(app, restoredPreferences ? UiLanguage.TraditionalChinese : UiLanguage.SimplifiedChinese);
+        UiTheme.Apply(app, restoredPreferences ? UiThemeChoice.Dark : UiThemeChoice.System);
+        if (restoredPreferences) IconRegistry.LoadPack(pack.Directory);
+        else IconRegistry.Reset();
+        var backend = new SampleBackend();
+        var main = App.CreateMainWindow(backend);
+        main.Show();
+        var catalog = ((ShellViewModel)main.DataContext!).Catalog;
+        catalog.Mini!.Show();
+        Window[] windows = [main, catalog.Mini.Window!, new OverlayWindow(catalog.Overlay!.Store, catalog, backend),
+            new CombatDetailWindow(), new InventoryTableWindow()];
+        try
+        {
+            LayoutProbe.Settle();
+            Assert.NotNull(AppIcon.Shared);
+            Assert.All(windows, window => Assert.Same(AppIcon.Shared, window.Icon));
+
+            UiTheme.Apply(app, restoredPreferences ? UiThemeChoice.Light : UiThemeChoice.Dark);
+            UiText.Apply(app, restoredPreferences ? UiLanguage.SimplifiedChinese : UiLanguage.TraditionalChinese);
+            if (restoredPreferences) IconRegistry.Remove();
+            else IconRegistry.LoadPack(pack.Directory);
+            LayoutProbe.Settle();
+            Assert.All(windows, window => Assert.Same(AppIcon.Shared, window.Icon));
+        }
+        finally
+        {
+            // 浮窗与明细窗口只构造未显示，关闭只针对已显示的主窗口与迷你窗。
+            foreach (var window in windows.Reverse().Where(window => window.IsVisible)) window.Close();
+            IconRegistry.Reset();
+            UiText.Apply(app, UiLanguage.SimplifiedChinese);
+            UiTheme.Apply(app, UiThemeChoice.Light);
+        }
+    }
+
     [Fact]
     public void MaximizedClientShrinksByFrameThickness()
     {

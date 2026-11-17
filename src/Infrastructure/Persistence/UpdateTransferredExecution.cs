@@ -1,6 +1,5 @@
 using System.Text.Json;
 using MabiTool.Contracts;
-using MabiTool.Infrastructure.Updates;
 using MabiTool.ModuleSdk;
 
 namespace MabiTool.Infrastructure;
@@ -10,66 +9,31 @@ public sealed partial class OperationStore
     internal ActivityBarrier.MaintenanceLease RequireUpdateMaintenance(string id) =>
         updateMaintenance is { } lease && lease.Owner == id ? lease : throw new ActivityBarrierException("update.maintenanceLeaseInvalid");
 
-    internal Task<OperationSnapshot> ReportTransferredUpdateAsync(UpdateInstallIntent intent, ActivityBarrier.MaintenanceLease maintenance,
-        string phase, CancellationToken token = default)
+    /// <summary>
+    /// 安装已交给替换器：在维护屏障内把安装操作记为成功结束（阶段 <c>handedOff</c>），宿主随后退出。
+    /// 替换、健康确认与回退的结果由替换器写入工具根的结果文件，重启后的宿主据此显示。
+    /// </summary>
+    internal async Task<OperationSnapshot> FinishUpdateHandoffAsync(string id, JsonElement result, CancellationToken token = default)
     {
-        var work = TransferredWork(intent);
-        var progress = JsonSerializer.SerializeToElement(new { planId = intent.Plan.PlanId, transactionId = intent.TransactionId, phase }, ContractJson.Options);
-        var observed = Get(intent.OperationId, "", true);
-        var prepared = PrepareUpdate(observed with { Revision = Next(observed), Result = progress });
-        return store.WriteMaintenanceAsync(maintenance, tx =>
+        await updateExecutionGate.WaitAsync(token);
+        try
         {
-            var previous = RequireTransferred(tx, intent, work);
-            var next = previous with { Revision = Next(previous), Result = progress };
-            if (previous.Revision == observed.Revision) SavePrepared(tx, prepared); else Save(tx, next);
-            return next;
-        }, token);
-    }
-
-    internal Task<OperationSnapshot> FinishTransferredUpdateAsync(UpdateInstallIntent intent, ActivityBarrier.MaintenanceLease maintenance,
-        UpdateInstallResult result, ApiProblem? problem = null, CancellationToken token = default)
-    {
-        var work = TransferredWork(intent);
-        var resultJson = JsonSerializer.SerializeToElement(result, ContractJson.Options);
-        var observed = Get(intent.OperationId, "", true);
-        OperationSnapshot Finish(OperationSnapshot previous) => previous with
-        {
-            State = problem is null ? OperationState.Succeeded : OperationState.Failed,
-            Phase = result.Outcome, Revision = Next(previous), Result = resultJson,
-            Problem = problem, Progress = problem is null ? 1 : null, Timestamps = previous.Timestamps with { CompletedAt = clock.GetUtcNow() },
-            Cancellation = previous.Cancellation.State.KnownValue == CancellationState.Deferred
-                ? new(CancellationState.Completed, "safe-update-completed") : previous.Cancellation
-        };
-        var prepared = SqliteStore.IsTerminal(observed.State.KnownValue) ? null : PrepareUpdate(Finish(observed));
-        return store.WriteMaintenanceAsync(maintenance, tx =>
-        {
-            var previous = Read(tx, intent.OperationId);
-            if (SqliteStore.IsTerminal(previous.State.KnownValue))
+            return await WriteUpdateAsync(id, tx =>
             {
-                if (previous.Kind != "update.apply" || previous.Result is null ||
-                    previous.Result.Value.GetRawText() != resultJson.GetRawText() || previous.Problem?.Code != problem?.Code)
-                    throw new OperationException("update.recoveryRequired", "原安装操作终态与恢复结果不一致");
-                return previous;
-            }
-            previous = RequireTransferred(tx, intent, work);
-            var next = prepared is not null && previous.Revision == observed.Revision ? prepared.Snapshot : Finish(previous);
-            if (prepared is not null && previous.Revision == observed.Revision) SavePrepared(tx, prepared); else Save(tx, next);
-            return next;
-        }, token);
-    }
-
-    private static string TransferredWork(UpdateInstallIntent intent) => JsonSerializer.Serialize(
-        new UpdateWorkRequest(UpdateAction.Apply, intent.Plan, UpdatePlanETag(intent.Plan)), ContractJson.Options);
-
-    private static OperationSnapshot RequireTransferred(DatabaseTransaction tx, UpdateInstallIntent intent, string expectedWork)
-    {
-        var previous = Read(tx, intent.OperationId);
-        if (previous.Kind != "update.apply" || previous.State.KnownValue is not (OperationState.Running or OperationState.CancelRequested) || previous.Phase != "applying")
-            throw new OperationException("update.recoveryRequired", "原安装操作未持有可接管状态");
-        var payload = tx.Scalar("SELECT payload FROM platform_update_requests WHERE operation_id=$id", ("$id", intent.OperationId)) as string;
-        if (payload != expectedWork)
-            throw new OperationException("update.installIntentInvalid", "安装意图与原始请求不一致");
-        return previous;
+                var previous = Read(tx, id);
+                RequireUpdate(previous);
+                if (previous.Kind != "update.apply" || previous.Phase != "applying" || updateMaintenance?.Owner != id)
+                    throw new OperationException("resource.busy", "安装尚未进入可交接阶段");
+                var next = previous with
+                {
+                    State = OperationState.Succeeded, Phase = "handedOff", Revision = Next(previous), Result = result, Progress = 1,
+                    Timestamps = previous.Timestamps with { CompletedAt = clock.GetUtcNow() }
+                };
+                Save(tx, next);
+                return next;
+            }, token);
+        }
+        finally { updateExecutionGate.Release(); }
     }
 
     private static PreparedOperationRecord PrepareUpdate(OperationSnapshot snapshot) =>

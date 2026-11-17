@@ -90,12 +90,12 @@ public sealed class LocalApiMiddleware(RequestDelegate next, LocalApiOptions opt
         {
             await ApiProblems.Write(context, error.Code, error.Message, error.Details);
         }
-        catch (Exception error) when (!context.Response.HasStarted && error is UpdateSourceException or TrustValidationException or UpdatePlanException or FileTreeException or AssetDownloadException)
+        catch (Exception error) when (!context.Response.HasStarted && error is UpdateSourceException or UpdatePackageException or AssetDownloadException)
         {
             var code = error switch
             {
-                UpdateSourceException e => e.Code, TrustValidationException e => e.Code, UpdatePlanException e => e.Code,
-                FileTreeException e => e.Code, AssetDownloadException e => e.Code, _ => "update.storageUnavailable"
+                UpdateSourceException e => e.Code, UpdatePackageException e => e.Code,
+                AssetDownloadException e => e.Code, _ => "update.storageUnavailable"
             };
             var details = error is UpdateSourceException sources ? new Dictionary<string, System.Text.Json.JsonElement>
                 { ["sources"] = System.Text.Json.JsonSerializer.SerializeToElement(sources.Failures, ContractJson.Options) } : null;

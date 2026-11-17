@@ -40,8 +40,7 @@ src/
   Modules/              MusicLibrary、Rooms、Color、CombatObservation、Inventory
   Providers/            TwObservation（台服）、Replay、GitHubReleases、Tunnels
   RoomServer/           合奏房间服务
-  Updater/  Launcher/   更新器与稳定启动器
-  PortableLauncher/     解压版包根入口 Moongate.exe
+  PortableLauncher/     解压版包根入口 Moongate.exe，兼作更新替换器
 workers/
   game-observation/     .NET 观察 Worker（Npcap）
   color-engine/         Python 染色引擎、Tesseract 锁定清单与测试
@@ -180,7 +179,11 @@ pwsh -NoProfile -File .\scripts\build\publish-backend.ps1 -Version 0.1.0 -Channe
 - 需要与 `-RuntimeVersion`（默认 10.0.13）一致的本机 .NET 与 ASP.NET Core 运行时，打包时复制进包内。
 - 先在 `artifacts/packages/<ReleaseId>/` 生成目录包，再由 `scripts/build/package-archive.ps1` 打成 `artifacts/packages/Moongate-v<版本>-preview-Windows-x64.zip` 与同名 `.sha256`（stable 渠道没有 `-preview`）。
 - ZIP 解压后是单个 `Moongate` 文件夹：`Moongate.exe`（入口，源码在 `src/PortableLauncher`）、`components\`（各组件与随包运行时）、`licenses\`（第三方声明与 SPDX 清单）；首次运行生成 `userdata\`，保存全部数据、设置与版面。`components\core\launch-backend.cmd -Wait` 只启动后端并显示输出，用于排查启动失败。
+- `components\release.json` 是发行身份：版本、渠道、检查更新的仓库、入口与各组件的树哈希；宿主据此得知自己的版本，应用内更新用它核对下载包。
+- 每个版本在 GitHub Releases 发布 ZIP 与同名 `.sha256`，标签为 `v<版本>`（预览版带 `-preview` 并标为预发布）；应用内更新从这里下载整包，核对 SHA-256、压缩包结构与发行身份后由 `Moongate.exe` 替换程序文件，失败时回退并恢复数据库。
 - Tesseract 的版本、来源与文件哈希按 `workers/color-engine/tesseract-lock.json` 核对，各组件的许可文字在 `workers/color-engine/tesseract-licenses/`；不符或缺失时打包在发布 .NET 组件之前停止。
+- 染色组件按引擎实际用到的模块瘦身：`scripts/build/package-color-runtime.py` 的 `SLIM_RULES` 逐条写明删除的文件与理由，删除后启动随包 Python 导入引擎全部模块并执行延迟导入，失败即停止打包；`tesseract.exe` 与 `libtesseract-5.dll` 移除调试信息，处理后哈希固定在锁定清单，识别输出须与原程序一致。
+- 发行物不带 `.pdb` 调试符号。
 
 ## 9. 目录与生成物约定
 

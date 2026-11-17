@@ -1,8 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <InternalsVisibleTo Include="MabiTool.Host" />
-    <InternalsVisibleTo Include="MabiTool.Updater" />
-    <InternalsVisibleTo Include="MabiTool.Launcher" />
     <InternalsVisibleTo Include="MabiTool.Host.Tests" />
     <InternalsVisibleTo Include="MabiTool.Updates.Tests" />
     <InternalsVisibleTo Include="MabiTool.CombatObservation.Tests" />
@@ -11,5 +9,8 @@
     <InternalsVisibleTo Include="MabiTool.BackendRuntimeProbe" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <ProjectReference Include="../ModuleSdk/MabiTool.ModuleSdk.csproj" />
+    <!-- 发行身份与更新事务日志与包根 Moongate.exe 共用同一份源码，保证两边按同一格式读写。 -->
+    <Compile Include="../PortableLauncher/Update/ReleaseIdentity.cs" Link="Updates/Shared/ReleaseIdentity.cs" />
+    <Compile Include="../PortableLauncher/Update/UpdateJournal.cs" Link="Updates/Shared/UpdateJournal.cs" />
   </ItemGroup>
 </Project>

@@ -14,21 +14,12 @@ public static class ToolRoot
     public const string PackageStateName = "userdata";
 
     /// <summary>
-    /// 由程序目录推出工具根：安装布局 <c>&lt;根&gt;/versions|staging/&lt;id&gt;/components/&lt;组件&gt;</c> 与
-    /// <c>&lt;根&gt;/launcher/stable/components/&lt;组件&gt;</c>（根下有 <c>launcher/</c>）取安装根；目录包布局
-    /// <c>&lt;根&gt;/components/&lt;组件&gt;</c> 取包根下的 <see cref="PackageStateName"/>，包根已有旧布局的
-    /// bootstrap、data、runtime 或 desktop 目录时继续取包根；其余取程序目录本身。
+    /// 由程序目录推出工具根：目录包布局 <c>&lt;根&gt;/components/&lt;组件&gt;</c> 取包根下的 <see cref="PackageStateName"/>，
+    /// 包根已有旧布局的 bootstrap、data、runtime 或 desktop 目录时继续取包根；其余（构建输出等）取程序目录本身。
     /// </summary>
     public static string FromProgramDirectory(string programDirectory)
     {
         var program = new DirectoryInfo(Path.TrimEndingDirectorySeparator(Path.GetFullPath(programDirectory)));
-        if (program.Parent is { } components && components.Name.Equals("components", StringComparison.OrdinalIgnoreCase) &&
-            components.Parent is { } owner && owner.Parent is { } holder && holder.Parent is { } installation &&
-            (holder.Name.Equals("versions", StringComparison.OrdinalIgnoreCase) ||
-             holder.Name.Equals("staging", StringComparison.OrdinalIgnoreCase) ||
-             holder.Name.Equals("launcher", StringComparison.OrdinalIgnoreCase) && owner.Name.Equals("stable", StringComparison.OrdinalIgnoreCase)) &&
-            Directory.Exists(Path.Combine(installation.FullName, "launcher")))
-            return installation.FullName;
         if (PackageRoot(program.FullName) is { } package)
             return new[] { BootstrapName, DataName, RuntimeName, DesktopName }.Any(name => Directory.Exists(Path.Combine(package, name)))
                 ? package : Path.Combine(package, PackageStateName);
@@ -37,7 +28,6 @@ public static class ToolRoot
 
     /// <summary>
     /// 目录包根：程序目录为 <c>&lt;根&gt;/components/&lt;组件&gt;</c> 且根下有 <c>components/core/MabiTool.Host.dll</c> 时返回该根，否则为空。
-    /// 安装布局由 <see cref="FromProgramDirectory"/> 先行判定。
     /// </summary>
     public static string? PackageRoot(string programDirectory)
     {

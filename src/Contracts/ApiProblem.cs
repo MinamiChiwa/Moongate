@@ -117,23 +117,13 @@ public static class ApiErrors
 
     private static IEnumerable<ErrorDefinition> UpdateDefinitions()
     {
-        foreach (var name in new[] { "sourceNotConfigured", "updaterRequired", "platformUnsupported", "incompatibleComponents",
-            "versionRollback", "releaseIdentityMismatch", "assetHashMismatch", "assetLengthMismatch", "assetInvalid",
-            "assetHostRejected", "assetMetadataInvalid", "channelInvalid", "clockUntrusted", "dependencyCycle",
-            "duplicateMetadataField", "envelopeInvalid", "envelopeVersionUnsupported", "identityMismatch", "indexUnverified",
-            "indexVersionUnsupported", "manifestBindingMismatch", "manifestInvalid", "manifestPathInvalid", "manifestTooLarge",
-            "manifestVersionUnsupported", "metadataEmpty", "metadataExpired", "metadataFieldInvalid", "metadataInvalid",
-            "metadataTooLarge", "migrationInvalid", "pathRejected", "planInvalid", "planTooLarge", "redirectHostRejected",
-            "redirectInvalid", "relayResponseInvalid", "releaseCatalogTooLarge", "releaseIdInvalid", "releaseMetadataInvalid",
-            "releaseSequenceRollback", "repositoryInvalid", "rootInvalid", "rootOverlap", "rootVersionInvalid",
-            "sameReleaseDifferentManifest", "sameSequenceDifferentMetadata", "sequenceRollback", "signatureEncodingInvalid",
-            "signatureInvalid", "sourceAccessDenied", "sourceHostRejected", "sourceResponseInvalid", "sourceUriInvalid",
-            "targetTreeMismatch", "trustCapacityExceeded", "trustStateInvalid", "unknownMetadataField",
-            "artifactUnsupported", "fullPackageMissing", "packageEntryInvalid", "packageInvalid", "installTargetInvalid", "installIntentInvalid", "stableLauncherRequired" })
+        foreach (var name in new[] { "sourceNotConfigured", "platformUnsupported", "versionRollback", "releaseIdentityMismatch",
+            "assetHashMismatch", "assetLengthMismatch", "assetMetadataInvalid", "packageInvalid", "pathRejected", "planInvalid",
+            "redirectHostRejected", "redirectInvalid", "releaseMetadataInvalid", "repositoryInvalid", "rootOverlap", "sourceAccessDenied",
+            "sourceHostRejected", "sourceResponseInvalid", "sourceUriInvalid", "manifestTooLarge", "metadataTooLarge" })
             yield return new("update." + name, 422, false);
-        foreach (var name in new[] { "allSourcesFailed", "allSourcesUnavailable", "assetDownloadFailed", "channelIndexMissing",
-            "channelNotFound", "diskSpaceInsufficient", "metadataTimeout", "networkUnavailable", "releaseAssetMissing",
-            "sourceUnavailable", "storageUnavailable", "trustStateBusy", "trustStateUnavailable" })
+        foreach (var name in new[] { "allSourcesFailed", "allSourcesUnavailable", "assetDownloadFailed", "diskSpaceInsufficient",
+            "metadataTimeout", "networkUnavailable", "releaseAssetMissing", "sourceUnavailable", "storageUnavailable" })
             yield return new("update." + name, 503, true);
         yield return new("update.rateLimited", 429, true);
         yield return new("update.stageExists", 409, false);
@@ -142,6 +132,9 @@ public static class ApiErrors
         yield return new("update.installationFailed", 503, true);
         yield return new("update.installationRolledBack", 409, false);
         yield return new("update.recoveryRequired", 503, false);
+        // 替换器写入安装结果的失败原因：旧进程未退出、替换失败、新版本未通过健康检查、安装被中断。
+        foreach (var name in new[] { "processTimeout", "replaceFailed", "healthTimeout", "interrupted" })
+            yield return new("update." + name, 409, false);
     }
 
     public static ApiProblem Create(string code, string title, string traceId, IReadOnlyDictionary<string, JsonElement>? details = null)

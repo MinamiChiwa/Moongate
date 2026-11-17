@@ -2,43 +2,6 @@ namespace MabiTool.Infrastructure.Updates;
 
 internal static class UpdatePaths
 {
-    // 已发布记录只经原子替换修改；读者固定旧文件，并允许发布和收尾删除。
-    internal static async Task<FileStream> OpenPublishedReadAsync(string path, CancellationToken token,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
-    {
-        delay ??= Task.Delay;
-        for (var attempt = 0; ; attempt++)
-        {
-            token.ThrowIfCancellationRequested();
-            RejectLinks(path);
-            try { return new(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 65536, FileOptions.Asynchronous); }
-            catch (IOException error) when (OperatingSystem.IsWindows() && attempt < 4 && (error.HResult & 0xffff) is 32 or 33)
-            {
-                await delay(TimeSpan.FromMilliseconds(50 * (1 << attempt)), token).ConfigureAwait(false);
-            }
-        }
-    }
-
-    internal static async Task ReplaceOwnedFileAsync(string source, string destination, CancellationToken token,
-        Action<string, string>? replace = null, Func<TimeSpan, CancellationToken, Task>? delay = null)
-    {
-        replace ??= (from, to) => File.Replace(from, to, null);
-        delay ??= Task.Delay;
-        for (var attempt = 0; ; attempt++)
-        {
-            token.ThrowIfCancellationRequested();
-            RejectLinks(source);
-            RejectLinks(destination);
-            try { replace(source, destination); return; }
-            // 1175 保留原来的两个文件名；1176/1177 可能发生部分移动，交由事务恢复。
-            catch (IOException error) when (OperatingSystem.IsWindows() && attempt < 4 &&
-                (error.HResult & 0xffff) is 5 or 32 or 33 or 1175 && File.Exists(source) && File.Exists(destination))
-            {
-                await delay(TimeSpan.FromMilliseconds(50 * (1 << attempt)), token).ConfigureAwait(false);
-            }
-        }
-    }
-
     internal static async Task PublishOwnedDirectoryAsync(string work, string destination, CancellationToken token,
         Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
@@ -48,7 +11,7 @@ internal static class UpdatePaths
             token.ThrowIfCancellationRequested();
             RejectLinks(work);
             RejectLinks(destination);
-            if (Directory.Exists(destination) || File.Exists(destination)) throw new FileTreeException("update.stageExists");
+            if (Directory.Exists(destination) || File.Exists(destination)) throw new UpdatePackageException("update.stageExists");
             try { Directory.Move(work, destination); return; }
             catch (IOException error) when (OperatingSystem.IsWindows() && attempt < 4 &&
                 (error.HResult & 0xffff) is 5 or 32 or 33 && !Directory.Exists(destination) && !File.Exists(destination))
@@ -77,7 +40,7 @@ internal static class UpdatePaths
         return string.Join('/', parts);
     }
 
-    private static void Reject(string path) => throw new FileTreeException("update.pathRejected", path);
+    private static void Reject(string path) => throw new UpdatePackageException("update.pathRejected", path);
 
     internal static string Local(string root, string relative)
     {
@@ -86,14 +49,6 @@ internal static class UpdatePaths
         return result;
     }
 
-    // 路径超过 MAX_PATH 时，dotnet 宿主给出的程序集位置带 \\?\ 扩展前缀；比较前还原为普通完整路径。
-    internal static bool SameLocalFile(string actual, string expected) =>
-        Path.GetFullPath(WithoutExtendedPrefix(actual)).Equals(Path.GetFullPath(WithoutExtendedPrefix(expected)), StringComparison.OrdinalIgnoreCase);
-
-    private static string WithoutExtendedPrefix(string path) =>
-        path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase) ? @"\\" + path[8..] :
-        path.StartsWith(@"\\?\", StringComparison.Ordinal) ? path[4..] : path;
-
     internal static void RejectLinks(string path)
     {
         for (var current = Path.GetFullPath(path); current is not null; current = Path.GetDirectoryName(current))
@@ -101,7 +56,7 @@ internal static class UpdatePaths
             try
             {
                 if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
-                    throw new FileTreeException("update.pathRejected", current);
+                    throw new UpdatePackageException("update.pathRejected", current);
             }
             catch (FileNotFoundException) { }
             catch (DirectoryNotFoundException) { }
@@ -115,7 +70,7 @@ internal static class UpdatePaths
         for (var i = 0; i < paths.Length; i++)
             for (var j = i + 1; j < paths.Length; j++)
                 if (Contains(paths[i], paths[j]) || Contains(paths[j], paths[i]))
-                    throw new FileTreeException("update.rootOverlap");
+                    throw new UpdatePackageException("update.rootOverlap");
     }
 
     private static bool Contains(string parent, string child) => child.Equals(parent, StringComparison.OrdinalIgnoreCase) ||
@@ -138,7 +93,7 @@ internal static class UpdatePaths
             foreach (var entryInfo in new DirectoryInfo(directory).EnumerateFileSystemInfos())
             {
                 token.ThrowIfCancellationRequested();
-                if (++count > 100_000) throw new FileTreeException("update.manifestTooLarge");
+                if (++count > 100_000) throw new UpdatePackageException("update.manifestTooLarge");
                 var entry = entryInfo.FullName;
                 var attributes = entryInfo.Attributes;
                 if ((attributes & FileAttributes.ReparsePoint) != 0) Reject(entry);

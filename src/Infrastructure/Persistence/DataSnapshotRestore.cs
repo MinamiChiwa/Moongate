@@ -134,7 +134,6 @@ public sealed partial class SqliteStore
             intent = document.RootElement.Deserialize<FileRestoreIntent>(SnapshotJson) ?? throw BackupInvalid("文件恢复意图为空");
         }
         catch (JsonException error) { throw new StorageException("storage.backupInvalid", "文件恢复意图格式无效", error); }
-        catch (TrustValidationException error) { throw new StorageException("storage.backupInvalid", "文件恢复意图格式无效", error); }
         if (intent.SchemaVersion != 1 || intent.TransactionId != transactionId || intent.Snapshot is null ||
             JsonSerializer.Serialize(intent.Snapshot, SnapshotJson) != JsonSerializer.Serialize(snapshot, SnapshotJson))
             throw BackupInvalid("文件恢复意图身份不匹配");

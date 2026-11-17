@@ -23,6 +23,7 @@ public sealed partial class CombatDetailWindow : Window
     public CombatDetailWindow()
     {
         InitializeComponent();
+        Shell.AppIcon.Apply(this);
         UiMotion.Attach(this);
         FocusRelease.Attach(this);
         AddHandler(PointerPressedEvent, OnCaptionPressed, RoutingStrategies.Bubble);

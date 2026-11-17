@@ -15,7 +15,8 @@
       "eng"
     ],
     "arguments": "stdin stdout -l eng --tessdata-dir <component>/tesseract/tessdata --psm 6|7|8|11 -c tessedit_char_whitelist=...",
-    "excluded": "训练与评估工具、HTML 手册、osd.traineddata、configs、Java 查看器与 pdf.ttf 不随包"
+    "excluded": "训练与评估工具、HTML 手册、osd.traineddata、configs、Java 查看器与 pdf.ttf 不随包",
+    "stripDebug": "标记 stripDebug 的文件在打包时移除末尾的 DWARF .debug_* 节、COFF 符号表与随之失效的 Authenticode 签名，并修正节数、映像大小与校验和；sha256 为安装器原始文件，strippedSha256 为随包文件，打包时两者都核对"
   },
   "packages": [
     {
@@ -241,13 +242,19 @@
       "path": "tesseract.exe",
       "package": "tesseract",
       "length": 1585024,
-      "sha256": "babb405f4366b480d02cd8ff2bac8d497170f6c1711ce6f3d5d8bf0fb7fa6ed9"
+      "sha256": "babb405f4366b480d02cd8ff2bac8d497170f6c1711ce6f3d5d8bf0fb7fa6ed9",
+      "stripDebug": true,
+      "strippedLength": 66048,
+      "strippedSha256": "0ced032db80dd60d4cf9d4b4f1c70189873acb3d8ca34658851d80f42622c506"
     },
     {
       "path": "libtesseract-5.dll",
       "package": "tesseract",
       "length": 101471336,
-      "sha256": "279488c41bd341edaa03dcd097faa33604ba330e6254ac97bcaf2229d8d7ac1a"
+      "sha256": "279488c41bd341edaa03dcd097faa33604ba330e6254ac97bcaf2229d8d7ac1a",
+      "stripDebug": true,
+      "strippedLength": 3289600,
+      "strippedSha256": "c219ebe7748d4f4d9ae1da468f698582a03cb80699aa708aefff8fc1e04fd6c0"
     },
     {
       "path": "libleptonica-6.dll",

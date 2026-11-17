@@ -170,7 +170,6 @@ public sealed partial class SqliteStore
             descriptor = document.RootElement.Deserialize<DataSnapshotDescriptor>(SnapshotJson) ?? throw BackupInvalid("数据快照清单为空");
         }
         catch (JsonException error) { throw new StorageException("storage.backupInvalid", "数据快照清单格式无效", error); }
-        catch (TrustValidationException error) { throw new StorageException("storage.backupInvalid", "数据快照清单格式无效", error); }
         ValidateDataSnapshot(descriptor, paths, snapshotId);
         if (frozen is not null && frozen != JsonSerializer.Serialize(descriptor, SnapshotJson))
             throw BackupInvalid("数据快照与固定描述不匹配");

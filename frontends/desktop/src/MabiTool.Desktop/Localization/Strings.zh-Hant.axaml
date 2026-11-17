@@ -243,7 +243,7 @@
   <sys:String x:Key="T.Shortcuts">全域快捷鍵</sys:String>
   <sys:String x:Key="T.NoShortcuts">後端沒有回報快捷鍵</sys:String>
   <sys:String x:Key="T.Update">更新</sys:String>
-  <sys:String x:Key="T.UpdateHint">只自動檢查並在這裡提示；下載和安裝由你決定。</sys:String>
+  <sys:String x:Key="T.UpdateHint">只自動檢查並在這裡提示；下載和安裝由你決定。安裝時 Moongate 會關閉並自動開啟新版本，失敗時自動回到目前版本；userdata 裡的資料不受影響。</sys:String>
   <sys:String x:Key="T.CheckUpdate">檢查更新</sys:String>
   <sys:String x:Key="G.CaptureSettings">前往設定</sys:String>
   <sys:String x:Key="T.Capture">抓包</sys:String>
@@ -306,7 +306,7 @@
   <sys:String x:Key="T.MotionOff">減弱</sys:String>
   <sys:String x:Key="T.MotionHint">減弱後按鈕、頁面切換和圖示不再播放動畫，狀態立即切換。</sys:String>
   <sys:String x:Key="T.DownloadUpdate">下載更新</sys:String>
-  <sys:String x:Key="T.InstallUpdate">安裝更新</sys:String>
+  <sys:String x:Key="T.InstallUpdate">安裝並重新啟動</sys:String>
   <sys:String x:Key="T.ChangeShortcut">修改</sys:String>
   <sys:String x:Key="T.CancelShortcut">取消</sys:String>
   <sys:String x:Key="T.PressKeys">請按下新的組合鍵</sys:String>

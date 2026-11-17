@@ -15,7 +15,6 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'MabiTool.Contracts' Or
                             '$(MSBuildProjectName)' == 'MabiTool.Host' Or
-                            '$(MSBuildProjectName)' == 'MabiTool.Updater' Or
                             '$(MSBuildProjectName)' == 'MabiTool.Infrastructure' Or
                             '$(MSBuildProjectName)' == 'MabiTool.Modules.Color' Or
                             '$(MSBuildProjectName)' == 'MabiTool.Modules.CombatObservation' Or

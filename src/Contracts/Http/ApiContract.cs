@@ -387,7 +387,7 @@ public static class ApiContract
         typeof(RoomScoreDraft), typeof(RoomScoreDraftSnapshot), typeof(RoomScoreDraftCommandResult), typeof(RoomLocalScoreMapping), typeof(MusicResolvedScore), typeof(MusicScoreSelection),
         typeof(RoomSnapshot), typeof(RoomClockSample), typeof(ColorProfile), typeof(ColorRun),
         typeof(ColorCandidateSelectionRequest), typeof(ColorRetryRequest),
-        typeof(CombatSummary), typeof(EffectsSnapshot), typeof(AssetSnapshot), typeof(UpdateSourceSettings),
+        typeof(CombatSummary), typeof(EffectsSnapshot), typeof(AssetSnapshot),
         typeof(CombatFrame),
         typeof(UpdateProgress), typeof(UpdateInstallResult), typeof(UpdateDownloadStatus), typeof(UpdatePolicy), typeof(UpdatePolicySnapshot),
         typeof(ResourceSnapshot<CombatSummary>), typeof(EventStreamOptions), typeof(StreamControl)

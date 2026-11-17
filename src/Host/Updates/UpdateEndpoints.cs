@@ -2,10 +2,11 @@ using System.Text.Json;
 using MabiTool.Contracts;
 using MabiTool.Infrastructure;
 using MabiTool.Infrastructure.Updates;
+using MabiTool.PortableUpdate;
 
 namespace MabiTool.Host.Updates;
 
-internal sealed class UpdateApiService(UpdateInstallationOptions? options, IUpdateDownloadService downloads,
+internal sealed class UpdateApiService(PortableInstallation? installation, IUpdateDownloadService downloads,
     OperationStore operations, UpdatePolicyStore policy, TimeProvider clock)
 {
     public UpdateStateSnapshot State()
@@ -13,18 +14,28 @@ internal sealed class UpdateApiService(UpdateInstallationOptions? options, IUpda
         var operation = operations.LatestUpdate(); var check = operations.LatestUpdate("update.check");
         var result = check?.State.KnownValue == OperationState.Succeeded && check.Result is { } saved
             ? saved.Deserialize<UpdateCheckResult>(ContractJson.Options) : null;
-        var available = result is { UpdateAvailable: true } && result.PlanExpiresAt > clock.GetUtcNow()
-            ? new UpdateAvailable(result.ReleaseId, result.ManifestSha256, result.PlanId, result.PlanExpiresAt, result.Source) : null;
-        var phase = operation is not null && !SqliteStore.IsTerminal(operation.State.KnownValue) ? operation.Phase :
-            operation?.Phase == "staged" ? "staged" : available is not null ? "available" : "idle";
-        return new(options is not null, phase, options?.InstalledReleaseId, policy.Get(), operation, available);
+        var available = installation is not null && result is { UpdateAvailable: true } && result.PlanExpiresAt > clock.GetUtcNow()
+            ? new UpdateAvailable(result.ReleaseId, result.ManifestSha256, result.PlanId, result.PlanExpiresAt, result.Source,
+                result.SizeBytes is { } size ? new((ulong)size) : null) : null;
+        var last = installation is null ? null : UpdateResult.Read(installation.ToolRoot);
+        var lastInstall = last is null ? null : new UpdateInstallResult(last.TransactionId, last.TransactionId, last.ToVersion, last.Outcome,
+            null, last.Reason, last.FromVersion, new DateTimeOffset(DateTime.SpecifyKind(last.At, DateTimeKind.Utc)));
+        var running = operation is not null && !SqliteStore.IsTerminal(operation.State.KnownValue);
+        // 下载完成且计划仍可用时为 ready（可安装）；已安装的发行不再显示为可用。
+        var staged = operation is { Kind: "update.download", Phase: "staged" } && available is not null &&
+            operation.ResourceRefs.Any(item => item.Id == available.PlanId);
+        var phase = running ? operation!.Phase : staged ? "ready" :
+            operation?.Phase == "handedOff" && last?.OperationId != operation.Id ? "handedOff" : available is not null ? "available" : "idle";
+        return new(installation is not null, phase, installation?.Identity.DisplayVersion, policy.Get(), operation, available,
+            installation?.Identity.Channel, lastInstall, installation is null ? "update.sourceNotConfigured" : null);
     }
+
     public async Task<UpdatePlanSnapshot> Plan(string id, CancellationToken ct)
     {
         var plan = await downloads.ReadPlanAsync(id, ct);
-        return new(plan.PlanId, new(1), plan.ReleaseId, plan.ManifestSha256, plan.CreatedAt, plan.ExpiresAt, plan.ExpiresAt <= clock.GetUtcNow(),
-            plan.Components.Select(x => new UpdateComponentSnapshot(x.ComponentId, x.Version.ToString(), new((ulong)x.DownloadBytes), new((ulong)x.InstalledBytes),
-                x.IsOptional, x.Dependencies.Select(d => d.ComponentId).ToArray())).ToArray(), plan.Removed.Select(x => x.ComponentId).ToArray(), new((ulong)plan.DownloadBytes), new((ulong)plan.PeakBytes), plan.RequiredUpdaterVersion?.ToString());
+        var bytes = new UInt64String((ulong)plan.AssetLength);
+        return new(plan.PlanId, new(1), plan.DisplayVersion, plan.Sha256, plan.CreatedAt, plan.ExpiresAt, plan.ExpiresAt <= clock.GetUtcNow(),
+            [], [], bytes, new((ulong)plan.AssetLength * 3));
     }
 }
 

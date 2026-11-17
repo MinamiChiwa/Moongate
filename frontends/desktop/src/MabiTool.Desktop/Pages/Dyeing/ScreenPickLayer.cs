@@ -104,6 +104,7 @@ public sealed class ScreenPickLayer : Window
         Topmost = true;
         ShowInTaskbar = false;
         CanResize = false;
+        Shell.AppIcon.Apply(this);
         Background = Brushes.Black;
         Cursor = new Cursor(StandardCursorType.Cross);
         Position = new PixelPoint(capture.X, capture.Y);

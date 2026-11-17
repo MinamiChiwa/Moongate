@@ -5,7 +5,7 @@
     [Parameter(Mandatory)][string]$ArchivePath
 )
 # 把目录包装成解压即用的 zip：解压后是单个 Moongate 文件夹，根下只有 Moongate.exe、components 与 licenses。
-# 发行输入 release-input.json 与构建记录 package-build.json 只留在构建目录，不进入 zip。
+# 构建记录 package-build.json 只留在构建目录，不进入 zip；发行身份 components/release.json 随组件进入 zip。
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 $package = [IO.Path]::GetFullPath($PackageDirectory)
@@ -17,7 +17,7 @@ if ($archive.StartsWith($package + [IO.Path]::DirectorySeparatorChar, [StringCom
 
 $rootName = 'Moongate'
 $licenseFiles = @('THIRD_PARTY_NOTICES.txt', 'sbom.spdx.json')
-$allowed = @('Moongate.exe', 'components', 'release-input.json', 'package-build.json') + $licenseFiles
+$allowed = @('Moongate.exe', 'components', 'package-build.json') + $licenseFiles
 $required = @('Moongate.exe', 'components') + $licenseFiles
 $present = @(Get-ChildItem -LiteralPath $package -Force | ForEach-Object Name)
 $unexpected = @($present | Where-Object { $_ -notin $allowed })
@@ -27,6 +27,7 @@ if ($unexpected.Count -or $missing.Count) {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $package 'Moongate.exe') -PathType Leaf) -or
     -not (Test-Path -LiteralPath (Join-Path $package 'components') -PathType Container)) { throw '目录包的 Moongate.exe 或 components 类型不符' }
+if (-not (Test-Path -LiteralPath (Join-Path $package 'components/release.json') -PathType Leaf)) { throw '目录包缺少发行身份 components/release.json' }
 
 # 包内路径 → 源文件；组件树不跟随链接。
 $entries = [ordered]@{ "$rootName/Moongate.exe" = (Join-Path $package 'Moongate.exe') }

@@ -22,6 +22,7 @@ public sealed partial class InventoryTableWindow : Window
     public InventoryTableWindow()
     {
         InitializeComponent();
+        Shell.AppIcon.Apply(this);
         UiMotion.Attach(this);
         FocusRelease.Attach(this);
         AddHandler(PointerPressedEvent, OnCaptionPressed, RoutingStrategies.Bubble);

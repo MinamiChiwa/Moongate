@@ -2,11 +2,8 @@ using MabiTool.Contracts;
 using MabiTool.Infrastructure;
 
 if (args.Length != 4) return 2;
-if (args[0] == "managed-install") return await ManagedInstallProbe.RunAsync(args[1], args[2], args[3]);
-if (args[0] == "managed-bootstrap") return await ManagedInstallProbe.BootstrapAsync(args[1], args[2], args[3]);
 if (args[0].StartsWith("data-maintenance-", StringComparison.Ordinal))
     return await DataMaintenanceProbe.RunAsync(args[1], args[2], args[3], args[0]["data-maintenance-".Length..]);
-if (args[0] == "update-handoff") return await UpdateHandoffProbe.RunAsync(args[1], args[2], args[3]);
 if (args[0].StartsWith("data-snapshot-", StringComparison.Ordinal))
 {
     using var snapshotRoot = DataRootLease.Open(new(args[1], false, args[2]));
@@ -20,8 +17,6 @@ if (args[0].StartsWith("data-snapshot-", StringComparison.Ordinal))
     });
     return 0;
 }
-if (args[0] == "install-transaction") return await InstallTransactionProbe.RunAsync(args[1], args[2], args[3]);
-if (args[0] == "install-rollback") return await InstallTransactionProbe.RollbackAsync(args[1], args[2], args[3]);
 if (args[0].StartsWith("restore-database-", StringComparison.Ordinal))
 {
     using var restoreLease = DataRootLease.Open(new(args[1], false, args[2]));

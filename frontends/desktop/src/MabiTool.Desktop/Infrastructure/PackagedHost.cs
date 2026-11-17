@@ -12,6 +12,7 @@ namespace MabiTool.Desktop.Infrastructure;
 /// 宿主未运行时用随包运行时启动 <c>components/core/MabiTool.Host.dll</c>，并传入本前端的进程号（<c>--owner-process</c>），
 /// 宿主在本前端结束（关闭、崩溃或被结束）后按正常停止流程退出；工具根（包根下的 userdata）还没有引导配置时加 <c>--initialize-data</c>。
 /// 同一工具根只运行一个前端，再次打开时把已有窗口提到前台。宿主中途停止时自动重新启动一次。
+/// 宿主为安装更新交出控制（工具根有 <c>update/restarting</c> 标记）后本前端退出，不再启动宿主，由替换器换入新版本后重新打开。
 /// 显式指定工具根、发现文件或样本时不启动宿主，也不负责结束已在运行的宿主（开发与复验方式）。
 /// </summary>
 internal static class PackagedHost
@@ -162,6 +163,11 @@ internal static class PackagedHost
         {
             while (!token.IsCancellationRequested)
             {
+                if (UpdateRestarting(DesktopFiles.Root))
+                {
+                    RequestExit();
+                    return;
+                }
                 var launch = Plan(args, DesktopFiles.Root, AppContext.BaseDirectory);
                 if (launch is null)
                 {
@@ -183,7 +189,8 @@ internal static class PackagedHost
                     if (await Task.WhenAny(exited, Task.Delay(StartupWatch, token)).ConfigureAwait(false) != exited) Problem = null;
                     await exited.ConfigureAwait(false);
                     // 同时启动的另一宿主已在运行（本宿主因数据被占用退出）：连接那一个，它退出后再启动。
-                    if (IsHostRunning(launch.HostLock)) continue;
+                    // 宿主为安装更新退出时由循环开头的检查让本前端退出。
+                    if (IsHostRunning(launch.HostLock) || UpdateRestarting(DesktopFiles.Root)) continue;
                     var (relaunch, problem) = AfterExit(process.ExitCode, running.Elapsed, relaunched);
                     Problem = problem;
                     if (!relaunch) return;
@@ -193,6 +200,12 @@ internal static class PackagedHost
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
     }
+
+    /// <summary>宿主已把安装交给替换器：前端随宿主退出，让替换器能改名程序文件。</summary>
+    internal static bool UpdateRestarting(string toolRoot) => File.Exists(Path.Combine(toolRoot, "update", "restarting"));
+
+    private static void RequestExit() => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.Shutdown());
 
     /// <summary>
     /// 本前端运行期间宿主退出后的处理。启动阶段以非零码退出是启动失败，写明原因、不重试，以免反复崩溃；

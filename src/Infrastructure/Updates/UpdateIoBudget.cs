@@ -14,6 +14,10 @@ public sealed class UpdateIoBudget
     private readonly int? bytesPerSecond;
     private double tokens = ChunkSize;
     private long lastTimestamp;
+    private long downloaded;
+
+    /// <summary>经本预算写入的下载字节数，供进度显示。</summary>
+    public long DownloadedBytes => Interlocked.Read(ref downloaded);
 
     public UpdateIoBudget(int? maximumBytesPerSecond = null, ActivityBarrier? barrier = null,
         TimeProvider? clock = null, Func<TimeSpan, CancellationToken, Task>? delay = null)
@@ -32,6 +36,7 @@ public sealed class UpdateIoBudget
     public async Task ConsumeDownloadAsync(int count, CancellationToken token = default)
     {
         if (count is < 0 or > ChunkSize) throw new ArgumentOutOfRangeException(nameof(count));
+        Interlocked.Add(ref downloaded, count);
         if (bytesPerSecond is not { } rate) { token.ThrowIfCancellationRequested(); return; }
         await bandwidthGate.WaitAsync(token).ConfigureAwait(false);
         try
@@ -70,7 +75,7 @@ public sealed class UpdateIoBudget
             await PauseVerificationAsync(token).ConfigureAwait(false);
             var read = await input.ReadAsync(buffer, token).ConfigureAwait(false);
             if (read == 0) break;
-            if (read > maximumLength - length) throw new FileTreeException("update.assetLengthMismatch");
+            if (read > maximumLength - length) throw new UpdatePackageException("update.assetLengthMismatch");
             length += read;
             hash.AppendData(buffer, 0, read);
             if (output is not null) await output.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);

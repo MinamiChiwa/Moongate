@@ -22,9 +22,6 @@
   <Application.Styles>
     <FluentTheme />
     <StyleInclude Source="/Theme/Controls.axaml" />
-    <!-- 所有窗口的标题栏与任务栏使用程序图标：与 Moongate.exe、MabiTool.Desktop.exe 是同一份 packaging/Moongate.ico。 -->
-    <Style Selector=":is(Window)">
-      <Setter Property="Window.Icon" Value="/Assets/Moongate.ico" />
-    </Style>
+    <!-- 窗口图标由各窗口构造时设置（Shell/AppIcon），不经过样式。 -->
   </Application.Styles>
 </Application>

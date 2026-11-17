@@ -316,7 +316,7 @@ public sealed class ResumableAssetDownloader : IDisposable
                 IPAddress.TryParse(uri.Host, out _))
                 throw new AssetDownloadException("update.sourceUriInvalid");
             using var message = new HttpRequestMessage(HttpMethod.Get, uri);
-            message.Headers.UserAgent.ParseAdd("MabiTool-UpdateClient/1.0");
+            message.Headers.UserAgent.ParseAdd("Moongate-Update/1");
             message.Headers.Accept.ParseAdd("application/octet-stream");
             message.Headers.Range = initial.Headers.Range;
             if (initial.Headers.TryGetValues("If-Range", out var values))

@@ -26,15 +26,9 @@ public sealed partial class DataRootLease : IDisposable
     }
 
     public static DataRootLease Open(StorageOptions options)
-        => OpenCoreChecked(options, null, null);
-
-    internal static DataRootLease OpenForUpdate(StorageOptions options, string transactionId, string intentHash)
-        => OpenCoreChecked(options, transactionId, intentHash);
-
-    private static DataRootLease OpenCoreChecked(StorageOptions options, string? transactionId, string? intentHash)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("数据根当前支持 Windows");
-        try { return OpenCore(options, transactionId, intentHash); }
+        try { return OpenCore(options); }
         catch (StorageException) { throw; }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
         {
@@ -43,7 +37,7 @@ public sealed partial class DataRootLease : IDisposable
     }
 
     [SupportedOSPlatform("windows")]
-    private static DataRootLease OpenCore(StorageOptions options, string? transactionId, string? intentHash)
+    private static DataRootLease OpenCore(StorageOptions options)
     {
         var bootstrap = StoragePaths.ValidateLocal(options.BootstrapDirectory);
         if (options.DataRoot is not null && options.PortableRoot is not null)
@@ -80,7 +74,6 @@ public sealed partial class DataRootLease : IDisposable
         LocalDiscoverySecurity.RejectLinks(markerPath);
         var marker = File.Exists(markerPath) ? Read<DataRootIdentity>(markerPath) : null;
         if (marker is not null) VerifyActiveRoot(marker, config, root, bootstrap);
-        UpdateInstallGate.RequireOpen(root, transactionId, intentHash, marker?.RootId);
         var lease = Lock(Path.Combine(root, "writer.lock"), "storage.writerBusy");
         try
         {
@@ -89,7 +82,6 @@ public sealed partial class DataRootLease : IDisposable
                 throw new StorageException("storage.identityMismatch", "取得写锁时数据根身份已改变");
             marker = lockedMarker ?? new(2, "MabiTool", Guid.NewGuid().ToString("N"), AuthorityBootstrap: bootstrap);
             var authority = VerifyActiveRoot(marker, config, root, bootstrap);
-            UpdateInstallGate.RequireOpen(root, transactionId, intentHash, marker.RootId);
             marker = marker with { Version = 2, AuthorityBootstrap = authority };
             var authorityConfig = string.Equals(authority, bootstrap, StringComparison.OrdinalIgnoreCase) ? config :
                 Read<BootstrapConfiguration>(Path.Combine(authority, "data-root.json"));

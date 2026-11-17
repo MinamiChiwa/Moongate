@@ -9,8 +9,6 @@
     <Project Path="src/ModuleSdk/MabiTool.ModuleSdk.csproj" />
     <Project Path="src/Host/MabiTool.Host.csproj" />
     <Project Path="src/RoomServer/MabiTool.RoomServer.csproj" />
-    <Project Path="src/Updater/MabiTool.Updater.csproj" />
-    <Project Path="src/Launcher/MabiTool.Launcher.csproj" />
     <Project Path="src/PortableLauncher/MabiTool.PortableLauncher.csproj" />
     <Project Path="src/Infrastructure/MabiTool.Infrastructure.csproj" />
     <Project Path="src/Modules/MusicLibrary/MabiTool.Modules.MusicLibrary.csproj" />
@@ -25,7 +23,6 @@
     <Project Path="tests/Domain/MabiTool.Rooms.Tests/MabiTool.Rooms.Tests.csproj" />
     <Project Path="tests/Domain/MabiTool.CombatObservation.Tests/MabiTool.CombatObservation.Tests.csproj" />
     <Project Path="tests/Domain/MabiTool.Inventory.Tests/MabiTool.Inventory.Tests.csproj" />
-    <Project Path="tests/Providers/MabiTool.Providers.GitHubReleases.Tests/MabiTool.Providers.GitHubReleases.Tests.csproj" />
     <Project Path="tests/Providers/MabiTool.Providers.TwObservation.Tests/MabiTool.Providers.TwObservation.Tests.csproj" />
     <Project Path="tests/Providers/MabiTool.Updates.Tests/MabiTool.Updates.Tests.csproj" />
     <Project Path="tests/Contracts/MabiTool.Host.Tests/MabiTool.Host.Tests.csproj" />
@@ -36,14 +33,12 @@
     <Project Path="tests/EndToEnd/InventoryObservationProbe/MabiTool.InventoryObservationProbe.csproj" />
     <Project Path="tests/EndToEnd/ObservationDebugTool/MabiTool.ObservationDebugTool.csproj" />
     <Project Path="tests/EndToEnd/MabiTool.ObservationDebugTool.Tests/MabiTool.ObservationDebugTool.Tests.csproj" />
-    <Project Path="tests/EndToEnd/MabiTool.ReleaseBuilder.Tests/MabiTool.ReleaseBuilder.Tests.csproj" />
     <Project Path="tests/Performance/BackendRuntimeProbe/MabiTool.BackendRuntimeProbe.csproj" />
     <Project Path="tests/Performance/ColorRuntimeProbe/MabiTool.ColorRuntimeProbe.csproj" />
     <Project Path="tests/Performance/CombatRuntimeProbe/MabiTool.CombatRuntimeProbe.csproj" />
   </Folder>
   <Folder Name="/scripts/">
     <Project Path="scripts/build/ContractGenerator/MabiTool.ContractGenerator.csproj" />
-    <Project Path="scripts/build/ReleaseBuilder/MabiTool.ReleaseBuilder.csproj" />
     <Project Path="scripts/maintenance/CombatEvidenceInspector/MabiTool.CombatEvidenceInspector.csproj" />
   </Folder>
   <Folder Name="/workers/">

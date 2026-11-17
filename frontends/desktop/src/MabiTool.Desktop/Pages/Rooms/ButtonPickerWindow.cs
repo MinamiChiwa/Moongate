@@ -27,6 +27,7 @@ public sealed class ButtonPickerWindow : Window
         Topmost = true;
         ShowInTaskbar = false;
         CanResize = false;
+        Shell.AppIcon.Apply(this);
         Cursor = new Cursor(StandardCursorType.Cross);
         Position = new PixelPoint(area.X, area.Y);
         Content = new Border

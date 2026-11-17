@@ -3,35 +3,11 @@ using MabiTool.Infrastructure;
 using MabiTool.Host.Updates;
 using MabiTool.Host.Color;
 
-// 常规宿主模式下记录监听端口与是否已开始监听：启动失败按端口、数据目录与未知错误分别给出原因与退出码（HostStartupFailure）。
-var hostMode = false;
+// 记录监听端口与是否已开始监听：启动失败按端口、数据目录与未知错误分别给出原因与退出码（HostStartupFailure）。
 var started = false;
 var port = 0;
 try
 {
-    if (args.Length > 0 && args[0] == "--initial-install-health")
-    {
-        Environment.ExitCode = await InitialInstallProgram.RunAsync(args); return;
-    }
-    if (args.Length > 0 && args[0] is "--update-preflight" or "--update-candidate" or "--update-rollback-health")
-    {
-        try { await UpdateCandidateProgram.RunAsync(args); }
-        catch (Exception error)
-        {
-            if (args.Length == 6)
-                await MabiTool.Infrastructure.Updates.UpdateFailureLog.RecordAsync(
-                    await MabiTool.Infrastructure.Updates.UpdateInstallIntent.ReadAsync(args[1], args[3]), error, args[0],
-                    error is UpdateHostHealthException health ? health.Code : null);
-            throw;
-        }
-        return;
-    }
-    if (args.Length == 2 && args[0] == "--print-install-target")
-    {
-        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(BackendApplication.InstallationTarget(args[1]), MabiTool.Contracts.ContractJson.Options));
-        return;
-    }
-    hostMode = true;
     // 目录包前端拉起宿主时传入自己的进程号：前端结束后宿主随之按正常停止流程退出。
     var (hostArgs, ownerRequested, owner) = OwnerProcess.Extract(args);
     var mock = hostArgs.Contains("--mock", StringComparer.Ordinal);
@@ -44,9 +20,9 @@ try
     // 全部运行时文件位于工具根；只有工具根尚未初始化时才检查旧默认位置并一次性迁入。
     var imported = requested.UsesToolRootDefaults && !mock ? DataRootLease.ImportLegacyLayout(requested, DataRootLease.LegacyBootstrapDirectory) : null;
     var storage = StorageMaintenanceCoordinator.StartupOptions(requested);
-    InitialInstallProgram.RequireCompleted(storage);
-    var updateGate = MabiTool.Infrastructure.Updates.UpdateInstallGate.Find(storage);
-    if (updateGate is not null) await MabiTool.Infrastructure.Updates.UpdateLaunchSupport.RecoverAsync(updateGate.InstallationRoot);
+    // 解压版（目录包且带发行身份、位置由工具根推出）才启用更新；更新回退时先恢复安装前的数据库。
+    var portable = requested.UsesToolRootDefaults && !mock ? PortableInstallation.Detect(AppContext.BaseDirectory) : null;
+    await PortableUpdateStartup.RestoreDatabaseIfRequestedAsync(portable, storage);
     var options = LocalApiOptions.FromEnvironment(storage.PortableRoot);
     port = options.Port;
     if (mock && storage.PortableRoot is not null)
@@ -59,13 +35,14 @@ try
         started = false;
         await StorageMaintenanceCoordinator.RecoverAsync(storage, BackendApplication.DatabaseMigrations, BackendApplication.StorageData);
         await using (var application = BackendApplication.Build(options, storage: storage, mock: mock,
-            updateInstallation: UpdateInstallationOptions.FromEnvironment(), colorPreviewOptions: mock ? null : ColorPreviewService.FromEnvironment,
+            portableUpdate: portable, ownerProcess: owner, colorPreviewOptions: mock ? null : ColorPreviewService.FromEnvironment,
             observationOptions: mock ? null : paths => paths is null ? null : MabiTool.Host.Game.GameObservationService.FromEnvironment(paths)(),
             gameAutomation: !mock))
         {
             await application.StartAsync();
             started = true;
             if (ownerRequested) _ = OwnerProcess.WatchAsync(owner, application.Lifetime);
+            PortableUpdateStartup.ReportReady(portable);
             if (portFallback is not null)
             {
                 var actual = new Uri(application.Urls.Single()).Port;
@@ -94,23 +71,13 @@ catch (ArgumentException error)
     Console.Error.WriteLine(error.Message);
     Environment.ExitCode = 2;
 }
-catch (MabiTool.Infrastructure.Updates.UpdatePlanException error)
+catch (MabiTool.Infrastructure.Updates.UpdatePackageException error)
 {
-    Console.Error.WriteLine(error.Code);
+    // 更新回退所需的数据库备份描述缺失或无效：保留事务日志，由用户按手动升级步骤处理。
+    Console.Error.WriteLine($"{error.Code}: {error.Message}");
     Environment.ExitCode = 4;
 }
-catch (UpdateHostHealthException error)
-{
-    Console.Error.WriteLine(error.Code);
-    Environment.ExitCode = 4;
-}
-catch (Exception error) when (!hostMode && error is IOException or UnauthorizedAccessException)
-{
-    // 安装与更新检查模式：文件访问与权限失败按数据目录不可用结束。
-    Console.Error.WriteLine($"storage.unavailable: 程序文件夹里的数据无法访问：{error.Message}");
-    Environment.ExitCode = HostStartupFailure.StorageExitCode;
-}
-catch (Exception error) when (hostMode)
+catch (Exception error)
 {
     // 启动阶段：端口被占用或不可用、文件访问与权限失败各有原因码与退出码；分不清的写出原始异常类型与消息。
     var failure = await HostStartupFailure.DescribeAsync(error, port, started);
