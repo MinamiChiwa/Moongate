@@ -53,10 +53,10 @@
   <Panel>
     <DockPanel>
       <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
-        <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+        <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
         <DockPanel Margin="{DynamicResource TitleReserve}">
-          <controls:CardGridEditBar DockPanel.Dock="Right" Target="{Binding #CardsGrid}" VerticalAlignment="Center" Margin="12,0,8,0" />
-          <TextBlock Classes="h1" Margin="0" Text="{DynamicResource G.Title}" />
+          <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource G.Title}" />
+          <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" ClipToBounds="True" />
         </DockPanel>
         <DockPanel Margin="0,4,0,0">
           <Button x:Name="RefreshButton" DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Center"
@@ -127,9 +127,9 @@
                   <controls:SelectionBorder Classes="segmented">
                     <StackPanel Orientation="Horizontal">
                       <Button x:Name="LevelDebugButton" Classes="segment" Classes.active="{Binding IsDebug}"
-                              Command="{Binding SetLevelCommand}" CommandParameter="debug" Content="debug" />
+                              Command="{Binding SetLevelCommand}" CommandParameter="debug" Content="{Binding DebugLabel}" />
                       <Button x:Name="LevelTraceButton" Classes="segment" Classes.active="{Binding IsTrace}"
-                              Command="{Binding SetLevelCommand}" CommandParameter="trace" Content="trace" />
+                              Command="{Binding SetLevelCommand}" CommandParameter="trace" Content="{Binding TraceLabel}" />
                     </StackPanel>
                   </controls:SelectionBorder>
                 </controls:PairRow>
@@ -259,6 +259,21 @@
               <TextBlock Classes="note" Text="{DynamicResource G.Loading}" IsVisible="{Binding Loading}" />
               <Button x:Name="MoreButton" HorizontalAlignment="Left" Content="{DynamicResource G.More}"
                       Command="{Binding MoreCommand}" IsVisible="{Binding HasMore}" />
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 界面诊断：浮窗拖动记录开关（默认关闭）与未登记文案的内部标识；不需要连接后端。 -->
+          <controls:Card x:Name="InterfacePanel" CardId="interface" Title="{Binding InterfaceTitle}">
+            <StackPanel Spacing="8" DataContext="{Binding Interface}" x:DataType="diag:DiagnosticsInterfaceSection">
+              <Button x:Name="DragTraceButton" Classes="chip" HorizontalAlignment="Left" Classes.active="{Binding DragTraceEnabled}"
+                      Content="{Binding DragTraceLabel}" Command="{Binding ToggleDragTraceCommand}" />
+              <TextBlock x:Name="DragTraceHint" Classes="note" TextWrapping="Wrap" Text="{Binding DragTraceHint}" />
+              <StackPanel Spacing="4" IsVisible="{Binding HasUnmapped}">
+                <TextBlock Classes="note muted" FontWeight="Bold" Text="{Binding $parent[UserControl].((diag:DiagnosticsPageModel)DataContext).UnmappedTitle}" />
+                <Border Classes="inset" Padding="10,8">
+                  <TextBlock x:Name="UnmappedList" Classes="mono" TextWrapping="Wrap" Text="{Binding UnmappedText}" />
+                </Border>
+              </StackPanel>
             </StackPanel>
           </controls:Card>
         </controls:CardGrid>

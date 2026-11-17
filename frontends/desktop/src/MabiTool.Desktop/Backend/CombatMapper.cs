@@ -332,7 +332,7 @@ public static class CombatMapper
         "combat.damageDisabled" => Pick("这次观测没有统计伤害", "這次觀測沒有統計傷害"),
         "combat.measurementActive" => Pick("已有定时测量在进行", "已有定時測量在進行"),
         null or "" => string.Empty,
-        var other => Pick($"暂不可用：{other}", $"暫不可用：{other}")
+        var other => Pick("暂不可用：", "暫不可用：") + Localization.CodeText.Reason(other)
     };
 
     /// <summary>不完整的原因：切换地图、身份等待、观测停止、时间线截断等写成短句，其余原因码原样列出。</summary>
@@ -357,7 +357,7 @@ public static class CombatMapper
             "range-segment-limit" => Pick("分段过多，只统计最近 128 段", "分段過多，只統計最近 128 段"),
             var other when other.StartsWith("combat.", StringComparison.Ordinal) || other.Contains("gap", StringComparison.OrdinalIgnoreCase)
                 || other.Contains("capacity", StringComparison.OrdinalIgnoreCase) => Pick($"抓包缺口（{other}）", $"抓包缺口（{other}）"),
-            var other => other
+            var other => Localization.CodeText.Reason(other)
         }).Distinct().ToList();
 
     // 主数据下方的不完整说明：有原因时写原因，后端没给原因时只写“不完整”。
@@ -532,7 +532,7 @@ public static class CombatMapper
         "hp-unpaired" => Pick("未与 HP 变化配对", "未與 HP 變化配對"),
         "hp-mismatch" => Pick("HP 变化不一致", "HP 變化不一致"),
         null or "" => Pick("原因未知", "原因未知"),
-        var other => other
+        var other => Localization.CodeText.Reason(other)
     };
 
     private static IReadOnlyList<HealingTargetRow> HealingTargets(CombatEncounter encounter)
@@ -684,7 +684,7 @@ public static class CombatMapper
             switching ? Pick("观测中，切换地图中，等待识别本机角色", "觀測中，切換地圖中，等待識別本機角色")
                 : ended ? Pick($"观测中，{EndedText(workspace.Encounter!.Summary.BoundaryReason)}，等待下一次伤害开始新分段",
                     $"觀測中，{EndedText(workspace.Encounter!.Summary.BoundaryReason)}，等待下一次傷害開始新分段")
-                : observing ? Pick("观测中", "觀測中") : Pick($"观测已结束（{workspace.Observation.State}）", $"觀測已結束（{workspace.Observation.State}）")
+                : observing ? Pick("观测中", "觀測中") : ObservationEnded(workspace.Observation.State)
         };
         if (ended)
         {
@@ -926,7 +926,7 @@ public static class CombatMapper
         "observation-stopped" or "observation-interrupted" => Pick("观测已停止", "觀測已停止"),
         null or "" => Pick("原因未知", "原因未知"),
         var other when other.Contains("connection", StringComparison.OrdinalIgnoreCase) => Pick("期间切换了地图", "期間切換了地圖"),
-        var other => Pick($"抓包缺口 {other}", $"抓包缺口 {other}")
+        var other => Pick($"抓包缺口（{other}）", $"抓包缺口（{other}）")
     };
 
     private static EncounterRow History(CombatEncounter encounter)
@@ -960,10 +960,19 @@ public static class CombatMapper
             "manual-split" => Pick("手动拆段", "手動拆段"),
             "reset" => Pick("重置", "重置"),
             "map-change" => Pick("切换地图", "切換地圖"),
-            var other => other
+            var other => Localization.CodeText.Reason(other)
         };
         return Pick($"第 {segment.Ordinal} 段 · {reason}", $"第 {segment.Ordinal} 段 · {reason}") + end;
     }
+
+    // 观测已结束的状态行：停止、中断、失败等状态写成中文。
+    private static string ObservationEnded(string? state) => state switch
+    {
+        "stopped" => Pick("观测已停止", "觀測已停止"),
+        "interrupted" => Pick("观测已中断", "觀測已中斷"),
+        "failed" => Pick("观测失败", "觀測失敗"),
+        _ => Pick($"观测已结束（{Localization.CodeText.State(state)}）", $"觀測已結束（{Localization.CodeText.State(state)}）")
+    };
 
     // 状态行与范围标题里“上一段”的结束说明。
     private static string EndedText(string reason) => reason switch
@@ -985,7 +994,7 @@ public static class CombatMapper
         "reset" => Pick("重置", "重置"),
         "stream-reset" => Pick("数据流重置", "資料流重置"),
         "observation-reconnected" => Pick("观测重连", "觀測重連"),
-        var other => other
+        var other => Localization.CodeText.Reason(other)
     };
 
     /// <summary>本机战斗状态（观察状态的 localCombatState）的显示文字；来源给出列表外的取值时为“战斗状态未知”。</summary>

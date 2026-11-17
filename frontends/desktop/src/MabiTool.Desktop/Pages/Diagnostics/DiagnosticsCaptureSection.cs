@@ -73,6 +73,8 @@ public sealed class DiagnosticsCaptureSection : ObservableObject
     public bool Busy => busy;
 
     public string Level => level;
+    public string DebugLabel => DiagnosticsText.Label("debug");
+    public string TraceLabel => DiagnosticsText.Label("trace");
     public bool IsDebug => level == "debug";
     public bool IsTrace => level == "trace";
     public bool IncludeDetail => includeDetail;

@@ -101,7 +101,7 @@ public sealed partial class SampleBackend
     // 被拒绝的写操作：错误码显示在活动胶囊。
     private BackendReply Reject(string code)
     {
-        notice = Pick($"请求未完成：{code}", $"請求未完成：{code}");
+        notice = Pick("请求未完成：", "請求未完成：") + Localization.CodeText.Reason(code);
         Changed?.Invoke(this, EventArgs.Empty);
         return new(false, notice);
     }

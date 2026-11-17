@@ -24,19 +24,19 @@ public static class CapabilityNotice
         // 台服没有游戏内选曲演奏依赖的命令行工具，原因码是 module.notImplemented 时直接说明台服的状况。
         if (capability.Id == CapabilityIds.PerformancePlay)
             return capability.ReasonCode is { Length: > 0 } reason && reason != "module.notImplemented"
-                ? Pick($"台服暂不支持在游戏内选曲演奏（{reason}）", $"台服暫不支援在遊戲內選曲演奏（{reason}）")
+                ? Pick($"台服暂不支持在游戏内选曲演奏（{Localization.CodeText.Reason(reason)}）", $"台服暫不支援在遊戲內選曲演奏（{Localization.CodeText.Reason(reason)}）")
                 : Pick("台服暂不支持在游戏内选曲演奏", "台服暫不支援在遊戲內選曲演奏");
         return capability.ReasonCode switch
         {
             "module.notImplemented" => Pick("后端尚未实现，暂不可用", "後端尚未實作，暫不可用"),
-            var code => Pick($"暂不可用：{code}", $"暫不可用：{code}")
+            var code => Pick("暂不可用：", "暫不可用：") + Localization.CodeText.Reason(code)
         };
     }
 }
 
 /// <summary>
 /// 展示接口里某个主题的缺失说明。<see cref="ReasonCode"/> 为 provider.unavailable 表示台服没有该数据来源，
-/// 此时浮窗里不显示对应元件；其他原因显示“暂不可用：原因码”。
+/// 此时浮窗里不显示对应元件；其他原因显示“暂不可用：原因说明”。
 /// </summary>
 public sealed record TopicNotice(string? ReasonCode, string Text)
 {
@@ -61,7 +61,7 @@ public static class TopicNoticeText
         return source.Reason == TopicNotice.ProviderUnavailable
             ? new(source.Reason, Pick("台服暂不支持", "台服暫不支援"))
             : new(source.Reason, source.Reason is { Length: > 0 } code
-                ? Pick($"暂不可用：{code}", $"暫不可用：{code}")
+                ? Pick("暂不可用：", "暫不可用：") + Localization.CodeText.Reason(code)
                 : Pick("暂不可用", "暫不可用"));
     }
 }

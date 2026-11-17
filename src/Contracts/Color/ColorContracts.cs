@@ -31,8 +31,8 @@ public sealed record ColorPaletteRequest(string TargetHex, OpenEnum<ColorMatchMo
     OpenEnum<ColorPaletteImage> Image);
 public sealed record ColorPalette(string TargetHex, OpenEnum<ColorMatchMode> MatchMode, double Tolerance,
     OpenEnum<ColorPaletteImage> Image, int ColorCount, int Width, int Height, AssetSnapshot Asset);
-/// <summary>原区域卡徽标：达标、未达标、未开始、未参与、未启用。</summary>
-public enum ColorRegionState { Met, Unmet, NotStarted, Excluded, Disabled }
+/// <summary>原区域卡徽标：达标、未达标、未开始、未参与、未启用；运行中的读数另有未读取（启用的区域这次没读出色码）。</summary>
+public enum ColorRegionState { Met, Unmet, NotStarted, Excluded, Disabled, Unread }
 public sealed record ColorRegionJudgement(string RegionId, OpenEnum<ColorRegionState> State);
 public sealed record ColorRegion(string Id, string TargetHex, IReadOnlyList<string> AlternativeHex,
     OpenEnum<ColorMatchMode> MatchMode, double Tolerance, int Priority, bool Enabled);
@@ -77,13 +77,16 @@ public sealed record ColorRunResult(string RunId, int RegionCount, string Outcom
     public string? FailedStage { get; init; }
     public bool? BestCurrent { get; init; }
 }
-/// <summary>运行中一组按区域的读数：色码与色差（引擎没有给出时为空）。</summary>
-public sealed record ColorRunReading(IReadOnlyDictionary<string, string?> HexByRegion, IReadOnlyDictionary<string, double?> DeltaByRegion);
+/// <summary>运行中引擎对当前画面的一次读数：色码、色差（引擎没有给出时为空）与按区域规则的判定。</summary>
+public sealed record ColorRunReading(IReadOnlyDictionary<string, string?> HexByRegion, IReadOnlyDictionary<string, double?> DeltaByRegion)
+{
+    public IReadOnlyList<ColorRegionJudgement> Regions { get; init; } = [];
+}
 /// <summary>
 /// 原引擎当前阶段；单调时间均为 hostClockEpoch 标识的宿主时钟毫秒。
 /// <see cref="Message"/> 是引擎给出的本阶段说明原文；<see cref="Status"/> 是阶段内的状态：
 /// 细化的 trial、restoring、recovering、retained，或重试的 retry-waiting、retry-zooming、retry-searching、retry-rejected；
-/// <see cref="Reason"/> 是重试被拒绝或不可用的原因码；<see cref="Reading"/> 是本阶段最新读到的游戏色码，<see cref="Retained"/> 是细化时保留的配色。
+/// <see cref="Reason"/> 是重试被拒绝或不可用的原因码；<see cref="Reading"/> 是引擎对当前画面最新一次读到的游戏色码（不带读数的阶段事件保留它，重试与选用候选后清空），<see cref="Retained"/> 是细化时保留的配色。
 /// </summary>
 public sealed record ColorRunProgress(string? Stage, int? Current, int? Total, double StageStartedMonotonicMs,
     DateTimeOffset StageStartedAt, double? DeadlineMonotonicMs, double UpdatedMonotonicMs, DateTimeOffset UpdatedAt)

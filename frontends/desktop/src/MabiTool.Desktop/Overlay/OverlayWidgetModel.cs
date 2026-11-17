@@ -137,6 +137,13 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     public RoomsPageData Rooms { get; private set; } = null!;
     public ColorPageData Color { get; private set; } = null!;
 
+    // 染色元件的剩余与已用时间：与染色页运行栏同一份进度锚点，按本机时钟重算，元件显示且寻色进行中时每 200 ms 刷新。
+    public string ColorRemaining => Color.Progress?.RemainingText(DateTimeOffset.Now) ?? string.Empty;
+    public bool HasColorRemaining => ColorRemaining.Length > 0;
+    public bool ColorLowTime => Color.Progress?.Low(DateTimeOffset.Now) == true;
+    public string ColorElapsed => Color.Progress?.ElapsedText(DateTimeOffset.Now) ?? string.Empty;
+    public bool HasColorElapsed => ColorElapsed.Length > 0;
+
     public QueueRow? NowPlaying => Music.Queue.FirstOrDefault(row => row.Current);
     public string NowPlayingTitle => NowPlaying?.Title ?? UiText.Pick("没有演奏中的乐谱", "沒有演奏中的樂譜");
     public string NowPlayingNote => NowPlaying is { } row ? $"{row.Note}，{row.Length}" : Music.QueueSummary;
@@ -293,7 +300,8 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
 
     private void UpdateClock()
     {
-        var run = shown && (IsReadiness && Rooms.Room?.Round is { Active: true } || IsMeasurement && MeasureRunning);
+        var run = shown && (IsReadiness && Rooms.Room?.Round is { Active: true } || IsMeasurement && MeasureRunning ||
+            IsColor && Color.Progress is not null);
         if (run && !clockTimer.IsEnabled) clockTimer.Start();
         else if (!run && clockTimer.IsEnabled) clockTimer.Stop();
     }
@@ -310,6 +318,7 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     [
         nameof(RoomStatus), nameof(HasRoomCountdown), nameof(RoomCountdownLabel), nameof(RoomCountdownValue), nameof(RoomCountdownFraction),
         nameof(RoomCountdownStarting), nameof(RoomCountdownStopping), nameof(HasRoomScoreProgress), nameof(HasRoomScoreFraction),
-        nameof(RoomScoreFraction), nameof(RoomScoreProgressText), nameof(MeasureRunningText), nameof(MeasureProgress)
+        nameof(RoomScoreFraction), nameof(RoomScoreProgressText), nameof(MeasureRunningText), nameof(MeasureProgress),
+        nameof(ColorRemaining), nameof(HasColorRemaining), nameof(ColorLowTime), nameof(ColorElapsed), nameof(HasColorElapsed)
     ];
 }

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using MabiTool.Desktop.Backend;
 using MabiTool.Desktop.Infrastructure;
+using MabiTool.Desktop.Localization;
 using static MabiTool.Desktop.Localization.UiText;
 
 namespace MabiTool.Desktop.Pages.Diagnostics;
@@ -15,6 +16,17 @@ public static class DiagnosticsText
 
     /// <summary>记录级别，取自后端的级别表。</summary>
     public static readonly string[] Levels = ["trace", "debug", "info", "warning", "error"];
+
+    /// <summary>筛选按钮上的名称：模块取共用映射的中文名，级别写成中文。</summary>
+    public static string Label(string id) => id switch
+    {
+        "trace" => Pick("跟踪", "追蹤"),
+        "debug" => Pick("调试", "偵錯"),
+        "info" => Pick("信息", "資訊"),
+        "warning" => Pick("警告", "警告"),
+        "error" => Pick("错误", "錯誤"),
+        _ => CodeText.Module(id)
+    };
 
     /// <summary>
     /// 计数值按键名后缀换算：Ms 为毫秒（满 1000 换成秒）、Bytes 为字节（KB、MB，1 KB = 1,024 字节）、
@@ -57,19 +69,15 @@ public static class DiagnosticsText
     ];
 
     /// <summary>
-    /// 原因码的短句，后面括注原因码；没有对应文案的码原样显示。合奏相关的码沿用合奏页的文案。
+    /// 探针原因码的短句，后面括注原因码（诊断页保留原码便于对照）；合奏相关的码沿用合奏页的文案，其余经共用映射，
+    /// 没有文案的码写成中文概括并括注原码。
     /// </summary>
     public static string Reason(string code)
     {
-        var text = code switch
-        {
-            "system.unexpectedError" => Pick("该探针读取出错", "該探針讀取出錯"),
-            "module.notImplemented" => Pick("后端尚未实现，暂不可用", "後端尚未實作，暫不可用"),
-            "provider.unavailable" => Pick("数据来源不可用", "資料來源不可用"),
-            "permission.denied" => Pick("没有权限", "沒有權限"),
-            _ => RoomReadinessText.Reason(code)
-        };
-        return text is null || text == code ? code : $"{text}（{code}）";
+        var text = code == "system.unexpectedError" ? Pick("该探针读取出错", "該探針讀取出錯")
+            : CodeText.TryReason(code, out var known) ? known : RoomReadinessText.Reason(code);
+        if (text is null) return code;
+        return text.EndsWith($"（{code}）", StringComparison.Ordinal) ? text : $"{text}（{code}）";
     }
 
     /// <summary>请求被拒绝或失败时的页面文字：已知错误码给短句，其余带码显示。</summary>
@@ -79,7 +87,7 @@ public static class DiagnosticsText
         "permission.denied" => Pick("当前授权没有这项权限", "目前授權沒有這項權限"),
         "frontend.notConnected" => Pick("未连接后端", "未連接後端"),
         "resource.notFound" => Pick("找不到所选内容，可能已被后端清理", "找不到所選內容，可能已被後端清理"),
-        _ => Pick($"请求未完成：{code}", $"請求未完成：{code}")
+        _ => Pick("请求未完成：", "請求未完成：") + CodeText.Reason(code)
     };
 
     /// <summary>采集的结束原因；进行中为空。</summary>
@@ -90,7 +98,7 @@ public static class DiagnosticsText
         "stopped" => Pick("手动结束", "手動結束"),
         "hostStopping" => Pick("宿主退出", "宿主退出"),
         "restarted" => Pick("宿主重启", "宿主重啟"),
-        _ => reason
+        _ => CodeText.Reason(reason)
     };
 
     /// <summary>剩余时间，例如 1:05；已过期显示 0:00。</summary>

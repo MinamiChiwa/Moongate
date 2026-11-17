@@ -45,19 +45,31 @@ public sealed record OverlayArea(PixelRect Pixels, double Scaling, IReadOnlyList
         : string.Join(Localization.UiText.Pick("、", "、"), screens.OrderBy(screen => screen.Bounds.X).Select(screen => Name(screen, screens)));
 
     /// <summary>一块显示器的说明，例如“左侧显示器（1920×1080 · 125%）”。</summary>
-    public static string Name(ScreenInfo screen, IReadOnlyList<ScreenInfo> all)
+    public static string Name(ScreenInfo screen, IReadOnlyList<ScreenInfo> all) =>
+        $"{Place(screen, all)}（{screen.Bounds.Width}×{screen.Bounds.Height} · {Math.Round(screen.Scaling * 100)}%）";
+
+    /// <summary>显示器的方位名：主显示器，或相对主显示器的左侧、右侧、上方、下方显示器。</summary>
+    public static string Place(ScreenInfo screen, IReadOnlyList<ScreenInfo> all)
     {
         var primary = all.FirstOrDefault(item => item.Primary);
-        string Place()
-        {
-            if (screen.Primary) return Localization.UiText.Pick("主显示器", "主顯示器");
-            if (primary is null) return Localization.UiText.Pick("显示器", "顯示器");
-            var (dx, dy) = (screen.Bounds.Center.X - primary.Bounds.Center.X, screen.Bounds.Center.Y - primary.Bounds.Center.Y);
-            return Math.Abs(dx) >= Math.Abs(dy)
-                ? dx < 0 ? Localization.UiText.Pick("左侧显示器", "左側顯示器") : Localization.UiText.Pick("右侧显示器", "右側顯示器")
-                : dy < 0 ? Localization.UiText.Pick("上方显示器", "上方顯示器") : Localization.UiText.Pick("下方显示器", "下方顯示器");
-        }
-        return $"{Place()}（{screen.Bounds.Width}×{screen.Bounds.Height} · {Math.Round(screen.Scaling * 100)}%）";
+        if (screen.Primary) return Localization.UiText.Pick("主显示器", "主顯示器");
+        if (primary is null) return Localization.UiText.Pick("显示器", "顯示器");
+        var (dx, dy) = (screen.Bounds.Center.X - primary.Bounds.Center.X, screen.Bounds.Center.Y - primary.Bounds.Center.Y);
+        return Math.Abs(dx) >= Math.Abs(dy)
+            ? dx < 0 ? Localization.UiText.Pick("左侧显示器", "左側顯示器") : Localization.UiText.Pick("右侧显示器", "右側顯示器")
+            : dy < 0 ? Localization.UiText.Pick("上方显示器", "上方顯示器") : Localization.UiText.Pick("下方显示器", "下方顯示器");
+    }
+
+    /// <summary>
+    /// “移到下一块显示器”的目标：按显示器从左到右（同列从上到下）的顺序取元件当前所在显示器的下一块，最后一块之后回到第一块。
+    /// 只有一块或没有显示器时为空。
+    /// </summary>
+    public static OverlayMonitor? Next(IReadOnlyList<OverlayMonitor> monitors, string? key)
+    {
+        if (monitors.Count < 2) return null;
+        var ordered = monitors.OrderBy(monitor => monitor.Area.X).ThenBy(monitor => monitor.Area.Y).ToList();
+        var current = Locate(monitors, key);
+        return ordered[(ordered.IndexOf(current!) + 1) % ordered.Count];
     }
 
     /// <summary>

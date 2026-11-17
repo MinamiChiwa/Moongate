@@ -79,7 +79,7 @@ public sealed partial class LiveBackend
                 try { return await send(api, token); }
                 catch (MabiToolApiException error) when (error.Problem is { } problem)
                 {
-                    throw new ExtensionRejectedException($"{problem.Title}（{problem.Code}）");
+                    throw new ExtensionRejectedException(problem.Title is { Length: > 0 } title ? title : Localization.CodeText.Reason(problem.Code));
                 }
             }, cancellationToken, remember);
         }

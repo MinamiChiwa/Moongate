@@ -135,7 +135,7 @@ public sealed partial class LiveBackend
             ],
             scores,
             page.Session is { } active
-                ? Pick($"{queue.Count} 首，{active.Phase}", $"{queue.Count} 首，{active.Phase}")
+                ? Pick($"{queue.Count} 首，{Localization.CodeText.Phase(System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(active.Phase.ToString()))}", $"{queue.Count} 首，{Localization.CodeText.Phase(System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(active.Phase.ToString()))}")
                 : Pick("没有进行中的演奏", "沒有進行中的演奏"),
             queue,
             page.Session is not { } state ? [] :
@@ -328,7 +328,7 @@ public sealed partial class LiveBackend
         "shortcut.inUse" => Pick("组合键已被其他程序或本工具的其他动作占用，请换一个组合", "組合鍵已被其他程式或本工具的其他動作佔用，請換一個組合"),
         "shortcut.registrationFailed" => Pick("系统拒绝注册这个组合键", "系統拒絕註冊這個組合鍵"),
         "shortcut.stopped" => Pick("快捷键服务已停止", "快捷鍵服務已停止"),
-        _ => code
+        _ => Localization.CodeText.Reason(code)
     };
 
     private static string ActionName(string actionId) => actionId switch
@@ -337,29 +337,11 @@ public sealed partial class LiveBackend
         "overlay-toggle" => Pick("显示或隐藏浮窗", "顯示或隱藏浮窗"),
         "overlay-click-through-toggle" => Pick("浮窗元件全部上锁或解锁", "浮窗元件全部上鎖或解鎖"),
         "combat-measurement-toggle" => Pick("开始／取消定时测量", "開始／取消定時測量"),
-        _ => actionId
+        _ => Pick($"未登记的动作（{actionId}）", $"未登記的動作（{actionId}）")
     };
 
-    // 常见的后端状态码换成界面文字；没有收录的原样显示，不猜含义。
-    private static string Code(string raw) => raw switch
-    {
-        "running" => Pick("运行中", "執行中"),
-        "idle" => Pick("待命，使用时才启动", "待命，使用時才啟動"),
-        "unavailable" => Pick("不可用", "不可用"),
-        "disabled" => Pick("已停用", "已停用"),
-        "unconfigured" => Pick("未配置", "未設定"),
-        "exact-hex" => Pick("精确色码", "精確色碼"),
-        "similar" => Pick("相似即可", "相似即可"),
-        "screenshot" => Pick("截图读取", "截圖讀取"),
-        "confirmed" => Pick("观测完整", "觀測完整"),
-        "partial" => Pick("部分观测", "部分觀測"),
-        "registered" => Pick("已注册", "已註冊"),
-        "up-to-date" => Pick("已是最新", "已是最新"),
-        "connected" => Pick("已连线", "已連線"),
-        "disconnected" => Pick("未连线", "未連線"),
-        "unknown" => Pick("未知", "未知"),
-        _ => raw
-    };
+    // 后端状态码换成界面文字，统一经共用映射；没有收录的写成中文概括并括注原文。
+    private static string Code(string raw) => Localization.CodeText.State(raw);
 
     private static string InstrumentName(PageState page, string? instrumentId)
     {

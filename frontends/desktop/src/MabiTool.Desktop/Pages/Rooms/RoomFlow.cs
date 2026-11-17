@@ -50,7 +50,7 @@ public static class RoomFlow
             null => (Pick("等待全员停止", "等待全員停止") + (pending > 0 ? Pick($"（还有 {pending} 人）", $"（還有 {pending} 人）") : string.Empty), RoomTone.Info),
             "executed" => (Pick("已执行停止", "已執行停止") + waiting, RoomTone.Success),
             "cancelled" => (Pick("本机停止已取消", "本機停止已取消") + waiting, RoomTone.Warning),
-            _ => (Pick("停止失败：", "停止失敗：") + (Backend.RoomReadinessText.Reason(mine.Detail) ?? mine.Detail ?? mine.Status)
+            _ => (Pick("停止失败：", "停止失敗：") + (Backend.RoomReadinessText.Reason(mine.Detail) ?? Localization.CodeText.State(mine.Status))
                   + Pick("，请在游戏中手动停止", "，請在遊戲中手動停止"), RoomTone.Error)
         };
     }
@@ -68,7 +68,7 @@ public static class RoomFlow
             "executed" => Pick(" 本机停止操作已执行，请确认游戏中已停止演奏。", " 本機停止操作已執行，請確認遊戲中已停止演奏。"),
             "cancelled" => Pick(" 本机停止操作已取消。", " 本機停止操作已取消。"),
             _ => Pick(" 本机停止操作没有执行：", " 本機停止操作沒有執行：")
-                 + (Backend.RoomReadinessText.Reason(receipt.Detail) ?? receipt.Detail ?? receipt.Status)
+                 + (Backend.RoomReadinessText.Reason(receipt.Detail) ?? Localization.CodeText.State(receipt.Status))
                  + Pick("。请在游戏中手动停止演奏。", "。請在遊戲中手動停止演奏。")
         };
     }

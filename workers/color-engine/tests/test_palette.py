@@ -91,6 +91,22 @@ class RegionStateTests(unittest.TestCase):
         self.assertIs(far['family_consistent'], False)
         self.assertEqual(measurements.candidate_fields(dict(colors=['#FE0000'], deltas=[.5]), rules), {})
 
+    def test_screenshot_reading_carries_deltas_and_states_of_the_same_read(self):
+        # 125% 副屏实机截图（游戏客户区 1105×770）里三张色卡的裁剪：引擎读出的色码就是画面上的色码，
+        # 读数的色差与判定按同一次读取算出，没读出的启用区域判定为未读取。
+        import numpy as np
+        from PIL import Image
+        from mabitool_color._vendor.screenshot_text import read_visible
+        image = np.asarray(Image.open(Path(__file__).with_name('fixtures') / 'screenshot-cards-041.png').convert('RGB'))
+        colors, _ = read_visible(image, [(10, 6, 70, 70), (154, 6, 70, 70), (298, 6, 69, 69)])
+        self.assertEqual(colors, ['#000101', '#000004', '#0F0F10'])
+        rules = [dict(enabled=True, colors=['#000000'], exact=True, tolerance=8.0, priority=i + 1) for i in range(3)]
+        fields = measurements.reading_fields(colors, rules)
+        self.assertEqual([round(v, 2) for v in fields['deltas']], [0.35, 1.6, 4.39])
+        self.assertEqual(fields['region_states'], ['unmet'] * 3)
+        partial = measurements.reading_fields([None, '#000000', '#000000'], rules)
+        self.assertEqual((partial['region_states'], partial['reading_complete']), (['unread', 'met', 'met'], False))
+
 
 if __name__ == '__main__':
     unittest.main()

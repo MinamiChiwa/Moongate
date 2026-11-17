@@ -67,7 +67,7 @@ public sealed class DiagnosticsTests
         Assert.Equal("1 个探针因数量上限被省略，2 个探针因标识无效或重复被省略", model.Runtime.Notice);
         Assert.Contains("epoch-7f3a", model.Runtime.Header);
         Assert.Equal("该探针读取出错", DiagnosticsText.Reason("system.unexpectedError").Split('（')[0]);
-        Assert.Equal("some.unmapped.code", DiagnosticsText.Reason("some.unmapped.code"));
+        Assert.Equal("后端返回了未登记的原因（some.unmapped.code）", DiagnosticsText.Reason("some.unmapped.code"));
     }
 
     [AvaloniaFact]

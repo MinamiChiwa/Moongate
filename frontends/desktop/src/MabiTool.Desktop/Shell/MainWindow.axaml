@@ -171,7 +171,7 @@
                                Text="{Binding Activity.Title}" ToolTip.Tip="{Binding Activity.Title}" />
                   </StackPanel>
                   <TextBlock Classes="body muted" VerticalAlignment="Center" MaxLines="2" TextTrimming="CharacterEllipsis"
-                             Text="{Binding Activity.Detail}" ToolTip.Tip="{Binding Activity.Detail}" />
+                             Text="{Binding Activity.Detail}" ToolTip.Tip="{Binding Activity.DetailTip}" />
                   <ItemsControl ItemsSource="{Binding Stages}" IsVisible="{Binding ShowStages}" VerticalAlignment="Center">
                     <ItemsControl.ItemsPanel>
                       <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>

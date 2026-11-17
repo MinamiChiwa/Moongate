@@ -108,7 +108,7 @@ public static class CaptureText
                 Pick("此地图为非永久频道（如地下城副本），没有固定频道号", "此地圖為非永久頻道（如地下城副本），沒有固定頻道號")),
             { ChannelReason: "location.channelRuleUnknown" } => (unknown, Pick("地图名称表未读取，无法判断频道", "地圖名稱表未讀取，無法判斷頻道")),
             { ChannelReason: "location.channelIndexUnresolved" } => (unknown, Pick("实例编号不符合永久频道规则，无法得出频道", "實例編號不符合永久頻道規則，無法得出頻道")),
-            { ChannelReason: { } other } => (unknown, other),
+            { ChannelReason: { } other } => (unknown, Localization.CodeText.Reason(other)),
             _ => (unknown, Pick("没有频道信息", "沒有頻道資訊"))
         };
         return new(location.MapName ?? unknown, channel, mapNote, channelNote);
@@ -127,7 +127,7 @@ public static class CaptureText
         "observation.savedChannelMissing" => Pick("已保存的网卡当前不可用，请在设置中重新选择", "已儲存的網卡目前不可用，請在設定中重新選擇"),
         "observation.channelDetecting" => Pick("正在检测网卡，结束后自动启动", "正在檢測網卡，結束後自動啟動"),
         "update.maintenanceActive" => Pick("正在安装更新，结束后自动启动", "正在安裝更新，結束後自動啟動"),
-        _ => RoomReadinessText.CaptureReason(code) ?? code
+        _ => RoomReadinessText.CaptureReason(code) ?? Localization.CodeText.Reason(code)
     };
 }
 

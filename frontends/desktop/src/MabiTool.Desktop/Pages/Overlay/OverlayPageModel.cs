@@ -20,6 +20,9 @@ public sealed record LibraryItem(string WidgetId, string Title, string Group, IB
 
 public sealed record SkinOption(string Id, string Label, bool Selected);
 
+/// <summary>显示器选项：标识（<see cref="ScreenInfo.Key"/>）、方位名与是否为当前所在的显示器；完整说明放在悬停提示里。</summary>
+public sealed record MonitorOption(string Key, string Label, string Tip, bool Selected);
+
 /// <summary>
 /// 浮窗版面页的状态：版面列表、元件库、所选元件的设置，以及在屏幕上编辑浮窗的入口与显示器说明。
 /// 所有改动直接写进 <see cref="OverlayLayoutStore"/>，各显示器的游戏浮窗随之更新；元件的位置与尺寸在实际屏幕上编辑。
@@ -112,6 +115,8 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
             else controller.Edit();
         });
         MoveAllToPrimaryCommand = new RelayCommand(_ => Store.MoveAllToPrimary());
+        MoveToMonitorCommand = new RelayCommand(key => { if (key is string screen) Edit(placement => placement.Screen = screen); });
+        MoveAllToMonitorCommand = new RelayCommand(key => { if (key is string screen) Store.MoveAllTo(screen); });
         ResetPositionCommand = new RelayCommand(_ =>
         {
             if (Selected is { } placement) Store.ResetPosition(placement);
@@ -153,6 +158,10 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     public ICommand ToggleHideWithGameCommand { get; }
     public ICommand EditCommand { get; }
     public ICommand MoveAllToPrimaryCommand { get; }
+    /// <summary>所选元件移到参数指定的显示器（比例位置不变，立即保存）；不需要拖动跨屏。</summary>
+    public ICommand MoveToMonitorCommand { get; }
+    /// <summary>当前版面的元件全部移到参数指定的显示器。</summary>
+    public ICommand MoveAllToMonitorCommand { get; }
     public ICommand ResetPositionCommand { get; }
 
     private IReadOnlyList<ScreenInfo> screens = [];
@@ -167,11 +176,38 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
             screens = value;
             Raise(nameof(MonitorsText));
             Raise(nameof(SelectedDetails));
+            Raise(nameof(MonitorChoices));
+            Raise(nameof(AllMonitorChoices));
+            Raise(nameof(HasMonitorChoice));
         }
     }
 
     /// <summary>各显示器的说明，例如“主显示器（1920×1080 · 100%）、左侧显示器（1920×1080 · 125%）”。</summary>
     public string MonitorsText => OverlayArea.Caption(screens);
+
+    public string MoveToLabel => UiText.Pick("移到显示器", "移到顯示器");
+    public string MoveAllLabel => UiText.Pick("全部移到", "全部移到");
+
+    /// <summary>连接了不止一块显示器：所选元件的“显示器”选择与“全部移到”才显示。</summary>
+    public bool HasMonitorChoice => screens.Count(screen => screen.Bounds is { Width: > 0, Height: > 0 }) > 1;
+
+    private IReadOnlyList<MonitorOption> Options(Func<string, bool> selected) => HasMonitorChoice
+        ? OverlayArea.Resolve(screens)!.Screens.OrderBy(screen => screen.Bounds.X).ThenBy(screen => screen.Bounds.Y)
+            .Select(screen => new MonitorOption(screen.Key, OverlayArea.Place(screen, screens), OverlayArea.Name(screen, screens), selected(screen.Key)))
+            .ToList()
+        : [];
+
+    // 元件实际所在的显示器（记住的显示器不在时回到主显示器，同 OverlayArea.Locate）。
+    private string? LocatedKey(WidgetPlacement placement) =>
+        OverlayArea.Resolve(screens) is { } all ? OverlayArea.Locate(all.Monitors, placement.Screen)?.Key : null;
+
+    /// <summary>所选元件可选的显示器（从左到右），当前所在的一块为选中项；只有一块显示器时为空。</summary>
+    public IReadOnlyList<MonitorOption> MonitorChoices => Selected is { } placement && LocatedKey(placement) is var current
+        ? Options(key => key == current) : [];
+
+    /// <summary>“全部移到”的显示器选项；当前版面的元件都在某一块上时该项为选中项。</summary>
+    public IReadOnlyList<MonitorOption> AllMonitorChoices => Options(key =>
+        Store.Active.Widgets.Count > 0 && Store.Active.Widgets.All(widget => LocatedKey(widget) == key));
 
     /// <summary>版面处于在屏幕上编辑的状态。</summary>
     public bool IsEditing => Store.IsEditing;
@@ -286,8 +322,8 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     public bool HideWithGame => Store.HideWhenGameMinimized;
 
     public string StatusLine => IsEditing
-        ? UiText.Pick("正在编辑：元件显示在各显示器上，拖动摆放（可拖到其他显示器），拖右下角改尺寸，对齐格线 8 px；完成后保存",
-            "正在編輯：元件顯示在各顯示器上，拖動擺放（可拖到其他顯示器），拖右下角改尺寸，對齊格線 8 px；完成後保存")
+        ? UiText.Pick("正在编辑：元件显示在各显示器上，拖动摆放，按元件上的箭头或下方“移到显示器”换屏，拖右下角改尺寸，对齐格线 8 px；完成后保存",
+            "正在編輯：元件顯示在各顯示器上，拖動擺放，按元件上的箭頭或下方「移到顯示器」換屏，拖右下角改尺寸，對齊格線 8 px；完成後保存")
         : UiText.Pick("按“编辑位置”后元件直接显示在屏幕上，可以拖到任意显示器；关闭或看不见的元件也会显示出来",
             "按「編輯位置」後元件直接顯示在螢幕上，可以拖到任意顯示器；關閉或看不見的元件也會顯示出來");
 

@@ -4,8 +4,14 @@ using static MabiTool.Desktop.Localization.UiText;
 
 namespace MabiTool.Desktop.Pages.Dyeing;
 
-/// <summary>运行栏状态行与说明行：标题是当前阶段或结果，说明是阶段指引、读数、结果解释与下一步。</summary>
-public sealed record ColorRunStatus(string Title, string Detail, ColorTone Tone);
+/// <summary>
+/// 运行栏状态行与说明行：标题是当前阶段或结果，说明是阶段指引、读数、结果解释与下一步。
+/// <see cref="Guide"/> 是去掉区域读数行的说明，游戏浮窗的染色元件另有逐区域读数，用它避免重复。
+/// </summary>
+public sealed record ColorRunStatus(string Title, string Detail, ColorTone Tone)
+{
+    public string Guide { get; init; } = Detail;
+}
 
 /// <summary>
 /// 寻色状态的中文呈现，按原工具 Color Studio 0.5.0 的 ui_progress.progress_text、native_status 与 screenshot_presentation：
@@ -19,7 +25,7 @@ public static class ColorRunText
 
     public static ColorRunStatus Describe(ColorRun run)
     {
-        if (IsActive(run)) return Running(run);
+        if (IsActive(run)) return Running(run, true) with { Guide = Running(run, false).Detail };
         var (title, detail) = Ended(run);
         var tone = run.Phase is "failed" or "interrupted" ? ColorTone.Warn : ColorTone.Idle;
         return new(title, detail, tone);
@@ -27,7 +33,7 @@ public static class ColorRunText
 
     // ---- 进行中 ----
 
-    private static ColorRunStatus Running(ColorRun run)
+    private static ColorRunStatus Running(ColorRun run, bool readings)
     {
         if (run.Phase == "stopping") return new(Pick("正在停止", "正在停止"), Pick("正在停止输入并收尾；请以游戏当前颜色为准。", "正在停止輸入並收尾；請以遊戲目前顏色為準。"), ColorTone.Live);
         if (run.Progress is not { } progress)
@@ -35,10 +41,11 @@ public static class ColorRunText
                 Pick("正在把游戏窗口切到前台并启动染色引擎，首次启动需要几秒。F9 可停止。",
                     "正在把遊戲視窗切到前景並啟動染色引擎，首次啟動需要幾秒。F9 可停止。"), ColorTone.Live);
         var regions = run.RulesSnapshot.Regions;
+        string Lines(ColorRunReading? reading, string header) => readings ? ColorRunText.Lines(regions, reading, header) : string.Empty;
         switch (progress.Status)
         {
             case "retry-waiting":
-                return new(Pick("本轮寻色已完成", "本輪尋色已完成"), Join(Lines(regions, progress.Reading, Pick("当前配色 · 游戏实测", "目前配色 · 遊戲實測")),
+                return new(Pick("本轮寻色已完成", "本輪尋色已完成"), Join(Lines(progress.Reading, Pick("当前配色 · 游戏实测", "目前配色 · 遊戲實測")),
                     run.Interaction?.RetryEnabled == true
                         ? Pick("可点「重试」在本局剩余时间内重新寻色；剩余时间不足时保留当前颜色。满意时点「停止」。",
                             "可點「重試」在本局剩餘時間內重新尋色；剩餘時間不足時保留目前顏色。滿意時點「停止」。")
@@ -50,19 +57,21 @@ public static class ColorRunText
             case "retry-rejected":
                 return new(Pick("暂时无法重试", "暫時無法重試"), RetryReason(progress.Reason), ColorTone.Live);
         }
-        if (progress.Stage == "refinement") return Refinement(regions, progress);
+        if (progress.Stage == "refinement") return Refinement(regions, progress, readings);
         var title = ColorStages.Name(progress.Stage);
         if (progress.Total is > 0 and var total)
             title += "  " + (progress.Current ?? 0).ToString(CultureInfo.InvariantCulture) + "/" + total.ToString(CultureInfo.InvariantCulture);
         var body = progress.Message is { } message ? Message(message) : DefaultBody(progress.Stage);
-        return new(title, Join(body, Lines(regions, progress.Reading, Pick("当前颜色 · 游戏读数", "目前顏色 · 遊戲讀數"))), ColorTone.Live);
+        return new(title, Join(body, Lines(progress.Reading, Pick("当前颜色 · 游戏读数", "目前顏色 · 遊戲讀數"))), ColorTone.Live);
     }
 
-    private static ColorRunStatus Refinement(IReadOnlyList<ColorRegion> regions, ColorRunProgress progress)
+    private static ColorRunStatus Refinement(IReadOnlyList<ColorRegion> regions, ColorRunProgress progress, bool readings)
     {
         var status = progress.Status;
         var trying = status is "trial" or "restoring" or "recovering";
         var current = Lines(regions, progress.Reading, status == "trial" ? Pick("当前试探 · 游戏实测", "目前試探 · 遊戲實測") : Pick("当前配色 · 游戏实测", "目前配色 · 遊戲實測"));
+        // 浮窗元件逐区域显示当前读数，这里只保留“已保留配色”（与当前读数不同的一组颜色）。
+        if (!readings) current = string.Empty;
         var retained = trying ? Lines(regions, progress.Retained, Pick("已保留配色 · 游戏实测", "已保留配色 · 遊戲實測")) : string.Empty;
         var message = status switch
         {
@@ -73,7 +82,7 @@ public static class ColorRunText
             _ => Pick("正在计算更好的配色，计算期间色板可能暂时不动。", "正在計算更好的配色，計算期間色板可能暫時不動。")
         };
         var guidance = trying ? Pick("按 F9 会立即停止操作；请以游戏当前颜色为准。", "按 F9 會立即停止操作；請以遊戲目前顏色為準。")
-            : current.Length > 0 || retained.Length > 0 ? Pick("可查看上方已确认的颜色；满意时按 F9 或点「停止」。", "可查看上方已確認的顏色；滿意時按 F9 或點「停止」。")
+            : progress.Reading is not null || retained.Length > 0 ? Pick("可查看上方已确认的颜色；满意时按 F9 或点「停止」。", "可查看上方已確認的顏色；滿意時按 F9 或點「停止」。")
             : Pick("正在寻找目标颜色。可按 F9 停止，再查看游戏当前结果。", "正在尋找目標顏色。可按 F9 停止，再查看遊戲目前結果。");
         return new(Pick("正在优化当前配色", "正在最佳化目前配色"), Join(current, retained, message, guidance), ColorTone.Live);
     }
@@ -141,10 +150,32 @@ public static class ColorRunText
             Pick("无法截取游戏客户区；确认游戏窗口没有最小化，再重新开始。", "無法擷取遊戲用戶區；確認遊戲視窗沒有最小化，再重新開始。")),
         "permission.missing" => Unavailable("permission.missing"),
         "gameBuild.incompatible" => Unavailable("game_build"),
+        "operation.executionFailed" => (Pick("染色引擎未完成运行", "染色引擎未完成執行"),
+            Pick("染色引擎运行出错，已停止输入；详细记录已写入诊断（诊断页可导出），请重新开始。", "染色引擎執行出錯，已停止輸入；詳細記錄已寫入診斷（診斷頁可匯出），請重新開始。")),
+        "provider.unavailable" or "provider.unconfigured" or "component.missing" => (Pick("染色组件不可用", "染色元件不可用"),
+            Pick("染色组件缺失或不完整；请重新解压完整的 Moongate 压缩包后再开始。", "染色元件缺失或不完整；請重新解壓完整的 Moongate 壓縮檔後再開始。")),
+        "worker.startFailed" or "worker.startTimeout" or "worker.handshakeInvalid" or "worker.protocolIncompatible" or "worker.unconfigured" or "worker.platformUnsupported" =>
+            (Pick("染色引擎没有启动", "染色引擎沒有啟動"),
+            Pick("染色引擎未能启动或与当前版本不符；请重新解压完整的 Moongate 压缩包后再开始，详细记录已写入诊断。", "染色引擎未能啟動或與目前版本不符；請重新解壓完整的 Moongate 壓縮檔後再開始，詳細記錄已寫入診斷。")),
+        { } worker when worker.StartsWith("worker.", StringComparison.Ordinal) => (Pick("与染色引擎的连接中断", "與染色引擎的連線中斷"),
+            Pick($"染色引擎的通信出错（{WorkerDetail(worker)}），已停止输入；请以游戏当前颜色为准，再重新开始。", $"染色引擎的通訊出錯（{WorkerDetail(worker)}），已停止輸入；請以遊戲目前顏色為準，再重新開始。")),
         _ when phase == "interrupted" => (Pick("染色引擎中断", "染色引擎中斷"),
-            Pick($"染色引擎没有正常结束（{code ?? "未知"}），已停止输入；请以游戏当前颜色为准，再重新开始。", $"染色引擎沒有正常結束（{code ?? "未知"}），已停止輸入；請以遊戲目前顏色為準，再重新開始。")),
+            Pick($"染色引擎没有正常结束（{ColorStages.UnknownReason(code)}），已停止输入；请以游戏当前颜色为准，再重新开始。", $"染色引擎沒有正常結束（{ColorStages.UnknownReason(code)}），已停止輸入；請以遊戲目前顏色為準，再重新開始。")),
         _ => (Pick("染色引擎未完成运行", "染色引擎未完成執行"),
-            Pick($"原因码 {code ?? "未知"}；详细记录已写入诊断（诊断页可导出），请重新开始。", $"原因碼 {code ?? "未知"}；詳細記錄已寫入診斷（診斷頁可匯出），請重新開始。"))
+            Pick($"{ColorStages.UnknownReason(code)}；详细记录已写入诊断（诊断页可导出），请重新开始。", $"{ColorStages.UnknownReason(code)}；詳細記錄已寫入診斷（診斷頁可匯出），請重新開始。"))
+    };
+
+    /// <summary>Worker 通信错误码的中文细节；没有登记的按未知原因显示。</summary>
+    private static string WorkerDetail(string code) => code switch
+    {
+        "worker.disconnected" or "worker.stopped" => Pick("引擎进程已退出", "引擎程序已結束"),
+        "worker.heartbeatTimeout" or "worker.commandTimeout" or "worker.cancelTimeout" => Pick("引擎长时间没有响应", "引擎長時間沒有回應"),
+        "worker.resultInvalid" or "worker.frameInvalid" or "worker.frameTooLarge" or "worker.sequenceInvalid" or "worker.phaseInvalid" or "worker.peerInvalid" =>
+            Pick("引擎回传的数据不符合约定", "引擎回傳的資料不符合約定"),
+        "worker.portFailed" or "worker.portInvalid" or "worker.portMethodUnavailable" => Pick("引擎请求游戏窗口或输入失败", "引擎請求遊戲視窗或輸入失敗"),
+        "worker.outputRateExceeded" or "worker.outputBackpressure" or "worker.writeFailed" => Pick("引擎输出过多或写入失败", "引擎輸出過多或寫入失敗"),
+        "worker.busy" or "worker.commandBusy" => Pick("引擎正忙", "引擎正忙"),
+        _ => ColorStages.UnknownReason(code)
     };
 
     /// <summary>截图寻色的一局结果（原 screenshot_presentation.result_text）。</summary>
@@ -247,7 +278,7 @@ public static class ColorRunText
                 return (Pick("工具内部错误，已停止", "工具內部錯誤，已停止"), Pick("本轮未继续发送操作，详细异常已写入诊断记录。", "本輪未繼續發送操作，詳細異常已寫入診斷記錄。"));
         }
         if (!verified) return (Pick("本轮寻色已停止", "本輪尋色已停止"), Join(Pick("当前色码未完成复核，请以游戏内显示为准。", "目前色碼未完成複核，請以遊戲內顯示為準。"),
-            result.StopReason is { } other ? Pick($"原因码 {other}。", $"原因碼 {other}。") : string.Empty));
+            result.StopReason is { } other ? ColorStages.UnknownReason(other) + Pick("。", "。") : string.Empty));
         return (Pick("本轮寻色已结束", "本輪尋色已結束"), Pick("当前颜色未达到全部目标，请以游戏内显示为准。", "目前顏色未達到全部目標，請以遊戲內顯示為準。"));
     }
 
@@ -274,7 +305,7 @@ public static class ColorRunText
         "gameBinding.invalid" or "input.bindingChanged" => (Pick("游戏窗口绑定已变化", "遊戲視窗綁定已變化"),
             Pick("精准读取与当前绑定的游戏窗口不符；请在左上角重新选择游戏窗口后再开始。", "精準讀取與目前綁定的遊戲視窗不符；請在左上角重新選擇遊戲視窗後再開始。")),
         _ => (Pick("当前游戏或窗口条件不支持", "目前遊戲或視窗條件不支援"),
-            Pick($"请检查游戏版本、窗口和程序权限，详情已写入诊断记录（原因码 {reason ?? "preparation"}）。", $"請檢查遊戲版本、視窗和程式權限，詳情已寫入診斷記錄（原因碼 {reason ?? "preparation"}）。"))
+            Pick($"请检查游戏版本、窗口和程序权限，详情已写入诊断记录（{ColorStages.UnknownReason(reason)}）。", $"請檢查遊戲版本、視窗和程式權限，詳情已寫入診斷記錄（{ColorStages.UnknownReason(reason)}）。"))
     };
 
     /// <summary>精准寻色失败时停在的步骤：准备步骤与运行阶段，未登记的原样显示。</summary>

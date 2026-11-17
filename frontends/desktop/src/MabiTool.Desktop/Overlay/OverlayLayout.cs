@@ -230,6 +230,23 @@ public sealed class OverlayLayoutStore
         Commit();
     }
 
+    /// <summary>
+    /// 元件改属另一块显示器（<see cref="ScreenInfo.Key"/>）并保存：比例位置不变，所以落在那块显示器工作区里的同一相对位置、总在可见范围内。
+    /// 不需要拖动跨过显示器边界，远程桌面一次只显示一块屏幕时也能换屏。
+    /// </summary>
+    public void MoveTo(WidgetPlacement placement, string screenKey)
+    {
+        placement.Screen = screenKey;
+        Commit();
+    }
+
+    /// <summary>当前版面的元件全部改属同一块显示器，比例位置不变。</summary>
+    public void MoveAllTo(string screenKey)
+    {
+        foreach (var widget in Active.Widgets) widget.Screen = screenKey;
+        Commit();
+    }
+
     /// <summary>元件回到内建版面里同一元件的位置（没有时为主显示器正中），尺寸、缩放与外观不变。</summary>
     public void ResetPosition(WidgetPlacement placement)
     {

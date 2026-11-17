@@ -6,12 +6,12 @@ using static MabiTool.Desktop.Localization.UiText;
 namespace MabiTool.Desktop.Backend;
 
 /// <summary>
-/// 合奏相关错误码与房间协议码的短句。后端状态码不直接显示给用户；没有对应短句的码原样显示。
+/// 合奏相关错误码与房间协议码的短句。后端状态码不直接显示给用户；没有对应短句的码交给共用映射（<see cref="Localization.CodeText"/>）。
 /// 房间协议码的文案取原工具 MainWindow.Friendly。
 /// </summary>
 public static class RoomReadinessText
 {
-    /// <summary>原因码对应的短句；不需要说明的码返回空，未识别的码原样返回。</summary>
+    /// <summary>原因码对应的短句；不需要说明的码返回空，其余交给共用映射。</summary>
     public static string? Reason(string? code) => code switch
     {
         null or "" or "unready" or "user-released" or "readiness-replaced" or "action-finished" => null,
@@ -39,7 +39,7 @@ public static class RoomReadinessText
         "session-cancelled" => Pick("本轮已取消", "本輪已取消"),
         "interrupted" or "cancelled" => Pick("准备被中断", "準備被中斷"),
         "preparation-failed" => Pick("准备没有完成", "準備沒有完成"),
-        _ => code
+        _ => Localization.CodeText.Reason(code)
     };
 
     /// <summary>抓包识别的停止、故障或被拒原因（原工具 CaptureChannelWindow.Explain）；不是抓包相关的码返回空。</summary>
@@ -104,8 +104,7 @@ public static class RoomReadinessText
         if (code == "resource.notFound" && intent is "rooms.leader" or "rooms.kick" or "rooms.roster" or "rooms.move" or "rooms.character")
             protocol ??= "MEMBER_NOT_FOUND";
         if (intent?.StartsWith("rooms.capture-", StringComparison.Ordinal) == true && CaptureReason(code) is { } capture) return capture;
-        return Protocol(protocol) ?? (Reason(code) is { } text && text != code ? text : null)
-            ?? Pick($"请求未完成：{code}", $"請求未完成：{code}");
+        return Protocol(protocol) ?? Reason(code) ?? Pick("请求未完成", "請求未完成");
     }
 
     /// <summary>

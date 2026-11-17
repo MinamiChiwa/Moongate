@@ -225,14 +225,14 @@ public sealed partial class LiveBackend
             RoomServerState.Starting => Pick("本机服务正在启动", "本機服務正在啟動"),
             RoomServerState.Running => Pick($"本机服务运行中（{mode}）", $"本機服務執行中（{mode}）"),
             RoomServerState.Stopping => Pick("本机服务正在停止", "本機服務正在停止"),
-            RoomServerState.Failed => Pick($"本机服务启动失败：{server.Problem?.Code}", $"本機服務啟動失敗：{server.Problem?.Code}"),
-            _ => server.State.RawValue
+            RoomServerState.Failed => Pick($"本机服务启动失败：{Localization.CodeText.Reason(server.Problem?.Code)}", $"本機服務啟動失敗：{Localization.CodeText.Reason(server.Problem?.Code)}"),
+            _ => Localization.CodeText.State(server.State.RawValue)
         };
         var tunnel = server.Tunnel.State.KnownValue switch
         {
             RoomTunnelState.Starting => Pick("正在建立公网连接", "正在建立公網連線"),
             RoomTunnelState.Available => Pick($"公网地址：{server.Tunnel.Endpoint}", $"公網位址：{server.Tunnel.Endpoint}"),
-            RoomTunnelState.Failed => Pick($"公网连接失败：{server.Tunnel.Problem?.Code}", $"公網連線失敗：{server.Tunnel.Problem?.Code}"),
+            RoomTunnelState.Failed => Pick($"公网连接失败：{Localization.CodeText.Reason(server.Tunnel.Problem?.Code)}", $"公網連線失敗：{Localization.CodeText.Reason(server.Tunnel.Problem?.Code)}"),
             _ => Pick("未建立公网连接", "未建立公網連線")
         };
         return new(state, server.State.KnownValue == RoomServerState.Running, server.Mode?.RawValue, server.LocalEndpoint,
@@ -556,9 +556,9 @@ public sealed partial class LiveBackend
             Notify();
             if (Ready(server)) return server;
             if (server.State.KnownValue == RoomServerState.Failed)
-                throw new InvalidOperationException(Pick($"本机房间服务启动失败：{server.Problem?.Code}", $"本機房間服務啟動失敗：{server.Problem?.Code}"));
+                throw new InvalidOperationException(Pick($"本机房间服务启动失败：{Localization.CodeText.Reason(server.Problem?.Code)}", $"本機房間服務啟動失敗：{Localization.CodeText.Reason(server.Problem?.Code)}"));
             if (server.Tunnel.State.KnownValue == RoomTunnelState.Failed)
-                throw new InvalidOperationException(Pick($"公网连接失败：{server.Tunnel.Problem?.Code}", $"公網連線失敗：{server.Tunnel.Problem?.Code}"));
+                throw new InvalidOperationException(Pick($"公网连接失败：{Localization.CodeText.Reason(server.Tunnel.Problem?.Code)}", $"公網連線失敗：{Localization.CodeText.Reason(server.Tunnel.Problem?.Code)}"));
         }
         throw new InvalidOperationException(Pick("本机房间服务启动超时，请稍后重试。", "本機房間服務啟動逾時，請稍後重試。"));
     }

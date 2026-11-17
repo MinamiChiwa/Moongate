@@ -8,10 +8,10 @@
              controls:Card.PageId="modules">
   <DockPanel>
     <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
-      <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+      <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
       <DockPanel Margin="{DynamicResource TitleReserve}">
-        <controls:CardGridEditBar DockPanel.Dock="Right" Target="{Binding #CardsGrid}" VerticalAlignment="Center" Margin="12,0,8,0" />
-        <TextBlock Classes="h1" Margin="0" Text="{DynamicResource X.Title}" />
+        <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource X.Title}" />
+        <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" ClipToBounds="True" />
       </DockPanel>
       <controls:ReflowPanel MinItemWidth="260" Spacing="12" Margin="0,4,0,0">
         <TextBlock Classes="body muted" VerticalAlignment="Center" Text="{DynamicResource X.Status}" />

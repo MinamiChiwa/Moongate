@@ -159,20 +159,81 @@
       </Panel>
     </Grid>
 
-    <DockPanel IsVisible="{Binding IsColor}">
-      <TextBlock DockPanel.Dock="Top" FontWeight="Bold" Margin="0,0,0,4" TextTrimming="CharacterEllipsis" Text="{Binding Color.Status}" />
+    <!--
+      染色“当前颜色”（原工具 Color Studio 寻色浮窗）：标题行是状态行与剩余时间；各启用区域一行（目标色与实测色色块、实测 HEX、ΔE、判定）；
+      说明行（阶段指引、结果与下一步）与已用时间；候选方案；按钮行（停止、重试）。与染色页同一份 ColorPageData，放不下时在元件内滚动。
+    -->
+    <DockPanel x:Name="ColorWidget" IsVisible="{Binding IsColor}">
+      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+        <TextBlock x:Name="ColorRemaining" DockPanel.Dock="Right" Margin="8,0,0,0" FontFamily="Consolas" VerticalAlignment="Center"
+                   Classes="state" Classes.waiting="{Binding ColorLowTime}" Text="{Binding ColorRemaining}" IsVisible="{Binding HasColorRemaining}" />
+        <TextBlock x:Name="ColorStatus" FontWeight="Bold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                   Classes="state" Classes.ready="{Binding Color.Live}" Classes.waiting="{Binding Color.Warn}" Text="{Binding Color.Status}" />
+      </DockPanel>
+      <!-- 按钮行带 overlayactions：元件上锁（鼠标穿透）时整行隐藏，见 OverlayCanvas。 -->
+      <Panel DockPanel.Dock="Bottom" Classes="overlayactions">
+        <Grid Margin="0,6,0,0" ColumnDefinitions="*,Auto" IsVisible="{Binding Color.Running}">
+          <Button x:Name="ColorStopButton" Classes="overlaybutton stop" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  Command="{Binding IntentCommand}" CommandParameter="color.stop">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{DynamicResource D.Stop}" />
+              <TextBlock Classes="dim" FontSize="10" FontFamily="Consolas" VerticalAlignment="Center" Text="F9" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="ColorRetryButton" Grid.Column="1" Margin="6,0,0,0" Classes="overlaybutton" HorizontalContentAlignment="Center"
+                  Command="{Binding IntentCommand}" CommandParameter="color.retry" IsVisible="{Binding Color.CanRetry}">
+            <TextBlock Text="{DynamicResource D.Retry}" />
+          </Button>
+        </Grid>
+      </Panel>
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <ItemsControl controls:StableItems.Source="{Binding Color.OverlayRows}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate DataType="color:ColorOverlayRow">
-              <DockPanel Margin="0,0,0,4">
-                <controls:SegmentBar DockPanel.Dock="Left" Width="44" Height="22" Radius="6" Gap="0" Margin="0,0,8,0"
-                                     Segments="{Binding Swatch}" Outline="#55FFFFFF" />
-                <TextBlock Classes="dim" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Text}" />
-              </DockPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <StackPanel Spacing="2">
+          <TextBlock Classes="dim" FontSize="10" Text="{Binding Color.OverlayCaption}" />
+          <ItemsControl controls:StableItems.Source="{Binding Color.OverlayRows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="color:ColorOverlayRow">
+                <DockPanel Margin="0,0,0,4">
+                  <controls:SegmentBar DockPanel.Dock="Left" Width="44" Height="22" Radius="6" Gap="0" Margin="0,0,8,0"
+                                       Segments="{Binding Swatch}" Outline="#55FFFFFF" />
+                  <TextBlock DockPanel.Dock="Right" Classes="state" Margin="6,0,0,0" FontSize="11" VerticalAlignment="Center"
+                             Classes.ready="{Binding Mark.Good, FallbackValue=False}" Classes.waiting="{Binding Mark.Warn, FallbackValue=False}"
+                             Classes.muted="{Binding Mark.Muted, FallbackValue=True}" Text="{Binding Mark.Text, FallbackValue=''}" IsVisible="{Binding HasMark}" />
+                  <TextBlock Classes="dim" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Text}" />
+                </DockPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock x:Name="ColorGuide" Classes="dim" TextWrapping="Wrap" Text="{Binding Color.OverlayGuide}" IsVisible="{Binding Color.HasOverlayGuide}" />
+          <TextBlock Classes="dim" FontSize="10" FontFamily="Consolas" Text="{Binding ColorElapsed}" IsVisible="{Binding HasColorElapsed}" />
+          <ItemsControl Margin="0,4,0,0" controls:StableItems.Source="{Binding Color.Candidates}" IsVisible="{Binding Color.HasCandidates}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="color:ColorCandidateCard">
+                <Border Margin="0,0,0,6" Padding="6" CornerRadius="6" Background="#22FFFFFF">
+                  <StackPanel Spacing="2">
+                    <TextBlock Classes="dim" FontSize="11" TextTrimming="CharacterEllipsis" Text="{Binding Title}" />
+                    <ItemsControl ItemsSource="{Binding Regions}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="color:CandidateRegion">
+                          <DockPanel>
+                            <Border DockPanel.Dock="Left" Width="12" Height="12" CornerRadius="3" Margin="0,0,6,0" Background="{Binding Swatch}" />
+                            <TextBlock DockPanel.Dock="Right" Classes="dim" FontSize="10" Text="{Binding Delta}" />
+                            <TextBlock FontSize="11" FontFamily="Consolas" TextTrimming="CharacterEllipsis" Text="{Binding Hex}" />
+                          </DockPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Classes="dim" FontSize="10" TextTrimming="CharacterEllipsis" Text="{Binding Summary}" IsVisible="{Binding HasSummary}" />
+                    <Button Classes="overlaybutton overlayactions" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Command="{Binding $parent[UserControl].((overlay:OverlayWidgetModel)DataContext).IntentCommand}"
+                            CommandParameter="{Binding Intent}" IsEnabled="{Binding CanSelect}">
+                      <TextBlock Text="{Binding ActionLabel}" />
+                    </Button>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
       </ScrollViewer>
     </DockPanel>
 

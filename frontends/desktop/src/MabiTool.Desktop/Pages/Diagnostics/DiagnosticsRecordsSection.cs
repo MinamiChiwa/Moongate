@@ -6,13 +6,13 @@ using static MabiTool.Desktop.Localization.UiText;
 
 namespace MabiTool.Desktop.Pages.Diagnostics;
 
-/// <summary>可多选的筛选项：标识是后端的稳定码，原样显示。</summary>
+/// <summary>可多选的筛选项：标识是后端的稳定码，按钮上显示中文名（模块与级别经共用映射）。</summary>
 public sealed class ChoiceChip(string id, bool selected = false, Action<string>? toggle = null) : ObservableObject
 {
     private bool selected = selected;
 
     public string Id => id;
-    public string Label => id;
+    public string Label => DiagnosticsText.Label(id);
     public ICommand ToggleCommand { get; } = new RelayCommand(_ => toggle?.Invoke(id));
 
     public bool Selected

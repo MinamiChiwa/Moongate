@@ -171,6 +171,11 @@ class ContextTests(unittest.TestCase):
                 self.assertEqual(len(c.rules), 3)
                 self.assertTrue(any(e['kind'] == 'screenshot_result' for e in self.events))
                 self.assertTrue(any(e['data'].get('stage') == 'verify' for e in self.events))
+                # 每次读取色卡（scene）带同一次读取的色差与区域判定，界面的当前与实测取这一份。
+                scene_events = [e['data'] for e in self.events if e['kind'] == 'scene']
+                self.assertTrue(scene_events)
+                self.assertTrue(all(len(e['deltas']) == count and e['reading_complete'] for e in scene_events))
+                self.assertEqual(len(scene_events[-1]['region_states']), count)
                 self.assertEqual([e['sequence'] for e in self.events], list(range(1, len(self.events) + 1)))
                 json.dumps(self.events)
 

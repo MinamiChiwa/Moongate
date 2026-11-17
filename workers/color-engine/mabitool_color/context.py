@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from ._vendor.profile_store import canonical_profile
 from ._vendor.run_stop import StopEvent
-from .measurements import annotate, candidate_fields
+from .measurements import annotate, candidate_fields, reading_fields, region_states
 from .ports import NativeRuntime
 
 
@@ -148,6 +148,12 @@ class ColorEngineContext:
                 data['interaction'] = self._interaction()
             if kind == 'native_progress' and isinstance(data.get('stage'), str):
                 self._last_stage = data['stage']
+            if kind in ('scene', 'native_colors'):
+                data.update(reading_fields(data.get('colors'), self._rules))
+            elif isinstance(data.get('current_colors'), list) and isinstance(data.get('current_deltas'), list):
+                rules = self._rules[:len(data['current_colors'])]
+                if len(data['current_deltas']) == len(rules):
+                    data['current_region_states'] = region_states(data['current_colors'], data['current_deltas'], rules)
             if kind in ('screenshot_result', 'native_result'):
                 annotate(data)
             elif kind == 'finished':

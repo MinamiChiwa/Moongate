@@ -545,7 +545,7 @@ public sealed class DyeingTests
         Assert.Equal(("exact-hex", 0.0, "atlas"), (exact.MatchMode.RawValue, exact.Tolerance, exact.Image.RawValue));
         UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
         Assert.Equal("染色引擎不可用：worker.crashed", LiveBackend.PaletteProblem("provider.unavailable", "worker.crashed"));
-        Assert.Equal("请求未完成：request.invalid", LiveBackend.PaletteProblem("request.invalid", null));
+        Assert.Equal("请求未完成：未知原因（request.invalid）", LiveBackend.PaletteProblem("request.invalid", null));
     }
 
     [AvaloniaFact]
@@ -780,7 +780,7 @@ public sealed class DyeingTests
         foreach (var stage in new[] { "waiting", "discovery", "native_validate", "binding", "capture", "search", "observe",
                      "position", "restore", "verify", "refinement" })
             Assert.NotEqual(stage, ColorStages.Name(stage));
-        Assert.Equal("new_stage", ColorRunText.Describe(Run("new_stage") with { Progress = Stage("new_stage") }).Title);
+        Assert.Equal("未知阶段（new_stage）", ColorRunText.Describe(Run("new_stage") with { Progress = Stage("new_stage") }).Title);
 
         var waiting = ColorRunText.Describe(Run("waiting") with { Progress = Stage("waiting") with { Message = "寻色已就绪，请进入染色界面；工具正在等待活动色板。F9 可停止。" } });
         Assert.Equal(("等待染色界面", ColorTone.Live), (waiting.Title, waiting.Tone));
@@ -818,7 +818,58 @@ public sealed class DyeingTests
         Assert.Equal("游戏失去焦点，已停止寻色", ColorRunText.Describe(Run("interrupted") with { StopReason = "input.focusChanged" }).Title);
         Assert.Equal("界面失联，寻色已停止", ColorRunText.Describe(Run("cancelled") with { StopReason = "frontend-lost" }).Title);
         Assert.Equal("已停止寻色", ColorRunText.Describe(Run("cancelled") with { StopReason = "user" }).Title);
-        Assert.Contains("原因码 worker.portFailed", ColorRunText.Describe(Run("failed") with { StopReason = "worker.portFailed" }).Detail);
+        var port = ColorRunText.Describe(Run("failed") with { StopReason = "worker.portFailed" });
+        Assert.Equal("与染色引擎的连接中断", port.Title);
+        Assert.Contains("引擎请求游戏窗口或输入失败", port.Detail);
+        Assert.Contains("未知原因（worker.newCode）", ColorRunText.Describe(Run("failed") with { StopReason = "worker.newCode" }).Detail);
+    }
+
+    /// <summary>
+    /// 区域卡与浮窗取同一份实测：进行中取引擎最新读数；结束时没有复核当前颜色时取上一次实测并标“上次实测（当前未确认）”，
+    /// 最佳实测不作为当前或实测颜色（实机：截图寻色色板结束，最佳 #000101 未能恢复，游戏停在 #443035）。
+    /// </summary>
+    [AvaloniaFact]
+    public void ReadingsShowTheEngineReadOfTheCurrentScreenNotTheBestMeasurement()
+    {
+        UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
+        var session = new GameSession("s", "TW", 1, DateTimeOffset.UnixEpoch, new(500), new(1), null);
+        var profile = new ColorProfile("p", 1, "方案", ColorStrategy.Screenshot,
+        [
+            new ColorRegion("r0", "#000000", [], ColorMatchMode.ExactHex, 8, 1, true),
+            new ColorRegion("r1", "#000000", [], ColorMatchMode.ExactHex, 8, 2, true)
+        ], new(1));
+        var source = new ObservationSource("sample", "1", "TW", null);
+        ColorMeasurement Measured(string a, string b, double da, double db) => new(new Dictionary<string, string> { ["r0"] = a, ["r1"] = b },
+            DateTimeOffset.UnixEpoch, source, new(1), ObservationQuality.Confirmed)
+        {
+            DeltaByRegion = new Dictionary<string, double?> { ["r0"] = da, ["r1"] = db },
+            Regions = [new("r0", ColorRegionState.Unmet), new("r1", ColorRegionState.Unmet)]
+        };
+        var best = Measured("#000101", "#000004", 0.35, 1.6);
+        var last = Measured("#443035", "#00000A", 24.38, 4.12);
+        var ended = new ColorRun("run", "op", session, profile, "interrupted", 0, null, best, last, null, "palette_ended")
+        {
+            Result = new ColorRunResult("run", 2, "unverified", "palette_ended", best, last, null) { BestCurrent = false }
+        };
+        var (readings, accepted) = LiveBackend.Readings(profile, ended, false);
+        Assert.Equal(((string?)null, "#443035", (double?)24.38, true), (readings["r0"].CurrentHex, readings["r0"].MeasuredHex, readings["r0"].MeasuredDelta, readings["r0"].Unconfirmed));
+        Assert.Equal("上次实测（当前未确认）", readings["r0"].MeasuredLabel);
+        Assert.Null(accepted);
+        Assert.DoesNotContain(readings.Values, reading => reading.CurrentHex == "#000101" || reading.MeasuredHex == "#000101");
+
+        var at = DateTimeOffset.UnixEpoch;
+        var running = ended with
+        {
+            Phase = "position", Result = null,
+            Progress = new ColorRunProgress("position", null, null, 0, at, null, 0, at)
+            {
+                Reading = new ColorRunReading(new Dictionary<string, string?> { ["r0"] = "#443035", ["r1"] = null },
+                    new Dictionary<string, double?> { ["r0"] = 24.38, ["r1"] = null }) { Regions = [new("r0", ColorRegionState.Unmet), new("r1", ColorRegionState.Unread)] }
+            }
+        };
+        var (live, _) = LiveBackend.Readings(profile, running, true);
+        Assert.Equal(("#443035", "#443035", "未达标"), (live["r0"].CurrentHex, live["r0"].MeasuredHex, live["r0"].Mark!.Text));
+        Assert.Equal(((string?)null, "未读取"), (live["r1"].MeasuredHex, live["r1"].Mark!.Text));
     }
 
     [AvaloniaFact]
@@ -906,7 +957,7 @@ public sealed class DyeingTests
         Assert.Equal(("已取消", (bool?)null), (cancelled.Result, cancelled.Accepted));
         Assert.All(cancelled.Regions, region => Assert.Null(region.MeasuredHex));
         Assert.Equal("未开始", cancelled.Regions[0].Mark.Text);
-        Assert.Equal("expired", ColorHistoryMapper.State(new OpenEnum<OperationState>("expired")));
+        Assert.Equal("未知状态（expired）", ColorHistoryMapper.State(new OpenEnum<OperationState>("expired")));
     }
 
     [AvaloniaFact]

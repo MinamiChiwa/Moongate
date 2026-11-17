@@ -126,10 +126,10 @@
   <Panel x:Name="Root">
   <DockPanel>
     <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
-      <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+      <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
       <DockPanel Margin="{DynamicResource TitleReserve}">
-        <controls:CardGridEditBar DockPanel.Dock="Right" x:Name="LayoutEditBar" VerticalAlignment="Center" Margin="12,0,8,0" />
-        <TextBlock Classes="h1" Margin="0" Text="{DynamicResource D.Title}" />
+        <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource D.Title}" />
+        <controls:CardGridEditBar x:Name="LayoutEditBar" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" ClipToBounds="True" />
       </DockPanel>
       <!-- 原工具环境栏的“选色方案”“寻色记录”：各开一层（QuickPanel）。 -->
       <WrapPanel HorizontalAlignment="Right" Margin="0,4,0,0">
@@ -356,7 +356,7 @@
                       </StackPanel>
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <Border Width="11" Height="11" CornerRadius="3" VerticalAlignment="Center" Background="{Binding MeasuredDot}" />
-                        <TextBlock Classes="label" FontSize="11" Text="{DynamicResource D.Measured}" />
+                        <TextBlock Classes="label" FontSize="11" Text="{Binding MeasuredLabel}" />
                         <TextBlock FontSize="11" VerticalAlignment="Center" Text="{Binding MeasuredText}" />
                       </StackPanel>
                     </DockPanel>

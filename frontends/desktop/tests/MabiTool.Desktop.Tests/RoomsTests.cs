@@ -219,14 +219,14 @@ public sealed class RoomsTests
         Assert.StartsWith("选中的成员尚未全部就绪", RoomReadinessText.Failure(Problem("room.commandRejected", "MEMBER_NOT_READY"), 409));
         Assert.StartsWith("请将指定总指挥加入本轮参与者", RoomReadinessText.Failure(Problem("room.commandRejected", "LEADER_NOT_PARTICIPATING"), 409));
         Assert.Equal("该操作由房主执行", RoomReadinessText.Failure(Problem("permission.denied"), 403));
-        Assert.Equal("请求未完成：room.somethingNew", RoomReadinessText.Failure(Problem("room.somethingNew"), 409));
-        Assert.Equal("请求未完成：http.502", RoomReadinessText.Failure(null, 502));
+        Assert.Equal("后端返回了未登记的原因（room.somethingNew）", RoomReadinessText.Failure(Problem("room.somethingNew"), 409));
+        Assert.Equal("后端内部出错（HTTP 502）", RoomReadinessText.Failure(null, 502));
 
         // 指定总指挥与移出成员。
         Assert.StartsWith("退出请点击“关闭房间”", RoomReadinessText.Failure(Problem("room.commandRejected", "CANNOT_KICK_HOST"), 409, "rooms.kick"));
         Assert.Equal("该成员已离开房间，请刷新后重试。", RoomReadinessText.Failure(Problem("resource.notFound"), 404, "rooms.kick"));
         Assert.Equal("该成员已离开房间，请刷新后重试。", RoomReadinessText.Failure(Problem("resource.notFound"), 404, "rooms.leader"));
-        Assert.Equal("请求未完成：resource.notFound", RoomReadinessText.Failure(Problem("resource.notFound"), 404, "rooms.start"));
+        Assert.Equal("找不到所选内容", RoomReadinessText.Failure(Problem("resource.notFound"), 404, "rooms.start"));
         Assert.Equal("本轮任务仍在进行，请先取消或统一停止", RoomReadinessText.Failure(Problem("room.activityActive"), 409, "rooms.leader"));
         Assert.Equal("该操作由房主执行", RoomReadinessText.Failure(Problem("permission.denied"), 403, "rooms.kick"));
         // 房主免就绪开轮前准备本机输入失败。

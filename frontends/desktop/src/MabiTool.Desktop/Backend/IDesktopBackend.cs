@@ -16,7 +16,16 @@ public enum EffectStage { Pending, Done, Unknown }
 /// 未连接后端时 <see cref="CanEmergencyStop"/> 为假，紧急停止按钮不可用。
 /// </summary>
 public sealed record ActivitySnapshot(string? OwnerModuleId, string OwnerLine, string Title, string Detail,
-    EffectStage Accepted, EffectStage Dispatched, EffectStage Observed, bool CanEmergencyStop = true);
+    EffectStage Accepted, EffectStage Dispatched, EffectStage Observed, bool CanEmergencyStop = true)
+{
+    /// <summary>持有输入的操作号；主界面不显示，只放在说明的悬停提示里，供反馈问题时对照诊断记录。</summary>
+    public string? Reference { get; init; }
+
+    /// <summary>说明的悬停提示：说明全文，有操作号时另起一行写明。</summary>
+    public string DetailTip => Reference is { Length: > 0 } reference
+        ? Detail + Environment.NewLine + Localization.UiText.Pick($"操作号：{reference}", $"操作編號：{reference}")
+        : Detail;
+}
 
 /// <summary>
 /// 侧栏顶部的游戏绑定：名称用游戏原文，状态文字和是否已证实来自后端。

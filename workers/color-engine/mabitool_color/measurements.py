@@ -45,6 +45,23 @@ def annotate(result):
     return result
 
 
+def reading_fields(colors, rules):
+    """一次读取当前画面的色码：按原 actual_result 的 error 算色差并给出区域判定，没读出的区域判定为 unread。
+
+    原截图引擎的 scene 与精准回读 native_colors 只带色码；界面的“当前／实测”与判定要用同一份读数，因此在这里一并算出。
+    """
+    if not isinstance(colors, list) or not colors or len(colors) > len(rules):
+        return {}
+    from ._vendor.vision import error
+    rules = rules[:len(colors)]
+    deltas = [error(color, rule['colors'], False) if rule.get('enabled') and isinstance(color, str) else None
+              for color, rule in zip(colors, rules)]
+    states = ['unread' if rule.get('enabled') and not isinstance(color, str) else state
+              for color, rule, state in zip(colors, rules, region_states(colors, deltas, rules))]
+    complete = all(isinstance(color, str) for color, rule in zip(colors, rules) if rule.get('enabled'))
+    return dict(deltas=deltas, region_states=states, reading_complete=complete)
+
+
 def candidate_fields(row, rules):
     """候选区域判定与色系偏离；色系按原 verify_result 的 family_priority/family_fields 计算。"""
     from ._vendor.color_family import family_priority, family_fields

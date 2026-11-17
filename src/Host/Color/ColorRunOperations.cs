@@ -374,14 +374,15 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
                 progress?.DeadlineMonotonicMs, now, at)
             {
                 Message = Text(data, "message", 512), Status = status,
-                Reading = verified ? Reading(run, data, "current_colors", "current_deltas") : null,
-                Retained = status is "trial" or "restoring" or "recovering" ? Reading(run, data, "retained_colors", "retained_deltas") : null
+                // 不带读数的阶段事件保留上一次读数：移动与复核开始时画面还没有新的读取结果。
+                Reading = verified ? Reading(run, data, "current_colors", "current_deltas", "current_region_states") ?? progress?.Reading : progress?.Reading,
+                Retained = status is "trial" or "restoring" or "recovering" ? Reading(run, data, "retained_colors", "retained_deltas", null) : null
             };
             changed = true;
         }
-        else if (kind == "native_colors" && Reading(run, data, "colors", null) is { } observed)
+        else if (kind is "scene" or "native_colors" && Reading(run, data, "colors", "deltas", "region_states") is { } observed)
         {
-            // 精准寻色的实际回读：只更新读数，阶段与说明不变。
+            // 截图寻色每次读取色卡（scene）与精准寻色的实际回读：只更新读数，阶段与说明不变。
             progress = (progress ?? new(null, null, null, now, at, null, now, at)) with { Reading = observed, UpdatedMonotonicMs = now, UpdatedAt = at };
             changed = true;
         }
@@ -392,7 +393,7 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
             progress = (progress ?? new(null, null, null, now, at, null, now, at)) with
             {
                 Status = "retry-waiting", Reason = Flag(data, "enabled") ? null : Text(data, "reason", 64), Message = null,
-                Reading = verified ? Reading(run, data, "current_colors", "current_deltas") : progress?.Reading, Retained = null,
+                Reading = verified ? Reading(run, data, "current_colors", "current_deltas", "current_region_states") : progress?.Reading, Retained = null,
                 UpdatedMonotonicMs = now, UpdatedAt = at
             };
             changed = true;
@@ -435,10 +436,10 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
         row.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.True;
 
     /// <summary>
-    /// 按规则区域顺序读一组色码与色差，只用于显示：色码统一为大写 #RRGGBB，不是色码的项为空，多出区域数的项忽略；
-    /// 读数不影响运行，格式不符时不拒绝整帧。
+    /// 按规则区域顺序读一组色码、色差与区域判定，只用于显示：色码统一为大写 #RRGGBB，不是色码的项为空，多出区域数的项忽略，
+    /// 不认识的判定不列出；读数不影响运行，格式不符时不拒绝整帧。
     /// </summary>
-    private static ColorRunReading? Reading(ColorRun run, JsonElement row, string colorsKey, string? deltasKey)
+    private static ColorRunReading? Reading(ColorRun run, JsonElement row, string colorsKey, string? deltasKey, string? statesKey)
     {
         if (!row.TryGetProperty(colorsKey, out var colors) || colors.ValueKind != JsonValueKind.Array) return null;
         var regions = run.RulesSnapshot.Regions;
@@ -456,7 +457,12 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
             hex[regions[i].Id] = color;
             delta[regions[i].Id] = value;
         }
-        return new(hex, delta);
+        var judgements = new List<ColorRegionJudgement>();
+        if (statesKey is not null && row.TryGetProperty(statesKey, out var states) && states.ValueKind == JsonValueKind.Array)
+            for (var i = 0; i < Math.Min(count, states.GetArrayLength()); i++)
+                if (states[i].ValueKind == JsonValueKind.String && new OpenEnum<ColorRegionState>(states[i].GetString()!) is { IsKnown: true } state)
+                    judgements.Add(new(regions[i].Id, state));
+        return new(hex, delta) { Regions = judgements };
     }
 
     private static int? Count(JsonElement row, string key) =>
@@ -476,6 +482,7 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
     private static ColorRun InvalidateCurrent(ColorRun run) => run with
     {
         CurrentVerified = null,
+        Progress = run.Progress is { } progress ? progress with { Reading = null } : null,
         Result = run.Result is { } result ? result with { CurrentVerified = null,
             Outcome = result.Outcome is "matched" or "compromise" ? "unverified" : result.Outcome } : null
     };

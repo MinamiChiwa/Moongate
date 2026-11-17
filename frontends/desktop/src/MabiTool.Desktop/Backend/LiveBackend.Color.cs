@@ -36,15 +36,7 @@ public sealed partial class LiveBackend
         // 截图寻色出一局结果后仍在等待重试，运行是否进行中只看宿主写入的终态阶段，不看结果是否已有。
         var active = run is not null && ColorRunText.IsActive(run);
         var draft = library.Draft;
-        var best = run?.BestMeasured ?? run?.Result?.BestMeasured;
-        var latest = run?.CurrentVerified ?? run?.Result?.CurrentVerified ?? run?.LastMeasured ?? run?.Result?.LastMeasured;
-        // 进行中的“当前”取引擎最新读数（精准寻色的实际回读、细化时的实测），与运行栏说明行同一来源。
-        var live = active ? run!.Progress?.Reading : null;
-        var marks = Judgements(best);
-        var readings = draft.Regions.ToDictionary(region => region.Id, region => new ColorReading(
-            live is not null && live.HexByRegion.TryGetValue(region.Id, out var hex) ? hex : latest?.HexByRegion.GetValueOrDefault(region.Id),
-            best?.HexByRegion.GetValueOrDefault(region.Id), best?.DeltaByRegion.GetValueOrDefault(region.Id),
-            best is null ? null : ColorMark.Of(marks, region.Id, region.Enabled)));
+        var (readings, accepted) = Readings(draft, run, active);
         // 本局区域可用性只在寻色进行中采用：结束后可能已换了服装，旧的“本局不可用”不再限制区域开关。
         var available = active ? run!.AvailableByRegion : null;
         var bound = current.Binding?.Binding is not null;
@@ -61,13 +53,43 @@ public sealed partial class LiveBackend
                 region.AlternativeHex, region.MatchMode.RawValue, region.Tolerance, region.Priority, region.Enabled,
                 available?.GetValueOrDefault(region.Id, true) ?? true)).ToList(),
                 draft.Revision.ToString()),
-            readings, status.Title, status.Tone, best?.Accepted,
+            readings, status.Title, status.Tone, accepted,
             active && run!.Candidates is { } batch ? Candidates(run, batch) : [],
             library.Profiles.Select(Row).ToList(),
             new(connected && !active, connected && !active && blocker is null, active, active && run!.Interaction is { RetryEnabled: true },
                 connected && !active),
             Progress: active && run!.Progress is { } progress ? Progress(run.Id, progress, seen) : null,
-            StartBlocker: blocker ?? string.Empty, Detail: status.Detail);
+            StartBlocker: blocker ?? string.Empty, Detail: status.Detail) { OverlayGuide = status.Guide };
+    }
+
+    /// <summary>
+    /// 区域卡、运行栏与浮窗共用的一份实测：进行中取引擎对当前画面的最新读数；结束后取结束时复核的当前颜色，
+    /// 没有复核时取上一次实测并标为当前未确认（“当前”为未读取）。最佳实测不作为当前或实测颜色显示。
+    /// 整体达标只取结束时复核的当前颜色。
+    /// </summary>
+    internal static (Dictionary<string, ColorReading> Readings, bool? Accepted) Readings(ColorProfile draft, ColorRun? run, bool active)
+    {
+        if (active)
+        {
+            var live = run!.Progress?.Reading;
+            var judgements = live?.Regions.Select(item => (item.RegionId, item.State.RawValue)).ToList() ?? [];
+            return (draft.Regions.ToDictionary(region => region.Id, region =>
+            {
+                var hex = live?.HexByRegion.GetValueOrDefault(region.Id);
+                return live is null || !live.HexByRegion.ContainsKey(region.Id)
+                    ? new ColorReading(null, null, null)
+                    : new ColorReading(hex, hex, live.DeltaByRegion.GetValueOrDefault(region.Id),
+                        hex is null && region.Enabled ? new ColorMark(ColorMark.Unread) : ColorMark.Of(judgements, region.Id, region.Enabled));
+            }), null);
+        }
+        var current = run?.CurrentVerified ?? run?.Result?.CurrentVerified;
+        var measured = current ?? run?.LastMeasured ?? run?.Result?.LastMeasured;
+        var marks = Judgements(measured);
+        return (draft.Regions.ToDictionary(region => region.Id, region => measured is null
+            ? new ColorReading(null, null, null)
+            : new ColorReading(current?.HexByRegion.GetValueOrDefault(region.Id), measured.HexByRegion.GetValueOrDefault(region.Id),
+                measured.DeltaByRegion.GetValueOrDefault(region.Id), ColorMark.Of(marks, region.Id, region.Enabled), current is null)),
+            current?.Accepted);
     }
 
     /// <summary>
@@ -117,7 +139,7 @@ public sealed partial class LiveBackend
                     "染色元件不完整：缺少 Python 直譯器或染色 Worker，請重新解壓完整的 Moongate 壓縮檔"),
                 "storage.unavailable" => Pick("后端数据目录不可用，不能寻色", "後端資料目錄不可用，不能尋色"),
                 "platform.unsupported" => Pick("寻色需要 Windows", "尋色需要 Windows"),
-                var code => Pick($"暂不能寻色：{code}", $"暫不能尋色：{code}")
+                var code => Pick("暂不能寻色：", "暫不能尋色：") + ColorStages.UnknownReason(code)
             };
         if (binding is null) return Pick("未绑定游戏窗口：先在左上角选择游戏窗口", "未綁定遊戲視窗：先在左上角選擇遊戲視窗");
         if (binding.IsMinimized) return Pick("游戏窗口已最小化：先恢复游戏窗口再开始", "遊戲視窗已最小化：先還原遊戲視窗再開始");
@@ -234,7 +256,7 @@ public sealed partial class LiveBackend
         "provider.unavailable" => reason is { Length: > 0 }
             ? Pick($"染色引擎不可用：{reason}", $"染色引擎不可用：{reason}")
             : Pick("染色引擎不可用", "染色引擎不可用"),
-        _ => Pick($"请求未完成：{code}", $"請求未完成：{code}")
+        _ => Pick("请求未完成：", "請求未完成：") + ColorStages.UnknownReason(code)
     };
 
     public async Task<CaptureReply> CaptureScreenAsync(CancellationToken cancellationToken)

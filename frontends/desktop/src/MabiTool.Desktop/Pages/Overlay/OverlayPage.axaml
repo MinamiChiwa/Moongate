@@ -19,10 +19,10 @@
   <Panel>
   <DockPanel>
     <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
-      <!-- 标题右侧是卡片布局的编辑入口；再往右留给窗口右上角的按钮。 -->
+      <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
       <DockPanel Margin="{DynamicResource TitleReserve}">
-        <controls:CardGridEditBar DockPanel.Dock="Right" Target="{Binding #CardsGrid}" VerticalAlignment="Center" Margin="12,0,8,0" />
-        <TextBlock Classes="h1" Margin="0" Text="{DynamicResource O.Title}" />
+        <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource O.Title}" />
+        <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" ClipToBounds="True" />
       </DockPanel>
       <controls:ReflowPanel MinItemWidth="260" Spacing="12" Margin="0,4,0,0">
         <TextBlock Classes="body muted" VerticalAlignment="Center" Text="{DynamicResource O.Status}" />
@@ -77,6 +77,25 @@
                 <TextBlock Classes="muted" Text="{DynamicResource O.Monitors}" />
                 <TextBlock x:Name="MonitorsText" Classes="body" TextWrapping="Wrap" TextAlignment="Right" Text="{Binding MonitorsText}" />
               </controls:PairRow>
+              <!-- 不用拖动也能换屏（远程桌面一次只显示一块屏幕时拖不过去）：当前版面的元件全部移到所选显示器，比例位置不变。 -->
+              <controls:PairRow IsVisible="{Binding HasMonitorChoice}">
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding MoveAllLabel}" />
+                <controls:SelectionBorder x:Name="MoveAllMonitors" Classes="segmented" HorizontalAlignment="Right">
+                  <ItemsControl controls:StableItems.Source="{Binding AllMonitorChoices}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="page:MonitorOption">
+                        <Button Classes="segment" Classes.active="{Binding Selected}" Content="{Binding Label}" ToolTip.Tip="{Binding Tip}"
+                                AutomationProperties.Name="{Binding Tip}"
+                                Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).MoveAllToMonitorCommand}"
+                                CommandParameter="{Binding Key}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </controls:SelectionBorder>
+              </controls:PairRow>
               <WrapPanel>
                 <!-- 选中表示当前版面的元件都已上锁；有元件解锁时按下全部上锁，否则全部解锁。 -->
                 <Button x:Name="LockAllButton" Classes="chip" Classes.active="{Binding AllLocked}" Margin="0,0,6,6"
@@ -98,6 +117,25 @@
             <TextBlock Classes="note" Text="{DynamicResource O.NoSelection}" IsVisible="{Binding NoSelection}" />
             <StackPanel Spacing="12" IsVisible="{Binding HasSelection}">
               <ItemsControl controls:StableItems.Source="{Binding SelectedDetails}" />
+              <!-- 所选元件移到另一块显示器：比例位置不变，立即保存；只有一块显示器时不显示。 -->
+              <controls:PairRow IsVisible="{Binding HasMonitorChoice}">
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding MoveToLabel}" />
+                <controls:SelectionBorder x:Name="WidgetMonitors" Classes="segmented" HorizontalAlignment="Right">
+                  <ItemsControl controls:StableItems.Source="{Binding MonitorChoices}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="page:MonitorOption">
+                        <Button Classes="segment" Classes.active="{Binding Selected}" Content="{Binding Label}" ToolTip.Tip="{Binding Tip}"
+                                AutomationProperties.Name="{Binding Tip}"
+                                Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).MoveToMonitorCommand}"
+                                CommandParameter="{Binding Key}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </controls:SelectionBorder>
+              </controls:PairRow>
               <controls:PairRow>
                 <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource O.Lock}" />
                 <StackPanel Orientation="Horizontal" Spacing="8">

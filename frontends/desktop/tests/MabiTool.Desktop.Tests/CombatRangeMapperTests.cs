@@ -165,11 +165,11 @@ public sealed class CombatRangeMapperTests
             new(Now, Now, null), null, null, new(CancellationState.None, null), EffectStatus.None);
         Assert.True(LiveBackend.StartView(operation, null)!.Waiting);
         var failed = operation with { State = OperationState.Failed, Problem = ApiErrors.Create("combat.sourceUnavailable", "x", "t") };
-        Assert.Equal((false, "开始观测失败：战斗来源不可用（combat.sourceUnavailable）"), (LiveBackend.StartView(failed, null)!.Waiting, LiveBackend.StartView(failed, null)!.Text));
+        Assert.Equal((false, "开始观测失败：战斗来源不可用"), (LiveBackend.StartView(failed, null)!.Waiting, LiveBackend.StartView(failed, null)!.Text));
         Assert.Null(LiveBackend.StartView(operation, Workspace(null) with { Observation = Workspace(null).Observation with { Id = "op-1" } }));
 
         Assert.Equal("正在等待识别本机角色（请在游戏里切换一次地图）", LiveBackend.AutoView(new(true, "waiting", null, "op-2", new(0)), null)!.Text);
-        Assert.Equal(("未抓包（observation.captureStopped），抓包运行后自动开始观测", true),
+        Assert.Equal(("未抓包（抓包已停止），抓包运行后自动开始观测", true),
             (LiveBackend.AutoView(new(true, "off", "observation.captureStopped", null, new(0)), null)!.Text, LiveBackend.AutoView(new(true, "off", "observation.captureStopped", null, new(0)), null)!.Problem));
         Assert.Equal("", LiveBackend.AutoView(new(true, "observing", null, "obs", new(0)), Workspace(null))!.Text);
         Assert.Equal("自动观测已关闭", LiveBackend.AutoView(new(false, "off", "combat.autoDisabled", null, new(0)), null)!.Text);

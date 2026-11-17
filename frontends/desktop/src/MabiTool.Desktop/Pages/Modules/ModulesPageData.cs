@@ -144,8 +144,8 @@ public sealed partial class ModulesPageModel : BackendPageModel<ModulesPageData>
                     Data.CanToggle && state is { Essential: false }, state?.Description ?? string.Empty, state?.Essential == true);
             }).ToList();
             // 只有后端有的模块：名称与功能说明取自模块清单，标识放在来源一行；旧宿主没有名称时以标识显示。
-            known.AddRange(states.Values.Select(state => new ModuleCard(state.Id, "?", Neutral, state.Name ?? state.Id,
-                UiText.Pick($"后端模块 · {state.Id}，没有前端页面", $"後端模組 · {state.Id}，沒有前端頁面"), ToggleLabel(state), StateText(state),
+            known.AddRange(states.Values.Select(state => new ModuleCard(state.Id, "?", Neutral, state.Name ?? CodeText.Module(state.Id),
+                UiText.Pick("后端模块，没有前端页面", "後端模組，沒有前端頁面"), ToggleLabel(state), StateText(state),
                 UiText.Pick($"版本 {state.Version}", $"版本 {state.Version}"), Data.CanToggle && !state.Essential,
                 state.Description ?? UiText.Pick("后端没有提供功能说明", "後端沒有提供功能說明"), state.Essential)));
             return known;

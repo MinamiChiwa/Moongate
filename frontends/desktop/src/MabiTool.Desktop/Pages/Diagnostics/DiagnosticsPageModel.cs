@@ -7,7 +7,7 @@ using MabiTool.Desktop.Localization;
 namespace MabiTool.Desktop.Pages.Diagnostics;
 
 /// <summary>
-/// 诊断页：导出排查包、调试采集、运行状态、最近记录四块，依次排列，各自可以折叠（状态存入前端偏好）。
+/// 诊断页：导出排查包、调试采集、运行状态、最近记录与界面诊断五块，依次排列，各自可以折叠（状态存入前端偏好）。
 /// 进入页面与按“刷新”时读取；页面可见时每 5 秒轮询运行状态，采集进行中每秒更新剩余时间。采集块与导出块连接后按握手时的权限显示，未连接时停用并在标题行写明原因。
 /// </summary>
 public sealed class DiagnosticsPageModel : ObservableObject, IDisposable, IPageLifecycle
@@ -61,6 +61,7 @@ public sealed class DiagnosticsPageModel : ObservableObject, IDisposable, IPageL
         Records = new(backend);
         Capture = new(backend, clock);
         Export = new(backend, Capture);
+        Interface = new();
         RefreshCommand = new RelayCommand(_ => _ = RefreshAllAsync());
         backend.Changed += OnBackendChanged;
         UiText.LanguageChanged += OnLanguageChanged;
@@ -71,7 +72,10 @@ public sealed class DiagnosticsPageModel : ObservableObject, IDisposable, IPageL
     public DiagnosticsRecordsSection Records { get; }
     public DiagnosticsCaptureSection Capture { get; }
     public DiagnosticsExportSection Export { get; }
+    public DiagnosticsInterfaceSection Interface { get; }
     public ICommand RefreshCommand { get; }
+    public string InterfaceTitle => UiText.Pick("界面诊断", "介面診斷");
+    public string UnmappedTitle => UiText.Pick("界面上还没有中文文案的标识（类别:原文）", "介面上還沒有中文文案的標識（類別:原文）");
 
     /// <summary>
     /// 调试采集入口：连接后仅在拥有 diagnostics.debug 且后端没有以 403 拒绝时显示；未连接时权限未知，照常显示并停用。
@@ -135,5 +139,6 @@ public sealed class DiagnosticsPageModel : ObservableObject, IDisposable, IPageL
         Records.Dispose();
         Capture.Dispose();
         Export.Dispose();
+        Interface.Dispose();
     }
 }

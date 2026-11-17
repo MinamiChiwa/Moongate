@@ -1,17 +1,19 @@
 using MabiTool.Desktop.Backend;
 using MabiTool.Desktop.Infrastructure;
+using MabiTool.Desktop.Localization;
 using static MabiTool.Desktop.Localization.UiText;
 
 namespace MabiTool.Desktop.Pages.Diagnostics;
 
-/// <summary>一个探针的显示块：标题是探针标识，状态与原因，下面是计数与短码合并的键值表。</summary>
+/// <summary>一个探针的显示块：标题是探针标识，状态与原因（中文，括注原码），下面是计数与短码合并的键值表。</summary>
 public sealed class ProbeBlock
 {
     public ProbeBlock(ProbeView probe)
     {
         Id = probe.Id;
-        Module = probe.Module;
-        State = probe.State;
+        // 状态与模块写成中文，诊断页保留原码便于对照；探针标识是稳定标识，原样作标题。
+        Module = CodeText.KnownModules.Contains(probe.Module) ? $"{CodeText.Module(probe.Module)}（{probe.Module}）" : CodeText.Module(probe.Module);
+        State = CodeText.State(probe.State);
         Unavailable = probe.State == "unavailable";
         ReasonLine = probe.Reason is { Length: > 0 } reason ? DiagnosticsText.Reason(reason) : string.Empty;
         Rows = DiagnosticsText.Rows(probe);

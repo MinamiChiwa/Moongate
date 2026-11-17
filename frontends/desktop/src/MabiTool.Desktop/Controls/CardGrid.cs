@@ -201,6 +201,9 @@ public sealed class CardGrid : Panel
 
     private IEnumerable<Card> Cards => Children.Select(CardOf).OfType<Card>();
 
+    /// <summary>网格里有可编辑布局的卡片（带 <see cref="Card.CardId"/>）；没有时编辑入口不显示。</summary>
+    public bool HasEditableCards => Cards.Any(card => card.CardId is { Length: > 0 });
+
     private static string? IdOf(Control child) => CardOf(child) is { CardId: { Length: > 0 } id } ? id : null;
 
     private CardSlot? Saved(Control child, int columns) =>
@@ -805,7 +808,9 @@ public sealed class CardGrid : Panel
 }
 
 /// <summary>
-/// 卡片网格的编辑入口，放在页面标题栏右侧：平时是“编辑布局”，编辑中变成“取消”“恢复默认”“完成”。<see cref="Target"/> 指向页面的 <see cref="CardGrid"/>。
+/// 卡片网格的编辑入口，各页面同一位置：页面标题同一行、紧跟标题之后（与标题垂直居中对齐），平时是“编辑布局”，
+/// 编辑中在同一处换成“完成”“取消”“恢复默认”。标题行除标题外只有它，宽度变化不推动页面其他内容；窗口右上角的按钮组另有预留，不相邻。
+/// 窄窗口下放不下时右端被裁，“完成”排在最前保证可见。网格里没有可编辑的卡片时不显示。<see cref="Target"/> 指向页面的 <see cref="CardGrid"/>。
 /// “完成”保存本次编辑；“取消”丢弃本次编辑的全部改动；“恢复默认”让该页各列数的布局与卡片的折叠状态回到缺省，仍在编辑模式里。
 /// </summary>
 public sealed class CardGridEditBar : Decorator
@@ -817,6 +822,7 @@ public sealed class CardGridEditBar : Decorator
     private readonly Button reset = new() { Name = "ResetLayoutButton" };
     private readonly Button done = new() { Name = "DoneLayoutButton" };
     private IDisposable? watch;
+    private CardGrid? watched;
 
     public CardGridEditBar()
     {
@@ -837,7 +843,7 @@ public sealed class CardGridEditBar : Decorator
         cancel.Click += (_, _) => Target?.CancelEditing();
         reset.Click += (_, _) => Target?.ResetToDefault();
         done.Click += (_, _) => Target?.SetCurrentValue(CardGrid.IsEditingProperty, false);
-        Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { edit, cancel, reset, done } };
+        Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { edit, done, cancel, reset } };
         Apply();
     }
 
@@ -849,12 +855,18 @@ public sealed class CardGridEditBar : Decorator
         if (change.Property != TargetProperty) return;
         watch?.Dispose();
         watch = Target?.GetObservable(CardGrid.IsEditingProperty).Subscribe(new Watcher(this));
+        if (watched is not null) watched.Children.CollectionChanged -= OnCardsChanged;
+        watched = Target;
+        if (watched is not null) watched.Children.CollectionChanged += OnCardsChanged;
         Apply();
     }
+
+    private void OnCardsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => Apply();
 
     private void Apply()
     {
         var editing = Target?.IsEditing == true;
+        IsVisible = editing || Target?.HasEditableCards == true;
         edit.IsVisible = !editing;
         cancel.IsVisible = reset.IsVisible = done.IsVisible = editing;
     }

@@ -203,13 +203,14 @@ public sealed class RegionCardModel : ObservableObject
     public ColorAtlasView Atlas { get => atlas; private set => Set(ref atlas, value); }
 
     // ---- 读数 ----
-    public string CurrentText => reading.CurrentHex ?? "—";
-    public string MeasuredText => reading.MeasuredHex ?? "—";
+    public string CurrentText => reading.CurrentHex ?? ColorReading.UnreadText;
+    public string MeasuredText => reading.MeasuredHex ?? ColorReading.UnreadText;
+    public string MeasuredLabel => reading.MeasuredLabel;
     public IBrush CurrentDot => Dot(reading.CurrentHex);
     public IBrush MeasuredDot => Dot(reading.MeasuredHex);
     public string MeasuredDelta => reading.MeasuredDelta is { } delta ? ColorStages.Delta(delta) : "ΔE —";
 
-    /// <summary>读数旁的徽标：后端对最佳实测的分区判定；还没有实测时为“未开始”（原工具 RegionCard badge）。</summary>
+    /// <summary>读数旁的徽标：后端对这份实测的分区判定；还没有实测时为“未开始”（原工具 RegionCard badge）。</summary>
     public ColorMark Mark => IsUnread ? new ColorMark(ColorMark.Unread) : reading.Mark ?? ColorMark.Waiting;
 
     public ColorRegionDraft ToDraft() => new(Id, targetHex, Alternatives.ToList(), matchMode, tolerance, priority, enabled);
@@ -241,6 +242,7 @@ public sealed class RegionCardModel : ObservableObject
         reading = value;
         Raise(nameof(CurrentText));
         Raise(nameof(MeasuredText));
+        Raise(nameof(MeasuredLabel));
         Raise(nameof(CurrentDot));
         Raise(nameof(MeasuredDot));
         Raise(nameof(MeasuredDelta));

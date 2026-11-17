@@ -41,6 +41,8 @@ public sealed class OverlayCanvas : Panel
     public const double CloseSize = 18;
 
     private static readonly Geometry CloseGlyph = Geometry.Parse("M8 8L16 16M16 8L8 16");
+    // 移到下一块显示器：向右的箭头。
+    private static readonly Geometry NextGlyph = Geometry.Parse("M6 12H17M13 8L17 12L13 16");
 
     // 开锁与闭锁画在 24×24 画板上：锁体相同，闭锁的锁梁两端都插进锁体，开锁的锁梁抬起、右端离开锁体。
     private static readonly Geometry LockBody = Geometry.Parse("M7 11H17A1 1 0 0 1 18 12V19A1 1 0 0 1 17 20H7A1 1 0 0 1 6 19V12A1 1 0 0 1 7 11Z");
@@ -56,8 +58,9 @@ public sealed class OverlayCanvas : Panel
     /// <summary>一个元件在画布上的几个部件：外框（含缩放）、锁图标、“－／＋”、尺寸手柄，以及元件声明的默认与最小尺寸。</summary>
     private sealed class Slot(WidgetPlacement placement, LayoutTransformControl frame, Border skin,
         LayoutTransformControl lockHost, Border lockFace, LayoutTransformControl handle, OverlayWidgetModel? model,
-        LayoutTransformControl zoom, Size? defaultSize, Size minimumSize, LayoutTransformControl close)
+        LayoutTransformControl zoom, Size? defaultSize, Size minimumSize, LayoutTransformControl close, LayoutTransformControl next)
     {
+        public LayoutTransformControl Next { get; } = next;
         public LayoutTransformControl Close { get; } = close;
         public LayoutTransformControl Zoom { get; } = zoom;
         public Size? DefaultSize { get; } = defaultSize;
@@ -85,6 +88,7 @@ public sealed class OverlayCanvas : Panel
     private Size sizeStart;
     private Slot? pressedZoom;
     private Slot? pressedClose;
+    private Slot? pressedNext;
     private string? pressedZoomName;
     private string? hoveredWidgetId;
     private bool resizing;
@@ -116,8 +120,8 @@ public sealed class OverlayCanvas : Panel
         DockPanel.SetDock(finish, Dock.Right);
         var text = new TextBlock
         {
-            Text = Localization.UiText.Pick("正在编辑浮窗：拖动元件摆放（可拖到其他显示器），拖右下角改尺寸，按锁切换上锁",
-                "正在編輯浮窗：拖動元件擺放（可拖到其他顯示器），拖右下角改尺寸，按鎖切換上鎖"),
+            Text = Localization.UiText.Pick("正在编辑浮窗：拖动元件摆放，按箭头移到下一块显示器，拖右下角改尺寸，按锁切换上锁",
+                "正在編輯浮窗：拖動元件擺放，按箭頭移到下一塊顯示器，拖右下角改尺寸，按鎖切換上鎖"),
             Foreground = Brushes.White, FontSize = 13, TextWrapping = TextWrapping.Wrap, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
         };
         return new Border
@@ -149,6 +153,30 @@ public sealed class OverlayCanvas : Panel
             InvalidateMeasure();
         }
     }
+
+    private OverlayArea? area;
+
+    /// <summary>
+    /// 本画布所在窗口铺满的显示器范围（物理像素原点与缩放比例），同时给出 <see cref="Monitors"/>。
+    /// 拖动轮询按它把系统光标的物理坐标换成本画布的逻辑坐标（<see cref="PollDrag"/>）。
+    /// </summary>
+    public OverlayArea? Area
+    {
+        get => area;
+        set
+        {
+            area = value;
+            if (value is not null) Monitors = value.Monitors;
+        }
+    }
+
+    /// <summary>
+    /// 系统光标与主按键状态的来源（Windows 上由浮窗给出，读 GetCursorPos 与 GetAsyncKeyState）。
+    /// 设置后拖动的位置与结束都按它判定：发起拖动的窗口不在前台时，系统只在光标位于该窗口可见范围内才把鼠标消息交给它，
+    /// 光标越过显示器边界后指针事件可能中断、指针捕获可能被收回，所以捕获丢失不再结束拖动，以轮询到的主按键松开为准。
+    /// 为空时（无界面测试、其他平台）按指针事件拖动，捕获丢失即结束。
+    /// </summary>
+    public IOverlayCursor? CursorSource { get; set; }
 
     private string? ownMonitor;
 
@@ -217,6 +245,9 @@ public sealed class OverlayCanvas : Panel
 
     /// <summary>元件右上角最右侧的关闭按钮。</summary>
     public Control? CloseOf(string widgetId) => Find(widgetId)?.Close;
+
+    /// <summary>编辑状态下“－／＋”左侧的“移到下一块显示器”按钮（多于一块显示器时显示）。</summary>
+    public Control? NextMonitorButtonOf(string widgetId) => Find(widgetId)?.Next;
 
     /// <summary>元件右下角的尺寸手柄。</summary>
     public Control? HandleOf(string widgetId) => Find(widgetId)?.Handle;
@@ -316,6 +347,7 @@ public sealed class OverlayCanvas : Panel
         Scale(slot.Close, factor);
         Scale(slot.Handle, factor);
         Scale(slot.Zoom, factor);
+        Scale(slot.Next, factor);
         ApplySize(slot);
     }
 
@@ -378,7 +410,9 @@ public sealed class OverlayCanvas : Panel
             var factor = Factor(slot);
             slot.Lock.Arrange(LockRect(rect, factor));
             slot.Close.Arrange(CloseRect(rect, factor));
-            slot.Zoom.Arrange(ZoomRect(rect, factor));
+            var zoom = ZoomRect(rect, factor);
+            slot.Zoom.Arrange(zoom);
+            slot.Next.Arrange(new Rect(zoom.X - (ZoomGap + ZoomSize) * factor, zoom.Y, ZoomSize * factor, ZoomSize * factor));
             slot.Handle.Arrange(HandleRect(rect, factor));
         }
         // 提示条在本显示器工作区顶部正中。
@@ -427,6 +461,8 @@ public sealed class OverlayCanvas : Panel
             slot.Lock.PointerReleased -= OnLockReleased;
             slot.Close.PointerPressed -= OnClosePressed;
             slot.Close.PointerReleased -= OnCloseReleased;
+            slot.Next.PointerPressed -= OnNextPressed;
+            slot.Next.PointerReleased -= OnNextReleased;
             foreach (var button in ((StackPanel)slot.Zoom.Child!).Children)
             {
                 button.PointerPressed -= OnZoomPressed;
@@ -443,11 +479,13 @@ public sealed class OverlayCanvas : Panel
         if (dragging is not null)
         {
             dragging = null;
+            OverlayDragTrace.End("widgets-rebuilt", null);
             ManipulationChanged?.Invoke(this, EventArgs.Empty);
         }
         pressedLock = null;
         pressedZoom = null;
         pressedClose = null;
+        pressedNext = null;
         hoveredWidgetId = null;
     }
 
@@ -519,8 +557,16 @@ public sealed class OverlayCanvas : Panel
             ToolTip.SetTip(close, this.TryFindResource("O.CloseWidget", out var tip) ? tip : null);
             close.PointerPressed += OnClosePressed;
             close.PointerReleased += OnCloseReleased;
+            // 编辑状态下“移到下一块显示器”：不需要拖过显示器边界也能换屏（远程桌面一次只显示一块屏幕时拖不过去）。
+            var next = new LayoutTransformControl
+            {
+                Child = ZoomButton(NextGlyph, "next"), Cursor = new Cursor(StandardCursorType.Hand), IsVisible = false, Classes = { "overlaycontrol" }
+            };
+            ToolTip.SetTip(next, Localization.UiText.Pick("移到下一块显示器", "移到下一塊顯示器"));
+            next.PointerPressed += OnNextPressed;
+            next.PointerReleased += OnNextReleased;
             var slot = new Slot(placement, frame, skin, lockHost, face, handle, model, zoom,
-                OverlayWidgetSizes.DefaultOf(descriptor), OverlayWidgetSizes.MinimumOf(descriptor), close);
+                OverlayWidgetSizes.DefaultOf(descriptor), OverlayWidgetSizes.MinimumOf(descriptor), close, next);
             // 依赖的展示主题缺失时元件在游戏浮窗里隐藏；状态随后端刷新变化。
             if (model is not null) model.PropertyChanged += (_, _) => UpdateStates();
             frame.PointerPressed += OnFramePressed;
@@ -541,6 +587,7 @@ public sealed class OverlayCanvas : Panel
         foreach (var slot in slots) Children.Add(slot.Lock);
         foreach (var slot in slots) Children.Add(slot.Close);
         foreach (var slot in slots) Children.Add(slot.Zoom);
+        foreach (var slot in slots) Children.Add(slot.Next);
         foreach (var slot in slots) Children.Add(slot.Handle);
         Children.Add(banner);
         builtLayout = store.Active;
@@ -596,6 +643,7 @@ public sealed class OverlayCanvas : Panel
             ApplyScale(slot);
             slot.Handle.IsVisible = visible && movable;
             slot.Zoom.IsVisible = visible && movable;
+            slot.Next.IsVisible = visible && editing && OverlayArea.Next(monitors, MonitorOf(slot.Placement)?.Key) is not null;
             slot.Frame.Opacity = editing && closed ? slot.Placement.Opacity * 0.4 : slot.Placement.Opacity;
         }
         banner.IsVisible = editing;
@@ -616,6 +664,7 @@ public sealed class OverlayCanvas : Panel
             // 关闭入口常驻（18.14）：不随锁状态或悬停隐藏。
             slot.Close.Opacity = 1;
             slot.Zoom.Opacity = opacity;
+            slot.Next.Opacity = opacity;
             slot.Handle.Opacity = opacity;
         }
     }
@@ -635,6 +684,19 @@ public sealed class OverlayCanvas : Panel
         e.Pointer.Capture(captureTarget);
         e.Handled = true;
         ManipulationChanged?.Invoke(this, EventArgs.Empty);
+        OverlayDragTrace.Begin(this, slot.Placement, resize, dragOrigin);
+    }
+
+    /// <summary>
+    /// 按 <see cref="CursorSource"/> 取一次系统光标：拖动到光标所在位置（物理像素换成本画布的逻辑坐标），主按键已松开时结束并保存。
+    /// 浮窗的光标轮询在拖动期间每帧调用；指针移动事件也调用它，位置始终取自同一个来源。
+    /// </summary>
+    public void PollDrag()
+    {
+        if (dragging is null || CursorSource is not { } cursor || area is not { } own) return;
+        if (cursor.Position is { } at)
+            DragTo(new Point((at.X - own.Pixels.X) / own.Scaling, (at.Y - own.Pixels.Y) / own.Scaling), "poll", at);
+        if (dragging is not null && !cursor.PrimaryButtonDown) Finish("released");
     }
 
     private void OnFramePressed(object? sender, PointerPressedEventArgs e)
@@ -664,7 +726,16 @@ public sealed class OverlayCanvas : Panel
         if (IsEditing || !slot.Placement.Locked) BeginManipulation(slot, true, e, slot.Handle);
     }
 
-    private void OnPointerMovedWhileDragging(object? sender, PointerEventArgs e) => DragTo(e.GetPosition(this));
+    // 有系统光标来源时位置取自它（与轮询同一来源，不受指针事件来自哪个窗口影响），否则取指针事件的位置。
+    private void OnPointerMovedWhileDragging(object? sender, PointerEventArgs e)
+    {
+        if (dragging is null) return;
+        if (CursorSource is not null && area is not null) PollDrag();
+        else DragTo(e.GetPosition(this), "pointer", null);
+    }
+
+    /// <summary>拖动或改尺寸到光标位置（本画布坐标，逻辑像素）；见 <see cref="DragTo(Point, string, PixelPoint?)"/>。</summary>
+    public void DragTo(Point point) => DragTo(point, "pointer", null);
 
     /// <summary>
     /// 拖动或改尺寸到光标位置（本画布坐标，逻辑像素，可以在画布之外、落在别的显示器上）。指针事件与浮窗的光标轮询都调用它：
@@ -673,9 +744,10 @@ public sealed class OverlayCanvas : Panel
     /// 光标所在的显示器就是元件的显示器；元件在那里的大小、边距与 8 px 格线都按那块显示器的逻辑像素计（乘以它与本窗口的缩放比之比）。
     /// 元件跨到别的显示器后，那块显示器的浮窗随拖动通知显示它，本画布继续处理移动直到松开。
     /// </summary>
-    public void DragTo(Point point)
+    private void DragTo(Point point, string source, PixelPoint? physical)
     {
         if (dragging is not { } slot) return;
+        OverlayDragTrace.Sample(source, physical, point, MonitorAt(point)?.Key);
         var placement = slot.Placement;
         if (resizing)
         {
@@ -721,26 +793,32 @@ public sealed class OverlayCanvas : Panel
     private void OnPointerReleasedAfterDragging(object? sender, PointerReleasedEventArgs e)
     {
         if (dragging is null) return;
-        EndManipulation();
+        // 松开处的位置按同一来源再取一次，再结束并保存。
+        if (CursorSource is not null && area is not null) PollDrag();
+        if (dragging is not null) Finish("pointer-released");
         e.Pointer.Capture(null);
     }
 
-    // 指针捕获被系统收回（例如松开发生在别的窗口上）时同样结束拖动并保存当前位置。
+    // 指针捕获被收回：没有系统光标来源时按松开处理并保存；有来源时只记录，拖动继续由轮询驱动，主按键松开才结束。
     private void OnCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
-        if (dragging is not null) EndManipulation();
+        if (dragging is null) return;
+        OverlayDragTrace.Note("capture-lost");
+        if (CursorSource is null) Finish("capture-lost");
     }
 
-    /// <summary>结束正在进行的拖动或缩放并保存（主按键已松开却没有收到松开消息时由游戏浮窗调用）。</summary>
+    /// <summary>结束正在进行的拖动或缩放并保存。</summary>
     public void FinishManipulation()
     {
-        if (dragging is not null) EndManipulation();
+        if (dragging is not null) Finish("finished");
     }
 
     // 松开后保存；拖到别的显示器的元件此后只留在那块显示器的浮窗里。
-    private void EndManipulation()
+    private void Finish(string reason)
     {
+        var placement = dragging?.Placement;
         dragging = null;
+        OverlayDragTrace.End(reason, placement);
         ManipulationChanged?.Invoke(this, EventArgs.Empty);
         if (store is not null) store.Commit();
         else UpdateStates();
@@ -787,6 +865,27 @@ public sealed class OverlayCanvas : Panel
         if (!new Rect(slot.Close.Bounds.Size).Contains(e.GetPosition(slot.Close))) return;
         if (slot.Placement.Closed) store?.Reopen(slot.Placement);
         else store?.Close(slot.Placement);
+    }
+
+    // “移到下一块显示器”：编辑状态下按下并在按钮上松开，元件改属下一块显示器（比例位置不变）并保存。
+    private void OnNextPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!IsEditing || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        pressedNext = slots.FirstOrDefault(item => item.Next == sender);
+        if (pressedNext is null) return;
+        e.Pointer.Capture(pressedNext.Next);
+        e.Handled = true;
+    }
+
+    private void OnNextReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        var slot = pressedNext;
+        pressedNext = null;
+        if (slot is null || slot.Next != sender) return;
+        e.Pointer.Capture(null);
+        e.Handled = true;
+        if (!new Rect(slot.Next.Bounds.Size).Contains(e.GetPosition(slot.Next))) return;
+        if (OverlayArea.Next(monitors, MonitorOf(slot.Placement)?.Key) is { } target) store?.MoveTo(slot.Placement, target.Key);
     }
 
     // “－／＋”：只在元件解锁或处于编辑状态时显示并接收鼠标；按下并在同一按钮上松开才改变缩放。

@@ -60,9 +60,17 @@ public sealed record ColorRegionView(string Id, string TargetHex, IReadOnlyList<
 public sealed record ColorDraftView(string Strategy, IReadOnlyList<ColorRegionView> Regions, string Revision);
 
 /// <summary>
-/// 一个区域的读数：当前读到的颜色与最佳实测（含色差），没有读数时为空；<see cref="Mark"/> 是后端对最佳实测的分区判定。
+/// 一个区域的读数，区域卡、运行栏与游戏浮窗取同一份：<see cref="CurrentHex"/> 是引擎对当前画面的读数（进行中的最新读数、结束时复核的当前颜色），
+/// <see cref="MeasuredHex"/>、<see cref="MeasuredDelta"/> 与 <see cref="Mark"/> 是这份实测的色码、色差与后端判定；没有读数时为空。
+/// <see cref="Unconfirmed"/> 为真表示结束时没有复核当前颜色，实测取的是上一次实测（原工具“上次实测（当前未确认）”）。
 /// </summary>
-public sealed record ColorReading(string? CurrentHex, string? MeasuredHex, double? MeasuredDelta, ColorMark? Mark = null);
+public sealed record ColorReading(string? CurrentHex, string? MeasuredHex, double? MeasuredDelta, ColorMark? Mark = null, bool Unconfirmed = false)
+{
+    public static string UnreadText => UiText.Pick("未读取", "未讀取");
+
+    /// <summary>“实测”一行的标签：上次实测且当前未确认时照原工具写明。</summary>
+    public string MeasuredLabel => Unconfirmed ? UiText.Pick("上次实测（当前未确认）", "上次實測（目前未確認）") : UiText.Pick("实测", "實測");
+}
 
 /// <summary>
 /// 后端的分区判定（ColorRegionJudgement.state 原始值）：达标、未达标、未开始、未参与、未启用。
@@ -212,24 +220,43 @@ public sealed record ColorPageData(ColorDraftView? Draft, IReadOnlyDictionary<st
 {
     public bool HasDetail => Detail.Length > 0;
 
-    /// <summary>游戏浮窗“当前颜色”元件：启用的区域按顺序各一行，目标色与实测色各占色块一半，后接实测 HEX 与色差。</summary>
+    /// <summary>
+    /// 游戏浮窗染色元件的区域行（原工具浮窗的读数部分）：启用的区域按顺序各一行，目标色与实测色各占色块一半，
+    /// 后接实测 HEX、色差与判定，与区域卡“实测”一行同一份实测；没读出时为“未读取”。
+    /// </summary>
     public IReadOnlyList<ColorOverlayRow> OverlayRows => Draft?.Regions.Select((region, index) => (region, index))
         .Where(pair => pair.region.Enabled).Select(pair =>
         {
             var reading = Readings.GetValueOrDefault(pair.region.Id);
             var text = reading?.MeasuredHex is { } hex
                 ? hex + (reading.MeasuredDelta is { } delta ? " · " + ColorStages.Delta(delta) : string.Empty)
-                : "—";
+                : ColorReading.UnreadText;
             return new ColorOverlayRow(UiText.Pick($"区域 {pair.index + 1}", $"區域 {pair.index + 1}") + "  " + text,
-                pair.region.TargetHex, reading?.MeasuredHex);
+                pair.region.TargetHex, reading?.MeasuredHex, reading?.MeasuredHex is null ? null : reading.Mark);
         }).ToList() ?? [];
+
+    /// <summary>浮窗区域行上方的标签：结束时没有复核当前颜色时写“上次实测（当前未确认）”，否则为“游戏实测”。</summary>
+    public string OverlayCaption => Readings.Values.Any(reading => reading.Unconfirmed)
+        ? UiText.Pick("上次实测（当前未确认）", "上次實測（目前未確認）")
+        : UiText.Pick("游戏实测", "遊戲實測");
+
+    /// <summary>浮窗说明：与运行栏同一份文字，去掉已由区域行显示的读数。</summary>
+    public string OverlayGuide { get; init; } = Detail;
+    public bool HasOverlayGuide => OverlayGuide.Length > 0;
+    public bool Running => Actions.CanStop;
+    public bool CanRetry => Actions.CanRetry;
+    public bool HasCandidates => Candidates.Count > 0;
+    public bool Warn => Tone == ColorTone.Warn;
+    public bool Live => Tone == ColorTone.Live;
 }
 
-/// <summary>浮窗元件里的一个区域。</summary>
-public sealed record ColorOverlayRow(string Text, string TargetHex, string? MeasuredHex)
+/// <summary>浮窗元件里的一个区域：文字、目标色与实测色（色块各占一半）与判定徽标。</summary>
+public sealed record ColorOverlayRow(string Text, string TargetHex, string? MeasuredHex, ColorMark? Mark = null)
 {
     public IReadOnlyList<MabiTool.Desktop.Controls.BarSegment> Swatch =>
         [MabiTool.Desktop.Controls.BarSegment.FromHex(TargetHex), MabiTool.Desktop.Controls.BarSegment.FromHex(MeasuredHex ?? "#00000000")];
+
+    public bool HasMark => Mark is not null;
 }
 
 /// <summary>后端给出的一张 RGB24 位图（逐行排列）。</summary>
@@ -244,7 +271,7 @@ public sealed record ColorAtlas(int Count, double Tolerance, Avalonia.Media.Imag
 /// <summary>读取目标色集合的回执；没有取到时 <see cref="Atlas"/> 为空，消息说明原因；<see cref="Retryable"/> 表示稍后再试可能成功（排队已满、计算超时）。</summary>
 public sealed record ColorAtlasReply(ColorAtlas? Atlas, string Message, bool Retryable = false);
 
-/// <summary>后端阶段名到原工具 ui_progress.STAGES 的中文阶段说明；未知阶段原样显示。</summary>
+/// <summary>后端阶段名到原工具 ui_progress.STAGES 的中文阶段说明；没有登记的阶段显示“未知阶段（原文）”并记诊断。</summary>
 public static class ColorStages
 {
     private static readonly Dictionary<string, (string Hans, string Hant)> Names = new(StringComparer.Ordinal)
@@ -273,9 +300,26 @@ public static class ColorStages
 
     public static string Name(string? phase) => phase is not null && Names.TryGetValue(phase, out var name)
         ? UiText.Pick(name.Hans, name.Hant)
-        : phase is { Length: > 0 } ? phase : UiText.Pick("正在按目标计算，请稍候。", "正在依目標計算，請稍候。");
+        : phase is { Length: > 0 } ? Unknown("stage", phase, "未知阶段", "未知階段") : UiText.Pick("正在按目标计算，请稍候。", "正在依目標計算，請稍候。");
 
-    /// <summary>寻色结果：达标、妥协与未复核取原工具的说法；宿主给出的常见停止原因写成中文，其余原样显示。</summary>
+    /// <summary>没有中文文案的原因码：“未知原因（原文）”，并记诊断；没有原因码时为“未知原因”。</summary>
+    public static string UnknownReason(string? code) => code is { Length: > 0 } ? Unknown("reason", code, "未知原因", "未知原因") : UiText.Pick("未知原因", "未知原因");
+
+    /// <summary>没有中文文案的操作状态：“未知状态（原文）”，并记诊断。</summary>
+    public static string UnknownState(string state) => Unknown("state", state, "未知状态", "未知狀態");
+
+    private static readonly HashSet<string> Reported = new(StringComparer.Ordinal);
+
+    // 前端没有登记文案的码照原文放在括号里，诊断记录每个码只写一次。
+    private static string Unknown(string kind, string code, string hans, string hant)
+    {
+        lock (Reported)
+            if (Reported.Add(kind + ":" + code))
+                System.Diagnostics.Trace.TraceWarning($"Moongate: 染色{kind switch { "stage" => "阶段", "outcome" => "结果", "state" => "状态", _ => "原因" }}码 {code} 没有中文文案");
+        return UiText.Pick(hans, hant) + "（" + code + "）";
+    }
+
+    /// <summary>寻色结果：达标、妥协与未复核取原工具的说法；宿主给出的常见停止原因写成中文，其余显示“未知结果（原文）”。</summary>
     public static string Outcome(string? outcome) => outcome switch
     {
         "matched" => UiText.Pick("目标达标", "目標達標"),
@@ -289,7 +333,7 @@ public static class ColorStages
         "frontend-lost" => UiText.Pick("前端失联", "前端失聯"),
         "emergency-stop" => UiText.Pick("紧急停止", "緊急停止"),
         null or "" => UiText.Pick("未知", "未知"),
-        _ => outcome
+        _ => Unknown("outcome", outcome, "未知结果", "未知結果")
     };
 
     /// <summary>色差文字，原工具的两位小数写法。</summary>

@@ -60,7 +60,7 @@ public sealed partial class LiveBackend
             ? Pick($"游戏输入正被占用（{holder}）", $"遊戲輸入正被佔用（{holder}）")
             : Pick("游戏输入正被其他操作占用", "遊戲輸入正被其他操作佔用"),
         "permission.denied" => Pick("没有控制游戏窗口的权限", "沒有控制遊戲視窗的權限"),
-        _ => Pick($"请求未完成：{code}", $"請求未完成：{code}")
+        _ => Pick("请求未完成：", "請求未完成：") + Localization.CodeText.Reason(code)
     });
 
     // Windows 只允许前台进程把前台让给别的进程：Moongate 仍在前台时，允许后端进程（本机发现文件里的进程号）前置窗口；读不到进程号时允许任意进程。

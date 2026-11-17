@@ -56,15 +56,43 @@ public sealed class CapabilityNoticeTests
     [AvaloniaFact]
     public void PlayCapabilityAppendsOtherReasonCodes()
     {
-        Assert.Equal("台服暂不支持在游戏内选曲演奏（provider.unavailable）",
+        Assert.Equal("台服暂不支持在游戏内选曲演奏（数据来源不可用）",
             CapabilityNotice.Describe(Capability("performance.play", CapabilityStatus.Unavailable, "provider.unavailable")));
     }
 
     [AvaloniaFact]
-    public void OtherReasonCodesAreShownVerbatim()
+    public void OtherReasonCodesAreShownAsText()
     {
-        Assert.Equal("暂不可用：game.validationRequired",
+        Assert.Equal("暂不可用：游戏版本尚未核验",
             CapabilityNotice.Describe(Capability("color.search", CapabilityStatus.Unavailable, "game.validationRequired")));
+    }
+
+    [AvaloniaFact]
+    public void EveryKnownIdentifierHasTextInBothLanguagesAndUnknownOnesAreSummarized()
+    {
+        // 共用映射里登记的操作类型、阶段、状态、原因码与模块：两种语言都给出不含原文的文字。
+        try
+        {
+            foreach (var language in new[] { UiLanguage.SimplifiedChinese, UiLanguage.TraditionalChinese })
+            {
+                UiText.Apply(Application.Current!, language);
+                foreach (var (codes, text) in new (IEnumerable<string>, Func<string, string>)[]
+                         {
+                             (CodeText.KnownOperations, code => CodeText.Operation(code)), (CodeText.KnownPhases, code => CodeText.Phase(code)),
+                             (CodeText.KnownStates, CodeText.State), (CodeText.KnownReasons, CodeText.Reason), (CodeText.KnownModules, CodeText.Module)
+                         })
+                    foreach (var code in codes)
+                        Assert.False(string.IsNullOrWhiteSpace(text(code)) || text(code).Contains(code, StringComparison.Ordinal), $"{language} {code} → {text(code)}");
+            }
+        }
+        finally { UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese); }
+        // 用户截图里的标识换成中文；没有文案的标识给出中文概括并括注原文，记入待补清单。
+        Assert.Equal("染色寻色", CodeText.Operation("color.search"));
+        Assert.Equal("正在启动", CodeText.Phase("starting"));
+        Assert.Equal("已停止", CodeText.State("stopped"));
+        Assert.Equal("后端内部出错（HTTP 502）", CodeText.Reason("http.502"));
+        Assert.Equal("后端返回了未登记的原因（some.newCode）", CodeText.Reason("some.newCode"));
+        Assert.Contains("reason:some.newCode", CodeText.Unmapped);
     }
 
     [AvaloniaFact]
@@ -83,11 +111,11 @@ public sealed class CapabilityNoticeTests
             UiText.Apply(Avalonia.Application.Current!, UiLanguage.TraditionalChinese);
             Assert.Equal("台服暫不支援在遊戲內選曲演奏",
                 CapabilityNotice.Describe(Capability("performance.play", CapabilityStatus.Unavailable, "module.notImplemented")));
-            Assert.Equal("台服暫不支援在遊戲內選曲演奏（provider.unavailable）",
+            Assert.Equal("台服暫不支援在遊戲內選曲演奏（資料來源不可用）",
                 CapabilityNotice.Describe(Capability("performance.play", CapabilityStatus.Unavailable, "provider.unavailable")));
             Assert.Equal("後端尚未實作，暫不可用",
                 CapabilityNotice.Describe(Capability("rooms.coordinate", CapabilityStatus.Unavailable, "module.notImplemented")));
-            Assert.Equal("暫不可用：storage.unavailable",
+            Assert.Equal("暫不可用：儲存不可用",
                 CapabilityNotice.Describe(Capability("inventory.full", CapabilityStatus.Unavailable, "storage.unavailable")));
         }
         finally { UiText.Apply(Avalonia.Application.Current!, UiLanguage.SimplifiedChinese); }
@@ -102,7 +130,7 @@ public sealed class CapabilityNoticeTests
         Assert.Equal("台服暂不支持", unsupported.Text);
         var other = TopicNoticeText.Describe(new("environment", CapabilityStatus.Unavailable, "provider.unconfigured"))!;
         Assert.False(other.PlatformUnsupported);
-        Assert.Equal("暂不可用：provider.unconfigured", other.Text);
+        Assert.Equal("暂不可用：数据来源未配置", other.Text);
         foreach (var status in new[] { CapabilityStatus.Available, CapabilityStatus.Degraded, CapabilityStatus.Unknown })
             Assert.Null(TopicNoticeText.Describe(new("nearby", status, "provider.unavailable")));
         Assert.Null(TopicNoticeText.Describe(null));

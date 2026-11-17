@@ -47,13 +47,13 @@ public static class ColorHistoryMapper
     public const int PageSize = 50;
 
     /// <summary>
-    /// 实测取运行结束时复核过的游戏颜色；没有时依次取最佳实测、最后实测。色差与分区判定都取同一次实测，
-    /// 后端没有列出的区域按“未开始”（规则里停用的为“未启用”）。
+    /// 实测取运行结束时复核过的游戏颜色，没有时取最后一次实测（与染色页同一口径，最佳实测不代替结束时的颜色）。
+    /// 色差与分区判定都取同一次实测，后端没有列出的区域按“未开始”（规则里停用的为“未启用”）；整体达标只取复核过的颜色。
     /// </summary>
     public static ColorHistoryRow Map(ColorHistoryItem item)
     {
-        var measured = item.Result?.CurrentVerified ?? item.BestMeasured ?? item.Result?.BestMeasured
-            ?? item.LastMeasured ?? item.Result?.LastMeasured;
+        var current = item.Result?.CurrentVerified;
+        var measured = current ?? item.LastMeasured ?? item.Result?.LastMeasured;
         var marks = measured?.Regions.Select(judgement => (judgement.RegionId, judgement.State.RawValue)).ToList() ?? [];
         var regions = item.RulesSnapshot.Regions.Select((region, index) => new ColorHistoryRegion(
             UiText.Pick($"区域 {index + 1}", $"區域 {index + 1}"), region.TargetHex,
@@ -62,7 +62,7 @@ public static class ColorHistoryMapper
             ColorMark.Of(marks, region.Id, region.Enabled), region.Enabled)).ToList();
         var outcome = item.Result?.Outcome is { Length: > 0 } value ? ColorStages.Outcome(value) : State(item.State);
         var time = item.CompletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-        return new(item.OperationId, time, outcome, measured?.Accepted, regions);
+        return new(item.OperationId, time, outcome, current?.Accepted, regions);
     }
 
     /// <summary>没有寻色结果时的操作状态：已知的终态映射成短句，其余原样显示。</summary>
@@ -72,7 +72,7 @@ public static class ColorHistoryMapper
         OperationState.Cancelled => UiText.Pick("已取消", "已取消"),
         OperationState.Failed => UiText.Pick("失败", "失敗"),
         OperationState.Interrupted => UiText.Pick("中断", "中斷"),
-        _ => state.RawValue
+        _ => ColorStages.UnknownState(state.RawValue)
     };
 }
 

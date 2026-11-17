@@ -259,9 +259,9 @@ public sealed class SettingsUpdatePolicyTests
             Assert.Equal("4", LimitBox(window).Text);
             Assert.Equal("MB/s", ActiveUnit(window));
             Assert.False(RangeNote(window).IsVisible);
-            Assert.Equal("请求未完成：revision.stale", backend.GetActivity().Detail);
+            Assert.Equal("请求未完成：数据已变化，请刷新后重试", backend.GetActivity().Detail);
             Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(),
-                text => text.IsEffectivelyVisible && text.Text == "请求未完成：revision.stale");
+                text => text.IsEffectivelyVisible && text.Text == "请求未完成：数据已变化，请刷新后重试");
         }
         finally { window.Close(); }
     }

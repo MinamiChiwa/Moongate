@@ -30,13 +30,13 @@ public sealed partial class LiveBackend
         {
             "waiting" => (Pick("正在等待识别本机角色（请在游戏里切换一次地图）", "正在等待識別本機角色（請在遊戲裡切換一次地圖）"), false),
             "observing" => (string.Empty, false),
-            "failed" => (Pick($"自动观测未能开始：{value.Reason}，稍后自动重试", $"自動觀測未能開始：{value.Reason}，稍後自動重試"), true),
+            "failed" => (Pick($"自动观测未能开始：{Localization.CodeText.Reason(value.Reason)}，稍后自动重试", $"自動觀測未能開始：{Localization.CodeText.Reason(value.Reason)}，稍後自動重試"), true),
             _ => value.Reason switch
             {
                 "combat.autoDisabled" => (Pick("自动观测已关闭", "自動觀測已關閉"), false),
                 "game.bindingRequired" => (Pick("尚未绑定游戏窗口，绑定后自动开始观测", "尚未綁定遊戲視窗，綁定後自動開始觀測"), true),
                 null => (string.Empty, false),
-                var other => (Pick($"未抓包（{other}），抓包运行后自动开始观测", $"未抓包（{other}），抓包運行後自動開始觀測"), true)
+                var other => (Pick($"未抓包（{CaptureText.Reason(other) ?? Localization.CodeText.Reason(other)}），抓包运行后自动开始观测", $"未抓包（{CaptureText.Reason(other) ?? Localization.CodeText.Reason(other)}），抓包運行後自動開始觀測"), true)
             }
         };
         return new(value.Enabled, text, problem);
@@ -57,11 +57,8 @@ public sealed partial class LiveBackend
     /// <summary>开始观测失败的原因：常见错误码给出短句，其余原样显示。</summary>
     internal static string StartFailure(string? code) => code switch
     {
-        "combat.sourceUnavailable" => Pick("开始观测失败：战斗来源不可用（combat.sourceUnavailable）", "開始觀測失敗：戰鬥來源不可用（combat.sourceUnavailable）"),
-        "combat.identityUnresolved" => Pick("开始观测失败：没能识别本机角色（combat.identityUnresolved）", "開始觀測失敗：沒能識別本機角色（combat.identityUnresolved）"),
-        "combat.buildUnsupported" => Pick("开始观测失败：当前客户端版本不受支持（combat.buildUnsupported）", "開始觀測失敗：目前用戶端版本不受支援（combat.buildUnsupported）"),
         null or "" => Pick("开始观测失败：后端没有给出原因", "開始觀測失敗：後端沒有給出原因"),
-        var other => Pick($"开始观测失败：{other}", $"開始觀測失敗：{other}")
+        var other => Pick("开始观测失败：", "開始觀測失敗：") + Localization.CodeText.Reason(other)
     };
 
     private async Task<OperationSnapshot?> RefreshStartAsync(MabiToolClient api, CombatWorkspace? workspace, CancellationToken token)

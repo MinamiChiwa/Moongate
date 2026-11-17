@@ -236,8 +236,8 @@ public sealed partial class SampleBackend
             {
                 if (Part(0) == "on" && ReadinessRejectCode is { } code)
                 {
-                    roomFeedback = new(RoomReadinessText.Reason(code) ?? code, RoomTone.Error);
-                    notice = Pick($"请求未完成：{code}", $"請求未完成：{code}");
+                    roomFeedback = new(RoomReadinessText.Reason(code) ?? Localization.CodeText.Reason(code), RoomTone.Error);
+                    notice = Pick("请求未完成：", "請求未完成：") + Localization.CodeText.Reason(code);
                     break;
                 }
                 var self = roomMembers.FindIndex(member => member.Id == SelfId);
@@ -346,7 +346,7 @@ public sealed partial class SampleBackend
     {
         UiIntents.Add(("rooms.preferences-load", null));
         return Task.FromResult(PreferencesLoadFailure is { } code
-            ? new RoomPreferencesReply(null, string.Empty, Pick($"请求未完成：{code}", $"請求未完成：{code}"))
+            ? new RoomPreferencesReply(null, string.Empty, Pick("请求未完成：", "請求未完成：") + Localization.CodeText.Reason(code))
             : new RoomPreferencesReply(samplePreferences, ETagOf(samplePreferences), string.Empty));
     }
 

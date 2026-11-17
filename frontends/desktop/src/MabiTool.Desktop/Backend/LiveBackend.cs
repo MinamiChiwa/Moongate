@@ -4,6 +4,7 @@ using MabiTool.Contracts;
 using MabiTool.Desktop.Pages.Combat;
 using MabiTool.Desktop.Pages.Rooms;
 using MabiTool.ModuleSdk;
+using MabiTool.Desktop.Localization;
 using static MabiTool.Desktop.Localization.UiText;
 
 namespace MabiTool.Desktop.Backend;
@@ -88,11 +89,15 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         var others = ownership.Owners.Count > 1
             ? Pick($"，另有 {ownership.Owners.Count - 1} 个占用", $"，另有 {ownership.Owners.Count - 1} 個佔用")
             : string.Empty;
-        return new(owner.OwnerId, Pick($"{owner.OwnerId} 持有游戏输入{others}", $"{owner.OwnerId} 持有遊戲輸入{others}"),
+        // 模块、操作类型、阶段与资源都换成界面文字；操作号对用户没有意义，只放进悬停提示（Reference）。
+        var module = CodeText.Module(owner.OwnerId);
+        return new(owner.OwnerId, Pick($"{module} 持有游戏输入{others}", $"{module} 持有遊戲輸入{others}"),
             current.OwnerOperation is { } operation
-                ? Pick($"进行中：{operation.Kind}（{operation.Phase}）", $"進行中：{operation.Kind}（{operation.Phase}）")
-                : Pick($"占用资源：{string.Join("、", owner.Resources)}", $"佔用資源：{string.Join("、", owner.Resources)}"),
-            message ?? Pick($"操作 {owner.OperationId}", $"操作 {owner.OperationId}"),
+                ? Pick($"进行中：{CodeText.Operation(operation.Kind)}（{OperationPhase(operation.Kind, operation.Phase)}）",
+                    $"進行中：{CodeText.Operation(operation.Kind)}（{OperationPhase(operation.Kind, operation.Phase)}）")
+                : Pick($"占用资源：{string.Join("、", owner.Resources.Select(CodeText.Resource))}",
+                    $"佔用資源：{string.Join("、", owner.Resources.Select(CodeText.Resource))}"),
+            message ?? EffectText(effect),
             EffectStage.Done,
             effect switch
             {
@@ -105,8 +110,25 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                 EffectStatus.ObservedApplied => EffectStage.Done,
                 EffectStatus.None or EffectStatus.InputDispatched => EffectStage.Pending,
                 _ => EffectStage.Unknown
-            });
+            })
+        { Reference = owner.OperationId };
     }
+
+    // 染色寻色的阶段用染色页的阶段说明（与原工具一致），其余操作用通用阶段文字。
+    private static string OperationPhase(string kind, string? phase) =>
+        CodeText.Phase(phase, kind == "color.search" ? ColorPhase : null);
+
+    private static string? ColorPhase(string phase) =>
+        Pages.Dyeing.ColorStages.Name(phase) is var name && name != phase ? name : null;
+
+    // 活动说明：受理、送出、游戏确认三段里走到了哪一步。
+    internal static string EffectText(EffectStatus? effect) => effect switch
+    {
+        EffectStatus.InputDispatched => Pick("已向游戏发送输入，等待游戏确认", "已向遊戲發送輸入，等待遊戲確認"),
+        EffectStatus.ObservedApplied => Pick("游戏已确认生效", "遊戲已確認生效"),
+        EffectStatus.Unknown => Pick("已发送输入，是否生效未知", "已發送輸入，是否生效未知"),
+        _ => Pick("已受理，尚未向游戏发送输入", "已受理，尚未向遊戲發送輸入")
+    };
 
     public BindingView GetGameBinding()
     {
@@ -136,7 +158,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         var name = nickname is { Length: > 0 } ? nickname : window;
         return snapshot.State == "bound"
             ? new(name, region, Pick("已绑定游戏窗口", "已綁定遊戲視窗"), true, true, window)
-            : new(name, region, Pick($"游戏窗口状态：{snapshot.State}", $"遊戲視窗狀態：{snapshot.State}"), false, true, window);
+            : new(name, region, Pick($"游戏窗口状态：{CodeText.State(snapshot.State)}", $"遊戲視窗狀態：{CodeText.State(snapshot.State)}"), false, true, window);
     }
 
     public Avalonia.PixelRect? GetGameWindowBounds()
@@ -371,7 +393,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         catch (Exception error) when (error is MabiToolApiException or InvalidOperationException or HttpRequestException
                                           or IOException or OperationCanceledException)
         {
-            var code = error is MabiToolApiException api ? api.Problem?.Code ?? $"http.{api.Status}" : error.Message;
+            var code = error is MabiToolApiException api ? CodeText.Reason(api.Problem?.Code ?? $"http.{api.Status}") : error.Message;
             result = Pick($"请求未完成：{code}", $"請求未完成：{code}");
         }
         lock (gate) notice = result;
@@ -432,7 +454,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
             {
                 // 工具根不可写或参数错误时宿主也无法在此启动；目录包里宿主停止或未能启动时写明宿主的情况。
                 var reason = Infrastructure.DesktopFiles.Problem ?? Infrastructure.PackagedHost.Problem ??
-                    (error is MabiToolApiException api ? api.Problem?.Code ?? $"http.{api.Status}" : error.Message);
+                    (error is MabiToolApiException api ? CodeText.Reason(api.Problem?.Code ?? $"http.{api.Status}") : error.Message);
                 client = null;
                 lock (gate)
                 {

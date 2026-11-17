@@ -53,6 +53,8 @@ public sealed class OverlayWindow : Window
         cursorWatch.Tick += (_, _) => FollowCursor();
         Opened += (_, _) =>
         {
+            // 拖动的位置与松开按系统光标判定，不依赖指针事件是否送到本窗口（见 OverlayCanvas.CursorSource）。
+            if (NativeHandle != IntPtr.Zero) canvas.CursorSource = Win32OverlayCursor.Instance;
             Follow();
             ApplyWindowFlags();
             UpdateVisibility();
@@ -124,7 +126,7 @@ public sealed class OverlayWindow : Window
         Area = area;
         Width = area.Logical.Width;
         Height = area.Logical.Height;
-        canvas.Monitors = area.Monitors;
+        canvas.Area = area;
         canvas.OwnMonitorKey = screen.Key;
     }
 
@@ -143,7 +145,8 @@ public sealed class OverlayWindow : Window
     }
 
     private const int ExtendedStyle = -20, Layered = 0x80000, Transparent = 0x20, NoActivate = 0x08000000, ToolWindow = 0x80;
-    private readonly DispatcherTimer cursorWatch = new() { Interval = TimeSpan.FromMilliseconds(33) };
+    // 输入优先级：拖动时连续的指针消息与重绘不会把轮询挤到后面。
+    private readonly DispatcherTimer cursorWatch = new(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(33) };
     private IReadOnlyList<PixelRect>? appliedRegion;
     private bool? appliedTransparent;
 
@@ -170,6 +173,8 @@ public sealed class OverlayWindow : Window
         if (handle == IntPtr.Zero) return;
         IReadOnlyList<PixelRect>? region = canvas.IsManipulating ? null : OverlayHitRegion.Painted(areas, scaling, size);
         // 拖动中不停：元件跨到别的显示器后本窗口可能没有可接收鼠标的元件，仍要按光标位置接着拖动并发现松开。
+        // 拖动期间每 16 ms 取一次光标，元件跟手；平时 33 ms 只用于悬停与穿透切换。
+        cursorWatch.Interval = TimeSpan.FromMilliseconds(canvas.IsManipulating ? 16 : 33);
         if (InteractiveRegion.Count > 0 || canvas.IsManipulating) cursorWatch.Start();
         else cursorWatch.Stop();
         FollowCursor();
@@ -192,21 +197,16 @@ public sealed class OverlayWindow : Window
     }
 
     // 光标在接收鼠标的矩形内（或正在拖动）时浮窗接收鼠标，其余时候整窗穿透。只在状态变化时改窗口样式。
-    // 拖动中主按键已经松开却没收到松开消息（松开发生在其他窗口上）时，按松开处理并保存，不让整窗一直拦截鼠标。
+    // 拖动中按系统光标接着拖动，主按键松开（不论松开消息送到哪个窗口）即结束并保存，不让整窗一直拦截鼠标。
     private void FollowCursor()
     {
         var handle = NativeHandle;
         if (handle == IntPtr.Zero) return;
-        var located = GetCursorPos(out var cursor);
+        canvas.PollDrag();
+        var located = Win32OverlayCursor.GetCursorPos(out var cursor);
         // 光标位置：物理像素减去窗口位置，再按本窗口（所在显示器）的缩放比例换成逻辑像素；别的显示器上的光标同样换算，落在窗口之外。
         var local = new PixelPoint(cursor.X - Position.X, cursor.Y - Position.Y);
         var point = new Point(local.X / RenderScaling, local.Y / RenderScaling);
-        if (canvas.IsManipulating)
-        {
-            // 光标移到别的显示器后本窗口可能收不到指针移动：按轮询到的位置接着拖动（与指针事件算出的位置相同）。
-            if (located) canvas.DragTo(point);
-            if ((GetAsyncKeyState(GetSystemMetrics(SwapButtons) != 0 ? RightButton : LeftButton) & 0x8000) == 0) canvas.FinishManipulation();
-        }
         // 同一次取到的光标位置也决定悬停的元件（显示它的锁与调整控件）。
         canvas.HoverAt(located ? point : null);
         var inside = canvas.IsManipulating || located && OverlayHitRegion.Accepts(InteractiveRegion, local);
@@ -216,25 +216,6 @@ public sealed class OverlayWindow : Window
         var style = GetWindowLongPtr(handle, ExtendedStyle).ToInt64();
         SetWindowLongPtr(handle, ExtendedStyle, new IntPtr(transparent ? style | Transparent : style & ~Transparent));
     }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct CursorPoint
-    {
-        public int X;
-        public int Y;
-    }
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetCursorPos(out CursorPoint point);
-
-    private const int LeftButton = 0x01, RightButton = 0x02, SwapButtons = 23;
-
-    [DllImport("user32.dll")]
-    private static extern short GetAsyncKeyState(int key);
-
-    [DllImport("user32.dll")]
-    private static extern int GetSystemMetrics(int index);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
@@ -283,6 +264,8 @@ public sealed class OverlayController(OverlayLayoutStore store, ModuleCatalog ca
     {
         if (primary is not null) return;
         primary = new OverlayWindow(store, catalog, backend);
+        Watch(primary);
+        OverlayDragTrace.Environment = DescribeWindows;
         primary.Opened += (_, _) => SyncScreens();
         primary.ScreensChanged += (_, _) => SyncScreens();
         primary.Closed += (_, _) =>
@@ -323,10 +306,29 @@ public sealed class OverlayController(OverlayLayoutStore store, ModuleCatalog ca
         foreach (var key in wanted.Where(key => others.All(window => window.ScreenKey != key)))
         {
             var window = new OverlayWindow(store, catalog, backend, key);
+            Watch(window);
             window.Closed += (_, _) => { if (!closing) others.Remove(window); };
             others.Add(window);
             window.Show();
         }
+    }
+
+    // 拖动开始时重新核对显示器：启动后接入的显示器即使没有收到布局变化通知，也先建好承载窗口再拖过去。
+    private void Watch(OverlayWindow window) => window.Canvas.ManipulationChanged += (_, _) =>
+    {
+        if (window.Canvas.IsManipulating) SyncScreens();
+    };
+
+    // 拖动诊断的环境说明：系统报告的显示器与各显示器浮窗窗口的实际范围（物理像素）与缩放比例。
+    private IEnumerable<string> DescribeWindows()
+    {
+        if (primary is null) yield break;
+        foreach (var screen in OverlayArea.Describe(primary.Screens))
+            yield return string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"screen {screen.Key}{(screen.Primary ? " primary" : string.Empty)} work={screen.WorkingArea.X},{screen.WorkingArea.Y} {screen.WorkingArea.Width}x{screen.WorkingArea.Height}");
+        foreach (var window in Windows)
+            yield return string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"window key={window.ScreenKey ?? "(primary)"} position={window.Position.X},{window.Position.Y} size={Math.Round(window.Bounds.Width * window.RenderScaling)}x{Math.Round(window.Bounds.Height * window.RenderScaling)} scaling={window.RenderScaling} visible={window.IsVisible} area={(window.Area is { } area ? $"{area.Pixels.X},{area.Pixels.Y} {area.Pixels.Width}x{area.Pixels.Height}@{area.Scaling}" : "-")}");
     }
 
     private void CloseOthers()

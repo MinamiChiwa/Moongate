@@ -17,7 +17,7 @@ public static class OverlayWidgetSizes
         ["performance.now-playing"] = (new(272, 104), new(176, 104)),
         ["performance.nearby"] = (new(304, 48), new(168, 48)),
         ["rooms.readiness"] = (new(312, 344), new(248, 232)),
-        ["color.current"] = (new(248, 144), new(176, 96)),
+        ["color.current"] = (new(288, 232), new(200, 120)),
         ["combat.dps"] = (new(240, 112), new(168, 104)),
         ["combat.skills"] = (new(240, 136), new(160, 80)),
         ["combat.coverage"] = (new(256, 136), new(176, 88)),

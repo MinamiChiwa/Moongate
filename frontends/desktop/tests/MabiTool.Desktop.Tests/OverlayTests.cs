@@ -508,6 +508,139 @@ public sealed class OverlayTests
         }
     }
 
+    private sealed class FakeCursor : IOverlayCursor
+    {
+        public PixelPoint? Position { get; set; }
+        public bool PrimaryButtonDown { get; set; }
+    }
+
+    [AvaloniaFact]
+    public void DragFollowsTheSystemCursorOntoAnotherMonitorWithoutPointerEventsAndSavesOnRelease()
+    {
+        // 真实环境下发起拖动的窗口不在前台时，光标越过它所在的显示器后收不到指针移动，捕获也可能被收回：
+        // 这里按下后不再发指针移动，只改系统光标的位置，并模拟捕获丢失；拖动仍跟到副显示器，主按键松开后保存。
+        UiMotion.Enabled = false;
+        var path = Path.Combine(Path.GetTempPath(), "moongate-cursor-drag-" + Guid.NewGuid().ToString("N") + ".json");
+        var trace = Path.ChangeExtension(path, ".log");
+        var backend = new SampleBackend();
+        var catalog = BuiltInModules.CreateCatalog(backend);
+        var store = new OverlayLayoutStore(path);
+        store.Select("raid");
+        var dps = store.Active.Widgets.Single(widget => widget.WidgetId == "combat.dps");
+        (dps.X, dps.Y, dps.Locked) = (0.5, 0.5, false);
+        store.Commit();
+        var (primary, secondary) = OpenMonitorWindows(store, catalog, backend);
+        var cursor = new FakeCursor();
+        primary.Canvas.Area = OverlayArea.ForScreen(UserScreens, UserScreens[0], 1);
+        primary.Canvas.CursorSource = cursor;
+        OverlayDragTrace.PathOverride = trace;
+        OverlayDragTrace.Enabled = true;
+        try
+        {
+            var press = primary.Canvas.BoundsOf("combat.dps")!.Value.Center;
+            (cursor.Position, cursor.PrimaryButtonDown) = (new PixelPoint((int)press.X, (int)press.Y), true);
+            primary.MouseDown(press, MouseButton.Left);
+            Assert.True(primary.Canvas.IsManipulating);
+
+            // 捕获丢失只记录，不结束拖动；光标移到左侧副显示器中部（物理像素），轮询把元件带过去。
+            primary.Canvas.FrameOf("combat.dps")!.RaiseEvent(new PointerCaptureLostEventArgs(primary.Canvas.FrameOf("combat.dps")!,
+                new Pointer(Pointer.GetNextFreeId(), PointerType.Mouse, true)));
+            Assert.True(primary.Canvas.IsManipulating);
+            cursor.Position = new PixelPoint(-900, 500);
+            primary.Canvas.PollDrag();
+            LayoutProbe.Render(primary);
+            LayoutProbe.Render(secondary);
+            Assert.Equal(UserScreens[1].Key, dps.Screen);
+            Assert.True(secondary.Canvas.FrameOf("combat.dps")!.IsVisible);
+            var onSecond = Physical(secondary, UserScreens[1], "combat.dps");
+            Assert.True(onSecond.Contains(new Point(-900, 500)), onSecond.ToString());
+
+            // 主按键松开（松开消息送到了别的窗口）：下一次轮询结束拖动并保存到副显示器。
+            cursor.PrimaryButtonDown = false;
+            primary.Canvas.PollDrag();
+            Assert.False(primary.Canvas.IsManipulating);
+            var saved = new OverlayLayoutStore(path).Active.Widgets.Single(widget => widget.WidgetId == "combat.dps");
+            Assert.Equal(UserScreens[1].Key, saved.Screen);
+            // 诊断记录写明来源、判定的显示器与结束原因。
+            var log = File.ReadAllText(trace);
+            Assert.Contains("capture-lost", log);
+            Assert.Contains($"poll cursor=-900,500", log);
+            Assert.Contains($"monitor={UserScreens[1].Key}", log);
+            Assert.Contains($"end released screen={UserScreens[1].Key}", log);
+        }
+        finally
+        {
+            OverlayDragTrace.Enabled = false;
+            OverlayDragTrace.PathOverride = null;
+            primary.Close();
+            secondary.Close();
+            File.Delete(path);
+            File.Delete(trace);
+        }
+    }
+
+    [AvaloniaFact]
+    public void WidgetsMoveToAnotherMonitorWithoutDragging()
+    {
+        // 远程桌面一次只显示一块屏幕时拖不过显示器边界：版面页选显示器、浮窗上的“移到下一块显示器”都能换屏，比例位置不变并立即保存。
+        UiMotion.Enabled = false;
+        var path = Path.Combine(Path.GetTempPath(), "moongate-move-monitor-" + Guid.NewGuid().ToString("N") + ".json");
+        var backend = new SampleBackend();
+        var store = new OverlayLayoutStore(path);
+        var catalog = BuiltInModules.CreateCatalog(backend, store);
+        store.Select("raid");
+        var dps = store.Active.Widgets.Single(widget => widget.WidgetId == "combat.dps");
+        (dps.X, dps.Y, dps.Screen) = (0.25, 0.75, null);
+        store.Commit();
+        var model = new OverlayPageModel(catalog, catalog.Overlay!) { SelectedWidgetId = "combat.dps" };
+        var (primary, secondary) = OpenMonitorWindows(store, catalog, backend);
+        try
+        {
+            // 只有一块显示器：不显示选择与“移到下一块显示器”。
+            model.Screens = [UserScreens[0]];
+            Assert.False(model.HasMonitorChoice);
+            Assert.Empty(model.MonitorChoices);
+            store.BeginEdit();
+            primary.Canvas.Monitors = OverlayArea.ForScreen([UserScreens[0]], UserScreens[0], 1).Monitors;
+            LayoutProbe.Render(primary);
+            Assert.False(primary.Canvas.NextMonitorButtonOf("combat.dps")!.IsVisible);
+
+            // 两块显示器：版面页从左到右列出，当前在主显示器；选左侧显示器后元件改属它，比例位置不变，已保存。
+            model.Screens = UserScreens;
+            Assert.Equal(["左侧显示器", "主显示器"], model.MonitorChoices.Select(option => option.Label));
+            Assert.True(model.MonitorChoices.Single(option => option.Key == UserScreens[0].Key).Selected);
+            model.MoveToMonitorCommand.Execute(UserScreens[1].Key);
+            Assert.Equal((UserScreens[1].Key, 0.25, 0.75), (dps.Screen, dps.X, dps.Y));
+            Assert.Equal(UserScreens[1].Key, new OverlayLayoutStore(path).Active.Widgets.Single(widget => widget.WidgetId == "combat.dps").Screen);
+            LayoutProbe.Render(secondary);
+            Assert.True(secondary.Canvas.FrameOf("combat.dps")!.IsVisible);
+
+            // 浮窗上的按钮（编辑状态、多于一块显示器时显示）依次循环到下一块显示器。
+            primary.Canvas.Monitors = OverlayArea.ForScreen(UserScreens, UserScreens[0], 1).Monitors;
+            LayoutProbe.Render(primary);
+            LayoutProbe.Render(secondary);
+            var next = secondary.Canvas.NextMonitorButtonOf("combat.dps")!;
+            Assert.True(next.IsVisible);
+            Click(secondary, next);
+            Assert.Equal(UserScreens[0].Key, dps.Screen);
+            LayoutProbe.Render(primary);
+            Click(primary, primary.Canvas.NextMonitorButtonOf("combat.dps")!);
+            Assert.Equal(UserScreens[1].Key, dps.Screen);
+
+            // “全部移到”主显示器。
+            model.MoveAllToMonitorCommand.Execute(UserScreens[0].Key);
+            Assert.All(store.Active.Widgets, widget => Assert.Equal(UserScreens[0].Key, widget.Screen));
+        }
+        finally
+        {
+            store.EndEdit();
+            primary.Close();
+            secondary.Close();
+            model.Dispose();
+            File.Delete(path);
+        }
+    }
+
     [AvaloniaFact]
     public void EditingOnScreenMovesLockedAndClosedWidgetsAndSavesWhenFinished()
     {
@@ -1250,7 +1383,7 @@ public sealed class OverlayTests
         {
             Click(window, Named<Button>(page, "GameDataButton"));
             var tile = NearbyTile(page);
-            Assert.Contains("暂不可用：provider.unconfigured", VisibleTexts(tile));
+            Assert.Contains("暂不可用：数据来源未配置", VisibleTexts(tile));
 
             backend.PresentationNotices = null;
             backend.RaiseChanged();
@@ -1356,7 +1489,7 @@ public sealed class OverlayTests
         {
             var nearby = WidgetView(window, "performance.nearby");
             Assert.True(nearby.IsEffectivelyVisible);
-            Assert.Equal(["暂不可用：provider.unconfigured"], VisibleTexts(nearby));
+            Assert.Equal(["暂不可用：数据来源未配置"], VisibleTexts(nearby));
             Assert.Empty(LayoutProbe.FindTextOverflow(window));
         }
         finally { window.Close(); }

@@ -143,6 +143,16 @@ public sealed class ColorRunOperationsTests
         Assert.Equal(("retry-waiting", "insufficient_retry_time", "refinement"), (run.Progress!.Status, run.Progress.Reason, run.Progress.Stage));
         run = ColorRunOperations.ProjectProgress(run, "native_colors", Data(new { colors = new[] { "#abcdef", "112233" } }), 50, 400_000, 4000, at);
         Assert.Equal(new Dictionary<string, string?> { ["region-0"] = "#ABCDEF", ["region-1"] = null }, run.Progress!.Reading!.HexByRegion);
+        // 不带读数的阶段事件保留上一次读数；截图寻色每次读取色卡（scene）换成这次读取的色码、色差与判定。
+        run = ColorRunOperations.ProjectProgress(run, "screenshot_progress", Data(new { stage = "position" }), 50, 400_000, 5000, at);
+        Assert.Equal("#ABCDEF", run.Progress!.Reading!.HexByRegion["region-0"]);
+        run = ColorRunOperations.ProjectProgress(run, "scene", Data(new
+        {
+            colors = new[] { "#443035", null }, deltas = new double?[] { 24.38, null }, region_states = new[] { "unmet", "unread" }
+        }), 50, 400_000, 6000, at);
+        Assert.Equal(("#443035", (double?)24.38, (string?)null), (run.Progress!.Reading!.HexByRegion["region-0"], run.Progress.Reading.DeltaByRegion["region-0"],
+            run.Progress.Reading.HexByRegion["region-1"]));
+        Assert.Equal(["unmet", "unread"], run.Progress.Reading.Regions.Select(item => item.State.RawValue));
     }
 
     [Trait("Category", "Slow")]

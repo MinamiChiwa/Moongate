@@ -128,7 +128,7 @@ public sealed partial class LiveBackend
 
     private static string Problem(Exception error)
     {
-        var code = error is MabiToolApiException api ? api.Problem?.Code ?? $"http.{api.Status}" : error.Message;
+        var code = error is MabiToolApiException api ? Localization.CodeText.Reason(api.Problem?.Code ?? $"http.{api.Status}") : error.Message;
         return Pick($"请求未完成：{code}", $"請求未完成：{code}");
     }
 }
