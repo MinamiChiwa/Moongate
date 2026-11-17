@@ -14,6 +14,14 @@ public sealed record CombatCheckpoint(CombatWorkspace Workspace, IReadOnlyList<C
     public ulong GapRevision { get; init; }
     /// <summary>已取消的定时测量：检查点提交时删除其未结束的记录与时间线。</summary>
     public IReadOnlyList<string> DeletedEncounters { get; init; } = [];
+    /// <summary>
+    /// 自上次确认的检查点以来有需要持久保存的变化：待写时间线、效果、缺口、待保存的已结束分段或删除，
+    /// 或实体集合与观察状态（不含观测时刻与单调时点的推进）有变。只有时间推进时为假。
+    /// </summary>
+    public bool Material { get; init; } = true;
+    /// <summary>需要在本次检查点立即保存：分段进行中、定时测量计时中、有待保存的已结束分段或删除，或观察已停止。</summary>
+    public bool Urgent { get; init; } = true;
+    internal CombatSession.PersistedShape? Shape { get; init; }
 }
 
 /// <summary>
@@ -138,7 +146,9 @@ public sealed class CombatSession
             value.OwnerKey, value.OwnerConfirmed && value.Quality.KnownValue == ObservationQuality.Confirmed, value.InScope, at, value.Quality, gauge);
         var changedScope = previous is null || previous.InScope != entity.InScope;
         var changedGauge = previous?.BreakGauge != entity.BreakGauge;
-        entities[value.Key] = entity; effects.Scope(value.Key, value.InScope); dirtyEffects.Add(value.Key);
+        // 效果文档只随效果或范围变化重写；来源每批重报的实体（只有观测时刻不同）不使其效果文档变脏。
+        entities[value.Key] = entity; effects.Scope(value.Key, value.InScope);
+        if (changedScope) dirtyEffects.Add(value.Key);
         if (value.Key == local) RenameLocal(entity.DisplayName);
         if (changedScope || changedGauge) Timeline("entity", null, null, null, null, entity);
         // 破防区间在目标破防值归零时结束（进行中的分段与定时测量各自记录）。
@@ -641,9 +651,39 @@ public sealed class CombatSession
                 statusReasons, new(dropped), localCombatState);
             var workspace = new CombatWorkspace(status, encounter is null ? null : Snapshot(encounter), entities.Values.OrderBy(x => x.Id, StringComparer.Ordinal).ToArray(),
                 settings.SelfEffectsEnabled ? effects.Snapshot(local, owner, observationId, mono, next) : null, next, new(boundaryRevision));
+            var shape = new PersistedShape(workspace.Entities.Select(x => x with { LastObservedAt = default }).ToArray(),
+                status with { Revision = default, LastObservedAt = null, MonotonicMs = 0 }, boundaryRevision, encounter?.Id, encounter?.Final, measurement?.Id, measurement?.Final);
+            var material = pendingTimeline.Count > 0 || dirtyEffects.Count > 0 || gapRevision != acknowledgedGapRevision || deletedRecords.Count > 0 ||
+                closed.Count > 0 || acknowledgedShape is null || !shape.Equals(acknowledgedShape);
+            var urgent = closed.Count > 0 || deletedRecords.Count > 0 || encounter is { Final: false } || measurement is { Final: false } || state != "observing";
             return new(workspace, changed, dirtyEffects.Select(key => effects.Snapshot(key, owner, observationId, mono, next)).ToArray(),
                 pendingTimeline.ToArray(), gaps.ToArray(), new(timelineIndex))
-            { GapsChanged = gapRevision != acknowledgedGapRevision, GapRevision = gapRevision, DeletedEncounters = deletedRecords.ToArray() };
+            { GapsChanged = gapRevision != acknowledgedGapRevision, GapRevision = gapRevision, DeletedEncounters = deletedRecords.ToArray(),
+              Material = material, Urgent = urgent, Shape = shape };
+        }
+    }
+    /// <summary>检查点中决定是否需要持久保存的部分：实体（不含观测时刻）与观察状态（不含修订、观测时刻与单调时点）及分段身份。</summary>
+    internal sealed record PersistedShape(CombatEntity[] Entities, CombatObservationStatus Status, ulong BoundaryRevision,
+        string? EncounterId, bool? EncounterFinal, string? MeasurementId, bool? MeasurementFinal)
+    {
+        public bool Equals(PersistedShape? other) => other is not null && Entities.AsSpan().SequenceEqual(other.Entities) &&
+            StatusEquals(Status, other.Status) && BoundaryRevision == other.BoundaryRevision && EncounterId == other.EncounterId &&
+            EncounterFinal == other.EncounterFinal && MeasurementId == other.MeasurementId && MeasurementFinal == other.MeasurementFinal;
+        public override int GetHashCode() => HashCode.Combine(Entities.Length, BoundaryRevision, EncounterId);
+        private static bool StatusEquals(CombatObservationStatus a, CombatObservationStatus b) =>
+            a.State == b.State && a.LocalEntity == b.LocalEntity && a.Quality == b.Quality && a.DroppedEvents == b.DroppedEvents &&
+            a.LocalCombatState == b.LocalCombatState && a.Reasons.SequenceEqual(b.Reasons, StringComparer.Ordinal);
+    }
+    private PersistedShape? acknowledgedShape;
+
+    /// <summary>当前观测中实体的效果视图，按当前单调时点计算剩余时间；实体不在当前工作区时为空。</summary>
+    public CombatEntityEffects? EntityEffects(string entityId)
+    {
+        lock (gate)
+        {
+            foreach (var (key, entity) in entities)
+                if (entity.Id == entityId) return effects.Snapshot(key, owner, observationId, mono, new(revision));
+            return null;
         }
     }
     public void Acknowledge(CombatCheckpoint checkpoint)
@@ -655,6 +695,7 @@ public sealed class CombatSession
             foreach (var value in checkpoint.Encounters.Where(x => x.Summary.Final)) closed.RemoveAll(x => x.Id == value.Id);
             if (revision == checkpoint.Workspace.Revision.Value) dirtyEffects.Clear();
             acknowledgedGapRevision = Math.Max(acknowledgedGapRevision, checkpoint.GapRevision);
+            if (checkpoint.Shape is { } shape) acknowledgedShape = shape;
             deletedRecords.RemoveAll(checkpoint.DeletedEncounters.Contains);
         }
     }

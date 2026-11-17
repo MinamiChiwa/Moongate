@@ -26,7 +26,7 @@ public sealed record EventFilter(IReadOnlyList<string> Topics, IReadOnlyList<str
 public sealed record EventDelivery(ulong Sequence, string Type, string ResourceId, JsonElement Data, string Json, int Bytes, long PublishedAt);
 
 /// <summary>投影提交、快照水位和订阅登记按同一顺序执行；不等待连接写入。</summary>
-public sealed class StateEventHub(SqliteStore? store, string epoch, TimeProvider? timeProvider = null) : IStateEventSink
+public sealed class StateEventHub(SqliteStore? store, string epoch, TimeProvider? timeProvider = null) : IBatchStateEventSink
 {
     public const int MaximumReplayEvents = 10000;
     public const int MaximumReplayBytes = 16 * 1024 * 1024;
@@ -124,6 +124,34 @@ public sealed class StateEventHub(SqliteStore? store, string epoch, TimeProvider
             foreach (var subscription in subscriptions)
                 if (subscription.Filter.Matches(delivery.Type, delivery.ResourceId) && Visible(subscription.Session, delivery.Type, delivery.Data))
                     subscription.Enqueue(delivery);
+        }
+        finally { gate.Release(); }
+    }
+
+    public async Task PublishBatchAsync(IReadOnlyList<PersistedEvent> batch, CancellationToken cancellationToken)
+    {
+        if (store is null) throw new InvalidOperationException("持久事件需要配置数据库");
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var changed = await store.ProjectBatchForStreamAsync(batch, cancellationToken);
+            for (var i = 0; i < batch.Count; i++)
+            {
+                var state = batch[i];
+                if (!changed[i] || ContractEvents.Definitions.SingleOrDefault(d => d.Type == state.Event.EventType) is not { } definition) continue;
+                var next = checked(sequence + 1);
+                var envelope = new EventEnvelope<JsonElement>(epoch + ":" + next.ToString(CultureInfo.InvariantCulture), definition.Type, 1, definition.Module,
+                    state.Event.ResourceId, state.Event.Revision, state.CreatedAt,
+                    state.Event.ResourceType == "operation" ? state.Event.ResourceId : null, state.Event.Payload);
+                var json = JsonSerializer.Serialize(envelope, ContractJson.Options);
+                var delivery = new EventDelivery(next, definition.Type, state.Event.ResourceId, state.Event.Payload, json,
+                    Encoding.UTF8.GetByteCount(json), clock.GetTimestamp());
+                sequence = next;
+                replay.Add(delivery);
+                foreach (var subscription in subscriptions)
+                    if (subscription.Filter.Matches(delivery.Type, delivery.ResourceId) && Visible(subscription.Session, delivery.Type, delivery.Data))
+                        subscription.Enqueue(delivery);
+            }
         }
         finally { gate.Release(); }
     }

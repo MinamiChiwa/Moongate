@@ -67,7 +67,9 @@ public sealed partial class CombatHistoryStore
         IReadOnlyList<CombatGapInput>? completionGaps = null, IReadOnlyList<CombatEncounter>? extraEncounters = null,
         IReadOnlyList<CombatTimelineRecord>? extraTimeline = null)
     {
-        var workspace = Workspace("owner", true, id);
+        // 收尾以已提交的检查点为准；登记的最新捕获随之移除。
+        EndLive(id);
+        var workspace = PersistedWorkspace("owner", true, id);
         if (workspace is null) return Task.FromResult(false);
         var collected = new CombatGapAccumulator();
         if (completionGaps is not null) collected.AddRange(completionGaps);

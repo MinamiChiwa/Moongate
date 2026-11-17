@@ -12,3 +12,9 @@ public interface IStateEventSink
 {
     Task PublishAsync(PersistedEvent state, CancellationToken cancellationToken);
 }
+
+/// <summary>能一次接收一批事件的发布方：整批投影在一个事务内提交，提交后按顺序送达订阅。</summary>
+public interface IBatchStateEventSink : IStateEventSink
+{
+    Task PublishBatchAsync(IReadOnlyList<PersistedEvent> batch, CancellationToken cancellationToken);
+}

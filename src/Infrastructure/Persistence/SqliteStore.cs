@@ -326,7 +326,7 @@ public sealed partial class SqliteStore : IAsyncDisposable
                 using (transaction)
                 {
                     timing.MarkTransactionStart();
-                    context = new DatabaseTransaction(store.writer, transaction, combined.Token, store.shutdown.Token, timing, hard) { Clock = store.storageClock };
+                    context = new DatabaseTransaction(store.writer, transaction, combined.Token, store.shutdown.Token, timing, hard) { Clock = store.storageClock, Owner = store };
                     try
                     {
                         var callbackStarted = Stopwatch.GetTimestamp();
@@ -405,17 +405,35 @@ public sealed partial class SqliteStore : IAsyncDisposable
                 throw new StorageException("storage.eventConflict", "相同事件 ID 对应不同内容");
             return false;
         }
-        tx.Execute("DELETE FROM core_outbox WHERE published=1 AND sequence IN (SELECT sequence FROM core_outbox WHERE published=1 ORDER BY sequence LIMIT max(0, (SELECT count(*) FROM core_outbox) - $limit + 1))", ("$limit", MaximumOutboxEvents));
-        // 已发布事件另按时间回收：超过重放窗口两倍（10 分钟）的不再保留。
-        tx.Execute("DELETE FROM core_outbox WHERE published=1 AND created_at < $cutoff",
-            ("$cutoff", tx.Clock.GetUtcNow().Subtract(PublishedEventRetention).ToString("O")));
-        if ((long)tx.Scalar("SELECT count(*) FROM core_outbox")! >= MaximumOutboxEvents)
+        // 回收按周期执行（每个存储至多每秒一次），接近容量时立即执行：高事件率下每次追加只做一次计数。
+        var count = (long)tx.Scalar("SELECT count(*) FROM core_outbox")!;
+        if (count >= MaximumOutboxEvents - 1 || tx.Owner?.OutboxCleanupDue(tx.Clock) != false)
+        {
+            tx.Execute("DELETE FROM core_outbox WHERE published=1 AND sequence IN (SELECT sequence FROM core_outbox WHERE published=1 ORDER BY sequence LIMIT max(0, $count - $limit + 1))",
+                ("$count", count), ("$limit", MaximumOutboxEvents));
+            // 已发布事件另按时间回收：超过重放窗口两倍（10 分钟）的不再保留。
+            tx.Execute("DELETE FROM core_outbox WHERE published=1 AND created_at < $cutoff",
+                ("$cutoff", tx.Clock.GetUtcNow().Subtract(PublishedEventRetention).ToString("O")));
+            count = (long)tx.Scalar("SELECT count(*) FROM core_outbox")!;
+        }
+        if (count >= MaximumOutboxEvents)
             throw new StorageException("storage.outboxFull", "可靠通知积压已达到容量上限");
         tx.Execute("INSERT INTO core_outbox(event_id,resource_type,resource_id,revision,event_type,payload,created_at) VALUES($id,$rt,$rid,$revision,$type,$payload,$at)",
             ("$id", state.EventId), ("$rt", state.ResourceType), ("$rid", state.ResourceId), ("$revision", state.Revision.ToString()),
             ("$type", state.EventType), ("$payload", payload), ("$at", tx.Clock.GetUtcNow().ToString("O")));
         tx.HasEvents = true;
         return true;
+    }
+
+    /// <summary>可靠通知回收的周期。</summary>
+    internal static readonly TimeSpan OutboxCleanupInterval = TimeSpan.FromSeconds(1);
+    private long outboxCleanedAt = long.MinValue;
+    // 只在单写入线程的事务回调内调用。
+    internal bool OutboxCleanupDue(TimeProvider clock)
+    {
+        var now = clock.GetTimestamp();
+        if (outboxCleanedAt != long.MinValue && clock.GetElapsedTime(outboxCleanedAt, now) < OutboxCleanupInterval) return false;
+        outboxCleanedAt = now; return true;
     }
 
     private const string EventContentQuery = "SELECT json_object('eventId', event_id, 'resourceType', resource_type, 'resourceId', resource_id, 'revision', revision, 'eventType', event_type, 'payload', json(payload)) FROM core_outbox";
@@ -440,17 +458,19 @@ public sealed partial class SqliteStore : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         if (!Regex.IsMatch(consumerId, @"\A[a-z][a-z0-9.-]{0,63}\z")) throw new ArgumentException("消费者身份无效");
-        return WriteAsync(tx =>
-        {
-            var durable = tx.Scalar(EventContentQuery + " WHERE sequence=$sequence AND event_id=$event", ("$sequence", state.Sequence), ("$event", state.Event.EventId)) as string;
-            if (durable is null || !System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(durable),
-                JsonSerializer.SerializeToNode(state.Event, ContractJson.Options)))
-                throw new StorageException("storage.eventInvalid", "事件与当前 outbox 内容不一致");
-            if ((long)tx.Scalar("SELECT count(*) FROM core_event_receipts WHERE consumer_id=$consumer AND event_id=$event", ("$consumer", consumerId), ("$event", state.Event.EventId))! != 0) return false;
-            apply(tx, state.Event);
-            tx.Execute("INSERT INTO core_event_receipts VALUES($consumer,$event)", ("$consumer", consumerId), ("$event", state.Event.EventId));
-            return true;
-        }, cancellationToken);
+        return WriteAsync(tx => ApplyOnce(tx, consumerId, state, apply), cancellationToken);
+    }
+
+    private static bool ApplyOnce(DatabaseTransaction tx, string consumerId, PersistedEvent state, Action<DatabaseTransaction, StateEvent> apply)
+    {
+        var durable = tx.Scalar(EventContentQuery + " WHERE sequence=$sequence AND event_id=$event", ("$sequence", state.Sequence), ("$event", state.Event.EventId)) as string;
+        if (durable is null || !System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(durable),
+            JsonSerializer.SerializeToNode(state.Event, ContractJson.Options)))
+            throw new StorageException("storage.eventInvalid", "事件与当前 outbox 内容不一致");
+        if ((long)tx.Scalar("SELECT count(*) FROM core_event_receipts WHERE consumer_id=$consumer AND event_id=$event", ("$consumer", consumerId), ("$event", state.Event.EventId))! != 0) return false;
+        apply(tx, state.Event);
+        tx.Execute("INSERT INTO core_event_receipts VALUES($consumer,$event)", ("$consumer", consumerId), ("$event", state.Event.EventId));
+        return true;
     }
 
     private readonly SemaphoreSlim dispatchGate = new(1, 1);
@@ -461,14 +481,30 @@ public sealed partial class SqliteStore : IAsyncDisposable
         {
             var batch = ReadPendingEvents();
             using var activity = batch.Count == 0 ? null : Activities.EnterActivity("outbox", "storage.publish");
-            foreach (var state in batch)
+            // 一批事件发布完成后在同一事务中确认；确认之前崩溃会重新发布，投影回执按事件去重，订阅方不会收到重复通知。
+            var published = 0;
+            try
             {
-                await sink.PublishAsync(state, cancellationToken);
-                await WriteAsync(tx => tx.Execute("UPDATE core_outbox SET published=1 WHERE sequence=$sequence AND event_id=$id", ("$sequence", state.Sequence), ("$id", state.Event.EventId)), cancellationToken);
+                if (sink is IBatchStateEventSink many && batch.Count > 0) { await many.PublishBatchAsync(batch, cancellationToken); published = batch.Count; }
+                else foreach (var state in batch) { await sink.PublishAsync(state, cancellationToken); published++; }
             }
+            catch when (published > 0)
+            {
+                try { await AcknowledgeAsync(batch.Take(published), CancellationToken.None); }
+                catch (Exception) { }
+                throw;
+            }
+            if (published > 0) await AcknowledgeAsync(batch, cancellationToken);
             return batch.Count;
         }
         finally { dispatchGate.Release(); }
+    }
+
+    private Task AcknowledgeAsync(IEnumerable<PersistedEvent> published, CancellationToken cancellationToken)
+    {
+        var sequences = JsonSerializer.Serialize(published.Select(x => x.Sequence).ToArray());
+        return WriteAsync(tx => tx.Execute("UPDATE core_outbox SET published=1 WHERE published=0 AND sequence IN (SELECT value FROM json_each($sequences))",
+            ("$sequences", sequences)), cancellationToken);
     }
 
     public Task<bool> ProjectAsync(PersistedEvent state, CancellationToken cancellationToken = default) => ApplyOnceAsync("core.state-projection", state, (tx, value) => ApplyProjection(tx, value), cancellationToken);
@@ -479,6 +515,19 @@ public sealed partial class SqliteStore : IAsyncDisposable
         await ApplyOnceAsync("core.state-projection", state, (tx, value) => changed = ApplyProjection(tx, value), cancellationToken);
         return changed;
     }
+
+    /// <summary>一批事件的状态投影在一个事务中提交；返回每个事件是否改变了投影（已投影或修订不新时为假）。</summary>
+    internal Task<bool[]> ProjectBatchForStreamAsync(IReadOnlyList<PersistedEvent> batch, CancellationToken cancellationToken) => WriteAsync(tx =>
+    {
+        var changed = new bool[batch.Count];
+        for (var i = 0; i < batch.Count; i++)
+        {
+            var applied = false;
+            ApplyOnce(tx, "core.state-projection", batch[i], (inner, value) => applied = ApplyProjection(inner, value));
+            changed[i] = applied;
+        }
+        return changed;
+    }, cancellationToken);
 
     private static bool ApplyProjection(DatabaseTransaction tx, StateEvent value)
     {

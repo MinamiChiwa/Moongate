@@ -27,6 +27,29 @@ public sealed class CombatSessionTests
         new(1, Source, Self.GameSessionId, Self.ObservationGeneration, new(sequence), At.AddMilliseconds(mono), mono,
             entities ?? [Entity(Monster, CombatEntityRole.Monster)], damage ?? [], effects ?? [], reconcile ?? [], gaps ?? []);
 
+    // 无人操作时来源每批重报相同实体：只有观测时刻推进，检查点不需要保存、效果文档不变脏；新实体或效果变化才需要保存，分段进行中每次都保存。
+    [Fact]
+    public void ReportedEntitiesWithOnlyNewObservationTimesDoNotRequireACheckpoint()
+    {
+        var session = Session();
+        session.Apply(Frame(1, 0));
+        var first = session.Capture(); Assert.True(first.Material); Assert.False(first.Urgent); session.Acknowledge(first);
+        session.Apply(Frame(2, 200)); session.Tick(At.AddMilliseconds(400), 400);
+        var repeated = session.Capture();
+        Assert.False(repeated.Material); Assert.Empty(repeated.Effects);
+        Assert.Equal(400, repeated.Workspace.Observation.MonotonicMs);
+        Assert.Equal(At.AddMilliseconds(200), repeated.Workspace.Entities.Single(x => x.Key == Monster).LastObservedAt);
+        var other = Monster with { RawInstanceId = new(Monster.RawInstanceId.Value + 2) };
+        session.Apply(Frame(3, 600, entities: [Entity(Monster, CombatEntityRole.Monster), Entity(other, CombatEntityRole.Monster)]));
+        var appeared = session.Capture(); Assert.True(appeared.Material); Assert.False(appeared.Urgent); session.Acknowledge(appeared);
+        session.Apply(Frame(4, 800, effects: [Effect(Monster, 800)]));
+        var effect = session.Capture(); Assert.True(effect.Material); Assert.Equal([CombatSession.EntityId(Monster)], effect.Effects.Select(x => x.Id)); session.Acknowledge(effect);
+        session.Apply(Frame(5, 1000, [Damage("hit", 1000)]));
+        var fighting = session.Capture(); Assert.True(fighting.Urgent); session.Acknowledge(fighting);
+        session.Tick(At.AddMilliseconds(1200), 1200);
+        Assert.True(session.Capture().Urgent);
+    }
+
     [Theory]
     [InlineData(true, "140")]
     [InlineData(false, "100")]

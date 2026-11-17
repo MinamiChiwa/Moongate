@@ -19,6 +19,7 @@ public sealed class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+        Controls.ScrollGutter.Install();
         UiText.Apply(this, UiLanguage.SimplifiedChinese);
         UiTheme.Apply(this, UiThemeChoice.System);
     }

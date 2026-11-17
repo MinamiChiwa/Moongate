@@ -45,6 +45,8 @@ public sealed partial class LiveBackend
         // 本局区域可用性只在寻色进行中采用：结束后可能已换了服装，旧的“本局不可用”不再限制区域开关。
         var available = active ? run!.AvailableByRegion : null;
         var bound = current.Binding?.Binding is not null;
+        var blocker = active ? null : StartBlocker(page.Capabilities?.FirstOrDefault(item => item.Id == CapabilityIds.ColorSearch),
+            current.Binding?.Binding);
         var (status, tone) = run is null
             ? (bound ? Pick("就绪", "就緒") : Pick("就绪 · 请先选择游戏窗口和目标颜色", "就緒 · 請先選擇遊戲視窗和目標顏色"), ColorTone.Idle)
             : active
@@ -59,9 +61,33 @@ public sealed partial class LiveBackend
             readings, status, tone, best?.Accepted,
             active && run!.Candidates is { } batch ? Candidates(run, batch) : [],
             library.Profiles.Select(Row).ToList(),
-            new(connected && !active, connected && bound && !active, active, active && run!.Interaction is { RetryEnabled: true },
+            new(connected && !active, connected && !active && blocker is null, active, active && run!.Interaction is { RetryEnabled: true },
                 connected && !active),
-            Progress: active && run!.Progress is { } progress ? Progress(run.Id, progress, seen) : null);
+            Progress: active && run!.Progress is { } progress ? Progress(run.Id, progress, seen) : null,
+            StartBlocker: blocker ?? string.Empty);
+    }
+
+    /// <summary>
+    /// “开始寻色”的前置条件，按检查顺序取第一条不满足的说明：后端寻色能力（染色组件、持久存储、平台）、
+    /// 已绑定游戏窗口、窗口未最小化（开始时要把游戏切到前台，最小化窗口恢复后绑定会变化）。全部满足时为 null。
+    /// 能力表尚未读到时不拦截，开始请求由后端按同样条件拒绝。
+    /// </summary>
+    internal static string? StartBlocker(CapabilitySnapshot? capability, GameWindowBinding? binding)
+    {
+        if (capability?.Status.KnownValue == CapabilityStatus.Unavailable)
+            return capability.ReasonCode switch
+            {
+                "provider.unconfigured" => Pick("染色组件缺失：程序文件夹里没有 components\\color-engine，请重新解压完整的 Moongate 压缩包",
+                    "染色元件缺失：程式資料夾裡沒有 components\\color-engine，請重新解壓完整的 Moongate 壓縮檔"),
+                "component.missing" => Pick("染色组件不完整：缺少 Python 解释器或染色 Worker，请重新解压完整的 Moongate 压缩包",
+                    "染色元件不完整：缺少 Python 直譯器或染色 Worker，請重新解壓完整的 Moongate 壓縮檔"),
+                "storage.unavailable" => Pick("后端数据目录不可用，不能寻色", "後端資料目錄不可用，不能尋色"),
+                "platform.unsupported" => Pick("寻色需要 Windows", "尋色需要 Windows"),
+                var code => Pick($"暂不能寻色：{code}", $"暫不能尋色：{code}")
+            };
+        if (binding is null) return Pick("未绑定游戏窗口：先在左上角选择游戏窗口", "未綁定遊戲視窗：先在左上角選擇遊戲視窗");
+        if (binding.IsMinimized) return Pick("游戏窗口已最小化：先恢复游戏窗口再开始", "遊戲視窗已最小化：先還原遊戲視窗再開始");
+        return null;
     }
 
     /// <summary>后端进度换成运行栏用的锚点：剩余时间取 deadline − updated 的单调毫秒差与 updatedAt，本机按现在推算。</summary>

@@ -588,6 +588,33 @@ public sealed class LiveBackendTests
         finally { await StopHostAsync(host, root); }
     }
 
+    // 背包快照只在背包事件、用户操作或重新连接后重读：五秒例行刷新照常读取其他页面状态，不再反复拉取整份背包。
+    [AvaloniaFact]
+    public async Task RoutinePageRefreshDoesNotRereadTheInventorySnapshot()
+    {
+        var hostDll = FindHostDll();
+        Assert.SkipWhen(hostDll is null, "未找到已构建的 MabiTool.Host.dll");
+        var (host, root) = await StartHostAsync(hostDll!);
+        using var hostProcess = host;
+        var token = TestContext.Current.CancellationToken;
+        try
+        {
+            var log = new System.Collections.Concurrent.ConcurrentQueue<(int Status, string Path)>();
+            await using var backend = new LiveBackend(Path.Combine(root, "runtime", "instance.json"),
+                action => Avalonia.Threading.Dispatcher.UIThread.Post(action)) { Handler = () => new RecordingHandler(log) };
+            backend.Start();
+            await Until(() => backend.GetCombat().Actions.CanStart, "连接模拟宿主并取得游戏绑定");
+            await Until(() => log.Any(item => item.Path == "/api/v1/inventory/snapshot"), "首次读取背包快照");
+            await Task.Delay(11500, token);
+            Assert.Equal(200, log.First(item => item.Path == "/api/v1/inventory/snapshot").Status);
+            Assert.True(log.Count(item => item.Path == "/api/v1/modules") >= 3, "五秒例行刷新照常读取模块状态");
+            Assert.Equal(1, log.Count(item => item.Path == "/api/v1/inventory/snapshot"));
+            await backend.SendIntentAsync("inventory.account", null, token);
+            await Until(() => log.Count(item => item.Path == "/api/v1/inventory/snapshot") == 2, "用户操作后重读背包快照");
+        }
+        finally { await StopHostAsync(host, root); }
+    }
+
     [AvaloniaFact]
     public async Task StoppingTheMockHostRemovesItsDataRoot()
     {

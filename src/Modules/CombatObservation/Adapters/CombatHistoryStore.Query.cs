@@ -5,6 +5,7 @@ using System.Text.Json;
 using MabiTool.Contracts;
 using MabiTool.Infrastructure;
 using MabiTool.Modules.CombatObservation.Domain;
+using Microsoft.Data.Sqlite;
 
 namespace MabiTool.Modules.CombatObservation.Adapters;
 
@@ -39,12 +40,17 @@ public sealed partial class CombatHistoryStore
         if (query is null || query.PageSize is < 1 or > 100 || query.GameSessionId?.Length > 128)
             throw new OperationException("request.invalid", "历史每页为 1–100 场");
         var filter = FilterHash(query with { Cursor = null });
+        var key = (principal, owner, filter, query.Cursor);
         return database.Read(connection =>
         {
             using var transaction = connection.BeginTransaction(deferred: true);
             using var command = connection.CreateCommand(); command.Transaction = transaction;
-            command.CommandText = "SELECT revision FROM combat_history_state WHERE id=1";
-            var revision = UInt64String.Parse((string)command.ExecuteScalar()!);
+            command.CommandText = "SELECT revision,(SELECT count(*)||':'||coalesce(max(rowid),0)||':'||coalesce(sum(favorite),0) FROM combat_encounters WHERE closed=1) FROM combat_history_state WHERE id=1";
+            UInt64String revision; string stamp;
+            using (var head = command.ExecuteReader()) { head.Read(); revision = UInt64String.Parse(head.GetString(0)); stamp = head.GetString(1); }
+            // 历史页只随历史修订变化（关闭、收藏、清理、保存范围都推进修订）；数据整体删除或恢复时条数与行号也随之变化。
+            lock (pageCache)
+                if (pageCache.TryGetValue(key, out var cached) && cached.Revision == revision && cached.Stamp == stamp) return cached.Page;
             var position = Position(query.Cursor, "encounters", principal, owner, filter, revision); long? afterTime = null; string? afterId = null;
             if (position is not null)
             {
@@ -63,8 +69,51 @@ public sealed partial class CombatHistoryStore
             var page = values.Take(query.PageSize).ToArray();
             var next = values.Count > query.PageSize ? Cursor("encounters", principal, owner, filter, revision,
                 page[^1].StartedAt.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) + "|" + page[^1].Id) : null;
-            return new CombatEncounterPage(page, next, revision);
+            var result = new CombatEncounterPage(page, next, revision);
+            lock (pageCache)
+            {
+                if (pageCache.Count >= MaximumPageCacheEntries) pageCache.Clear();
+                pageCache[key] = (revision, stamp, result);
+            }
+            return result;
         });
+    }
+    private const int MaximumPageCacheEntries = 16;
+    private readonly Dictionary<(string Principal, bool Owner, string Filter, string? Cursor), (UInt64String Revision, string Stamp, CombatEncounterPage Page)> pageCache = [];
+
+    /// <summary>
+    /// 时间线只追加：按记录缓存已读取的条目，之后只读取序号更大的新页。上限 2 条记录、合计 16 MiB 存储字节，最久未用先淘汰。
+    /// </summary>
+    private sealed record TimelineEntry(CombatTimelineItem[] Items, ulong LastIndex, int Bytes, long Used);
+    private const int MaximumTimelineCacheEntries = 2;
+    private const int MaximumTimelineCacheBytes = 16 * 1024 * 1024;
+    private readonly Dictionary<string, TimelineEntry> timelineCache = new(StringComparer.Ordinal);
+    private long timelineUse;
+    private CombatTimelineItem[] TimelineItems(SqliteCommand command, string id)
+    {
+        TimelineEntry? cached;
+        lock (timelineCache) timelineCache.TryGetValue(id, out cached);
+        command.CommandText = "SELECT document,bytes,last_index FROM combat_timeline_pages WHERE encounter_id=$id AND CAST(last_index AS INTEGER)>$last ORDER BY length(first_index),first_index";
+        command.Parameters.AddWithValue("$last", (long)(cached?.LastIndex ?? 0));
+        var bytes = cached?.Bytes ?? 0; var lastIndex = cached?.LastIndex ?? 0; var added = new List<CombatTimelineItem>();
+        using (var rows = command.ExecuteReader())
+            while (rows.Read())
+            {
+                bytes += rows.GetInt32(1);
+                if (bytes > 17 * 1024 * 1024) throw new OperationException("resource.capacityExceeded", "时间线读取超过预算");
+                added.AddRange(JsonSerializer.Deserialize<CombatTimelineItem[]>(rows.GetString(0), ContractJson.Options)!);
+                if ((cached?.Items.Length ?? 0) + added.Count > 10000) throw new OperationException("resource.capacityExceeded", "时间线条目超过预算");
+                lastIndex = Math.Max(lastIndex, UInt64String.Parse(rows.GetString(2)).Value);
+            }
+        var items = cached is null ? added.ToArray() : added.Count == 0 ? cached.Items : [.. cached.Items, .. added];
+        lock (timelineCache)
+        {
+            timelineCache[id] = new(items, lastIndex, bytes, ++timelineUse);
+            while (timelineCache.Count > MaximumTimelineCacheEntries || timelineCache.Count > 1 && timelineCache.Values.Sum(x => (long)x.Bytes) > MaximumTimelineCacheBytes)
+                timelineCache.Remove(timelineCache.MinBy(x => x.Value.Used).Key);
+            if (bytes > MaximumTimelineCacheBytes) timelineCache.Remove(id);
+        }
+        return items;
     }
     private static readonly UInt64String TimelineCursorRevision = new(0);
     public CombatTimelinePage Timeline(string principal, bool owner, string id, CombatTimelineQuery query)
@@ -85,15 +134,7 @@ public sealed partial class CombatHistoryStore
             // 时间线只追加，游标位置是条目序号：续页不绑定记录修订，进行中的分段写入新检查点后游标照常有效。
             var position = Position(query.Cursor, "timeline", principal, owner, filter, TimelineCursorRevision);
             var after = position is null ? 0UL : UInt64String.Parse(position).Value;
-            command.CommandText = "SELECT document,bytes FROM combat_timeline_pages WHERE encounter_id=$id ORDER BY length(first_index),first_index";
-            using var rows = command.ExecuteReader(); var timeline = new List<CombatTimelineItem>(); var bytes = 0;
-            while (rows.Read())
-            {
-                bytes += rows.GetInt32(1);
-                if (bytes > 17 * 1024 * 1024) throw new OperationException("resource.capacityExceeded", "时间线读取超过预算");
-                timeline.AddRange(JsonSerializer.Deserialize<CombatTimelineItem[]>(rows.GetString(0), ContractJson.Options)!);
-                if (timeline.Count > 10000) throw new OperationException("resource.capacityExceeded", "时间线条目超过预算");
-            }
+            var timeline = TimelineItems(command, id);
             var to = Math.Min(query.ToMs ?? value.Summary.DurationMs, value.Summary.DurationMs);
             var from = Math.Min(query.FromMs ?? 0, to);
             if (query.EntityId is { } entityId && entityId != CombatSession.EntityId(value.Summary.LocalEntity) &&

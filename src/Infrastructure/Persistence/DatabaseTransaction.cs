@@ -17,6 +17,8 @@ public sealed class DatabaseTransaction
     internal bool HasEvents { get; set; }
     /// <summary>所属存储的时钟；可靠通知的写入时间与按时间回收使用它。</summary>
     internal TimeProvider Clock { get; init; } = TimeProvider.System;
+    /// <summary>所属存储；可靠通知按周期回收时使用它记录上次回收时刻。</summary>
+    internal SqliteStore? Owner { get; init; }
     internal SqliteWriteTrace? Timing { get; }
     /// <summary>最近一次检查时的事务耗时；提交前检查后即为计入预算的耗时。</summary>
     internal TimeSpan CheckedElapsed { get; private set; }

@@ -352,7 +352,10 @@ public sealed class DataTable : Border
 
     private void Relayout(bool rebuildHeader = false)
     {
-        var viewport = Bounds.Width;
+        // 表体右侧固定让出滚动条槽位（ScrollGutter）：填充列只铺到槽位左侧，表头与列组标题同样让出，横向滚动时与表体对齐。
+        var gutter = ScrollGutter.Width(this);
+        headerScroller.Margin = groupScroller.Margin = new Thickness(0, 0, gutter, 0);
+        var viewport = Math.Max(0, Bounds.Width - gutter);
         double x = 0;
         var next = new List<ColumnSlot>();
         foreach (var column in visible)

@@ -10,7 +10,8 @@ namespace MabiTool.Host.Color;
 
 /// <summary>宿主持有运行及取消；交互续约与持久化执行分别管理。</summary>
 public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime modules, SystemInfo info,
-    TimeProvider clock, ColorRunWorkerFactory? factory = null, LocalAuthService? auth = null, DiagnosticTrace? trace = null) : BackgroundService
+    TimeProvider clock, ColorRunWorkerFactory? factory = null, LocalAuthService? auth = null, DiagnosticTrace? trace = null,
+    ColorWorkerPool? workers = null) : BackgroundService
 {
     private readonly SemaphoreSlim admission = new(1, 1);
     private readonly SemaphoreSlim commands = new(1, 1);
@@ -52,7 +53,8 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
             bool available;
             lock (gate) available = current is null && factory?.Workers.IsBusy != true;
             var result = await operations.AdmitColorAsync(principal, request, key,
-                () => factory?.Resolve(request) ?? throw new OperationException("capability.unavailable", "宿主尚未配置染色运行端口"),
+                () => factory?.Resolve(request) ?? throw new OperationException("capability.unavailable",
+                    ColorRunWorkerFactory.UnavailableMessage(ColorRunWorkerFactory.UnavailableReason(workers?.Options) ?? "unknown")),
                 info.InstanceId, MonotonicMs + TimeSpan.FromMinutes(5).TotalMilliseconds, available, ct);
             if (result.Created)
             {

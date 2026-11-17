@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -241,6 +242,43 @@ public sealed class CardGridTests
         {
             window.Close();
             CardStateStore.Restore(null);
+        }
+    }
+    [AvaloniaFact]
+    public void ScrollAreasKeepAFixedScrollBarSlot()
+    {
+        // 卡片外壳的滚动区：内容放得下与放不下时内容宽度相同，滚动条在内容右侧的槽位里，与内容隔开固定间距。
+        Border Content(double height) => new() { Height = height };
+        ScrollViewer Scroller(Control content) => new()
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = content
+        };
+        var shortContent = Content(50);
+        var tallContent = Content(1000);
+        var shortScroller = Scroller(shortContent);
+        var tallScroller = Scroller(tallContent);
+        var outer = Scroller(new StackPanel { Children = { new Border { Height = 200, Child = shortScroller }, new Border { Height = 200, Child = tallScroller }, Content(1000) } });
+        var window = new Window { Width = 300, Height = 420, Content = outer };
+        window.Show();
+        try
+        {
+            LayoutProbe.Render(window);
+            var bar = tallScroller.GetVisualDescendants().OfType<ScrollBar>().Single(item => item.Name == "PART_VerticalScrollBar");
+            Assert.True(bar.IsVisible);
+            Assert.Equal(shortContent.Bounds.Width, tallContent.Bounds.Width);
+            var barLeft = bar.TranslatePoint(default, tallScroller)!.Value.X;
+            var contentRight = tallContent.TranslatePoint(new Point(tallContent.Bounds.Width, 0), tallScroller)!.Value.X;
+            Assert.Equal(ScrollGutter.Gap, barLeft - contentRight, 1);
+
+            // 滚轮落在槽位（滚动条）上：滚动所在的滚动区，外层不动。
+            window.MouseWheel(bar.TranslatePoint(new Point(bar.Bounds.Width / 2, 40), window)!.Value, new Vector(0, -1));
+            LayoutProbe.Settle();
+            Assert.True(tallScroller.Offset.Y > 0);
+            Assert.Equal(0, outer.Offset.Y);
+        }
+        finally
+        {
+            window.Close();
         }
     }
 }

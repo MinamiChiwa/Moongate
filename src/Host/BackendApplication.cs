@@ -56,7 +56,7 @@ public static class BackendApplication
         Func<HttpMessageHandler>? updateHttpHandler = null,
         QuickTunnelFactory? roomTunnels = null, IRoomServerListenerFactory? roomListeners = null,
         Func<PathService?, WorkerProcessOptions?>? observationOptions = null, bool gameAutomation = false,
-        PortableInstallation? portableUpdate = null, System.Diagnostics.Process? ownerProcess = null)
+        PortableInstallation? portableUpdate = null, System.Diagnostics.Process? ownerProcess = null, IGameCaptureSource? gameCapture = null)
     {
         options.Validate();
         if (portableUpdate is not null && (storage is null || mock))
@@ -252,8 +252,15 @@ public static class BackendApplication
             AddBackground(sp => sp.GetRequiredService<InventoryOperations>());
             builder.Services.AddSingleton<MusicImportOperations>();
             AddBackground(sp => sp.GetRequiredService<MusicImportOperations>());
+            // 正式宿主：染色组件已配置时运行端口复用宿主的绑定、租约与输入代理；未配置时为空，能力表与开始请求给出原因。
             if (colorFactory is not null) builder.Services.AddSingleton(colorFactory);
-            builder.Services.AddSingleton(sp => sp.GetService<ColorRunWorkerFactory>()?.Workers ??
+            else if (!mock) builder.Services.AddSingleton(sp =>
+            {
+                var controls = sp.GetRequiredService<GameControlContext>();
+                return ColorRunWorkerFactory.ForHost(sp.GetRequiredService<ColorWorkerPool>(), controls.Bindings, controls.Leases, controls.Input,
+                    gameCapture, sp.GetRequiredService<GameBindingService>().TryActivate)!;
+            });
+            builder.Services.AddSingleton(sp => colorFactory is not null ? sp.GetRequiredService<ColorRunWorkerFactory>().Workers :
                 new ColorWorkerPool(colorPreviewOptions?.Invoke(sp.GetRequiredService<PathService>()), clock));
             AddBackground<ColorRuntimeLifetime>();
             builder.Services.AddSingleton<ColorRunOperations>();
@@ -318,7 +325,8 @@ public static class BackendApplication
         builder.Services.AddSingleton(sp => new DiagnosticRuntimeService(sp.GetServices<IDiagnosticProbe>(), info, sp.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton(new LocalAuthService(options, info.InstanceId, clock));
         builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
-        builder.Services.AddSingleton(BuiltInModules.CreateCatalog(colorFactory is not null));
+        // 染色模块的运行在正式持久化宿主里总是装配（组件缺失时由 color.search 能力给出原因）；纯模拟宿主没有运行端口。
+        builder.Services.AddSingleton(BuiltInModules.CreateCatalog(colorFactory is not null || (!mock && storage is not null)));
         builder.Services.AddSingleton<ModuleRuntime>();
         AddBackground<IdleCollector>();
         builder.Services.ConfigureHttpJsonOptions(json => ContractJson.Configure(json.SerializerOptions));
@@ -486,8 +494,7 @@ public static class BackendApplication
                  .. capabilityRegistry.Snapshot(),
                  Snapshot("performance.play", "performance", CapabilityStatus.Unavailable, null, null, "module.notImplemented"),
                  Snapshot("rooms.coordinate", "rooms", CapabilityStatus.Unavailable, null, null, "module.notImplemented"),
-                 Snapshot("color.search", "color", CapabilityStatus.Unavailable, null, null,
-                     colorFactory is null ? "provider.unconfigured" : "game.validationRequired"),
+                 ColorCapability(context.RequestServices, checkedAt),
                  Combat("combat.local-dps", "combat.damage.local"),
                  Combat("combat.self-effects", "combat.effects.self"),
                  Combat("combat.monster-effects", "combat.effects.monster"),
@@ -782,6 +789,17 @@ public static class BackendApplication
 
     private static T RequiredService<T>(HttpContext context) where T : class => context.RequestServices.GetService<T>()
         ?? throw new OperationException("storage.unavailable", "当前宿主未配置持久存储");
+
+    /// <summary>寻色能力取实际装配：运行端口存在即可用；否则按持久存储、染色组件配置与文件、平台给出原因码。</summary>
+    private static CapabilitySnapshot ColorCapability(IServiceProvider services, DateTimeOffset checkedAt)
+    {
+        var factory = services.GetService<ColorRunWorkerFactory>();
+        var reason = factory is not null ? null
+            : services.GetService<ColorRunOperations>() is null ? "storage.unavailable"
+            : ColorRunWorkerFactory.UnavailableReason(services.GetService<ColorWorkerPool>()?.Options) ?? "provider.unconfigured";
+        return new("color.search", "color", reason is null ? CapabilityStatus.Available : CapabilityStatus.Unavailable,
+            reason is null ? "color-engine" : null, reason is null ? "1.0" : null, null, null, reason ?? "available", checkedAt, []);
+    }
     private static void MapSettingsImports(WebApplication app, string project, EndpointDefinition preview, EndpointDefinition query, EndpointDefinition commit)
     {
         app.MapPost(preview.Path, async (SettingsImportRequest request, HttpContext context) =>
@@ -829,10 +847,11 @@ public static class BackendApplication
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    private sealed class StateOutboxPublisher(SqliteStore store, StateEventHub hub) : BackgroundService, IStateEventSink
+    private sealed class StateOutboxPublisher(SqliteStore store, StateEventHub hub) : BackgroundService, IBatchStateEventSink
     {
         protected override Task ExecuteAsync(CancellationToken stoppingToken) => store.RunOutboxAsync(this, stoppingToken);
         public Task PublishAsync(PersistedEvent state, CancellationToken cancellationToken) => hub.PublishAsync(state, cancellationToken);
+        public Task PublishBatchAsync(IReadOnlyList<PersistedEvent> batch, CancellationToken cancellationToken) => hub.PublishBatchAsync(batch, cancellationToken);
     }
 
     private sealed class IdleCollector(ModuleRuntime runtime) : BackgroundService

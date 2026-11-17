@@ -36,6 +36,8 @@ public sealed partial class LiveBackend
     private string? inventoryAccount;
     private DateTimeOffset pagesReadAt;
     private bool pagesDue = true;
+    // 背包快照（含全部条目）只在后端发出背包事件、用户操作或重新连接后重读；五秒例行刷新沿用上次结果。
+    private bool inventoryDue = true;
 
     public Task SendIntentAsync(string intent, string? argument, CancellationToken cancellationToken)
     {
@@ -375,11 +377,15 @@ public sealed partial class LiveBackend
     private async Task RefreshPagesAsync(MabiToolClient api, CancellationToken token)
     {
         string search;
+        bool readInventory;
+        InventorySnapshot? previousInventory;
         lock (gate)
         {
-            if (!pagesDue && DateTimeOffset.UtcNow - pagesReadAt < TimeSpan.FromSeconds(5)) return;
-            pagesDue = false;
+            if (!pagesDue && !inventoryDue && DateTimeOffset.UtcNow - pagesReadAt < TimeSpan.FromSeconds(5)) return;
+            readInventory = pagesDue || inventoryDue || pages.Inventory is null;
+            pagesDue = false; inventoryDue = false;
             search = musicSearch;
+            previousInventory = pages.Inventory;
         }
 
         var library = await Try(() => api.GetMusicLibraryAsync(token));
@@ -391,7 +397,7 @@ public sealed partial class LiveBackend
             (await Try(() => api.GetMusicInstrumentsAsync(token)))?.Items ?? [],
             (await Try(() => api.ListPerformanceSessionsAsync(token)))?.Items.FirstOrDefault(IsLive),
             await Try(() => api.GetColorLibraryAsync(token)), await Try(() => api.GetColorRuntimeAsync(token)),
-            await Try(() => api.GetInventorySnapshotAsync(token)), (await Try(() => api.GetModulesAsync(token)))?.Items ?? [],
+            readInventory ? await Try(() => api.GetInventorySnapshotAsync(token)) : previousInventory, (await Try(() => api.GetModulesAsync(token)))?.Items ?? [],
             (await Try(() => api.GetShortcutsAsync(token)))?.Items ?? [], await Try(() => api.GetUpdateStateAsync(token)),
             await Try(() => api.GetSystemInfoAsync(token)),
             await Try(() => api.GetShortcutSettingsAsync(token)), (await Try(() => api.GetCapabilitiesAsync(token)))?.Items,
@@ -412,6 +418,8 @@ public sealed partial class LiveBackend
         {
             pages = next;
             pagesReadAt = DateTimeOffset.UtcNow;
+            // 读取被拒绝（模块未启用等）时下一轮再试，与原先每五秒读取一次相同。
+            if (next.Inventory is null) inventoryDue = true;
         }
         Notify();
     }

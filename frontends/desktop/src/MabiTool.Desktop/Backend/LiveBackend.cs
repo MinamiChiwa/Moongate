@@ -17,7 +17,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
 {
     private static readonly EventStreamOptions DesktopEvents = new(
         ["combat.summary.changed", "combat.effects.changed", "combat.encounter.closed", "combat.observation.degraded", "combat.measurement.changed",
-            "shortcut.triggered"],
+            "shortcut.triggered", "inventory.snapshot.changed", "inventory.catalog.changed"],
         [], null);
 
     private sealed record State(bool Connected, string? Problem, GameBindingSnapshot? Binding,
@@ -392,6 +392,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                 {
                     diagnosticAccess = DiagnosticAccessOf(handshake.Grant.Session);
                     apiAddress = handshake.ApiBaseUri;
+                    inventoryDue = true;
                 }
                 var simulation = (await api.GetCombatCapabilitiesAsync(token)).Simulation;
                 try { await RegisterFrontendShortcutsAsync(api, token); }
@@ -457,6 +458,11 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                 if (message.Event == "control") return;
                 if (message.Event == "diagnostics.record") ReceiveDiagnosticRecord(message);
                 else if (message.Event == "shortcut.triggered") shortcutNotifications.Receive(generation, message);
+                else if (message.Event.StartsWith("inventory.", StringComparison.Ordinal))
+                {
+                    lock (gate) inventoryDue = true;
+                    Signal();
+                }
                 else Signal();
             }
         }

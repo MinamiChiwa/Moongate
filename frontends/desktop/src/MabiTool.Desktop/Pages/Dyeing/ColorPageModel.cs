@@ -104,8 +104,9 @@ public sealed class ColorPageModel : BackendPageModel<ColorPageData>, IPageLifec
     /// <summary>寻色记录层；打开时读取，不随页面刷新。</summary>
     public ColorHistoryModel History { get; }
 
-    /// <summary>后端能力表说明“开始寻色”不可用的原因；可用时为空。</summary>
-    public string CapabilityNotice => Backend.GetCapabilityNotice(CapabilityIds.ColorSearch) ?? string.Empty;
+    /// <summary>“开始寻色”不可用的具体原因：页面数据给出的前置条件优先，其次是后端能力表的说明；可以开始时为空。</summary>
+    public string CapabilityNotice => Data.StartBlocker.Length > 0 ? Data.StartBlocker
+        : Backend.GetCapabilityNotice(CapabilityIds.ColorSearch) ?? string.Empty;
     public bool HasCapabilityNotice => CapabilityNotice.Length > 0;
 
     public bool HasDraft => Data.Draft is not null;

@@ -328,6 +328,47 @@ public sealed class ColorRunOperationsTests
         await app.StopAsync();
     }
 
+    [Trait("Category", "Slow")]
+    [Fact]
+    public async Task HostRegistrationRunsTheProductionWorkerThroughCaptureAndStop()
+    {
+        using var area = new Area();
+        var binding = area.Bindings.Current!.Session;
+        var capture = new CountingCapture();
+        // 正式装配路径：只给出染色组件配置（与 Program 相同的 colorPreviewOptions），不注入运行工厂；
+        // 游戏绑定、输入设备与窗口截图换成离线实现，避免触碰真实窗口。
+        await using var app = BackendApplication.Build(new(0, Token, new HashSet<string>()), storage: area.Storage,
+            colorPreviewOptions: _ => new ColorWorkerOptions(area.Python, Path.Combine(area.Repository, "workers", "color-engine"), area.Root)
+            { HeartbeatInterval = TimeSpan.FromMilliseconds(100), HeartbeatTimeout = TimeSpan.FromSeconds(3) },
+            gameControls: services =>
+            {
+                var leases = services.GetRequiredService<ResourceLeaseCoordinator>();
+                return new(area.Bindings, leases, new(leases, area.Bindings, area.Device), false);
+            },
+            gameCapture: capture);
+        await app.StartAsync(); using var http = Client(app);
+        Assert.NotNull(app.Services.GetService<ColorRunWorkerFactory>());
+        var capabilities = (await http.GetFromJsonAsync<ApiList<CapabilitySnapshot>>("/api/v1/capabilities", ContractJson.Options))!;
+        var search = capabilities.Items.Single(item => item.Id == "color.search");
+        Assert.Equal(CapabilityStatus.Available, search.Status.KnownValue);
+        Assert.Equal("available", search.ReasonCode);
+
+        var operation = await Start(http, new(binding.Id, binding.BindingRevision, Profile), "production-worker");
+        var runId = operation.Result!.Value.GetProperty("id").GetString()!;
+        // 原截图控制器在等待阶段经宿主端口反复截取绑定窗口；白色画面里没有色板，不发送鼠标输入。
+        var run = await WaitRun(http, runId, value => capture.Count >= 2 && value.Phase is "waiting" or "capture");
+        Assert.Equal(binding.BindingRevision, run.BindingSnapshot.BindingRevision);
+        await Post<OperationSnapshot>(http, $"/api/v1/operations/{operation.Id}/cancel", new CancelOperationRequest("stop"));
+        var terminal = await WaitOperation(http, operation.Id);
+        Assert.Equal(OperationState.Cancelled, terminal.State.KnownValue);
+        Assert.Equal(0, area.Device.Actions);
+        var leasesAfter = app.Services.GetRequiredService<ResourceLeaseCoordinator>();
+        var next = leasesAfter.Acquire(new("music", "after-production-run", binding.Id, binding.BindingRevision,
+            ["foreground-input", "activity-control:" + binding.Id], TimeSpan.FromSeconds(5)));
+        Assert.True(leasesAfter.Release(next.Id));
+        await app.StopAsync();
+    }
+
     [Fact]
     public async Task WorkerCrashReleasesLeaseAndDoesNotReplayTheRun()
     {
@@ -579,8 +620,8 @@ public sealed class ColorRunOperationsTests
     private sealed class Area : IDisposable
     {
         public string Root { get; }
-        private readonly string repository;
-        private readonly string python;
+        public string Repository { get; }
+        public string Python { get; }
         public StorageOptions Storage => new(Path.Combine(Root, "bootstrap"), true, DataRoot: Path.Combine(Root, "data"));
         public GameSessionBindingTracker Bindings { get; } = new();
         public OfflineDevice Device { get; } = new();
@@ -588,12 +629,14 @@ public sealed class ColorRunOperationsTests
         {
             var dir = new DirectoryInfo(AppContext.BaseDirectory);
             while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "MabiTool.slnx"))) dir = dir.Parent;
-            repository = dir!.FullName;
-            Root = Path.Combine(repository, "artifacts", "tmp", "color-host-" + Guid.NewGuid().ToString("N"));
+            Repository = dir!.FullName;
+            Root = Path.Combine(Repository, "artifacts", "tmp", "color-host-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Root);
-            var start = new ProcessStartInfo("python") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
+            // 设置了 MABITOOL_COLOR_PYTHON 时用该解释器（可指向解压版随包的 python.exe），否则用 PATH 上的 python。
+            var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("MABITOOL_COLOR_PYTHON") is { Length: > 0 } configured ? configured : "python")
+            { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
             start.ArgumentList.Add("-c"); start.ArgumentList.Add("import sys; print(sys.executable)");
-            using var process = Process.Start(start)!; python = process.StandardOutput.ReadToEnd().Trim(); process.WaitForExit();
+            using var process = Process.Start(start)!; Python = process.StandardOutput.ReadToEnd().Trim(); process.WaitForExit();
             Assert.Equal(0, process.ExitCode);
             Bindings.Update(new("TW", 100, DateTimeOffset.UtcNow, new(500), "offline", new(0, 0, 200, 120), 96, 96, false));
         }
@@ -602,16 +645,28 @@ public sealed class ColorRunOperationsTests
             colorFactory: services =>
             {
                 var leases = services.GetRequiredService<ResourceLeaseCoordinator>();
-                var options = new ColorWorkerOptions(python, Path.Combine(repository, "workers", "color-engine", "tests"), Root)
+                var options = new ColorWorkerOptions(Python, Path.Combine(Repository, "workers", "color-engine", "tests"), Root)
                 { EntryModule = entry, Arguments = mode is null ? [] : [mode],
                     HeartbeatInterval = TimeSpan.FromMilliseconds(100), HeartbeatTimeout = TimeSpan.FromSeconds(3) };
                 return new(options, Bindings, leases, new(leases, Bindings, Device), Device, providerId: "offline-color-test", workerPool: new(options, clock));
             });
         public void Dispose()
         {
-            var allowed = Path.GetFullPath(Path.Combine(repository, "artifacts", "tmp")) + Path.DirectorySeparatorChar;
+            var allowed = Path.GetFullPath(Path.Combine(Repository, "artifacts", "tmp")) + Path.DirectorySeparatorChar;
             if (!Path.GetFullPath(Root).StartsWith(allowed, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException();
             Directory.Delete(Root, true);
+        }
+    }
+
+    private sealed class CountingCapture : IGameCaptureSource
+    {
+        private int count;
+        public int Count => Volatile.Read(ref count);
+        public ValueTask<GameCapture> CaptureAsync(GameWindowBinding binding, CancellationToken token)
+        {
+            Interlocked.Increment(ref count);
+            return ValueTask.FromResult(new GameCapture(binding.Bounds.Width, binding.Bounds.Height,
+                Enumerable.Repeat((byte)255, binding.Bounds.Width * binding.Bounds.Height * 3).ToArray()));
         }
     }
 

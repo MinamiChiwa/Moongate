@@ -8,10 +8,14 @@ using MabiTool.ModuleSdk;
 
 namespace MabiTool.Host.Color;
 
-/// <summary>运行依赖由宿主装配，HTTP 请求不能指定进程、输入设备或可执行路径。</summary>
+/// <summary>
+/// 运行依赖由宿主装配，HTTP 请求不能指定进程、输入设备或可执行路径。
+/// <paramref name="activate"/> 在取得输入租约后把绑定的游戏窗口切到前台：用户在 Moongate 里按开始，此时前台是 Moongate，
+/// 统一输入代理只向前台的绑定窗口发送输入（原工具从游戏内按 F8 开始，不需要这一步）。
+/// </summary>
 public sealed class ColorRunWorkerFactory(ColorWorkerOptions options, GameSessionBindingTracker bindings,
     ResourceLeaseCoordinator leases, GameInputBroker input, IGameCaptureSource capture, bool allowProcessRead = false,
-    string providerId = "color-engine", ColorWorkerPool? workerPool = null) : IAsyncDisposable
+    string providerId = "color-engine", ColorWorkerPool? workerPool = null, Func<GameWindowBinding, bool>? activate = null) : IAsyncDisposable
 {
     public GameSessionBindingTracker Bindings { get; } = bindings;
     public ResourceLeaseCoordinator Leases { get; } = leases;
@@ -19,6 +23,39 @@ public sealed class ColorRunWorkerFactory(ColorWorkerOptions options, GameSessio
     public ColorWorkerPool Workers { get; } = workerPool ?? new(options);
     public EmergencyStopResult EmergencyStop() => Input.EmergencyStop();
     public ValueTask DisposeAsync() => Workers.DisposeAsync();
+
+    /// <summary>
+    /// 正式宿主的装配：染色组件已配置且文件齐全时，运行端口复用宿主的游戏绑定、租约与输入代理（与合奏共同仲裁），
+    /// 截图取绑定窗口的客户区，精准寻色由宿主授权只读进程读取；否则返回 null，能力表给出 <see cref="UnavailableReason"/>。
+    /// </summary>
+    public static ColorRunWorkerFactory? ForHost(ColorWorkerPool workers, GameSessionBindingTracker bindings, ResourceLeaseCoordinator leases,
+        GameInputBroker input, IGameCaptureSource? capture, Func<GameWindowBinding, bool> activate)
+    {
+        if (UnavailableReason(workers.Options) is not null || !OperatingSystem.IsWindows()) return null;
+        return new(workers.Options!, bindings, leases, input, capture ?? new MabiTool.Platform.Windows.WindowsGameCaptureSource(),
+            allowProcessRead: true, workerPool: workers, activate: activate);
+    }
+
+    /// <summary>
+    /// 染色运行不可用的原因码：provider.unconfigured 为未配置染色组件（解压版里没有 components\color-engine），
+    /// component.missing 为配置的解释器或 Worker 包不存在，platform.unsupported 为非 Windows；可用时为 null。
+    /// </summary>
+    public static string? UnavailableReason(ColorWorkerOptions? options)
+    {
+        if (options is null) return "provider.unconfigured";
+        if (!OperatingSystem.IsWindows()) return "platform.unsupported";
+        if (!File.Exists(options.PythonExecutable) || !Directory.Exists(Path.Combine(options.WorkerDirectory, "mabitool_color")))
+            return "component.missing";
+        return null;
+    }
+
+    public static string UnavailableMessage(string reason) => reason switch
+    {
+        "provider.unconfigured" => "未找到染色组件：程序文件夹里缺少 components\\color-engine",
+        "component.missing" => "染色组件不完整：缺少 Python 解释器或染色 Worker",
+        "platform.unsupported" => "染色需要 Windows",
+        _ => "染色运行端口不可用"
+    };
     public GameSession Resolve(ColorRunStartRequest request)
     {
         var binding = Bindings.Current;
@@ -42,6 +79,24 @@ public sealed class ColorRunWorkerFactory(ColorWorkerOptions options, GameSessio
             throw new OperationException("input.bindingChanged", "游戏绑定已变化");
         var lease = Leases.Acquire(new("color", run.OperationId, binding.Session.Id, binding.Session.BindingRevision,
             ["foreground-input", "activity-control:" + binding.Session.Id], TimeSpan.FromMinutes(5)));
+        if (activate is not null)
+        {
+            // 前台输入租约已持有，激活期间其他活动不能开始；切换后绑定修订不变才继续。
+            var foreground = false;
+            try { foreground = activate(binding); }
+            catch { Leases.Release(lease.Id); throw; }
+            if (!foreground)
+            {
+                Leases.Release(lease.Id);
+                throw new OperationException("input.focusChanged", "无法把游戏窗口切到前台，请点一下游戏窗口后重新开始");
+            }
+            if (Bindings.Current is not { } current || current.Session != run.BindingSnapshot)
+            {
+                Leases.Release(lease.Id);
+                throw new OperationException("input.bindingChanged", "游戏窗口在切到前台时发生变化，请重新开始");
+            }
+            binding = current;
+        }
         ColorGamePort? port = null;
         GameInteractionSession? interaction = null;
         ColorWorkerSession? worker = null;

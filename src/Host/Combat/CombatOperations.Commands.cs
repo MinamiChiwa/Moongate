@@ -45,7 +45,8 @@ public sealed partial class CombatOperations
                 var receipt = new CombatBoundaryReceipt(principal, route, resource, key!, hash, CombatHistoryStore.WorkspaceETag(workspace), result);
                 if (!await history.SaveAsync(checkpoint, boundary: receipt)) throw new OperationException("combat.planStale", "观察已被停止");
                 TraceSegments(job, checkpoint);
-                job.Session.Acknowledge(checkpoint); return result;
+                job.Session.Acknowledge(checkpoint); job.LastSaved = clock.GetTimestamp();
+                history.PublishLive(checkpoint.Workspace, job.Session.EntityEffects); return result;
             }
             catch (Exception error) { job.Failure = error; job.StopReason = "boundary-interrupted"; job.Stop.Cancel(); throw; }
         }

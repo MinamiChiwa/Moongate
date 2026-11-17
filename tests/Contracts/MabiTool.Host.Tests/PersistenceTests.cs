@@ -416,6 +416,45 @@ public sealed class PersistenceTests
         Assert.Equal(ulong.MaxValue.ToString(), reopened.ReadScalar("SELECT revision FROM core_state_projection"));
     }
 
+    // 整批投影在一个事务内提交、确认也按批提交：批内保持 outbox 顺序；确认前崩溃时重新发布，投影回执去重，不重复改变投影。
+    [Fact]
+    public async Task BatchedDispatchKeepsOrderAndRecoversWhenAcknowledgementIsLost()
+    {
+        using var workspace = new Workspace();
+        using var lease = workspace.Lease();
+        await using (var first = SqliteStore.Open(lease, [Migration]))
+        {
+            foreach (var revision in new ulong[] { 1, 2, 3 })
+                await first.WriteAsync(tx => SqliteStore.AppendEvent(tx, Event("batch-" + revision, revision)));
+            var crashed = new BatchSink(first, failAfterPublish: true);
+            await Assert.ThrowsAsync<IOException>(() => first.DispatchPendingAsync(crashed));
+            Assert.Equal(["batch-1", "batch-2", "batch-3"], crashed.Delivered);
+            Assert.Equal([true, true, true], crashed.Changed);
+            Assert.Equal(3, first.ReadPendingEvents().Count);
+            Assert.Equal("3", first.ReadScalar("SELECT revision FROM core_state_projection"));
+        }
+        await using var reopened = SqliteStore.Open(lease, [Migration]);
+        var retry = new BatchSink(reopened);
+        Assert.Equal(3, await reopened.DispatchPendingAsync(retry));
+        Assert.Equal(["batch-1", "batch-2", "batch-3"], retry.Delivered);
+        Assert.All(retry.Changed, Assert.False);
+        Assert.Empty(reopened.ReadPendingEvents());
+        Assert.Equal(3L, reopened.ReadScalar("SELECT count(*) FROM core_event_receipts"));
+    }
+
+    private sealed class BatchSink(SqliteStore store, bool failAfterPublish = false) : IBatchStateEventSink
+    {
+        public List<string> Delivered { get; } = [];
+        public List<bool> Changed { get; } = [];
+        public Task PublishAsync(PersistedEvent state, CancellationToken cancellationToken) => throw new InvalidOperationException("应按批发布");
+        public async Task PublishBatchAsync(IReadOnlyList<PersistedEvent> batch, CancellationToken cancellationToken)
+        {
+            Changed.AddRange(await store.ProjectBatchForStreamAsync(batch, cancellationToken));
+            Delivered.AddRange(batch.Select(state => state.Event.EventId));
+            if (failAfterPublish) throw new IOException("injected before acknowledgement");
+        }
+    }
+
     [Fact]
     public async Task StartupRecoveryInterruptsActiveOperationsOnceAndPreservesTerminalResults()
     {

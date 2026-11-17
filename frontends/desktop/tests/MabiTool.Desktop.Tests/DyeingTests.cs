@@ -751,6 +751,21 @@ public sealed class DyeingTests
         Assert.False(GameWindowActivation.Unbound.Missed);
     }
 
+    [Fact]
+    public void StartBlockerNamesTheFirstMissingPrecondition()
+    {
+        CapabilitySnapshot Capability(CapabilityStatus status, string reason) => new("color.search", "color", status, null, null, null, null,
+            reason, DateTimeOffset.UnixEpoch, []);
+        var session = new GameSession("s", "TW", 1, DateTimeOffset.UnixEpoch, new(500), new(1), null);
+        var bound = new GameWindowBinding(session, new(0, 0, 1280, 720), 96, 96, false, true);
+        Assert.StartsWith("染色组件缺失", LiveBackend.StartBlocker(Capability(CapabilityStatus.Unavailable, "provider.unconfigured"), bound));
+        Assert.StartsWith("染色组件不完整", LiveBackend.StartBlocker(Capability(CapabilityStatus.Unavailable, "component.missing"), bound));
+        Assert.StartsWith("未绑定游戏窗口", LiveBackend.StartBlocker(Capability(CapabilityStatus.Available, "available"), null));
+        Assert.StartsWith("游戏窗口已最小化", LiveBackend.StartBlocker(Capability(CapabilityStatus.Available, "available"),
+            bound with { IsMinimized = true, CanAcceptInput = false }));
+        Assert.Null(LiveBackend.StartBlocker(Capability(CapabilityStatus.Available, "available"), bound));
+    }
+
     [AvaloniaFact]
     public void PresetsSaveLoadAndDeleteThroughTheBackend()
     {

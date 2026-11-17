@@ -71,7 +71,42 @@ public sealed partial class CombatHistoryStore(SqliteStore database, OperationSt
     }
     public static string ETag(CombatEncounter value) => $"\"combat-boundary-{value.Id}-{value.BoundaryRevision ?? value.Revision}\"";
     public static string WorkspaceETag(CombatWorkspace value) => $"\"combat-boundary-{value.Observation.Id}-{value.BoundaryRevision ?? value.Revision}\"";
-    public CombatWorkspace? Workspace(string principal, bool owner, string? id = null) => database.Read(connection =>
+    /// <summary>
+    /// 活动观察的最新捕获：宿主每次捕获后登记，读取优先使用它（修订不低于已保存的检查点时）。只有时间推进的捕获不落库，
+    /// 读取方仍得到当前的观测时刻、单调时点与效果剩余时间；观察结束时移除，此后读取已保存的终态。
+    /// </summary>
+    private sealed record LiveObservation(string Owner, CombatWorkspace Workspace, Func<string, CombatEntityEffects?> Effects);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, LiveObservation> live = new(StringComparer.Ordinal);
+    public void PublishLive(CombatWorkspace workspace, Func<string, CombatEntityEffects?> effects)
+    {
+        var id = workspace.Observation.Id;
+        live.AddOrUpdate(id, new LiveObservation(workspace.Observation.Owner, workspace, effects),
+            (_, previous) => previous.Workspace.Revision.Value > workspace.Revision.Value ? previous : new(workspace.Observation.Owner, workspace, effects));
+    }
+    public void EndLive(string observationId) => live.TryRemove(observationId, out _);
+
+    public CombatWorkspace? Workspace(string principal, bool owner, string? id = null)
+    {
+        var (selected, revision) = database.Read(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT id,revision FROM combat_observations WHERE ($owner=1 OR owner=$p) AND ($id IS NULL OR id=$id) ORDER BY updated_at DESC,id DESC LIMIT 1";
+            command.Parameters.AddWithValue("$owner", owner ? 1 : 0); command.Parameters.AddWithValue("$p", principal); command.Parameters.AddWithValue("$id", (object?)id ?? DBNull.Value);
+            using var row = command.ExecuteReader();
+            return row.Read() ? (row.GetString(0), UInt64String.Parse(row.GetString(1))) : ((string?)null, default(UInt64String));
+        });
+        if (selected is null) return null;
+        if (live.TryGetValue(selected, out var current) && current.Workspace.Revision.Value >= revision.Value)
+        {
+            // 已结束的当前分段以历史中保存的记录为准（收藏等修改只写入历史记录）。
+            if (current.Workspace.Encounter is { Summary.Final: true } final &&
+                database.ReadScalar("SELECT document FROM combat_encounters WHERE id=$id AND closed=1", ("$id", final.Id)) is string saved)
+                return current.Workspace with { Encounter = JsonSerializer.Deserialize<CombatEncounter>(saved, ContractJson.Options) };
+            return current.Workspace;
+        }
+        return PersistedWorkspace(principal, owner, selected);
+    }
+    private CombatWorkspace? PersistedWorkspace(string principal, bool owner, string? id) => database.Read(connection =>
     {
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT workspace FROM combat_observations WHERE ($owner=1 OR owner=$p) AND ($id IS NULL OR id=$id) ORDER BY updated_at DESC,id DESC LIMIT 1";
@@ -85,7 +120,13 @@ public sealed partial class CombatHistoryStore(SqliteStore database, OperationSt
         return command.ExecuteScalar() is string json ? JsonSerializer.Deserialize<CombatEncounter>(json, ContractJson.Options)!
             : throw new OperationException("resource.notFound", "战斗记录不存在");
     });
-    public CombatEntityEffects EntityEffects(string id, string principal, bool owner) => database.Read(connection =>
+    public CombatEntityEffects EntityEffects(string id, string principal, bool owner)
+    {
+        foreach (var current in live.Values)
+            if ((owner || current.Owner == principal) && current.Effects(id) is { } value) return value;
+        return PersistedEntityEffects(id, principal, owner);
+    }
+    private CombatEntityEffects PersistedEntityEffects(string id, string principal, bool owner) => database.Read(connection =>
     {
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT e.document FROM combat_entities e JOIN combat_observations o ON o.id=e.observation_id WHERE e.id=$id AND ($owner=1 OR e.owner=$p) ORDER BY o.updated_at DESC LIMIT 1";
@@ -174,6 +215,7 @@ public sealed partial class CombatHistoryStore(SqliteStore database, OperationSt
                         checkpoint.Workspace.Revision, checkpoint.Gaps.Take(64).ToArray(), observation.DroppedEvents, SnapshotRequired: true));
             if (historyChanged) { AdvanceHistory(tx); historyClosed = true; }
         }, terminal, problem, ct);
+        if (committed && terminal is not null) EndLive(checkpoint.Workspace.Observation.Id);
         // 预算清理放在检查点事务之后单独提交：检查点写事务只含本次观测数据，不随历史条数增长；清理失败时留到下一次关闭或手动清理。
         if (committed && historyClosed)
             try { await database.WriteAsync(tx => Clean(tx), ct); }

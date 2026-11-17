@@ -34,6 +34,8 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
         public double LastMono;
         public long LastReceived;
         public bool Received;
+        /// <summary>上次保存检查点的时刻（TimeProvider 时间戳）。</summary>
+        public long LastSaved;
         /// <summary>由常驻自动观测开始的观察。</summary>
         public bool Auto;
         public string? TracedSegment;
@@ -74,6 +76,11 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
                 .Value("reason", current.Segment?.StartReason));
         }
     }
+    /// <summary>
+    /// 没有进行中的分段或计时中的测量时，实体与效果等变化至多每隔该间隔保存一次检查点；只有时间推进时不保存。
+    /// 读取经最新捕获登记取得当前状态；崩溃时至多丢失这段时间内未保存的实体、效果与缺口变化，不含伤害时间线。
+    /// </summary>
+    internal static TimeSpan DeferredCheckpointInterval { get; set; } = TimeSpan.FromSeconds(1);
     private readonly SemaphoreSlim admission = new(1, 1);
     private readonly Channel<Job> queue = Channel.CreateBounded<Job>(new BoundedChannelOptions(128) { SingleReader = true });
     private readonly ConcurrentDictionary<string, Job> active = new(StringComparer.Ordinal);
@@ -204,7 +211,8 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
             healing: job.Subscription.HealingSupported);
         var initial = job.Session.Capture();
         if (!await history.SaveAsync(initial)) { await history.StopCommittedAsync(job.Id, job.StopReason, false, OperationState.Cancelled); return; }
-        job.Session.Acknowledge(initial);
+        job.Session.Acknowledge(initial); job.LastSaved = clock.GetTimestamp();
+        history.PublishLive(initial.Workspace, job.Session.EntityEffects);
         var producer = ProduceAsync(job);
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(200), clock);
         try
@@ -234,10 +242,14 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
                     else if (job.Buffer.Count == 0) job.Session.Tick(clock.GetUtcNow(), Now(job));
                     var checkpoint = job.Session.Capture();
                     var terminal = ended ? job.Failure is null ? OperationState.Succeeded : OperationState.Interrupted : (OperationState?)null;
-                    if (!await history.SaveAsync(checkpoint, terminal, job.Failure is null ? null : ApiErrors.Create("combat.sourceUnavailable", "观察源中断", job.Id)))
-                    { job.Stop.Cancel(); break; }
-                    job.Session.Acknowledge(checkpoint);
-                    TraceSegments(job, checkpoint);
+                    if (ended || checkpoint.Urgent || checkpoint.Material && clock.GetElapsedTime(job.LastSaved) >= DeferredCheckpointInterval)
+                    {
+                        if (!await history.SaveAsync(checkpoint, terminal, job.Failure is null ? null : ApiErrors.Create("combat.sourceUnavailable", "观察源中断", job.Id)))
+                        { job.Stop.Cancel(); break; }
+                        job.Session.Acknowledge(checkpoint); job.LastSaved = clock.GetTimestamp();
+                        TraceSegments(job, checkpoint);
+                    }
+                    if (!ended) history.PublishLive(checkpoint.Workspace, job.Session.EntityEffects);
                     TraceRejections(job);
                     if (ended) return;
                 }
@@ -248,6 +260,7 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
         finally
         {
             job.Stop.Cancel(); await producer;
+            await FlushDeferredAsync(job);
             TraceRejections(job, flush: true);
             var completion = new CombatGapAccumulator();
             completion.AddRange(await job.Subscription.CloseAsync()); job.SubscriptionClosed = true;
@@ -266,6 +279,21 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
                 { job.StopReason = "update-maintenance"; DeferResidentStop(job, completion.Snapshot(), measured, measuredTimeline); }
             }
         }
+    }
+    /// <summary>停止前保存尚未落库的变化，收尾检查点从这里继续；保存失败时沿用上一次已提交的检查点。</summary>
+    private async Task FlushDeferredAsync(Job job)
+    {
+        if (job.Session is not { } session) return;
+        await job.Gate.WaitAsync();
+        try
+        {
+            var checkpoint = session.Capture();
+            if (!checkpoint.Material) return;
+            if (await history.SaveAsync(checkpoint)) session.Acknowledge(checkpoint);
+        }
+        catch (OperationException) { }
+        catch (StorageException) { }
+        finally { job.Gate.Release(); }
     }
     public async Task<OperationSnapshot> CancelAsync(string id, string principal, bool owner, string? reason, CancellationToken ct = default)
     {

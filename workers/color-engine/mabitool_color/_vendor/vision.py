@@ -64,7 +64,7 @@ def configure_ocr(strict=False,*,check=None):
         if not directory.is_absolute():
             failure=('ocr.componentMissing',f'文字识别组件路径无效：{TESSERACT_DIRECTORY_VARIABLE} 须为绝对路径。')
         elif not exe.is_file() or not (data_dir/'eng.traineddata').is_file():
-            failure=('ocr.componentMissing','文字识别组件缺失：染色组件内没有 Tesseract 程序或英文识别数据，请使用完整安装包。')
+            failure=('ocr.componentMissing','文字识别组件缺失：程序文件夹的 components\\color-engine\\tesseract 里没有 Tesseract 程序或英文识别数据，请重新解压完整的 Moongate 压缩包。')
         else:
             try:
                 # --list-langs includes the installation path in its header, whose
