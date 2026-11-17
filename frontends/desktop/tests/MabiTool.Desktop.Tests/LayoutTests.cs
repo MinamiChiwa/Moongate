@@ -309,7 +309,7 @@ public sealed class LayoutTests
             {
                 Assert.DoesNotContain(Named<MabiTool.Desktop.Controls.Tables.DataTable>(window, "DamageTable").VisibleColumns,
                     column => column.Id == "elements");
-                Assert.False(Named<ItemsControl>(window, "TraitTiles").IsEffectivelyVisible);
+                Assert.DoesNotContain("无防备", VisibleTexts(Named<ItemsControl>(window, "RateGrid")));
                 Assert.False(Named<StackPanel>(window, "FirstAttackGroup").IsEffectivelyVisible);
             }),
         new("combat.update-badge", "combat-observation",
@@ -441,10 +441,10 @@ public sealed class LayoutTests
 
         // 浮窗版面
         new("presentation", "presentation", "sample",
-            // 画布中央写明画的是哪几块显示器（浮窗按显示器分窗，不再绑定游戏窗口）。
+            // 屏幕卡片写明当前有哪几块显示器（浮窗按显示器分窗，元件在实际屏幕上编辑，页面里不再画画布）。
             Check: window =>
             {
-                var caption = Named<TextBlock>(window, "CanvasLabel");
+                var caption = Named<TextBlock>(window, "MonitorsText");
                 Assert.True(caption.IsEffectivelyVisible);
                 Assert.Contains("示器", caption.Text);
             }, Shot: Shot.Full),
@@ -573,7 +573,7 @@ public sealed class LayoutTests
         "measure-countdown" => new SampleBackend { SampleMeasurementPhase = MeasurementPhase.Waiting },
         "measure-running" => new SampleBackend { SampleMeasurementPhase = MeasurementPhase.Running, SampleRangeTarget = "boss" },
         "measure-unavailable" => new SampleBackend { MeasurementUnavailable = true,
-            SampleAutoText = "未抓包（observation.channelAmbiguous），抓包运行后自动开始观测" },
+            SampleAutoText = "未抓包：多张网卡有游戏连接，请在设置中指定" },
         "measure-scope" => new SampleBackend { SampleScope = CombatScopeKind.Measurement, IncompleteRange = true, SampleRangeTarget = "archer-2" },
         "many-targets" => new SampleBackend { ExtraRangeTargets = 24, SampleRangeTarget = "mob-20" },
         "no-healing" => new SampleBackend { NoHealingData = true },

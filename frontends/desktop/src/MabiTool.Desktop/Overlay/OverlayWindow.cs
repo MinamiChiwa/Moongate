@@ -50,7 +50,7 @@ public sealed class OverlayWindow : Window
         canvas.ManipulationChanged += (_, _) => UpdateRegions();
         // 显示器缩放改变（或窗口被系统移到别的显示器）后按新的比例重新铺满。
         ScalingChanged += (_, _) => { Follow(); UpdateRegions(); };
-        cursorWatch.Tick += (_, _) => FollowCursor();
+        cursorWatch.Tick += (_, _) => FollowCursor(true);
         Opened += (_, _) =>
         {
             // 拖动的位置与松开按系统光标判定，不依赖指针事件是否送到本窗口（见 OverlayCanvas.CursorSource）。
@@ -164,6 +164,17 @@ public sealed class OverlayWindow : Window
     /// </summary>
     private void UpdateRegions()
     {
+        // 设置窗口区域与样式可能同步引起窗口消息与重排，期间再进来直接返回。
+        if (updatingRegions) return;
+        updatingRegions = true;
+        try { ApplyRegions(); }
+        finally { updatingRegions = false; }
+    }
+
+    private bool updatingRegions;
+
+    private void ApplyRegions()
+    {
         var scaling = RenderScaling;
         var size = new PixelSize((int)Math.Ceiling(Bounds.Width * scaling), (int)Math.Ceiling(Bounds.Height * scaling));
         // 随游戏最小化隐藏时没有画出内容的区域，整窗让鼠标落到下层。
@@ -177,7 +188,7 @@ public sealed class OverlayWindow : Window
         cursorWatch.Interval = TimeSpan.FromMilliseconds(canvas.IsManipulating ? 16 : 33);
         if (InteractiveRegion.Count > 0 || canvas.IsManipulating) cursorWatch.Start();
         else cursorWatch.Stop();
-        FollowCursor();
+        FollowCursor(false);
         if (region is null ? appliedRegion is null : appliedRegion is not null && region.SequenceEqual(appliedRegion)) return;
         appliedRegion = region;
         if (region is null)
@@ -197,12 +208,13 @@ public sealed class OverlayWindow : Window
     }
 
     // 光标在接收鼠标的矩形内（或正在拖动）时浮窗接收鼠标，其余时候整窗穿透。只在状态变化时改窗口样式。
-    // 拖动中按系统光标接着拖动，主按键松开（不论松开消息送到哪个窗口）即结束并保存，不让整窗一直拦截鼠标。
-    private void FollowCursor()
+    // 定时器调用时（poll）拖动中按系统光标接着拖动，主按键松开（不论松开消息送到哪个窗口）即结束并保存，不让整窗一直拦截鼠标。
+    // 排版之后更新区域时不轮询拖动：改尺寸会要求重新排版，排版后再轮询会与排版互相触发。
+    private void FollowCursor(bool poll)
     {
         var handle = NativeHandle;
         if (handle == IntPtr.Zero) return;
-        canvas.PollDrag();
+        if (poll) canvas.PollDrag();
         var located = Win32OverlayCursor.GetCursorPos(out var cursor);
         // 光标位置：物理像素减去窗口位置，再按本窗口（所在显示器）的缩放比例换成逻辑像素；别的显示器上的光标同样换算，落在窗口之外。
         var local = new PixelPoint(cursor.X - Position.X, cursor.Y - Position.Y);

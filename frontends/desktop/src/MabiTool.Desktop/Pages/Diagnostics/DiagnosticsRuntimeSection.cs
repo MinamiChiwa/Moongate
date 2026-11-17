@@ -97,7 +97,7 @@ public sealed class DiagnosticsRuntimeSection : ObservableObject
         try { reply = await backend.ReadDiagnosticRuntimeAsync(CancellationToken.None); }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            reply = new(null, exception.Message);
+            reply = new(null, Localization.CodeText.Error(exception));
         }
         if (disposed || token != generation) return;
         if (reply.Value is { } value)

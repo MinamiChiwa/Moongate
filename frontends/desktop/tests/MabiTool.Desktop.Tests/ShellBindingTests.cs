@@ -147,7 +147,7 @@ public sealed class ShellBindingTests
             Assert.True(Picker(window).IsOpen);
             Assert.Equal(3, Rows(window).Count);
             Assert.True(Rows(window).All(row => row.IsEffectivelyEnabled));
-            Assert.Equal("请求未完成：窗口选择已过期，请重新选择", ((ShellViewModel)window.DataContext!).Activity.Detail);
+            Assert.Equal("请求未完成：窗口选择已过期", ((ShellViewModel)window.DataContext!).Activity.Detail);
             Assert.Equal("琉特", ((ShellViewModel)window.DataContext!).Binding.CharacterName);
         }
         finally { window.Close(); }

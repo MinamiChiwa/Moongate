@@ -116,7 +116,7 @@ public sealed partial class SampleBackend
     public Task<BackendReply> SaveColorDraftAsync(ColorDraft draft, CancellationToken cancellationToken)
     {
         SavedColorDrafts.Add(draft);
-        if (ColorDraftReject is { } code) return Task.FromResult(new BackendReply(false, Pick($"请求未完成：{code}", $"請求未完成：{code}")));
+        if (ColorDraftReject is { } code) return Task.FromResult(new BackendReply(false, Pick("请求未完成：", "請求未完成：") + Localization.CodeText.Reason(code)));
         colorDraft = draft;
         colorRevision++;
         Changed?.Invoke(this, EventArgs.Empty);
@@ -165,7 +165,7 @@ public sealed partial class SampleBackend
                 CancelledAtlasRequests++;
                 throw;
             }
-        if (NoColorAtlas) return new ColorAtlasReply(null, Pick("后端没有配置染色引擎，无法计算目标色集合", "後端沒有設定染色引擎，無法計算目標色集合"));
+        if (NoColorAtlas) return new ColorAtlasReply(null, Pick("未配置染色引擎，无法计算色集", "未設定染色引擎，無法計算色集"));
         var exact = matchMode == ColorCodes.ExactHex;
         var (r, g, b) = ColorMath.Rgb(targetHex);
         ColorBitmap Shades(int width, int height)

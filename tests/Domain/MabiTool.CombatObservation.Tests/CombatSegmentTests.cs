@@ -48,6 +48,23 @@ public sealed class CombatSegmentTests
     }
 
     [Fact]
+    public void MapChangeMarksTheWholeExpiredUntilTheNextDamageOpensANewOne()
+    {
+        var session = Session(); var script = new Script(session);
+        script.Start(0);
+        Fight(script, 100, 100);
+        script.Reset(1500, Closed); script.Identify(3000);
+        var waiting = session.Capture().Workspace.Observation;
+        Assert.Equal(1, waiting.WholeOrdinal);
+        Assert.Equal("map-change", waiting.WholeExpired);
+        Fight(script, 4000, 100);
+        var renewed = session.Capture().Workspace.Observation;
+        Assert.Equal(2, renewed.WholeOrdinal);
+        Assert.Null(renewed.WholeExpired);
+        Assert.Equal([1, 2], Segments(session).Select(x => x.Segment!.Whole!.Value));
+    }
+
+    [Fact]
     public void ThreeMapChangesProduceFourIndependentCompleteSegments()
     {
         var session = Session(); var script = new Script(session);

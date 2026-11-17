@@ -10,6 +10,23 @@ namespace MabiTool.Host.Game;
 public sealed record GameControlContext(GameSessionBindingTracker Bindings, ResourceLeaseCoordinator Leases,
     GameInputBroker Input, bool Simulation)
 {
+    private GameBackgroundInputBroker? background;
+
+    /// <summary>
+    /// 后台输入通道，与 <see cref="Input"/> 并列并共用租约与紧急停止。Windows 上为移植自 MabiAgent 的后台触控；
+    /// 模拟宿主与其他平台不可用并给出原因码。现有模块（合奏、染色）本期仍只用前台输入。
+    /// </summary>
+    public GameBackgroundInputBroker Background
+    {
+        get => background ??= new(Leases, Bindings, Simulation || !OperatingSystem.IsWindows()
+            ? new UnavailableBackgroundInputDevice(Simulation ? "input.backgroundSimulation" : "input.backgroundUnsupported")
+            : CreateWindowsBackground());
+        init => background = value;
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static IGameBackgroundInputDevice CreateWindowsBackground() => new WindowsBackgroundTouchInput();
+
     public static GameControlContext Create(ResourceLeaseCoordinator leases, TimeProvider time, bool simulation)
     {
         var bindings = new GameSessionBindingTracker(time);

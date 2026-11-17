@@ -68,6 +68,118 @@ public sealed partial class LiveBackend
             return Pick($"已卸载扩展 {id}", $"已解除安裝擴充 {id}");
         }, cancellationToken);
 
+    public Task<BackendReply> SetExtensionPermissionAsync(string id, string permission, bool granted, CancellationToken cancellationToken) =>
+        ExtensionReplyAsync(async (api, token) =>
+        {
+            await api.SetExtensionPermissionsAsync(id, new(new Dictionary<string, bool> { [permission] = granted }), token);
+            return granted ? Pick("已授予权限", "已授予權限") : Pick("已撤销权限，立即生效", "已撤銷權限，立即生效");
+        }, cancellationToken);
+
+    public Task<BackendReply> RestartExtensionAsync(string id, CancellationToken cancellationToken) =>
+        ExtensionReplyAsync(async (api, token) =>
+        {
+            await api.RestartExtensionAsync(id, token);
+            return Pick($"已重启扩展 {id}", $"已重新啟動擴充 {id}");
+        }, cancellationToken);
+
+    private ExtensionSurfaceCatalog? extensionSurfaces;
+
+    /// <summary>
+    /// 活动胶囊里的扩展状态：取最近更新的一条，写成“扩展名：状态”，状态最多 16 字；没有运行中扩展的状态时为空。
+    /// </summary>
+    internal (string Title, string Detail)? ExtensionActivity()
+    {
+        ExtensionSurfaceCatalog? surfaces;
+        ExtensionCatalog? catalog;
+        lock (gate) { surfaces = extensionSurfaces; catalog = extensions; }
+        if (surfaces?.Activities.OrderByDescending(x => x.Revision.Value).FirstOrDefault() is not { } activity) return null;
+        var name = Pages.Modules.ModuleText.Pick(catalog?.Installed.FirstOrDefault(x => x.Id == activity.ExtensionId)?.Package?.DisplayNames) ?? activity.ExtensionId;
+        var text = activity.Text.Length > 16 ? activity.Text[..16] : activity.Text;
+        return (Pick($"扩展 {name}：{text}", $"擴充 {name}：{text}"), Pick($"来自扩展 {name} 的状态", $"來自擴充 {name} 的狀態"));
+    }
+
+    public ExtensionSurfaceCatalog? GetExtensionSurfaces()
+    {
+        lock (gate) return extensionSurfaces;
+    }
+
+    // 扩展界面的状态由扩展推送（例如计时），随主循环每轮读取一次；只在有运行中的带代码扩展、或上一轮还有界面时读取，
+    // 修订不变时不通知界面。
+    private async Task RefreshExtensionSurfacesAsync(MabiToolClient api, CancellationToken token)
+    {
+        bool wanted;
+        lock (gate) wanted = extensions?.Installed.Any(item => item.Runtime?.State is "running" or "starting") == true ||
+            extensionSurfaces is { Surfaces.Count: > 0 } || extensionSurfaces is { Settings.Count: > 0 } ||
+            extensionSurfaces is { Activities.Count: > 0 } || extensionSurfaces?.FileRequests is { Count: > 0 };
+        if (!wanted) return;
+        var value = await Try(() => api.GetExtensionSurfacesAsync(token));
+        bool changed;
+        lock (gate)
+        {
+            changed = value?.Revision != extensionSurfaces?.Revision;
+            extensionSurfaces = value;
+        }
+        if (changed) Notify();
+    }
+
+    public Task<BackendReply> SendExtensionUiEventAsync(string id, ExtensionUiEvent value, CancellationToken cancellationToken) =>
+        ExtensionReplyAsync(async (api, token) =>
+        {
+            var catalog = await api.SendExtensionUiEventAsync(id, value, token);
+            lock (gate) extensionSurfaces = catalog;
+            return string.Empty;
+        }, cancellationToken, remember: false);
+
+    public Task<BackendReply> SaveExtensionSettingsAsync(string id, IReadOnlyDictionary<string, System.Text.Json.JsonElement> values,
+        CancellationToken cancellationToken) =>
+        ExtensionReplyAsync(async (api, token) =>
+        {
+            await api.SaveExtensionSettingsAsync(id, new(values), token);
+            return Pick("扩展设置已保存", "擴充設定已儲存");
+        }, cancellationToken);
+
+    // 文件只经上传接口交给宿主，扩展得到内容而不是路径；超过上限的文件在本机就拒绝，扩展收到取消。
+    public Task<BackendReply> AnswerExtensionFileRequestAsync(string extensionId, string requestId, string? filePath, CancellationToken cancellationToken) =>
+        ExtensionReplyAsync(async (api, token) =>
+        {
+            if (filePath is not null && new FileInfo(filePath) is { Exists: true } info && info.Length <= 512 * 1024)
+            {
+                await using var file = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous);
+                var sha = Convert.ToHexStringLower(await SHA256.HashDataAsync(file, token));
+                file.Position = 0;
+                string? tag = null;
+                var upload = await api.CreateFileUploadAsync(new(Path.GetFileName(filePath), new((ulong)file.Length), sha, "application/octet-stream"),
+                    IdempotencyKey(), token, metadata => tag = metadata.ETag);
+                upload = await api.UploadFileContentAsync(upload.Id, file, IdempotencyKey(), tag ?? string.Empty, token);
+                await api.AnswerExtensionFileRequestAsync(requestId, new(upload.Id), token);
+                return Pick("已把所选文件交给扩展", "已把所選檔案交給擴充");
+            }
+            await api.AnswerExtensionFileRequestAsync(requestId, new(null, true), token);
+            return filePath is null ? string.Empty : Pick("所选文件超过 512 KiB，未交给扩展", "所選檔案超過 512 KiB，未交給擴充");
+        }, cancellationToken);
+
+    public Task<BackendReply> SetExtensionDevelopmentModeAsync(bool enabled, CancellationToken cancellationToken) =>
+        ExtensionReplyAsync(async (api, token) =>
+        {
+            await api.SetExtensionDevelopmentModeAsync(new(enabled), token);
+            return enabled ? Pick("已开启开发模式", "已開啟開發模式") : Pick("已关闭开发模式，开发中的扩展已停止", "已關閉開發模式，開發中的擴充已停止");
+        }, cancellationToken);
+
+    public Task<BackendReply> LoadDevelopmentExtensionAsync(string directory, CancellationToken cancellationToken) =>
+        ExtensionReplyAsync(async (api, token) =>
+        {
+            var installed = await api.LoadDevelopmentExtensionAsync(new(directory), token);
+            return Pick($"已加载开发中的扩展 {installed.Id}，启用后运行", $"已載入開發中的擴充 {installed.Id}，啟用後執行");
+        }, cancellationToken);
+
+    public async Task<ExtensionLogPage?> GetExtensionLogsAsync(string id, CancellationToken cancellationToken)
+    {
+        MabiToolClient? api;
+        lock (gate) api = client;
+        if (api is null) return null;
+        return await Try(() => api.GetExtensionLogsAsync(id, cancellationToken));
+    }
+
     // 与其他编辑意图相同的回执与重读；扩展的拒绝原因以后端的中文说明加原因码显示，用户能看懂为什么不能安装。
     private async Task<BackendReply> ExtensionReplyAsync(Func<MabiToolClient, CancellationToken, Task<string>> send,
         CancellationToken cancellationToken, bool remember = true)
@@ -79,7 +191,7 @@ public sealed partial class LiveBackend
                 try { return await send(api, token); }
                 catch (MabiToolApiException error) when (error.Problem is { } problem)
                 {
-                    throw new ExtensionRejectedException(problem.Title is { Length: > 0 } title ? title : Localization.CodeText.Reason(problem.Code));
+                    throw new ExtensionRejectedException(Localization.CodeText.Readable(problem.Title) ?? Localization.CodeText.Reason(problem.Code));
                 }
             }, cancellationToken, remember);
         }

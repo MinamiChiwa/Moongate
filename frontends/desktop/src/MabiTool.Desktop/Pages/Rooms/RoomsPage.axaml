@@ -204,7 +204,7 @@
               </StackPanel>
               <StackPanel x:Name="TailControls" Spacing="4" IsVisible="{Binding ShowTail}">
                 <WrapPanel>
-                  <TextBlock Classes="label" Text="{DynamicResource R.TailHold}" ToolTip.Tip="{DynamicResource R.TailHint}" />
+                  <TextBlock Classes="label" Text="{DynamicResource R.TailHold}" /><controls:HelpTip Margin="4,0,8,0" Text="{DynamicResource R.TailHint}" />
                   <StackPanel Orientation="Horizontal" IsVisible="{Binding EditTail}">
                     <TextBox x:Name="TailBox" Classes="field" Width="76" MinHeight="36" Text="{Binding TailText}"
                              AutomationProperties.Name="{DynamicResource R.TailHold}" />
@@ -212,7 +212,6 @@
                   </StackPanel>
                   <TextBlock Classes="body" VerticalAlignment="Center" Text="{Binding Status.TailRoundText}" IsVisible="{Binding ShowTailRound}" />
                 </WrapPanel>
-                <TextBlock Classes="note" Text="{DynamicResource R.TailHint}" />
                 <TextBlock x:Name="TailErrorText" Classes="note error" Text="{Binding TailError}" />
               </StackPanel>
               <!-- 本机时间微调：−2000～+2000 毫秒，负数提前、正数延后；进行中锁定。 -->
@@ -342,12 +341,11 @@
               <WrapPanel>
                 <CheckBox x:Name="OperateGameBox" Margin="0,0,18,6" IsChecked="{Binding OperateGame, Mode=OneWay}"
                           Command="{Binding OperateGameCommand}" IsEnabled="{Binding CanToggleOperateGame}"
-                          Content="{DynamicResource R.OperateGame}" ToolTip.Tip="{DynamicResource R.OperateGameTip}" />
+                          Content="{DynamicResource R.OperateGame}" ToolTip.Tip="{DynamicResource R.OperateGameNote}" />
                 <TextBlock Classes="body" VerticalAlignment="Center" Margin="0,0,10,6" Text="{Binding GameWindowText}" />
                 <Button x:Name="PickWindowButton" Classes="chip" Margin="0,0,0,6" Content="{DynamicResource R.PickWindow}"
                         Command="{Binding $parent[Window].((shell:ShellViewModel)DataContext).GamePicker.OpenCommand}" />
               </WrapPanel>
-              <TextBlock Classes="note" Text="{DynamicResource R.OperateGameNote}" />
               <!-- 开始：快捷键、游戏按钮，表情另有预填指令。 -->
               <Border Classes="inset" Padding="12,10">
                 <StackPanel Spacing="6">
@@ -572,9 +570,8 @@
         <StackPanel Spacing="10">
           <DockPanel>
             <Button DockPanel.Dock="Right" Classes="chip" Content="{DynamicResource R.Close}" Command="{Binding CloseLayerCommand}" />
-            <TextBlock Classes="h2" Text="{DynamicResource R.Advanced}" />
+            <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="h2" Text="{DynamicResource R.Advanced}" /><controls:HelpTip Text="{DynamicResource R.AdvancedHint}" /></StackPanel>
           </DockPanel>
-          <TextBlock Classes="note" Text="{DynamicResource R.AdvancedHint}" />
           <DockPanel>
             <TextBlock DockPanel.Dock="Left" Classes="label" Text="{DynamicResource R.Endpoint}" />
             <TextBox x:Name="EndpointBox" Classes="field" Text="{Binding ManualEndpoint}" IsEnabled="{Binding CanEditConnection}"

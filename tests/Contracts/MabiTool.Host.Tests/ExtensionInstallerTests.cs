@@ -60,6 +60,37 @@ public sealed class ExtensionInstallerTests : IDisposable
     }
 
     [Fact]
+    public async Task CodeExtensionUpgradeMarksAddedPermissionsAndKeepsHighRiskOff()
+    {
+        static string Code(string version, string permissions) => $$"""
+            {
+              "schemaVersion": 1, "id": "example.code", "version": "{{version}}",
+              "hostApi": { "minimum": "1.0", "maximumExclusive": "2.0" },
+              "displayNames": { "zh-Hans": "示例程序" },
+              "runtime": { "protocol": 1, "kind": "executable", "entry": "bin/run.exe" },
+              "permissions": [{{permissions}}]
+            }
+            """;
+        using var installer = Started();
+        var first = await Preview(installer, Package(("extension.json", Code("1.0.0", "\"combat.read\"")), ("bin/run.exe", "MZ")));
+        Assert.Equal(("executable", "bin/run.exe"), (first.Package.Runtime!.Kind, first.Package.Runtime.Entry));
+        await installer.InstallAsync(first.Id, includePaths: false, CancellationToken.None);
+        Assert.True(Assert.Single(installer.Get("example.code", false).Permissions!).Granted);
+
+        var upgrade = await Preview(installer, Package(("extension.json", Code("1.1.0", "\"combat.read\", \"ui.page\", \"capture.selected-window\"")), ("bin/run.exe", "MZ")));
+        Assert.Equal([("combat.read", false), ("ui.page", true), ("capture.selected-window", true)],
+            upgrade.Package.Permissions!.Select(x => (x.Id, x.Added)));
+        await installer.InstallAsync(upgrade.Id, includePaths: false, CancellationToken.None);
+        Assert.Equal([("combat.read", true), ("ui.page", true), ("capture.selected-window", false)],
+            installer.Get("example.code", false).Permissions!.Select(x => (x.Id, x.Granted)));
+
+        var memory = await Assert.ThrowsAsync<OperationException>(() => Preview(installer, Package(("extension.json",
+            Code("1.2.0", "\"process.read.selected-game\"").Replace("\"permissions\"", "\"highRiskBehaviors\": [\"memoryRead\"], \"permissions\"")),
+            ("bin/run.exe", "MZ"))));
+        Assert.Equal("extension.permissionUnavailable", memory.Code);
+    }
+
+    [Fact]
     public async Task RejectsPathTraversal()
     {
         using var installer = Started();

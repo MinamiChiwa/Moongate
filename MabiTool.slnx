@@ -32,6 +32,7 @@
     <Project Path="tests/EndToEnd/ObservationProbe/MabiTool.ObservationProbe.csproj" />
     <Project Path="tests/EndToEnd/InventoryObservationProbe/MabiTool.InventoryObservationProbe.csproj" />
     <Project Path="tests/EndToEnd/ObservationDebugTool/MabiTool.ObservationDebugTool.csproj" />
+    <Project Path="tests/EndToEnd/ExtensionFixture/MabiTool.ExtensionFixture.csproj" />
     <Project Path="tests/EndToEnd/MabiTool.ObservationDebugTool.Tests/MabiTool.ObservationDebugTool.Tests.csproj" />
     <Project Path="tests/Performance/BackendRuntimeProbe/MabiTool.BackendRuntimeProbe.csproj" />
     <Project Path="tests/Performance/ColorRuntimeProbe/MabiTool.ColorRuntimeProbe.csproj" />
@@ -47,6 +48,7 @@
   <Folder Name="/frontends/">
     <Project Path="frontends/sdk/csharp/MabiTool.Client.csproj" />
     <Project Path="frontends/examples/dotnet/MabiTool.FrontendExamples.csproj" />
+    <Project Path="frontends/examples/extensions/kill-timer/Moongate.Examples.KillTimer.csproj" />
     <Project Path="frontends/desktop/src/MabiTool.Desktop/MabiTool.Desktop.csproj" />
     <Project Path="frontends/desktop/tests/MabiTool.Desktop.Tests/MabiTool.Desktop.Tests.csproj" />
   </Folder>

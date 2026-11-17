@@ -23,7 +23,8 @@ public static class OverlayWidgetSizes
         ["combat.coverage"] = (new(256, 136), new(176, 88)),
         ["combat.self-effects"] = (new(352, 96), new(112, 96)),
         ["combat.target-effects"] = (new(352, 120), new(136, 120)),
-        ["combat.measurement"] = (new(248, 168), new(184, 144))
+        ["combat.measurement"] = (new(248, 168), new(184, 144)),
+        ["combat.healing"] = (new(240, 128), new(168, 112))
     };
 
     /// <summary>元件的默认尺寸；扩展元件没有声明时为空（按内容的自然尺寸显示）。</summary>

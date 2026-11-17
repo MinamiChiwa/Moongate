@@ -39,6 +39,13 @@ public sealed partial class SampleBackend
     public Task SendIntentAsync(string intent, string? argument, CancellationToken cancellationToken)
     {
         UiIntents.Add((intent, argument));
+        // 明细窗口自己的范围与目标：只通知窗口，主页面不随之重读。
+        if (intent.StartsWith("combat.detail.", StringComparison.Ordinal))
+        {
+            ApplyDetailIntent(intent, argument);
+            CombatDetailChanged?.Invoke(this, EventArgs.Empty);
+            return Task.CompletedTask;
+        }
         switch (intent)
         {
             case "music.search": musicSearch = argument ?? string.Empty; break;

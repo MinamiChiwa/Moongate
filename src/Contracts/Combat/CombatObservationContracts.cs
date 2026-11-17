@@ -87,12 +87,18 @@ public sealed record CombatObservationRequest(string GameSessionId, bool DamageE
 public sealed record CombatCapability(string Id, OpenEnum<CapabilityStatus> Status, ObservationSource? Source,
     string? Reason, UInt64String? Generation, DateTimeOffset? LastObservedAt);
 public sealed record CombatCapabilities(bool Simulation, IReadOnlyList<CombatCapability> Capabilities);
-/// <summary>LocalCombatState 为本机当前战斗状态（来源 170196）；来源未提供、旧配置或换连接后尚未收到时为空。</summary>
+/// <summary>
+/// LocalCombatState 为本机当前战斗状态（来源 170196）；来源未提供、旧配置或换连接后尚未收到时为空。
+/// WholeOrdinal 为当前整场序号（与分段的 <see cref="CombatSegment.Whole"/> 对应）；WholeExpired 为整场到期原因
+/// （map-change、idle-out-of-combat），到期后整场仍显示原结果，下一个分段开始新的一场时清除。旧版本为空。
+/// </summary>
 public sealed record CombatObservationStatus(string Id, string Owner, string GameSessionId, string State,
     ObservationSource Source, EntityKey LocalEntity, CombatObservationRequest Settings, UInt64String Revision,
     DateTimeOffset StartedAt, DateTimeOffset? LastObservedAt, double MonotonicMs,
     OpenEnum<ObservationQuality> Quality, IReadOnlyList<string> Reasons, UInt64String DroppedEvents,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] OpenEnum<CombatLocalState>? LocalCombatState = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] OpenEnum<CombatLocalState>? LocalCombatState = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? WholeOrdinal = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WholeExpired = null);
 public sealed record CombatDamageTotals(DamageAmountString ActualHp, DamageAmountString Shield,
     DamageAmountString Overkill, DamageAmountString Unclassified);
 public sealed record CombatDamageClassificationCounts(UInt64String Direct, UInt64String Indirect,
@@ -173,8 +179,12 @@ public sealed record CombatRangeSource(string Scope, IReadOnlyList<string> Encou
 public sealed record CombatMeasurementResult(string CalculationVersion, double DurationMs, double CountdownMs, DamageAmountString Damage,
     double? Dps, double? FirstDamageMs, double? LastDamageMs, double? ActiveDurationMs, bool Complete, IReadOnlyList<string> Reasons,
     DateTimeOffset StartedAt, DateTimeOffset EndedAt);
-/// <summary>战斗分段：观察内从 1 开始的序号及开始原因（first-damage、combat-entered、manual-start、manual-split、reset、map-change）。旧历史为空。</summary>
-public sealed record CombatSegment(int Ordinal, string StartReason);
+/// <summary>
+/// 战斗分段：观察内从 1 开始的序号及开始原因（first-damage、combat-entered、manual-start、manual-split、reset、map-change）。
+/// Whole 为所属整场的序号（观察内从 1 开始），整场范围合并同一序号的分段；旧历史为空。
+/// </summary>
+public sealed record CombatSegment(int Ordinal, string StartReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Whole = null);
 /// <summary>
 /// 实体的一个当前效果。Polarity 为客户端 Buff 表 AffectType 给出的极性：buff（增益）、debuff（减益）、none（表里标为无）；
 /// 名称表未读取、表里没有该效果或列结构不符时为空，前端单列为“未分类”，不推测。
@@ -217,7 +227,7 @@ public sealed record CombatObservationDegraded(string Owner, string ObservationI
 
 /// <summary>
 /// 按“时间范围 × 目标”重新统计的查询。Scope 为 <c>encounter</c>（一个战斗记录，含定时测量与保存的记录）或
-/// <c>observation</c>（一次观察里自最近一次重设起的全部自动分段）。FromMs/ToMs 相对记录开始，省略为整段；TargetId 为目标实体 ID。
+/// <c>observation</c>（一次观察里当前整场的全部自动分段）。FromMs/ToMs 相对记录开始，省略为整段；TargetId 为目标实体 ID。
 /// </summary>
 public sealed record CombatRangeQuery(string Scope, string? EncounterId = null, string? ObservationId = null,
     double? FromMs = null, double? ToMs = null, string? TargetId = null);

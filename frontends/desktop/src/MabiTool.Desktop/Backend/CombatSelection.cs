@@ -7,7 +7,7 @@ public readonly record struct CombatSelectionSnapshot(string Scope, string? Targ
 }
 
 /// <summary>
-/// DPS检测页的范围与目标选择：整个前端只有这一份（主页面、DPS 明细窗口与浮窗共用），由后端适配层持有。
+/// DPS检测页的范围与目标选择，由后端适配层持有：主页面与浮窗共用一份，DPS 明细窗口另有一份。
 /// 用户的每次选择推进修订；后端读取在发出时记下选择，结果只在仍是当前选择时采用，迟到的旧结果丢弃。
 /// 由异步回应触发的切换（开始观测、重设、测量开始或出结果后自动切到测量）带上发出时的修订，期间用户另选了范围就不再覆盖。
 /// </summary>
@@ -39,6 +39,16 @@ public sealed class CombatSelection
             if (next is "segment" or "observation") live = next;
             if (next != scope) target = null;
             scope = next; version++;
+        }
+    }
+
+    /// <summary>整份换成给定的范围与目标（明细窗口打开时取主页面当时的选择）。</summary>
+    public void Assign(string scope, string? target)
+    {
+        lock (gate)
+        {
+            if (scope is "segment" or "observation") live = scope;
+            this.scope = scope; this.target = target; version++;
         }
     }
 

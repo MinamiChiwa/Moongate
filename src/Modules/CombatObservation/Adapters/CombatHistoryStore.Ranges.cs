@@ -70,9 +70,19 @@ public sealed partial class CombatHistoryStore
             return result;
         });
         if (segments.Count == 0) throw new OperationException("resource.notFound", "这次观察还没有战斗记录");
-        // 整场从最近一次重设开始；重设前的分段属于上一轮统计。
-        var start = segments.FindLastIndex(x => x.Segment?.StartReason == "reset");
-        var selected = segments.Skip(Math.Max(0, start)).ToList();
+        // 整场为当前整场序号的分段：到期后、下一场开始前仍是原整场；重设后在下一笔伤害前没有分段。
+        // 没有整场序号的旧观察从最近一次重设开始。
+        List<CombatEncounter> selected;
+        if (Workspace(principal, owner, observation)?.Observation.WholeOrdinal is { } whole)
+        {
+            selected = segments.Where(x => x.Segment?.Whole == whole).ToList();
+            if (selected.Count == 0) throw new OperationException("resource.notFound", "这一场还没有战斗记录");
+        }
+        else
+        {
+            var start = segments.FindLastIndex(x => x.Segment?.StartReason == "reset");
+            selected = segments.Skip(Math.Max(0, start)).ToList();
+        }
         return selected.Select(x => new RangeSource(x, 0, x.Summary.DurationMs)).ToArray();
     }
 

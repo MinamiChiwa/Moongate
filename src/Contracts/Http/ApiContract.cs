@@ -332,6 +332,22 @@ public static class ApiContract
         Method: "POST", RequestType: typeof(ExtensionEnableRequest), Permission: ApiPermissions.ModulesConfigure);
     public static EndpointDefinition UninstallExtension { get; } = new("/api/v1/extensions/{id}/uninstall", "uninstallExtension", typeof(ExtensionUninstallReceipt),
         Method: "POST", Permission: ApiPermissions.ModulesConfigure);
+    public static EndpointDefinition SetExtensionPermissions { get; } = new("/api/v1/extensions/{id}/permissions", "setExtensionPermissions", typeof(InstalledExtension),
+        Method: "POST", RequestType: typeof(ExtensionGrantRequest), Permission: ApiPermissions.ModulesConfigure);
+    public static EndpointDefinition RestartExtension { get; } = new("/api/v1/extensions/{id}/restart", "restartExtension", typeof(InstalledExtension),
+        Method: "POST", Permission: ApiPermissions.ModulesConfigure);
+    public static EndpointDefinition ExtensionLogs { get; } = new("/api/v1/extensions/{id}/logs", "getExtensionLogs", typeof(ExtensionLogPage));
+    public static EndpointDefinition SetExtensionDevelopmentMode { get; } = new("/api/v1/extensions/development", "setExtensionDevelopmentMode", typeof(ExtensionCatalog),
+        Method: "POST", RequestType: typeof(ExtensionDevelopmentModeRequest), Permission: ApiPermissions.ModulesConfigure);
+    public static EndpointDefinition LoadDevelopmentExtension { get; } = new("/api/v1/extensions/development/load", "loadDevelopmentExtension", typeof(InstalledExtension),
+        Method: "POST", RequestType: typeof(ExtensionDevelopmentLoadRequest), Permission: ApiPermissions.ModulesConfigure);
+    public static EndpointDefinition ExtensionSurfaces { get; } = new("/api/v1/extensions/surfaces", "getExtensionSurfaces", typeof(ExtensionSurfaceCatalog), ETag: true);
+    public static EndpointDefinition SendExtensionUiEvent { get; } = new("/api/v1/extensions/{id}/ui-events", "sendExtensionUiEvent", typeof(ExtensionSurfaceCatalog),
+        Method: "POST", RequestType: typeof(ExtensionUiEvent), Permission: ApiPermissions.DesktopControl);
+    public static EndpointDefinition SaveExtensionSettings { get; } = new("/api/v1/extensions/{id}/settings", "saveExtensionSettings", typeof(ExtensionSettingsForm),
+        Method: "POST", RequestType: typeof(ExtensionSettingsUpdate), Permission: ApiPermissions.ModulesConfigure);
+    public static EndpointDefinition AnswerExtensionFileRequest { get; } = new("/api/v1/extensions/file-requests/{id}", "answerExtensionFileRequest", typeof(ExtensionSurfaceCatalog),
+        Method: "POST", RequestType: typeof(ExtensionFileResponse), Permission: ApiPermissions.FilesTransfer);
     public static IReadOnlyList<EndpointDefinition> Endpoints { get; } = Array.AsReadOnly([
         SystemInfo, GameWindows, GameBinding, SelectGameBinding, GameObservationRuntime, GameObservation, QueryObservationChannels, StartGameObservation, ReleaseGameObservation,
         GameCaptureSettings, SaveGameCaptureSettings, StartChannelDetection, ChannelDetection, CancelChannelDetection,
@@ -347,7 +363,8 @@ public static class ApiContract
         QueryDiagnosticRecords, StartDiagnosticCapture, CurrentDiagnosticCapture, StopDiagnosticCapture,
         Presentation, QueryPresentation, DesktopBridge, DesktopSurface, ChangeDesktopSurface,
         AuthSession, AuthClients, PairingChallenges, Pairings, RevokeClient,
-        ModuleConfiguration, ConfigureModule, Extensions, PreviewExtensionInstall, InstallExtension, SetExtensionEnabled, UninstallExtension, Operation, CancelOperation, EventSnapshot, Events, ReplayCatalog, MusicInstruments, QueryOwnedMusicInstruments, QueryOwnedMusicScores, StartReplay,
+        ModuleConfiguration, ConfigureModule, Extensions, PreviewExtensionInstall, InstallExtension, SetExtensionEnabled, UninstallExtension,
+        SetExtensionPermissions, RestartExtension, ExtensionLogs, SetExtensionDevelopmentMode, LoadDevelopmentExtension, ExtensionSurfaces, SendExtensionUiEvent, SaveExtensionSettings, AnswerExtensionFileRequest, Operation, CancelOperation, EventSnapshot, Events, ReplayCatalog, MusicInstruments, QueryOwnedMusicInstruments, QueryOwnedMusicScores, StartReplay,
         CombatCapabilities, StartCombatObservation, CombatObservation, StopCombatObservation, CombatSnapshot, CombatEncounters, QueryCombatEncounters, CombatEncounter,
         StartCombatEncounter, CloseCombatEncounter, SplitCombatEncounter, ResetCombatEncounter, FavoriteCombatEncounter, CombatEntityEffects, CombatTimeline, QueryCombatTimeline, CleanupCombatHistory,
         QueryCombatRange, SaveCombatRange, CombatMeasurement, StartCombatMeasurement, CancelCombatMeasurement, SaveCombatMeasurementSettings, CombatAutoObservation, SetCombatAutoObservation,

@@ -216,18 +216,18 @@ public sealed class RoomsTests
         UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
         ApiProblem Problem(string code, string? protocol = null) => new("about:blank", "x", 409, code, "x", "t",
             protocol is null ? new Dictionary<string, JsonElement>() : new() { ["protocolCode"] = JsonSerializer.SerializeToElement(protocol) }, false);
-        Assert.StartsWith("选中的成员尚未全部就绪", RoomReadinessText.Failure(Problem("room.commandRejected", "MEMBER_NOT_READY"), 409));
-        Assert.StartsWith("请将指定总指挥加入本轮参与者", RoomReadinessText.Failure(Problem("room.commandRejected", "LEADER_NOT_PARTICIPATING"), 409));
+        Assert.StartsWith("有选中的成员未就绪", RoomReadinessText.Failure(Problem("room.commandRejected", "MEMBER_NOT_READY"), 409));
+        Assert.StartsWith("总指挥需加入本轮", RoomReadinessText.Failure(Problem("room.commandRejected", "LEADER_NOT_PARTICIPATING"), 409));
         Assert.Equal("该操作由房主执行", RoomReadinessText.Failure(Problem("permission.denied"), 403));
-        Assert.Equal("后端返回了未登记的原因（room.somethingNew）", RoomReadinessText.Failure(Problem("room.somethingNew"), 409));
-        Assert.Equal("后端内部出错（HTTP 502）", RoomReadinessText.Failure(null, 502));
+        Assert.Equal("未知原因", RoomReadinessText.Failure(Problem("room.somethingNew"), 409));
+        Assert.Equal("后端内部出错", RoomReadinessText.Failure(null, 502));
 
         // 指定总指挥与移出成员。
-        Assert.StartsWith("退出请点击“关闭房间”", RoomReadinessText.Failure(Problem("room.commandRejected", "CANNOT_KICK_HOST"), 409, "rooms.kick"));
-        Assert.Equal("该成员已离开房间，请刷新后重试。", RoomReadinessText.Failure(Problem("resource.notFound"), 404, "rooms.kick"));
-        Assert.Equal("该成员已离开房间，请刷新后重试。", RoomReadinessText.Failure(Problem("resource.notFound"), 404, "rooms.leader"));
+        Assert.StartsWith("房主退出请点「关闭房间」", RoomReadinessText.Failure(Problem("room.commandRejected", "CANNOT_KICK_HOST"), 409, "rooms.kick"));
+        Assert.Equal("该成员已离开房间", RoomReadinessText.Failure(Problem("resource.notFound"), 404, "rooms.kick"));
+        Assert.Equal("该成员已离开房间", RoomReadinessText.Failure(Problem("resource.notFound"), 404, "rooms.leader"));
         Assert.Equal("找不到所选内容", RoomReadinessText.Failure(Problem("resource.notFound"), 404, "rooms.start"));
-        Assert.Equal("本轮任务仍在进行，请先取消或统一停止", RoomReadinessText.Failure(Problem("room.activityActive"), 409, "rooms.leader"));
+        Assert.Equal("本轮仍在进行，请先取消或全停", RoomReadinessText.Failure(Problem("room.activityActive"), 409, "rooms.leader"));
         Assert.Equal("该操作由房主执行", RoomReadinessText.Failure(Problem("permission.denied"), 403, "rooms.kick"));
         // 房主免就绪开轮前准备本机输入失败。
         Assert.Equal("尚未绑定游戏窗口", RoomReadinessText.Failure(Problem("input.bindingUnavailable"), 409, "rooms.start"));
@@ -236,24 +236,24 @@ public sealed class RoomsTests
         OperationSnapshot Operation(OperationState state, ApiProblem? problem = null) => new("op-" + new string('a', 32), "room.round.prepare", "o", [],
             state, "x", new(1), null, new(DateTimeOffset.UnixEpoch, null, null), null, problem, new(CancellationState.None, null), EffectStatus.None);
         Assert.Null(RoomReadinessText.RoundOutcome(Operation(OperationState.Succeeded)));
-        Assert.Equal(("本轮任务仍在进行，请先取消或统一停止", RoomTone.Error),
+        Assert.Equal(("本轮仍在进行，请先取消或全停", RoomTone.Error),
             RoomReadinessText.RoundOutcome(Operation(OperationState.Failed, Problem("room.activityActive")), "rooms.start"));
-        Assert.Equal(("选中的成员尚未全部就绪，请让成员就绪或取消勾选。", RoomTone.Error),
+        Assert.Equal(("有选中的成员未就绪", RoomTone.Error),
             RoomReadinessText.RoundOutcome(Operation(OperationState.Failed, Problem("room.memberNotReady", "MEMBER_NOT_READY")), "rooms.start"));
         Assert.Equal(RoomTone.Warning, RoomReadinessText.RoundOutcome(Operation(OperationState.Running))!.Value.Tone);
 
         // 抓包识别的被拒原因按抓包说明；轮询输入占用时只查询 Operation 标识，合奏本机准备的 room-… 不查询。
-        Assert.Equal("所选网卡不可用，请重新列出网卡后选择", RoomReadinessText.Failure(Problem("observation.channelUnavailable"), 409, "rooms.capture-start"));
+        Assert.Equal("所选网卡不可用，请重新选择", RoomReadinessText.Failure(Problem("observation.channelUnavailable"), 409, "rooms.capture-start"));
         Assert.Equal("请先选择游戏窗口", RoomReadinessText.Failure(Problem("input.bindingUnavailable"), 409, "rooms.capture-start"));
         Assert.True(LiveBackend.IsOperationId("op-" + new string('0', 32)));
         Assert.False(LiveBackend.IsOperationId("room-" + new string('0', 32)));
         Assert.False(LiveBackend.IsOperationId("op-" + new string('G', 32)));
 
         // 本机停止的三种结果各一句。
-        Assert.Equal(("已发出本机停止，房主将选择全员停止或继续。", RoomTone.Success), RoomReadinessText.LocalStop("stopScheduled", true));
+        Assert.Equal(("已发出本机停止，等房主决定", RoomTone.Success), RoomReadinessText.LocalStop("stopScheduled", true));
         Assert.Equal(RoomTone.Warning, RoomReadinessText.LocalStop("stopScheduled", false).Tone);
-        Assert.Equal(("无法执行本机停止，请在游戏中手动停止演奏。", RoomTone.Error), RoomReadinessText.LocalStop("stopRejected", true));
-        Assert.Equal(("已取消本机任务。", RoomTone.Success), RoomReadinessText.LocalStop("cancelled", false));
+        Assert.Equal(("本机停止失败，请在游戏中手动停止", RoomTone.Error), RoomReadinessText.LocalStop("stopRejected", true));
+        Assert.Equal(("已取消本机任务", RoomTone.Success), RoomReadinessText.LocalStop("cancelled", false));
     }
 
     [AvaloniaFact]
@@ -351,10 +351,10 @@ public sealed class RoomsTests
         // 开始请求等待后端执行结果期间：开始与就绪停用并说明原因。
         var busy = RoomFlow.Describe(Data(hostUnready) with { RoundBusy = true }, "ensemble", preferences);
         Assert.False(busy.CanStart);
-        Assert.Equal("正在等待上一次操作的结果…", busy.StartHint);
+        Assert.Equal("等待上次操作的结果…", busy.StartHint);
         Assert.False(RoomFlow.Describe(Data(hostUnready, "a") with { RoundBusy = true }, "ensemble", preferences).CanReady);
         // 倒计时等参数有误时停用并说明。
-        Assert.StartsWith("倒计时、演奏时长或尾音保留填写有误", RoomFlow.Describe(Data(hostUnready), "ensemble", preferences, settingsInvalid: true).StartHint);
+        Assert.StartsWith("倒计时或时长填写有误", RoomFlow.Describe(Data(hostUnready), "ensemble", preferences, settingsInvalid: true).StartHint);
 
         // 成员视角：参与者显示参与者提示，不显示开始。
         var member = RoomFlow.Describe(Data(waiting, "a"), "ensemble", preferences);
@@ -366,7 +366,7 @@ public sealed class RoomsTests
         var interrupted = ParseSample();
         var hostInterrupted = RoomFlow.Describe(Data(interrupted), "ensemble", preferences);
         Assert.Equal(("演奏中断", RoomTone.Error), (hostInterrupted.Phase, hostInterrupted.PhaseTone));
-        Assert.Equal("请选择全员停止，或继续演奏。", hostInterrupted.NextStep);
+        Assert.Equal("请选择全员停止或继续", hostInterrupted.NextStep);
         Assert.True(hostInterrupted.ShowContinue && hostInterrupted.ShowStopAll && !hostInterrupted.ShowCancel);
         Assert.Equal("继续，按原计划停止", hostInterrupted.ContinueLabel);
         Assert.Contains("成員甲 手动报告已提前停止", hostInterrupted.MusicStatus);
@@ -388,7 +388,7 @@ public sealed class RoomsTests
 
         // 房间连接中断。
         var lost = RoomFlow.Describe(Data(room, session: "reconnecting"), "ensemble", preferences);
-        Assert.Equal(("房间连接已中断", "连接已断开，可点击重新连接，或关闭房间。"), (lost.Phase, lost.NextStep));
+        Assert.Equal(("房间连接已中断", "连接已断开，可重连或关闭房间"), (lost.Phase, lost.NextStep));
         Assert.False(lost.CanReady || lost.CanStart);
     }
 
@@ -444,7 +444,7 @@ public sealed class RoomsTests
         var pending = LayoutProbe.Open(new SampleBackend { CaptureCharacter = null }, 1280, 860, "rooms");
         try
         {
-            Assert.Equal("抓包中 · 未识别角色，请切换一次地图", Named<TextBlock>(pending, "CaptureLineText").Text);
+            Assert.Equal("未识别角色，请切换一次地图", Named<TextBlock>(pending, "CaptureLineText").Text);
             Assert.False(Named<StackPanel>(pending, "ObservedPanel").IsVisible);
         }
         finally { pending.Close(); }
@@ -453,7 +453,7 @@ public sealed class RoomsTests
         var failed = LayoutProbe.Open(new SampleBackend { CaptureState = "faulted", CaptureReason = "observation.channelNotFound" }, 1280, 860, "rooms");
         try
         {
-            Assert.StartsWith("未抓包：没有网卡承载游戏连接", Named<TextBlock>(failed, "CaptureLineText").Text);
+            Assert.StartsWith("未抓包：找不到游戏网卡", Named<TextBlock>(failed, "CaptureLineText").Text);
             Click(failed, Named<Button>(failed, "CaptureChip"));
             LayoutProbe.Settle();
             Assert.True(Named<Card>(failed, "CapturePanel").IsEffectivelyVisible);
@@ -549,7 +549,7 @@ public sealed class RoomsTests
             LayoutProbe.Settle();
             Assert.Equal(("rooms.local-stop", (string?)null), backend.UiIntents[^1]);
             Assert.Equal("演奏中断", Named<TextBlock>(window, "PhaseText").Text);
-            Assert.Equal("已发出本机停止，房主将选择全员停止或继续。", Named<TextBlock>(window, "FeedbackText").Text);
+            Assert.Equal("已发出本机停止，等房主决定", Named<TextBlock>(window, "FeedbackText").Text);
         }
         finally { window.Close(); }
     }
@@ -1119,10 +1119,10 @@ public sealed class RoomsTests
         // 停止时刻过后：任何情况下都不再出现停止倒计时，阶段文字给出收尾状态。
         Assert.Null(RoomClock.Countdown(round, timing, At(190)));
         Assert.Null(Status(silent with { Round = round with { Cycle = null } }, 190).Countdown);
-        Assert.Equal(("正在执行停止 · 等待全员停止（还有 2 人）", RoomTone.Info), (Status(silent, 190).Phase, Status(silent, 190).PhaseTone));
+        Assert.Equal(("正在执行停止 · 还有 2 人未停", RoomTone.Info), (Status(silent, 190).Phase, Status(silent, 190).PhaseTone));
         RoomState With(params RoomReceipt[] receipts) => silent with { Round = round with { Receipts = receipts } };
         var executed = new RoomReceipt("t1", "h", "executed", false, null);
-        Assert.Equal(("已执行停止 · 等待全员停止（还有 1 人）", RoomTone.Success), (Status(With(executed), 190).Phase, Status(With(executed), 190).PhaseTone));
+        Assert.Equal(("已执行停止 · 还有 1 人未停", RoomTone.Success), (Status(With(executed), 190).Phase, Status(With(executed), 190).PhaseTone));
         Assert.Equal("已执行停止", Status(With(executed, executed with { MemberId = "a" }), 190).Phase);
         var failed = Status(With(executed with { Status = "failed", Detail = "input-failed" }), 190);
         Assert.StartsWith("停止失败：", failed.Phase);

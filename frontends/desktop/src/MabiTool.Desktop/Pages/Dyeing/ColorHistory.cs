@@ -72,7 +72,7 @@ public static class ColorHistoryMapper
         OperationState.Cancelled => UiText.Pick("已取消", "已取消"),
         OperationState.Failed => UiText.Pick("失败", "失敗"),
         OperationState.Interrupted => UiText.Pick("中断", "中斷"),
-        _ => ColorStages.UnknownState(state.RawValue)
+        _ => Localization.CodeText.State(state.RawValue)
     };
 }
 

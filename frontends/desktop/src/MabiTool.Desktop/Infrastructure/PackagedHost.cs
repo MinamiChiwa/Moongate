@@ -179,7 +179,7 @@ internal static class PackagedHost
                 try { process = Process.Start(StartInfo(launch)) ?? throw new IOException("宿主进程未能创建"); }
                 catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
                 {
-                    Problem = UiText.Pick($"后端未能启动：{error.Message}", $"後端未能啟動：{error.Message}");
+                    Problem = UiText.Pick("后端未能启动：", "後端未能啟動：") + Localization.CodeText.Error(error);
                     return;
                 }
                 using (process)
@@ -214,29 +214,22 @@ internal static class PackagedHost
     internal static (bool Relaunch, string Problem) AfterExit(int exitCode, TimeSpan ranFor, bool relaunched)
     {
         if (exitCode != 0 && ranFor < StartupWatch) return (false, FailureMessage(exitCode));
-        var stopped = UiText.Pick($"后端已停止（退出码 {exitCode}）", $"後端已停止（結束代碼 {exitCode}）");
         return relaunched
-            ? (false, stopped + UiText.Pick("，自动重新启动后再次停止。请关闭并重新打开 Moongate。", "，自動重新啟動後再次停止。請關閉並重新開啟 Moongate。") + Diagnose)
-            : (true, stopped + UiText.Pick("，正在自动重新启动。", "，正在自動重新啟動。"));
+            ? (false, UiText.Pick("后端再次停止，请重新打开 Moongate。", "後端再次停止，請重新開啟 Moongate。") + Diagnose)
+            : (true, UiText.Pick("后端已停止，正在自动重启。", "後端已停止，正在自動重新啟動。"));
     }
 
-    /// <summary>宿主退出码到连接状态说明；退出码的分类见宿主 <c>HostStartupFailure</c>。</summary>
+    /// <summary>宿主退出码到连接状态说明；退出码的分类见宿主 <c>HostStartupFailure</c>。退出码本身只在诊断记录里，不写进说明。</summary>
     internal static string FailureMessage(int exitCode) => exitCode switch
     {
-        3 => UiText.Pick("后端未能启动（退出码 3）：数据目录无法使用，可能是程序文件夹不可写、数据正被占用、需要恢复或配置冲突。",
-            "後端未能啟動（結束代碼 3）：資料目錄無法使用，可能是程式資料夾不可寫入、資料正被佔用、需要復原或設定衝突。") + Diagnose,
-        4 => UiText.Pick("后端未能启动（退出码 4）：上次更新尚未完成恢复。", "後端未能啟動（結束代碼 4）：上次更新尚未完成復原。") + Diagnose,
+        3 => UiText.Pick("后端未能启动：数据目录不可用。", "後端未能啟動：資料目錄不可用。") + Diagnose,
+        4 => UiText.Pick("后端未能启动：上次更新未完成恢复。", "後端未能啟動：上次更新未完成復原。") + Diagnose,
         5 => UiText.Pick(
-            $"后端未能启动（退出码 5）：本机端口 {Port} 已被占用，通常是另一个文件夹里的 Moongate 仍在运行。" +
-            "请先关闭那一份的 Moongate 窗口（后台服务随之退出），或在任务管理器的“详细信息”里结束命令行含 MabiTool.Host 的 dotnet.exe；然后重新打开本程序。",
-            $"後端未能啟動（結束代碼 5）：本機連接埠 {Port} 已被佔用，通常是另一個資料夾裡的 Moongate 仍在執行。" +
-            "請先關閉那一份的 Moongate 視窗（背景服務隨之結束），或在工作管理員的「詳細資料」裡結束命令列含 MabiTool.Host 的 dotnet.exe；然後重新開啟本程式。"),
+            $"后端未能启动：端口 {Port} 被占用，通常是另一份 Moongate 仍在运行。请关闭那一份，或在任务管理器结束命令行含 MabiTool.Host 的 dotnet.exe。",
+            $"後端未能啟動：連接埠 {Port} 被佔用，通常是另一份 Moongate 仍在執行。請關閉那一份，或在工作管理員結束命令列含 MabiTool.Host 的 dotnet.exe。"),
         // 默认端口被其他程序占用或被系统保留时宿主自动改用空闲端口，退出码 6 只出现在用 MABITOOL_API_PORT 指定了端口的情形。
-        6 => UiText.Pick(
-            $"后端未能启动（退出码 6）：指定的本机端口 {Port} 被其他程序占用或被系统保留。请关闭占用该端口的程序，或清除 MABITOOL_API_PORT 设置让后端自动选用空闲端口，然后重新打开。",
-            $"後端未能啟動（結束代碼 6）：指定的本機連接埠 {Port} 被其他程式佔用或被系統保留。請關閉佔用該連接埠的程式，或清除 MABITOOL_API_PORT 設定讓後端自動選用空閒連接埠，然後重新開啟。") + Diagnose,
-        7 => UiText.Pick("后端未能启动（退出码 7）：未知启动错误。", "後端未能啟動（結束代碼 7）：未知啟動錯誤。") + Diagnose,
-        _ => UiText.Pick($"后端未能启动（退出码 {exitCode}）。", $"後端未能啟動（結束代碼 {exitCode}）。") + Diagnose
+        6 => UiText.Pick($"后端未能启动：指定端口 {Port} 不可用，请清除 MABITOOL_API_PORT。", $"後端未能啟動：指定連接埠 {Port} 不可用，請清除 MABITOOL_API_PORT。") + Diagnose,
+        _ => UiText.Pick("后端未能启动。", "後端未能啟動。") + Diagnose
     };
 
     private static string Diagnose => UiText.Pick(@"在程序文件夹运行 components\core\launch-backend.cmd -Wait 可查看具体原因。",

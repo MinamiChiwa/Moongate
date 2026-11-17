@@ -7,7 +7,9 @@ namespace MabiTool.Desktop.Backend;
 public sealed record InventoryAccountItems(InventoryAccountView Account,
     IReadOnlyDictionary<string, IReadOnlyList<InventoryItemView>> ByCharacter, IReadOnlyList<InventoryItemView> Shared);
 
-/// <summary>背包透视表的读取与汇总：按道具类型键（类别 + 类型编号）一行，每个角色的背包、角色保管箱各一列。</summary>
+/// <summary>
+/// 背包透视表的读取与汇总：按道具类型键（类别 + 类型编号）一行，带实例元数据的乐谱每张一行；每个角色的背包、角色保管箱各一列。
+/// </summary>
 public static class InventoryPivotBuilder
 {
     public const int PageSize = 1000;
@@ -49,6 +51,12 @@ public static class InventoryPivotBuilder
     public static string TypeKey(InventoryItem item) => item.Category + ":" + item.TypeId;
 
     /// <summary>
+    /// 行键：带乐谱元数据（<c>Score</c>）且有实例 ID 的乐谱按实例成行（类别:表编号:实例 ID），各张显示自己的谱名；其余按类型键汇总。
+    /// </summary>
+    public static string RowKey(InventoryItemView view) =>
+        view.Score is not null && view.Item.InstanceId is { } instance ? TypeKey(view.Item) + ":" + instance : TypeKey(view.Item);
+
+    /// <summary>
     /// 汇总成透视表。列的角色顺序：已读取的角色按后端顺序，之后是角色名单里尚未读取的角色。
     /// 一个格子：有这件道具时为数量之和（任一条数量未知则为“未知”）；没有时，该角色该处已完整读取（覆盖里对应类别与容器
     /// <c>Complete</c>）为 0，否则为“未读取”。公共保管箱按账号视图的 <c>SharedCoverage</c> 判定（任何账号都适用）：
@@ -64,7 +72,7 @@ public static class InventoryPivotBuilder
                 .Select(slot => (Id: slot.CharacterId, Name: slot.RawName, Coverage: (IReadOnlyList<InventoryCoverage>)[])))
             .ToList();
         var all = items.ByCharacter.Values.SelectMany(list => list).Concat(items.Shared).ToList();
-        var rows = all.GroupBy(view => TypeKey(view.Item), StringComparer.Ordinal).Select(group =>
+        var rows = all.GroupBy(RowKey, StringComparer.Ordinal).Select(group =>
         {
             var first = group.First();
             var category = first.Item.Category;
@@ -73,17 +81,19 @@ public static class InventoryPivotBuilder
                 coverage?.Any(cover => cover.Category == category && cover.Container.KnownValue == container && cover.Complete) == true;
             IEnumerable<InventoryItemView> Of(string character, InventoryContainer container) =>
                 items.ByCharacter.TryGetValue(character, out var list)
-                    ? list.Where(view => TypeKey(view.Item) == group.Key && view.Item.Container.KnownValue == container)
+                    ? list.Where(view => RowKey(view) == group.Key && view.Item.Container.KnownValue == container)
                     : [];
             var backpack = characters.Select(c => Cell(Of(c.Id, InventoryContainer.Backpack), Complete(c.Coverage, InventoryContainer.Backpack))).ToList();
             var storage = characters.Select(c => Cell(Of(c.Id, InventoryContainer.CharacterStorage), Complete(c.Coverage, InventoryContainer.CharacterStorage))).ToList();
-            var shared = Cell(items.Shared.Where(view => TypeKey(view.Item) == group.Key), Complete(sharedCoverage, InventoryContainer.AccountStorage));
+            var shared = Cell(items.Shared.Where(view => RowKey(view) == group.Key), Complete(sharedCoverage, InventoryContainer.AccountStorage));
             var cells = backpack.Concat(storage).Append(shared).ToList();
             ulong sum = 0;
             foreach (var cell in cells) sum += cell.Quantity ?? 0;
             var total = new InventoryCount(sum, cells.All(cell => cell.State == InventoryCountState.Value) ? InventoryCountState.Value : InventoryCountState.Partial);
-            return new InventoryPivotRow(group.Key, name, first.Item.TypeId.ToString(), name is null ? null : first.Name.State.RawValue,
-                category, total, shared, backpack, storage);
+            // 名称来源按已知枚举名给出（线路值为 kebab-case，界面按枚举名对照文字）。
+            return new InventoryPivotRow(group.Key, name, first.Item.TypeId.ToString(),
+                name is null ? null : first.Name.State.KnownValue?.ToString() ?? first.Name.State.RawValue,
+                category, total, shared, backpack, storage, group.Key == TypeKey(first.Item) ? null : first.Score);
         }).OrderBy(row => row.Category, StringComparer.Ordinal).ThenBy(row => row.Name, StringComparer.Ordinal).ToList();
         return (characters.Select(c => new InventoryCharacter(c.Id, c.Name)).ToList(), rows);
     }

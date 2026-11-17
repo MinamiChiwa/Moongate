@@ -71,6 +71,9 @@ public sealed class GameControlService(GameControlContext controls, SystemInfo i
         }
         try { released = controls.Input.EmergencyStop(); }
         catch { failures.Add(new("input", "input.releaseFailed")); }
+        // 后台输入通道与前台输入共用紧急停止：撤销其租约并释放按下的触点与按键。
+        try { controls.Background.EmergencyStop(); }
+        catch { failures.Add(new("background-input", "input.releaseFailed")); }
         // 活动控制也可能独立于前台输入，撤销本次停止开始时的完整租约。
         foreach (var lease in before) controls.Leases.Release(lease.Id);
         if (color is not null)

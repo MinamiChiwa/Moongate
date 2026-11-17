@@ -158,13 +158,12 @@
           <Button DockPanel.Dock="Right" x:Name="GameLayerClose" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
                   Content="{DynamicResource S.ClosePicker}" Command="{Binding CloseGameCommand}"
                   AutomationProperties.Name="{DynamicResource S.ClosePicker}" />
-          <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource M.GameTitle}" />
+          <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="h2" FontSize="17" Text="{DynamicResource M.GameTitle}" /><controls:HelpTip Text="{DynamicResource M.GameHint}" /></StackPanel>
         </DockPanel>
         <ScrollViewer controls:EdgeFade.IsEnabled="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel Spacing="10">
             <TextBlock x:Name="CapabilityNotice" Classes="body unconfirmed" FontWeight="Bold" Text="{Binding CapabilityNotice}"
                        IsVisible="{Binding HasCapabilityNotice}" />
-            <TextBlock Classes="note" Text="{DynamicResource M.GameHint}" />
             <DockPanel>
               <TextBlock DockPanel.Dock="Left" Classes="note" FontWeight="Bold" Margin="0,0,10,0" Text="{DynamicResource MW.NowPlaying}" />
               <TextBlock Classes="name muted" FontSize="12" TextAlignment="Right" Text="{Binding Data.QueueSummary}"

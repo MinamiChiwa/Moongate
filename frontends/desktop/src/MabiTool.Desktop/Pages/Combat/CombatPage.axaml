@@ -57,17 +57,13 @@
         </ScrollViewer>
       </StackPanel>
     </Flyout>
-    <!-- 比率块：名称与百分比、占比条、分子与分母。攻击特性、覆盖率与伤害分类共用。 -->
-    <DataTemplate x:Key="RatioTemplate" DataType="combat:CoverageTile">
-      <Border Classes="inset" Padding="12,10">
-        <StackPanel Spacing="4">
-          <DockPanel>
-            <TextBlock DockPanel.Dock="Right" FontSize="18" FontWeight="Black" Margin="8,0,0,0" Text="{Binding Percent}" />
-            <TextBlock Classes="name" VerticalAlignment="Bottom" Text="{Binding Name}" />
-          </DockPanel>
-          <controls:MeterBar Value="{Binding Ratio}" Fill="{StaticResource CombatBrush}" Track="{DynamicResource TrackBrush}" />
-          <TextBlock Classes="name muted" FontSize="12" Text="{Binding Note}" />
-        </StackPanel>
+    <!-- 比率一格：名称在左、百分比右对齐；分子与分母在悬停提示里。攻击特性、覆盖率与伤害分类共用。 -->
+    <DataTemplate x:Key="RateTemplate" DataType="combat:CoverageTile">
+      <Border Classes="inset" Padding="10,4" CornerRadius="10" ToolTip.Tip="{Binding Note}">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Right" Classes="strong" FontWeight="Black" Margin="8,0,0,0" Text="{Binding Percent}" />
+          <TextBlock Classes="name muted" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+        </DockPanel>
       </Border>
     </DataTemplate>
   </UserControl.Resources>
@@ -278,7 +274,7 @@
                 </StackPanel>
               </controls:SelectionBorder>
               <TextBlock x:Name="ScopeTitle" Classes="h2" FontSize="17" VerticalAlignment="Center" Margin="0,0,0,4"
-                         TextWrapping="Wrap" Text="{Binding Scope.Title}" IsVisible="{Binding HasScopeTitle}" />
+                         TextWrapping="Wrap" Text="{Binding Scope.Title}" ToolTip.Tip="{Binding Scope.TitleHint}" IsVisible="{Binding HasScopeTitle}" />
             </WrapPanel>
           </DockPanel>
           <!-- 定时测量结果：最近一次与历史里保存的测量。 -->
@@ -303,8 +299,7 @@
           <TextBlock x:Name="ScopeProblem" Classes="note" Text="{Binding Scope.Problem}" IsVisible="{Binding Scope.HasProblem}" />
           <!-- 选择目标：默认折叠成一行（全部、选中的目标与能放下的前几个，按伤害从高到低），其余收进“+N”，可展开查看全部。 -->
           <StackPanel Spacing="6" IsVisible="{Binding HasRangeTargets}">
-            <TextBlock Classes="note" Text="{DynamicResource C.SelectTarget}" />
-            <controls:SelectionBorder>
+            <controls:SelectionBorder ToolTip.Tip="{DynamicResource C.SelectTarget}" AutomationProperties.HelpText="{DynamicResource C.SelectTarget}">
               <ItemsControl x:Name="RangeTargetChips" ItemsSource="{Binding RangeTargetItems}">
                 <ItemsControl.Styles>
                   <Style Selector="ItemsControl#RangeTargetChips > ContentPresenter">
@@ -349,13 +344,10 @@
       </controls:Card>
 
       <!-- 4. 主数据、5. 目标详情、6. 攻击特性 -->
-      <controls:Card x:Name="DamagePanel" CardId="damage" Title="{DynamicResource C.Damage}" AllowedSizes="ThreeByTwo,TwoByTwo">
+      <controls:Card x:Name="DamagePanel" CardId="damage" Title="{DynamicResource C.Damage}" TitleTip="{DynamicResource C.LiveNote}" AllowedSizes="ThreeByTwo,TwoByTwo">
         <controls:Card.Icon>
           <controls:IconTile Slot="panel.combat.damage" Fallback="{DynamicResource C.DamageGlyph}" Accent="{StaticResource CombatBrush}" />
         </controls:Card.Icon>
-        <controls:Card.Status>
-          <TextBlock Classes="note" TextAlignment="Right" Text="{DynamicResource C.LiveNote}" />
-        </controls:Card.Status>
         <StackPanel Spacing="14">
           <ItemsControl x:Name="KpiTiles" ItemsSource="{Binding Kpis}">
             <ItemsControl.ItemsPanel>
@@ -399,34 +391,24 @@
 
           <!-- 攻击特性：暴击、强击、连击、追击；无防备、破防、普攻、多重打击；间接与持续伤害占比。 -->
           <StackPanel x:Name="TraitsGroup" Spacing="8">
-            <controls:ReflowPanel MinItemWidth="200" Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="4">
               <TextBlock Classes="strong" Text="{DynamicResource C.Traits}" />
-              <TextBlock Classes="note" Text="{DynamicResource C.TraitsNote}" />
-            </controls:ReflowPanel>
-            <ItemsControl x:Name="CoverageTiles" ItemsSource="{Binding Coverage}" ItemTemplate="{StaticResource RatioTemplate}">
+              <controls:HelpTip Text="{DynamicResource C.TraitsHelp}" />
+            </StackPanel>
+            <!-- 三个范围同一个紧凑比率表：多列对齐的“名称 百分比”，分子与分母在悬停提示里，不画条形图。 -->
+            <ItemsControl x:Name="RateGrid" ItemsSource="{Binding Rates}" ItemTemplate="{StaticResource RateTemplate}">
               <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="150" Spacing="10" /></ItemsPanelTemplate>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="130" Spacing="4" /></ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
             </ItemsControl>
-            <ItemsControl x:Name="TraitTiles" ItemsSource="{Binding Traits}" ItemTemplate="{StaticResource RatioTemplate}" IsVisible="{Binding HasTraits}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="150" Spacing="10" /></ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-            </ItemsControl>
-            <ItemsControl x:Name="ClassTiles" ItemsSource="{Binding Classes}" ItemTemplate="{StaticResource RatioTemplate}" IsVisible="{Binding HasClasses}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="150" Spacing="10" /></ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-            </ItemsControl>
-            <TextBlock Classes="note" Text="{DynamicResource C.CoverageNote}" />
           </StackPanel>
 
           <!-- 首击不算比例：只显示本场最近的一次（技能、伤害与目标）；事件未知、查不到或没有首击时整组不显示。 -->
           <StackPanel x:Name="FirstAttackGroup" Spacing="6" IsVisible="{Binding HasFirstAttack}">
-            <controls:ReflowPanel MinItemWidth="200" Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="4">
               <TextBlock Classes="strong" Text="{DynamicResource C.FirstAttack}" />
-              <TextBlock Classes="note" Text="{DynamicResource C.FirstAttackNote}" />
-            </controls:ReflowPanel>
+              <controls:HelpTip Text="{DynamicResource C.FirstAttackNote}" />
+            </StackPanel>
             <Border x:Name="FirstAttackRow" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,1,0,0" Padding="8,6">
               <DockPanel>
                 <TextBlock DockPanel.Dock="Right" Classes="strong" Margin="12,0,0,0" VerticalAlignment="Center"
@@ -443,10 +425,10 @@
 
           <!-- 元素构成：未知时不显示；已知但没有元素时只显示一行“无元素”。 -->
           <StackPanel x:Name="ElementsGroup" Spacing="6" IsVisible="{Binding HasElements}">
-            <controls:ReflowPanel MinItemWidth="200" Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="4">
               <TextBlock Classes="note" Text="{DynamicResource C.Elements}" />
-              <TextBlock Classes="note" Text="{DynamicResource C.ElementsNote}" />
-            </controls:ReflowPanel>
+              <controls:HelpTip Text="{DynamicResource C.ElementsNote}" />
+            </StackPanel>
             <controls:SegmentBar x:Name="ElementBar" Segments="{Binding ElementSegments}" IsVisible="{Binding HasElementParts}" />
             <ItemsControl x:Name="ElementLegend" ItemsSource="{Binding ElementParts}" IsVisible="{Binding HasElementParts}">
               <ItemsControl.ItemsPanel>

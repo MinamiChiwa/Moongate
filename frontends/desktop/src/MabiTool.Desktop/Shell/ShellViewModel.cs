@@ -88,6 +88,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         IconRegistry.Changed += OnPackChanged;
         backend.Changed += OnBackendChanged;
         backend.ShortcutTriggered += OnShortcutTriggered;
+        catalog.Changed += OnCatalogChanged;
+    }
+
+    // 运行中扩展提供的页面随扩展启停出现或消失：只增删扩展分组里的入口，保留已有入口与其排序；当前页所属扩展消失时回到默认页。
+    private void OnCatalogChanged(object? sender, EventArgs e)
+    {
+        var current = catalog.Modules.Where(m => m.Origin == ModuleOrigin.Extension && !m.Pending).ToList();
+        allExtensions.RemoveAll(item => !current.Contains(item.Module));
+        foreach (var module in current.Where(module => allExtensions.All(item => item.Module != module)))
+            allExtensions.Add(new NavigationItem(module, SelectCommand));
+        Sync(Extensions, allExtensions);
+        Raise(nameof(HasExtensions));
+        if (selected.Module.Origin == ModuleOrigin.Extension && !current.Contains(selected.Module)) Select(DefaultEntry());
     }
 
     /// <summary>模块注册表；主窗口借它把自己交给迷你窗，迷你窗据此回到主窗口。</summary>

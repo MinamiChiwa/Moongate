@@ -220,6 +220,9 @@ public sealed record ColorPageData(ColorDraftView? Draft, IReadOnlyDictionary<st
 {
     public bool HasDetail => Detail.Length > 0;
 
+    /// <summary>运行栏状态的悬停提示：原因、背景与引擎说明全文（<see cref="ColorRunStatus.Tip"/>）。</summary>
+    public string DetailTip { get; init; } = string.Empty;
+
     /// <summary>
     /// 游戏浮窗染色元件的区域行（原工具浮窗的读数部分）：启用的区域按顺序各一行，目标色与实测色各占色块一半，
     /// 后接实测 HEX、色差与判定，与区域卡“实测”一行同一份实测；没读出时为“未读取”。
@@ -271,7 +274,7 @@ public sealed record ColorAtlas(int Count, double Tolerance, Avalonia.Media.Imag
 /// <summary>读取目标色集合的回执；没有取到时 <see cref="Atlas"/> 为空，消息说明原因；<see cref="Retryable"/> 表示稍后再试可能成功（排队已满、计算超时）。</summary>
 public sealed record ColorAtlasReply(ColorAtlas? Atlas, string Message, bool Retryable = false);
 
-/// <summary>后端阶段名到原工具 ui_progress.STAGES 的中文阶段说明；没有登记的阶段显示“未知阶段（原文）”并记诊断。</summary>
+/// <summary>后端阶段名到原工具 ui_progress.STAGES 的中文阶段说明；没有登记的阶段显示“未知阶段”，原文记入诊断页。</summary>
 public static class ColorStages
 {
     private static readonly Dictionary<string, (string Hans, string Hant)> Names = new(StringComparer.Ordinal)
@@ -284,7 +287,7 @@ public static class ColorStages
         ["binding"] = ("识别本局色板", "辨識本局色板"),
         ["align"] = ("对齐采集画面", "對齊採集畫面"),
         ["period"] = ("测量色板周期", "測量色板週期"),
-        ["stitch"] = ("拼接全局颜色板", "拼接全域顏色板"),
+        ["stitch"] = ("拼接颜色板", "拼接顏色板"),
         ["export"] = ("保存颜色板", "儲存顏色板"),
         ["validate"] = ("检查拼图质量", "檢查拼圖品質"),
         ["search"] = ("搜索目标颜色", "搜尋目標顏色"),
@@ -292,34 +295,24 @@ public static class ColorStages
         ["ready"] = ("准备候选方案", "準備候選方案"),
         ["position"] = ("移动到目标位置", "移動到目標位置"),
         ["verify"] = ("复核游戏色码", "複核遊戲色碼"),
-        ["observe"] = ("读取当前游戏色码", "讀取目前遊戲色碼"),
-        ["restore"] = ("正在尝试返回本轮最好颜色", "正在嘗試返回本輪最好顏色"),
+        ["observe"] = ("读取游戏色码", "讀取遊戲色碼"),
+        ["restore"] = ("返回本轮最好颜色", "返回本輪最好顏色"),
         ["retry"] = ("重新搜索目标颜色", "重新搜尋目標顏色"),
-        ["refinement"] = ("正在优化当前配色", "正在最佳化目前配色")
+        ["refinement"] = ("正在优化当前配色", "正在最佳化目前配色"),
+        ["initial"] = ("准备寻色", "準備尋色"),
+        ["complete"] = ("准备完成", "準備完成"),
+        ["timer_grace_binding"] = ("等待计时稳定", "等待計時穩定"),
+        ["return_protection"] = ("返回较好结果", "返回較好結果")
     };
+
+    /// <summary>登记了中文名的阶段。</summary>
+    public static IReadOnlyCollection<string> Known => Names.Keys;
 
     public static string Name(string? phase) => phase is not null && Names.TryGetValue(phase, out var name)
         ? UiText.Pick(name.Hans, name.Hant)
-        : phase is { Length: > 0 } ? Unknown("stage", phase, "未知阶段", "未知階段") : UiText.Pick("正在按目标计算，请稍候。", "正在依目標計算，請稍候。");
+        : phase is { Length: > 0 } ? CodeText.Unknown("color-stage", phase, "未知阶段", "未知階段") : UiText.Pick("正在计算", "正在計算");
 
-    /// <summary>没有中文文案的原因码：“未知原因（原文）”，并记诊断；没有原因码时为“未知原因”。</summary>
-    public static string UnknownReason(string? code) => code is { Length: > 0 } ? Unknown("reason", code, "未知原因", "未知原因") : UiText.Pick("未知原因", "未知原因");
-
-    /// <summary>没有中文文案的操作状态：“未知状态（原文）”，并记诊断。</summary>
-    public static string UnknownState(string state) => Unknown("state", state, "未知状态", "未知狀態");
-
-    private static readonly HashSet<string> Reported = new(StringComparer.Ordinal);
-
-    // 前端没有登记文案的码照原文放在括号里，诊断记录每个码只写一次。
-    private static string Unknown(string kind, string code, string hans, string hant)
-    {
-        lock (Reported)
-            if (Reported.Add(kind + ":" + code))
-                System.Diagnostics.Trace.TraceWarning($"Moongate: 染色{kind switch { "stage" => "阶段", "outcome" => "结果", "state" => "状态", _ => "原因" }}码 {code} 没有中文文案");
-        return UiText.Pick(hans, hant) + "（" + code + "）";
-    }
-
-    /// <summary>寻色结果：达标、妥协与未复核取原工具的说法；宿主给出的常见停止原因写成中文，其余显示“未知结果（原文）”。</summary>
+    /// <summary>寻色结果：达标、妥协与未复核取原工具的说法；宿主给出的常见停止原因写成中文，其余显示“未知结果”并记入诊断页。</summary>
     public static string Outcome(string? outcome) => outcome switch
     {
         "matched" => UiText.Pick("目标达标", "目標達標"),
@@ -327,13 +320,15 @@ public static class ColorStages
         "unverified" => UiText.Pick("未完成复核", "未完成複核"),
         "stopped" => UiText.Pick("已停止", "已停止"),
         "not_found" => UiText.Pick("未找到达标方案", "未找到達標方案"),
-        "input.focusChanged" => UiText.Pick("游戏窗口不在前台", "遊戲視窗不在前景"),
+        "input.focusChanged" => UiText.Pick("游戏不在前台", "遊戲不在前景"),
         "input.bindingChanged" => UiText.Pick("游戏窗口已变化", "遊戲視窗已變化"),
-        "resource.busy" => UiText.Pick("游戏输入被其他操作占用", "遊戲輸入被其他操作佔用"),
-        "frontend-lost" => UiText.Pick("前端失联", "前端失聯"),
+        "resource.busy" => UiText.Pick("游戏输入被占用", "遊戲輸入被佔用"),
+        "frontend-lost" => UiText.Pick("界面失联", "介面失聯"),
         "emergency-stop" => UiText.Pick("紧急停止", "緊急停止"),
+        "host-stopped" => UiText.Pick("后端已停止", "後端已停止"),
         null or "" => UiText.Pick("未知", "未知"),
-        _ => Unknown("outcome", outcome, "未知结果", "未知結果")
+        _ when CodeText.TryReason(outcome, out var reason) => reason,
+        _ => CodeText.Unknown("color-outcome", outcome, "未知结果", "未知結果")
     };
 
     /// <summary>色差文字，原工具的两位小数写法。</summary>

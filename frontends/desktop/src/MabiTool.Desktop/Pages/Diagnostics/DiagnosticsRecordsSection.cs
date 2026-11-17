@@ -135,7 +135,7 @@ public sealed class DiagnosticsRecordsSection : ObservableObject
         try { reply = await backend.QueryDiagnosticRecordsAsync(Filter(cursor), CancellationToken.None); }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            reply = new(false, exception.Message, [], null);
+            reply = new(false, Localization.CodeText.Error(exception), [], null);
         }
         if (disposed || token != generation) return;
         loading = false;

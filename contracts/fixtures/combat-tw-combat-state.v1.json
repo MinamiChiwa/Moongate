@@ -76,7 +76,7 @@
       "id": "party-stop-and-wipe",
       "sample": "combat-state-03-party",
       "captureOffsetMs": 24781,
-      "description": "组队：本机停手约 19 s 期间保持 2；怪物全灭 2→3，891 ms 后新一批怪接战 3→2；再次全灭 2→3→0",
+      "description": "组队：本机停手约 19 s 期间保持 2；怪物全灭 2→3，891 ms 后新一批怪接战 3→2（10 秒余量内，同一分段）；再次全灭 2→3→0",
       "expected": {
         "segments": [
           {
@@ -89,16 +89,9 @@
           {
             "startReason": "combat-entered",
             "boundaryReason": "combat-left",
-            "damage": "217666",
-            "damageEvents": 50,
-            "dpsDurationMs": 33375
-          },
-          {
-            "startReason": "combat-entered",
-            "boundaryReason": "combat-left",
-            "damage": "733542",
-            "damageEvents": 72,
-            "dpsDurationMs": 16531
+            "damage": "951208",
+            "damageEvents": 122,
+            "dpsDurationMs": 50828
           }
         ]
       },

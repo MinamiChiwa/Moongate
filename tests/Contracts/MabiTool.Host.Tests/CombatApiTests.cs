@@ -215,7 +215,7 @@ public sealed class CombatApiTests
             await WorkspaceReady(sdk); var started = await Boundary(sdk, operation.Id, "start", "combat-boundary-start"); oldId = started.Id;
             source.Send(1); await WorkspaceReady(sdk, x => x.Encounter?.Summary.AttributedDamage.ToString() == "1200");
             var pair = await Reset(sdk, operation.Id, "combat-boundary-reset"); reset = pair.Value; resetEtag = pair.ETag;
-            Assert.NotEqual(oldId, reset.Id); Assert.Equal("reset", (await sdk.GetCombatEncounterAsync(oldId)).Summary.BoundaryReason);
+            Assert.Equal(oldId, reset.Id); Assert.Equal("reset", (await sdk.GetCombatEncounterAsync(oldId)).Summary.BoundaryReason);
             source.Send(2); await WorkspaceReady(sdk, x => x.Encounter?.Summary.AttributedDamage.ToString() == "1200");
             var closed = await Boundary(sdk, operation.Id, "close", "combat-boundary-close");
             Assert.True(closed.Summary.Final); Assert.Equal("manual-end", closed.Summary.BoundaryReason);

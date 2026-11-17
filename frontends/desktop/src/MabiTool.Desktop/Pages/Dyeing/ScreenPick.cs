@@ -173,7 +173,7 @@ public static class EyedropperSession
         }
         catch (Exception error) when (error is InvalidOperationException or IOException or ExternalException)
         {
-            return Failed(error.Message, note);
+            return Failed(Localization.CodeText.Error(error), note);
         }
         finally
         {

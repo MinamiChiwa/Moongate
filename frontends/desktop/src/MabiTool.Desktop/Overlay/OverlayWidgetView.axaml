@@ -13,6 +13,13 @@
     外框的宽高由画布按版面里的尺寸给出，这里不写固定宽度。
   -->
   <UserControl.Resources>
+    <!-- 比率一格：名称与百分比同一行，百分比右对齐；DPS 与定时测量元件共用。 -->
+    <DataTemplate x:Key="RateCell" DataType="combat:CoverageTile">
+      <DockPanel Margin="0,0,8,1">
+        <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="4,0,0,0" Text="{Binding Percent}" />
+        <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+      </DockPanel>
+    </DataTemplate>
     <!-- 效果条目：与 DPS 页同一自绘控件，素材包有该效果的图片时盖在色标位置。 -->
     <DataTemplate x:Key="EffectIcon" DataType="combat:EffectRow">
       <!-- 紧凑的效果行：与 DPS 页同一自绘条目（色标、星标、名称、层数、剩余与倒计时进度）。 -->
@@ -246,16 +253,52 @@
       </DockPanel>
       <TextBlock DockPanel.Dock="Top" FontSize="34" FontWeight="Black" TextTrimming="CharacterEllipsis" Text="{Binding PrimaryDps}" />
       <ScrollViewer VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
-        <ItemsControl controls:StableItems.Source="{Binding OtherKpis}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate DataType="combat:KpiTile">
-              <DockPanel Margin="0,0,0,2">
-                <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding Value}" />
-                <TextBlock Classes="dim" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Label}" />
-              </DockPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <StackPanel>
+          <ItemsControl controls:StableItems.Source="{Binding OtherKpis}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="combat:KpiTile">
+                <DockPanel Margin="0,0,0,2">
+                  <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding Value}" />
+                  <TextBlock Classes="dim" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Label}" />
+                </DockPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <!-- 暴击、强击、连击、追击比率：两列对齐的文字，不画条形图。 -->
+          <ItemsControl x:Name="DpsRates" Margin="0,2,0,0" controls:StableItems.Source="{Binding Rates}" ItemTemplate="{StaticResource RateCell}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+    </DockPanel>
+
+    <!-- 治疗：当前统计范围的 HPS 大字，下方是总治疗量、次数与受到治疗的有效比例；没有治疗块时只写“未读取治疗数据”。 -->
+    <DockPanel x:Name="HealingWidget" IsVisible="{Binding IsHealing}">
+      <DockPanel DockPanel.Dock="Top">
+        <TextBlock DockPanel.Dock="Right" Classes="dim" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" Text="{Binding HealingScope}" />
+        <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{DynamicResource O.Healing}" />
+      </DockPanel>
+      <TextBlock DockPanel.Dock="Top" Classes="dim" TextWrapping="Wrap" Text="{DynamicResource O.NoHealing}" IsVisible="{Binding !HealingAvailable}" />
+      <ScrollViewer VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HealingAvailable}">
+      <StackPanel>
+        <TextBlock FontSize="30" FontWeight="Black" TextTrimming="CharacterEllipsis">
+          <Run Text="HPS " FontSize="13" /><Run Text="{Binding HealingHps}" />
+        </TextBlock>
+        <DockPanel Margin="0,0,0,2">
+          <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding HealingCast}" />
+          <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding HealingCastLabel}" />
+        </DockPanel>
+        <DockPanel Margin="0,0,0,2">
+          <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding HealingCount}" />
+          <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding HealingCountLabel}" />
+        </DockPanel>
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding HealingEffective}" />
+          <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding HealingEffectiveLabel}" />
+        </DockPanel>
+      </StackPanel>
       </ScrollViewer>
     </DockPanel>
 
@@ -299,6 +342,12 @@
               <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{DynamicResource C.BreakDamage}" />
             </DockPanel>
           </StackPanel>
+          <ItemsControl x:Name="MeasureRates" Margin="0,2,0,0" controls:StableItems.Source="{Binding Rates}" ItemTemplate="{StaticResource RateCell}"
+                        IsVisible="{Binding HasMeasureRates}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+          </ItemsControl>
         </StackPanel>
       </ScrollViewer>
     </DockPanel>

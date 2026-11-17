@@ -10,7 +10,7 @@ Moongate 以 [MIT 许可](LICENSE)发布。本文件列出 Moongate 移植或并
 | [MabiSync](https://github.com/MinamiChiwa/MabiSync) | MinamiChiwa（南千和） | MIT（作者授权） | 合奏房间协议、校时与调度、前台输入、台服音乐与合奏观测 |
 | [SyncCue](https://github.com/MinamiChiwa/SyncCue) | MinamiChiwa（南千和） | MIT（作者授权） | 房间生命周期与单调计时 |
 | [Color Studio](https://github.com/MinamiChiwa/mabinogi-mobile-color-studio) | MinamiChiwa（南千和） | MIT（作者授权） | 染色寻色引擎、截图与精准数据源、选色方案 |
-| MabiAgent | MinamiChiwa（南千和） | MIT（作者授权） | 背包读取与客户端道具名称关联 |
+| MabiAgent | MinamiChiwa（南千和） | MIT（作者授权） | 背包读取与客户端道具名称关联、后台触控输入 |
 
 战斗统计（伤害、DPS、治疗、效果、破防）由本项目依据台服实际数据与客户端资料独立实现；mobilay 的功能形态作为界面参考。
 

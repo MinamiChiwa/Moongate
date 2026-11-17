@@ -59,8 +59,17 @@ public sealed class CombatSession
     private bool awaitingIdentity, mapChanged, splitPending;
     // 本机战斗状态（来源 170196）；未收到、旧配置或换代次/换连接后为空，此时分段规则与未接入信号时相同。
     // combatLeft：上一分段因脱离战斗结束，下一笔有效本机伤害开始的分段记 combat-entered。
+    // combatLeftAt：本机离开 in-combat 的来源时点；余量内回到战斗或续击时取消，余量结束才结束分段。
     private OpenEnum<CombatLocalState>? localCombatState;
     private bool combatLeft;
+    private double? combatLeftAt;
+    // 整场：分段按整场序号分组；到期（切图、脱战后无战斗动作）只作标记，下一个分段开始时才开启新的一场。
+    // resetPending：重设后第一个分段的开始原因记 reset。lastActionMs：本机最近一次战斗动作的来源时点。
+    private int wholeOrdinal = 1;
+    private string? wholeExpired;
+    private bool resetPending;
+    private double? lastActionMs;
+    private double resetFloorMs = double.NegativeInfinity;
     // 同一连接内的流重置（重组超时、解码失败、捕获丢包等，combat.streamGap.* 中连接变化以外的原因）：Worker 随之换代次，
     // 本段以 stream-reset 结束，与连接更换（connection-changed）及原因不明的 observation-reconnected 区分。
     private string? streamReset;
@@ -104,6 +113,10 @@ public sealed class CombatSession
         if (!PutEntity(localEntity, startedAt)) throw new ArgumentException("本机实体观测无效");
     }
     public const int MaximumRollingWindowMs = 60000;
+    /// <summary>本机离开 in-combat 后的余量：期间回到战斗或续击仍属于同一分段，超过才以 combat-left 结束。</summary>
+    public const double CombatLeftGraceMs = 10000;
+    /// <summary>整场到期：本机不在 in-combat 且距最后一次战斗动作满这么久时，下一个分段开启新的一场。</summary>
+    public const double WholeIdleMs = 180000;
     public static void ValidateSettings(CombatObservationRequest value)
     {
         if (value is null || !ValidId(value.GameSessionId) || !value.DamageEnabled && !value.SelfEffectsEnabled && !value.MonsterEffectsEnabled ||
@@ -200,7 +213,7 @@ public sealed class CombatSession
                     MarkGap(boundary, mono, frame.MonotonicMs, 0);
                     CloseCore(boundary, frame.ObservedAt, frame.MonotonicMs);
                 }
-                streamReset = null; localCombatState = null;
+                streamReset = null; localCombatState = null; combatLeftAt = null;
                 var identities = frame.Entities.Where(x => x.Role.KnownValue == CombatEntityRole.LocalPlayer && x.Key.GameSessionId == settings.GameSessionId &&
                     x.Key.ObservationGeneration == frame.Generation && x.Quality.KnownValue == ObservationQuality.Confirmed).Take(2).ToArray();
                 if (identities.Length != 1)
@@ -272,6 +285,7 @@ public sealed class CombatSession
                 ConnectionBoundary(gap, frame.ObservedAt);
             foreach (var key in effects.Tick(mono)) dirtyEffects.Add(key);
             if (frame.EncounterEnded) CloseCore("source-end", frame.ObservedAt, mono);
+            CloseCombatLeft(mono); ExpireWhole(mono);
             return true;
         }
     }
@@ -304,12 +318,35 @@ public sealed class CombatSession
         { MarkGap("combat-state-invalid-or-late", Math.Max(0, double.IsFinite(value.MonotonicMs) ? value.MonotonicMs : mono), mono, 0); return; }
         var previous = localCombatState;
         localCombatState = value.State;
-        if (previous?.KnownValue != CombatLocalState.InCombat || value.State.KnownValue == CombatLocalState.InCombat) return;
+        // 余量内回到战斗：分段照常延续。
+        if (value.State.KnownValue == CombatLocalState.InCombat) { combatLeftAt = null; return; }
+        if (previous?.KnownValue != CombatLocalState.InCombat) return;
+        if (encounter is { Final: false, Manual: false, LastDamageMs: not null }) combatLeftAt = value.MonotonicMs;
+    }
+    /// <summary>离开 in-combat 的余量已过且期间没有续上：分段以 combat-left 结束，截止最后有效伤害。</summary>
+    private void CloseCombatLeft(double time)
+    {
+        if (combatLeftAt is not { } left || time - left <= CombatLeftGraceMs) return;
+        combatLeftAt = null;
         if (encounter is { Final: false, Manual: false, LastDamageMs: { } last } current)
         {
             CloseCore("combat-left", current.LastDamageAt!.Value, last);
             combatLeft = true;
         }
+    }
+    /// <summary>本机战斗动作：本机或计入的召唤物的有效伤害、本机受到的正数伤害、本机施放或受到的治疗。</summary>
+    private void CombatAction(double time) => lastActionMs = Math.Max(lastActionMs ?? time, time);
+    /// <summary>
+    /// 整场到期判定：本机不在 in-combat（含未知）且距最后一次战斗动作满 <see cref="WholeIdleMs"/>。
+    /// 仍在进行的自动分段以 idle-timeout 结束（截止最后有效伤害）；已有数据保留，下一个分段开始时才开启新的一场。
+    /// </summary>
+    private void ExpireWhole(double time)
+    {
+        if (wholeExpired is not null || lastActionMs is not { } action || time - action < WholeIdleMs ||
+            localCombatState?.KnownValue == CombatLocalState.InCombat) return;
+        wholeExpired = "idle-out-of-combat";
+        if (encounter is { Final: false, Manual: false, LastDamageMs: { } last } current)
+            CloseCore("idle-timeout", current.LastDamageAt!.Value, last);
     }
     /// <summary>帧级拒绝的固定分支；未拒绝时为空。来源时点只与已接受帧比较（见 <see cref="sourceMono"/>）。</summary>
     private string? RejectionBranch(CombatFrame frame)
@@ -341,7 +378,9 @@ public sealed class CombatSession
             if (current is { Manual: false, LastDamageMs: { } last }) CloseCore("connection-changed", current.LastDamageAt!.Value, last);
             else CloseCore("connection-changed", at, double.IsFinite(gap.FromMs) ? Math.Min(gap.FromMs, mono) : mono);
         }
-        awaitingIdentity = true; mapChanged = false; splitPending = false; combatLeft = false; localCombatState = null;
+        awaitingIdentity = true; mapChanged = false; splitPending = false; combatLeft = false; localCombatState = null; combatLeftAt = null;
+        // 切图使整场到期：已有数据保留，新地图的第一个分段开启新的一场。
+        if (lastActionMs is not null || encounter is not null) wholeExpired ??= "map-change";
         if (lost == 0) BoundaryGap(gap.Reason, gap.FromMs, gap.ToMs, 0);
         else awaitingReasons.Add(gap.Reason);
     }
@@ -401,9 +440,14 @@ public sealed class CombatSession
             if (attribution == "local" || attribution == "owned" && settings.IncludeOwnedEntities)
                 window.Breaks.Damage(EntityId(value.TargetEntity), value.MonotonicMs - window.StartedMs, value.BreakOccurred, value.BreakedHit);
         }
+        // 重设时点之前的迟到伤害不属于重设后的任何分段。
+        if (value.MonotonicMs < resetFloorMs) { MarkGap("damage-before-boundary", value.MonotonicMs, mono, 1); return; }
         var attributed = attribution == "local" || attribution == "owned" && settings.IncludeOwnedEntities;
+        if (value.Amount.Value > 0 && (attributed || value.TargetEntity == local)) CombatAction(value.MonotonicMs);
         if (attributed && value.Amount.Value > 0)
         {
+            // 离开 in-combat 超过余量后的伤害属于下一段；余量内的伤害计入本段，回到 in-combat 才取消余量。
+            CloseCombatLeft(value.MonotonicMs);
             if (encounter is { Final: false, Manual: false, LastDamageMs: { } last } && value.MonotonicMs - last >= settings.IdleTimeoutMs)
                 CloseCore("idle-timeout", encounter.LastDamageAt!.Value, last);
             if (encounter is null || encounter.Final) Begin(value.ObservedAt, value.MonotonicMs, false, "first-damage");
@@ -437,6 +481,7 @@ public sealed class CombatSession
         if (deduplication.Count >= limits.MaximumDeduplicationEntries || OtherCacheBytes() + effects.Bytes + 768 > limits.MaximumCacheBytes)
         { MarkGap("deduplication-capacity", value.MonotonicMs, mono, 1); return; }
         deduplication.Add(key, (hash, mono)); deduplicationOrder.Enqueue((key, mono));
+        CombatAction(value.MonotonicMs);
         if (measurement is { Final: false, Healing: { } measured } window && value.MonotonicMs >= window.StartedMs && value.MonotonicMs <= measurementEndMs)
         {
             AddHeal(measured, value);
@@ -471,10 +516,12 @@ public sealed class CombatSession
     {
         // 切图优先；手动拆段只标记其后由首笔伤害自动开始的分段。
         // 脱战后的首击记 combat-entered，切图与手动拆段优先。
-        var reason = mapChanged ? "map-change" : splitPending && startReason == "first-damage" ? "manual-split"
+        var reason = mapChanged ? "map-change" : resetPending ? "reset" : splitPending && startReason == "first-damage" ? "manual-split"
             : combatLeft && startReason == "first-damage" ? "combat-entered" : startReason;
-        var segment = new CombatSegment(checked(++segmentOrdinal), reason);
-        mapChanged = false; splitPending = false; combatLeft = false;
+        // 整场已到期：这个分段开启新的一场。
+        if (wholeExpired is not null) { wholeOrdinal = checked(wholeOrdinal + 1); wholeExpired = null; }
+        var segment = new CombatSegment(checked(++segmentOrdinal), reason, wholeOrdinal);
+        mapChanged = false; splitPending = false; combatLeft = false; resetPending = false; combatLeftAt = null;
         encounter = new(encounterIdFactory(), owner, observationId, local,
             entities.GetValueOrDefault(local)?.DisplayName ?? local.RawInstanceId.ToString(), at, time, manual, settings.IncludeOwnedEntities, limits, segment,
             healing);
@@ -500,6 +547,7 @@ public sealed class CombatSession
             foreach (var key in effects.Tick(mono)) dirtyEffects.Add(key);
             if (encounter is { Final: false, Manual: false, LastDamageMs: { } last } && mono - last >= settings.IdleTimeoutMs)
                 CloseCore("idle-timeout", encounter.LastDamageAt!.Value, last);
+            CloseCombatLeft(mono); ExpireWhole(mono);
         }
     }
     public void StartManual(DateTimeOffset at, double time)
@@ -533,9 +581,25 @@ public sealed class CombatSession
             CloseCore(reason, at, mono);
         }
     }
-    public void Reset(DateTimeOffset at, double time)
+    /// <summary>
+    /// 重设：结束进行中的分段（reset）并立即开启新的一场，不建立空分段；进行中的定时测量取消且不保存。
+    /// 下一个分段的开始原因为 reset。返回被结束的分段（没有进行中的分段时为空）。
+    /// </summary>
+    public CombatEncounter? Reset(DateTimeOffset at, double time)
     {
-        lock (gate) { CloseCore("reset", at, Math.Max(mono, time)); mono = Math.Max(mono, time); Begin(at, mono, true, "reset"); }
+        lock (gate)
+        {
+            mono = Math.Max(mono, time);
+            var closing = encounter is { Final: false } ? encounter : null;
+            CloseCore("reset", at, mono);
+            var result = closing?.Snapshot(new(revision), mono, settings.RollingWindowMs, Resources());
+            encounter = null;
+            if (measurementPending is not null || measurement is { Final: false }) CancelMeasurementCore();
+            wholeOrdinal = checked(wholeOrdinal + 1); wholeExpired = null; lastActionMs = null;
+            resetPending = true; splitPending = false; combatLeft = false; combatLeftAt = null; resetFloorMs = mono;
+            boundaryRevision = checked(boundaryRevision + 1);
+            return result;
+        }
     }
     public void Stop(string reason, DateTimeOffset at, double time, bool partial = false)
     {
@@ -648,7 +712,7 @@ public sealed class CombatSession
             var statusReasons = reasons.Union(awaitingReasons, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
             var status = new CombatObservationStatus(observationId, owner, settings.GameSessionId, state, source, local, settings, next,
                 startedAt, lastObserved, mono, statusReasons.Length == 0 ? ObservationQuality.Confirmed : ObservationQuality.Partial,
-                statusReasons, new(dropped), localCombatState);
+                statusReasons, new(dropped), localCombatState, wholeOrdinal, wholeExpired);
             var workspace = new CombatWorkspace(status, encounter is null ? null : Snapshot(encounter), entities.Values.OrderBy(x => x.Id, StringComparer.Ordinal).ToArray(),
                 settings.SelfEffectsEnabled ? effects.Snapshot(local, owner, observationId, mono, next) : null, next, new(boundaryRevision));
             var shape = new PersistedShape(workspace.Entities.Select(x => x with { LastObservedAt = default }).ToArray(),
@@ -672,7 +736,7 @@ public sealed class CombatSession
         public override int GetHashCode() => HashCode.Combine(Entities.Length, BoundaryRevision, EncounterId);
         private static bool StatusEquals(CombatObservationStatus a, CombatObservationStatus b) =>
             a.State == b.State && a.LocalEntity == b.LocalEntity && a.Quality == b.Quality && a.DroppedEvents == b.DroppedEvents &&
-            a.LocalCombatState == b.LocalCombatState && a.Reasons.SequenceEqual(b.Reasons, StringComparer.Ordinal);
+            a.LocalCombatState == b.LocalCombatState && a.WholeOrdinal == b.WholeOrdinal && a.WholeExpired == b.WholeExpired && a.Reasons.SequenceEqual(b.Reasons, StringComparer.Ordinal);
     }
     private PersistedShape? acknowledgedShape;
 

@@ -154,7 +154,7 @@ public sealed class DiagnosticsCaptureSection : ObservableObject
         try { reply = await backend.GetDiagnosticCaptureAsync(CancellationToken.None); }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            reply = new(false, exception.Message, null);
+            reply = new(false, Localization.CodeText.Error(exception), null);
         }
         if (disposed || token != refreshGeneration) return;
         if (reply.Ok) Adopt(reply.Capture);
@@ -175,7 +175,7 @@ public sealed class DiagnosticsCaptureSection : ObservableObject
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            reply = new(false, exception.Message, null);
+            reply = new(false, Localization.CodeText.Error(exception), null);
         }
         if (disposed) return;
         busy = false;
@@ -199,7 +199,7 @@ public sealed class DiagnosticsCaptureSection : ObservableObject
         try { reply = await backend.StopDiagnosticCaptureAsync(current.Id, CancellationToken.None); }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            reply = new(false, exception.Message, null);
+            reply = new(false, Localization.CodeText.Error(exception), null);
         }
         if (disposed) return;
         busy = false;

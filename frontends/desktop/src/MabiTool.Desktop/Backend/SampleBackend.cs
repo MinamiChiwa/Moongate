@@ -269,11 +269,15 @@ public sealed partial class SampleBackend : IDesktopBackend
                     Pick("31 次，自疗 6,210、其他来源 15,695（协议不提供来源），过量不可得：未与 HP 变化配对",
                         "31 次，自療 6,210、其他來源 15,695（協議不提供來源），過量不可得：未與 HP 變化配對"))
             ], Pick("本人施放的治疗（对自己与队友）；HPS = 施放治疗量 ÷ 统计时长 2:31", "本人施放的治療（對自己與隊友）；HPS = 施放治療量 ÷ 統計時長 2:31"),
-                rangeTarget is null ? string.Empty : Pick("治疗与所选怪物无关，按整个范围统计", "治療與所選怪物無關，按整個範圍統計")),
+                rangeTarget is null ? string.Empty : Pick("治疗与所选怪物无关，按整个范围统计", "治療與所選怪物無關，按整個範圍統計"))
+            { Hps = "123", Cast = "18,640", CastCount = "24", Effective = Pick("未知", "未知") },
             [
-                new(otherPlayer.Text, "9,820", "53%", "11", otherPlayer.Tip),
-                new(Pick("本人", "本人"), "6,210", "33%", "9"),
-                new(Pick("宠物", "寵物"), "2,610", "14%", "4")
+                new(otherPlayer.Text, "9,820", "53%", "11", otherPlayer.Tip) { Hps = "65", Effective = Pick("未知", "未知"), Overheal = Pick("未知", "未知") },
+                new(Pick("本人", "本人"), "6,210", "33%", "9") { Hps = "41", Effective = Pick("未知", "未知"), Overheal = Pick("未知", "未知") },
+                new(Pick("宠物", "寵物"), "2,610", "14%", "4") { Hps = "17", Effective = Pick("未知", "未知"), Overheal = Pick("未知", "未知") },
+                new(Pick("受到的治疗（合计）", "受到的治療（合計）"), "21,905", Pick("不适用", "不適用"), "31")
+                    { Hps = Pick("不适用", "不適用"), Effective = Pick("未知", "未知"), Overheal = Pick("未知", "未知"),
+                      EffectiveTip = Pick("有效与溢出不可得：未与 HP 变化配对", "有效與溢出不可得：未與 HP 變化配對") }
             ]);
     }
 }

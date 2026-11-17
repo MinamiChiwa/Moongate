@@ -65,7 +65,9 @@ public sealed partial class LiveBackend
     private sealed class DiagnosticFailure(string code) : Exception(code);
 
     private static string ErrorCode(Exception error) =>
-        error is MabiToolApiException api ? api.Problem?.Code ?? $"http.{api.Status}" : error.Message;
+        error is MabiToolApiException api ? api.Problem?.Code ?? $"http.{api.Status}"
+        : error is HttpRequestException or IOException ? "frontend.notConnected"
+        : error is TimeoutException or OperationCanceledException ? "frontend.timeout" : "frontend.requestFailed";
 
     public async Task<DiagnosticRuntimeReply> ReadDiagnosticRuntimeAsync(CancellationToken cancellationToken)
     {

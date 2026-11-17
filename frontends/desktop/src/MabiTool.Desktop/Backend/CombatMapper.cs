@@ -184,9 +184,9 @@ public static class CombatMapper
     {
         if (problem is not null) return new([], 0, 0, problem switch
         {
-            "observation-scope" => Pick("整场跨多个分段，后端时间线分桶只按单个战斗记录提供", "整場跨多個分段，後端時間線分桶只按單個戰鬥紀錄提供"),
+            "observation-scope" => Pick("整场跨多段，曲线只按单段提供", "整場跨多段，曲線只按單段提供"),
             "no-record" => Pick("当前范围还没有战斗记录", "目前範圍還沒有戰鬥紀錄"),
-            var code => Pick($"时间线读取被拒绝：{code}", $"時間線讀取被拒絕：{code}")
+            var code => Pick("曲线不可用：", "曲線不可用：") + Localization.CodeText.Reason(code)
         });
         if (page is null) return CombatTimelineView.Pending;
         var buckets = page.DamageBuckets;
@@ -194,6 +194,32 @@ public static class CombatMapper
         var dps = buckets.Select(bucket => bucket.ToMs > bucket.FromMs
             ? (double)DamageAccumulatorTotal(bucket.Amounts) * 1000 / (bucket.ToMs - bucket.FromMs) : 0).ToList();
         return new(dps, (buckets[0].ToMs - buckets[0].FromMs) / 1000, (buckets[^1].ToMs - buckets[0].FromMs) / 1000, null);
+    }
+
+    /// <summary>
+    /// 整场曲线：把整场各分段的时间线分桶按本机时钟合并到同一条横轴上（从第一段开始到最后一段的最后一个桶），
+    /// 按整场跨度重新取桶宽（约 60 个点），各分段的细桶按中点归入；分段之间没有伤害的时段为 0。
+    /// </summary>
+    public static CombatTimelineView WholeTimelineView(IReadOnlyList<(DateTimeOffset Start, IReadOnlyList<CombatDamageBucket> Buckets)> segments)
+    {
+        var parts = segments.Where(part => part.Buckets.Count > 0).ToList();
+        if (parts.Count == 0) return new([], 0, 0, Pick("当前范围还没有伤害", "目前範圍還沒有傷害"));
+        var origin = parts.Min(part => part.Start);
+        var end = parts.Max(part => part.Start.AddMilliseconds(part.Buckets[^1].ToMs));
+        var spanMs = Math.Max(1, (end - origin).TotalMilliseconds);
+        var width = BucketWidth(spanMs);
+        var count = Math.Max(1, (int)Math.Ceiling(spanMs / width));
+        var sums = new double[count];
+        foreach (var part in parts)
+        {
+            var offset = (part.Start - origin).TotalMilliseconds;
+            foreach (var bucket in part.Buckets)
+            {
+                var index = (int)Math.Clamp(Math.Floor((offset + (bucket.FromMs + bucket.ToMs) / 2) / width), 0, count - 1);
+                sums[index] += (double)Total(bucket.Amounts);
+            }
+        }
+        return new(sums.Select(sum => sum * 1000 / width).ToList(), width / 1000.0, count * width / 1000.0, null, Origin: origin);
     }
 
     private static BigInteger DamageAccumulatorTotal(CombatDamageTotals totals) => Total(totals);
@@ -274,11 +300,11 @@ public static class CombatMapper
     private static string EffectNote(CombatBackendState state, IReadOnlyList<CombatDamageGroup> ordered, string? target, CombatEntity? entity)
     {
         if (target is null)
-            return ordered.Count == 0 ? Pick("还没有命中怪物，命中后显示它的效果", "還沒有命中怪物，命中後顯示它的效果")
-                : Pick("这些目标都不在当前观测中，没有实时效果", "這些目標都不在目前觀測中，沒有即時效果");
+            return ordered.Count == 0 ? Pick("命中怪物后显示效果", "命中怪物後顯示效果")
+                : Pick("目标已不在观测范围", "目標已不在觀測範圍");
         if (entity is null || state.EffectProblem == "combat.entityOutOfScope")
-            return Pick("该目标已不在当前观测中，没有实时效果", "該目標已不在目前觀測中，沒有即時效果");
-        return state.EffectProblem is { } code ? Pick($"效果读取被拒绝：{code}", $"效果讀取被拒絕：{code}") : string.Empty;
+            return Pick("目标已不在观测范围", "目標已不在觀測範圍");
+        return state.EffectProblem is { } code ? Pick("效果不可用：", "效果不可用：") + Localization.CodeText.Reason(code) : string.Empty;
     }
 
     /// <summary>界面上的范围选择：observation、segment 或 measurement:&lt;记录&gt;。</summary>
@@ -349,14 +375,15 @@ public static class CombatMapper
             "connection-changed" or "combat.streamGap.connectionClosed" or "combat.streamGap.connectionRemoved"
                 or "combat.streamGap.connectionSyn" or "combat.streamGap.connectionReset" => Pick("期间切换了地图", "期間切換了地圖"),
             "identity-unresolved" or "observation-reconnected" => Pick("等待识别本机角色", "等待識別本機角色"),
-            "stream-reset" => Pick("同一连接内抓包数据中断，重新识别后另起分段", "同一連線內抓包資料中斷，重新識別後另起分段"),
+            "stream-reset" => Pick("抓包数据中断，已另起分段", "抓包資料中斷，已另起分段"),
             "observation-stopped" or "observation-interrupted" => Pick("观测提前停止", "觀測提前停止"),
             "timeline-incomplete" or "timeline-capacity" => Pick("超出事件保留范围", "超出事件保留範圍"),
             "healing-not-retained" => Pick("记录没有保留治疗事件", "紀錄沒有保留治療事件"),
             "insufficientDuration" => Pick("时长为零", "時長為零"),
             "range-segment-limit" => Pick("分段过多，只统计最近 128 段", "分段過多，只統計最近 128 段"),
+            var other when Localization.CodeText.TryReason(other, out var known) => known,
             var other when other.StartsWith("combat.", StringComparison.Ordinal) || other.Contains("gap", StringComparison.OrdinalIgnoreCase)
-                || other.Contains("capacity", StringComparison.OrdinalIgnoreCase) => Pick($"抓包缺口（{other}）", $"抓包缺口（{other}）"),
+                || other.Contains("capacity", StringComparison.OrdinalIgnoreCase) => Localization.CodeText.Unknown("combat-gap", other, "抓包缺口", "抓包缺口"),
             var other => Localization.CodeText.Reason(other)
         }).Distinct().ToList();
 
@@ -394,19 +421,34 @@ public static class CombatMapper
         var title = pending is not null ? runningLabel ?? string.Empty
             : scope == CombatScopeKind.Measurement && shown is not null ? RecordLabel(shown)
             : scope == CombatScopeKind.Segment && state.Workspace?.Observation.State == "observing" && state.Workspace.Encounter is { Summary.Final: true } last
-                ? Pick($"上一段（{EndReason(last.Summary.BoundaryReason)}）", $"上一段（{EndReason(last.Summary.BoundaryReason)}）") : string.Empty;
+                ? Pick($"上一段（{EndReason(last.Summary.BoundaryReason)}）", $"上一段（{EndReason(last.Summary.BoundaryReason)}）")
+            // 整场已到期、下一次伤害还没到：显示的仍是上一场。
+            : scope == CombatScopeKind.Whole && shown is not null && state.Workspace?.Observation.WholeExpired is not null ? Pick("上一场", "上一場")
+            : string.Empty;
+        var titleTip = scope == CombatScopeKind.Whole && shown is not null && state.Workspace?.Observation.WholeExpired is { } expired
+            ? WholeExpiredText(expired) : string.Empty;
         var reasons = scope == CombatScopeKind.Measurement && shown?.Record?.Measurement is { Complete: false } measured
             ? Incomplete(measured.Reasons)
             : state.Range is { Complete: false } range && !(scope == CombatScopeKind.Segment && state.RangeTarget is null) ? Incomplete(range.Reasons) : string.Empty;
         var problem = pending is not null
-            ? pending.Phase is "waiting" or "countdown" ? Pick("定时测量等待首次伤害，暂无数据", "定時測量等待首次傷害，暫無資料") : Pick("定时测量计时中，暂无数据", "定時測量計時中，暫無資料")
+            ? pending.Phase is "waiting" or "countdown" ? Pick("等待首次伤害", "等待首次傷害") : Pick("定时测量计时中", "定時測量計時中")
             : state.RangeProblem is { } code
-            ? code == "resource.notFound" ? Pick("这条记录已不存在", "這條紀錄已不存在") : Pick($"范围统计未完成：{code}", $"範圍統計未完成：{code}")
+            ? code == "resource.notFound" ? Pick("这条记录已不存在", "這條紀錄已不存在") : Pick("范围统计未完成：", "範圍統計未完成：") + Localization.CodeText.Reason(code)
             : shown is null && state.Connected
                 ? scope == CombatScopeKind.Measurement ? Pick("还没有定时测量结果", "還沒有定時測量結果") : Pick("还没有战斗数据", "還沒有戰鬥資料")
                 : string.Empty;
-        return new(scope, title, options, reasons, problem);
+        return new(scope, title, options, reasons, problem) { TitleTip = titleTip };
     }
+
+    /// <summary>整场到期的说明：到期原因与“下一次伤害开始新的一场”。</summary>
+    public static string WholeExpiredText(string reason) => reason switch
+    {
+        "map-change" => Pick("已切换地图，这一场已结束；下一次伤害开始新的一场，之前一直显示上一场",
+            "已切換地圖，這一場已結束；下一次傷害開始新的一場，之前一直顯示上一場"),
+        "idle-out-of-combat" => Pick("脱离战斗后 3 分钟没有战斗动作，这一场已结束；下一次伤害开始新的一场，之前一直显示上一场",
+            "脫離戰鬥後 3 分鐘沒有戰鬥動作，這一場已結束；下一次傷害開始新的一場，之前一直顯示上一場"),
+        _ => Pick("这一场已结束；下一次伤害开始新的一场，之前一直显示上一场", "這一場已結束；下一次傷害開始新的一場，之前一直顯示上一場")
+    };
 
     /// <summary>记录的显示名：定时测量为“定时测量 1:00 · 时刻”（有名称时用名称），保存的记录用名称。</summary>
     public static string RecordLabel(CombatEncounter value)
@@ -523,8 +565,15 @@ public static class CombatMapper
             $"{Number(healing.ReceivedCount.Value)} {times}{Pick("，自疗 ", "，自療 ")}{Number(healing.ReceivedSelfAmount.Value)}" +
             $"{Pick("、其他来源 ", "、其他來源 ")}{Number(healing.ReceivedOtherAmount.Value)}{Pick("（协议不提供来源）", "（協議不提供來源）")}" +
             $"{Pick("，", "，")}{overheal}");
+        var effective = healing.ReceivedEffective is { } known && !healing.ReceivedAmount.Value.IsZero
+            ? Percent((double)known.Value / (double)healing.ReceivedAmount.Value)
+            : healing.ReceivedCount.Value == 0 ? NotApplicable() : Pick("未知", "未知");
         return new(true, [perSecond, cast, received], header,
-            targeted ? Pick("治疗与所选怪物无关，按整个范围统计", "治療與所選怪物無關，按整個範圍統計") : string.Empty);
+            targeted ? Pick("治疗与所选怪物无关，按整个范围统计", "治療與所選怪物無關，按整個範圍統計") : string.Empty)
+        {
+            Hps = Number(healing.EncounterHps), Cast = Number(healing.CastAmount.Value),
+            CastCount = Number(healing.CastCount.Value), Effective = effective
+        };
     }
 
     private static string EffectiveReason(string? reason) => reason switch
@@ -535,18 +584,41 @@ public static class CombatMapper
         var other => Localization.CodeText.Reason(other)
     };
 
+    /// <summary>
+    /// 治疗明细：每个施放目标一行（治疗量、占比、次数、HPS = 目标治疗量 ÷ 范围的 HPS 时长），末行为受到的治疗合计及有效与溢出。
+    /// 协议不带治疗技能，也没有施放治疗的有效量来源，这两项显示“未知”；受疗未配对时有效与溢出同样为“未知”。
+    /// </summary>
     private static IReadOnlyList<HealingTargetRow> HealingTargets(CombatEncounter encounter)
     {
-        if (encounter.Healing?.Targets is not { } targets) return [];
-        var total = encounter.Healing.CastAmount.Value;
-        return targets.OrderByDescending(target => target.Amount.Value).Select(target =>
+        if ((encounter.Healing ?? encounter.Summary.Healing) is not { } healing) return [];
+        var unknown = Pick("未知", "未知");
+        var notApplicable = NotApplicable();
+        var total = healing.CastAmount.Value;
+        var span = healing.HpsDurationMs ?? encounter.Summary.DurationMs;
+        string Hps(System.Numerics.BigInteger amount) => span > 0 ? Number((double)amount * 1000 / span) : Dash;
+        var rows = (healing.Targets ?? []).OrderByDescending(target => target.Amount.Value).Select(target =>
         {
             // 治疗目标是本人或其他玩家：战斗协议不带其他玩家的名字，名称缺失时为“未知玩家”，实体编号在悬停提示里。
             var name = target.Self ? Fixed(Pick("本人", "本人")) : target.Key == "other-targets" ? Fixed(Pick("其他目标", "其他目標"))
                 : CombatNames.Of(null, CombatNameKind.Player, target.Name, target.Key);
             return new HealingTargetRow(name.Text, Number(target.Amount.Value),
-                total.IsZero ? Dash : Percent((double)target.Amount.Value / (double)total), Number(target.Count.Value), Hint(name));
+                total.IsZero ? Dash : Percent((double)target.Amount.Value / (double)total), Number(target.Count.Value), Hint(name))
+            { Hps = Hps(target.Amount.Value), Effective = unknown, Overheal = unknown,
+              EffectiveTip = Pick("施放治疗没有有效量来源", "施放治療沒有有效量來源") };
         }).ToList();
+        if (healing.ReceivedCount.Value > 0)
+        {
+            var reason = healing.ReceivedEffective is null ? EffectiveReason(healing.EffectiveReason) : string.Empty;
+            rows.Add(new HealingTargetRow(Pick("受到的治疗（合计）", "受到的治療（合計）"), Number(healing.ReceivedAmount.Value), notApplicable,
+                Number(healing.ReceivedCount.Value), Pick("本人受到的全部治疗，协议不提供来源", "本人受到的全部治療，協議不提供來源"))
+            {
+                Hps = notApplicable,
+                Effective = healing.ReceivedEffective is { } effective ? Number(effective.Value) : unknown,
+                Overheal = healing.ReceivedOverheal is { } overheal ? Number(overheal.Value) : unknown,
+                EffectiveTip = reason.Length > 0 ? Pick("有效与溢出不可得：", "有效與溢出不可得：") + reason : string.Empty
+            });
+        }
+        return rows;
     }
 
     // 只显示本场最近的一次首击：技能取本场同一技能分组的 resolvedName（分组键是技能编号），目标取观测到的实体名称，查不到时不写目标。
@@ -926,7 +998,7 @@ public static class CombatMapper
         "observation-stopped" or "observation-interrupted" => Pick("观测已停止", "觀測已停止"),
         null or "" => Pick("原因未知", "原因未知"),
         var other when other.Contains("connection", StringComparison.OrdinalIgnoreCase) => Pick("期间切换了地图", "期間切換了地圖"),
-        var other => Pick($"抓包缺口（{other}）", $"抓包缺口（{other}）")
+        var other => Localization.CodeText.Unknown("combat-gap", other, "抓包缺口", "抓包缺口")
     };
 
     private static EncounterRow History(CombatEncounter encounter)
@@ -971,7 +1043,7 @@ public static class CombatMapper
         "stopped" => Pick("观测已停止", "觀測已停止"),
         "interrupted" => Pick("观测已中断", "觀測已中斷"),
         "failed" => Pick("观测失败", "觀測失敗"),
-        _ => Pick($"观测已结束（{Localization.CodeText.State(state)}）", $"觀測已結束（{Localization.CodeText.State(state)}）")
+        _ => Localization.CodeText.Unknown("combat-observation", state, "观测已结束", "觀測已結束")
     };
 
     // 状态行与范围标题里“上一段”的结束说明。

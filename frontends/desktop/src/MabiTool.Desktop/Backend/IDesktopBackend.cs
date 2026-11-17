@@ -64,8 +64,17 @@ public partial interface IDesktopBackend
     /// </summary>
     bool SetCombatPageVisible(bool visible) => false;
 
-    /// <summary>DPS 明细窗口打开或关闭；打开期间后端适配层读取时间线分桶。</summary>
+    /// <summary>DPS 明细窗口打开或关闭；打开期间后端适配层按窗口自己的选择读取范围汇总与时间线分桶。</summary>
     void SetCombatDetailOpen(bool open) { }
+
+    /// <summary>
+    /// DPS 明细窗口的数据：窗口自己的范围与目标（意图 combat.detail.scope、combat.detail.scope.live、combat.detail.target），
+    /// 与主页面的选择互不影响。不区分的后端返回与主页面相同的数据。
+    /// </summary>
+    CombatPageData GetCombatDetail() => GetCombat();
+
+    /// <summary>只有明细窗口需要重读时触发（窗口内切换范围或目标的结果到达），在界面线程上；主页面与浮窗不订阅。</summary>
+    event EventHandler? CombatDetailChanged { add { } remove { } }
 
     /// <summary>DPS 随时间曲线的数据；后端或适配层不提供时返回停用说明。</summary>
     MabiTool.Desktop.Pages.Combat.CombatTimelineView? GetCombatTimeline() =>

@@ -102,10 +102,31 @@ public sealed class ModuleCatalog
     /// <summary>迷你窗的控制器，由内建模块注册时建立；乐谱库页从这里打开迷你窗。</summary>
     public Shell.MiniWindowController? Mini { get; set; }
 
+    /// <summary>扩展模块注册或撤下后触发；侧栏与浮窗画布据此更新入口与元件。</summary>
+    public event EventHandler? Changed;
+
     public void Register(ModuleDescriptor module)
     {
         if (modules.Any(existing => string.Equals(existing.Id, module.Id, StringComparison.Ordinal)))
             throw new InvalidOperationException($"模块 ID 已存在：{module.Id}");
         modules.Add(module);
+    }
+
+    /// <summary>
+    /// 把扩展模块换成 <paramref name="extensions"/>：只增删与替换 <see cref="ModuleOrigin.Extension"/> 的条目，内建与外壳入口不变。
+    /// 集合没有变化时不触发 <see cref="Changed"/>。
+    /// </summary>
+    public void ReplaceExtensions(IReadOnlyList<ModuleDescriptor> extensions)
+    {
+        var current = modules.Where(module => module.Origin == ModuleOrigin.Extension).ToList();
+        if (current.Count == extensions.Count && current.Zip(extensions).All(pair => ReferenceEquals(pair.First, pair.Second))) return;
+        modules.RemoveAll(module => module.Origin == ModuleOrigin.Extension);
+        foreach (var module in extensions)
+        {
+            if (module.Origin != ModuleOrigin.Extension || modules.Any(existing => existing.Id == module.Id))
+                throw new InvalidOperationException($"扩展模块无效或 ID 重复：{module.Id}");
+            modules.Add(module);
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 }

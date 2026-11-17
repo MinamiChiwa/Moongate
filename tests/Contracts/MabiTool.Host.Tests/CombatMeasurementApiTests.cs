@@ -406,6 +406,36 @@ public sealed class CombatMeasurementApiTests
         await sdk.StopCombatObservationAsync(operation.Id); await app.StopAsync();
     }
 
+    [Fact]
+    public async Task ResetClearsTheLastMeasurementResultButKeepsItsRecord()
+    {
+        using var area = new Workspace(); var source = new ControlledCombatSource(); var clock = new StorageClock();
+        await using var app = BackendApplication.Build(new(0, Token, new HashSet<string>()), clock: clock, storage: area.Options, mock: true, combatSource: _ => source);
+        await app.StartAsync(); using var sdk = Sdk(app);
+        var operation = await sdk.StartCombatObservationAsync(new((await sdk.GetGameBindingAsync()).Binding!.Session.Id), "reset-observe");
+        await WorkspaceReady(sdk); source.Send(1, 0);
+        await WorkspaceReady(sdk, value => value.Encounter?.Summary.AttributedDamage.ToString() == "1200");
+        await sdk.StartCombatMeasurementAsync(new(operation.Id, 5000, 0), "reset-measure");
+        clock.Advance(TimeSpan.FromMilliseconds(100)); source.Send(2, 100);
+        await Until(sdk, value => value.Phase == "running", TimeSpan.FromSeconds(5));
+        clock.Advance(TimeSpan.FromMilliseconds(5100)); source.Send(3, 5200, 5050);
+        var finished = await Until(sdk, value => value.Phase == "idle" && value.LastResult is not null, TimeSpan.FromSeconds(5));
+        // 重设：最近一次测量结果清除，整场与当前分段一并清空，历史里的测量记录保留。
+        CombatEncounter? closed = null;
+        for (var attempt = 0; attempt < 20 && closed is null; attempt++)
+        {
+            var current = (await sdk.GetCombatSnapshotAsync()).Data!.Encounter!;
+            try { closed = await sdk.ResetCombatEncounterAsync(current.Id, new(operation.Id), "reset-boundary", CombatHistoryStore.ETag(current)); }
+            catch (MabiToolApiException error) when (error.Problem?.Code == "revision.stale") { }
+        }
+        Assert.Equal("reset", closed!.Summary.BoundaryReason);
+        var cleared = await Until(sdk, value => value.LastResult is null, TimeSpan.FromSeconds(5));
+        Assert.Null(cleared.LastResultId);
+        Assert.Null((await sdk.GetCombatSnapshotAsync()).Data!.Encounter);
+        Assert.Equal("2400", (await sdk.GetCombatEncounterAsync(finished.LastResultId!)).Summary.AttributedDamage.ToString());
+        await sdk.StopCombatObservationAsync(operation.Id); await app.StopAsync();
+    }
+
     private static Task SeedReceiptCapacity(SqliteStore database, StorageClock clock, bool bytes) => database.WriteAsync(tx =>
     {
         var expiry = clock.GetUtcNow().AddHours(48).ToUnixTimeMilliseconds();

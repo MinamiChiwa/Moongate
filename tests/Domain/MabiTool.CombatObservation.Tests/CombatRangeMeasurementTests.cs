@@ -162,6 +162,23 @@ public sealed class CombatRangeMeasurementTests
     }
 
     [Fact]
+    public async Task ObservationScopeKeepsTheExpiredWholeUntilTheNextDamage()
+    {
+        await using var area = new Area(); var session = await area.Start();
+        await area.Commit(session, Frame(1, 1000, [Hit("old", 1000, 500, Monster)], entities: Monsters));
+        session.Tick(At.AddMilliseconds(181000), 181000);
+        await area.Commit(session, Frame(2, 181100, entities: Monsters));
+        var observation = session.Capture().Workspace.Observation;
+        Assert.Equal("idle-out-of-combat", observation.WholeExpired);
+        var kept = area.History.QueryRange("client-a", false, new("observation", ObservationId: observation.Id));
+        Assert.Equal("500", kept.Result.Summary.AttributedDamage.ToString());
+        await area.Commit(session, Frame(3, 190000, [Hit("new", 190000, 70, Monster)], entities: Monsters));
+        var renewed = area.History.QueryRange("client-a", false, new("observation", ObservationId: observation.Id));
+        Assert.Equal("70", renewed.Result.Summary.AttributedDamage.ToString());
+        Assert.Single(renewed.EncounterIds);
+    }
+
+    [Fact]
     public async Task ObservationScopeMergesSegmentsSinceTheLastResetAndSavedRangesBecomeFavoriteRecords()
     {
         await using var area = new Area(); var session = await area.Start();
@@ -177,9 +194,9 @@ public sealed class CombatRangeMeasurementTests
         var whole = area.History.QueryRange("client-a", false, new("observation", ObservationId: observation));
         Assert.Equal(2, whole.EncounterIds.Count);
         Assert.Equal("800", whole.Result.Summary.AttributedDamage.ToString());
-        // 重设开的手动分段从 1000 到拆段时点 3500，拆段后的自动分段从 5000 进行到 6000：分母为两段之和。
-        Assert.Equal(3500d, whole.Result.Summary.DurationMs);
-        Assert.Equal(800 * 1000d / 3500, whole.Result.Summary.EncounterDps!.Value, 6);
+        // 重设后由首击开始的分段从 2000 到最后一击 3000（拆段截止最后有效伤害），拆段后的分段从 5000 进行到 6000：分母为两段之和。
+        Assert.Equal(2000d, whole.Result.Summary.DurationMs);
+        Assert.Equal(800 * 1000d / 2000, whole.Result.Summary.EncounterDps!.Value, 6);
         Assert.Equal(2, whole.RangeTargets.Count);
 
         var saved = await area.History.SaveRangeAsync("client-a", false, new(new("observation", ObservationId: observation), " 首领战 "), "save-range-1");

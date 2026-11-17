@@ -63,7 +63,7 @@ public sealed class LiveBackendTests
             // 能力表随页面状态读取：未实现的能力给出说明，可用或能力表没有的编号没有说明。
             await Until(() => backend.GetCapabilityNotice(CapabilityIds.PerformancePlay) is not null, "读取后端能力表");
             Assert.Equal("台服暂不支持在游戏内选曲演奏", backend.GetCapabilityNotice(CapabilityIds.PerformancePlay));
-            Assert.Equal("后端尚未实现，暂不可用", backend.GetCapabilityNotice(CapabilityIds.RoomsCoordinate));
+            Assert.Equal("后端未实现，暂不可用", backend.GetCapabilityNotice(CapabilityIds.RoomsCoordinate));
             Assert.StartsWith("暂不可用：", backend.GetCapabilityNotice(CapabilityIds.ColorSearch));
             Assert.Null(backend.GetCapabilityNotice("system.inspect"));
             Assert.Null(backend.GetCapabilityNotice("no.such.capability"));
@@ -116,7 +116,8 @@ public sealed class LiveBackendTests
                 page.GetVisualDescendants().OfType<MabiTool.Desktop.Controls.Tables.DataTable>().Single(table => table.Name == "DamageTable")
                     .VisibleColumns.Any(column => column.Id == "elements"));
             Assert.Equal(backend.GetCombat().Traits is { Count: > 0 },
-                page.GetVisualDescendants().OfType<Control>().Single(control => control.Name == "TraitTiles").IsEffectivelyVisible);
+                page.GetVisualDescendants().OfType<ItemsControl>().Single(control => control.Name == "RateGrid").GetVisualDescendants()
+                    .OfType<TextBlock>().Any(text => text.IsEffectivelyVisible && text.Text == "无防备"));
             Assert.Equal(backend.GetCombat().Elements is not null,
                 page.GetVisualDescendants().OfType<Control>().Single(control => control.Name == "ElementsGroup").IsEffectivelyVisible);
             if (!traitsKnown)

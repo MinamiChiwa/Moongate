@@ -135,6 +135,8 @@ public sealed class ColorPageModel : BackendPageModel<ColorPageData>, IPageLifec
     /// <summary>说明行：当前阶段的指引、引擎读数，或结束原因与下一步；显示本地操作的失败说明时不显示。</summary>
     public string DetailText => message.Length > 0 ? string.Empty : Data.Detail;
     public bool HasDetailText => DetailText.Length > 0;
+    /// <summary>状态行与说明行的悬停提示：原因与背景；没有时不显示提示。</summary>
+    public string? StatusTip => message.Length > 0 || Data.DetailTip.Length == 0 ? null : Data.DetailTip;
     public bool StatusLive => message.Length == 0 && Data.Tone == ColorTone.Live;
     public bool StatusWarn => message.Length > 0 || Data.Tone == ColorTone.Warn;
     public bool HasAccepted => Data.Accepted is not null;
@@ -425,6 +427,7 @@ public sealed class ColorPageModel : BackendPageModel<ColorPageData>, IPageLifec
             Raise(nameof(StatusText));
             Raise(nameof(DetailText));
             Raise(nameof(HasDetailText));
+            Raise(nameof(StatusTip));
             Raise(nameof(StatusLive));
             Raise(nameof(StatusWarn));
         }

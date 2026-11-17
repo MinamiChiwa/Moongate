@@ -51,7 +51,7 @@ public static class DesktopFiles
         catch (ArgumentException error)
         {
             // --portable-root 缺少绝对路径：按程序所在文件夹启动，并在连接状态里写明参数错误。
-            root = ToolRoot.FromProgramDirectory(AppContext.BaseDirectory); Problem = error.Message;
+            root = ToolRoot.FromProgramDirectory(AppContext.BaseDirectory); Problem = Localization.CodeText.Readable(error.Message) ?? Localization.UiText.Pick("启动参数无效", "啟動參數無效");
             return;
         }
         // 与宿主一致：只有未显式指定工具根时才迁入旧默认位置。迁入失败保留旧目录，前端使用默认偏好照常启动。

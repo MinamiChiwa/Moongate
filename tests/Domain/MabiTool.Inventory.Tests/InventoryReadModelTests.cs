@@ -196,6 +196,43 @@ public sealed class InventoryReadModelTests
         AssertHistory(history);
     }
 
+    [Fact]
+    public async Task ScoresTakeTheirOwnTitlesAndOldUntitledEntriesAreReplacedByTheNextFullSync()
+    {
+        // 合成标题与作曲者；结构按客户端 MusicNoteItem 记录（Id、SheetId 等为只含 Id 的对象）。
+        static InventoryItem Score(string key, ulong sheet, ulong instance, object attributes) => new("MusicNoteItem", InventoryContainer.Backpack, key,
+            new(sheet), new(instance), new(1), JsonSerializer.SerializeToElement(attributes), "MusicNoteItem");
+        static object Data(ulong sheet, ulong instance, string title, string composer) => new { key = instance, data = new {
+            Id = new { Id = instance }, SheetId = new { Id = sheet }, AcquiredTime = new { Id = 0 }, Title = title, Composer = composer,
+            ComposerRealmId = new { Id = 3 }, Arranger = "", ArrangerRealmId = new { Id = 0 }, IsCopyingAllowed = true, IsJunked = false, IsLocked = true, IsFavorite = false } };
+        InventoryFrame Full(ulong sequence, params InventoryItem[] items) => Frame() with { Sequence = new(sequence), Items = items,
+            Coverage = Enum.GetValues<InventoryContainer>().Select(c => new InventoryCoverage("MusicNoteItem", c, true)).ToArray() };
+        await using var area = new Area();
+        // 旧数据：属性里没有乐谱元数据，名称按类型（目录未收录，未知）。
+        await area.Store.ApplyFrameAsync(Full(1, Score("a", 0, 21, new { })));
+        var old = Assert.Single(area.Store.Workspace()!.Items);
+        Assert.Equal(InventoryNameState.Unknown, old.Name.State.KnownValue);
+        Assert.Null(old.Score);
+
+        await area.Store.ApplyFrameAsync(Full(2, Score("a", 0, 21, Data(0, 21, "合成自制谱甲", "合成作曲者")),
+            Score("b", 0, 22, Data(0, 22, "合成自制谱乙", "合成作曲者")), Score("c", 9001, 23, Data(9001, 23, "合成系统谱", "另一作曲者")),
+            Score("d", 0, 24, Data(0, 24, " ", "合成作曲者"))));
+        var items = area.Store.Workspace()!.Items.ToDictionary(i => i.Item.Key);
+        Assert.Equal(4, items.Count);
+        Assert.Equal(4UL, items.Values.Aggregate(0UL, (sum, i) => sum + i.Item.Quantity!.Value.Value));
+        Assert.Equal(["合成自制谱甲", "合成自制谱乙", "合成系统谱"], new[] { "a", "b", "c" }.Select(k => items[k].Name.DisplayName));
+        Assert.All(new[] { "a", "b", "c" }, k => Assert.Equal(InventoryNameState.ItemInstance, items[k].Name.State.KnownValue));
+        var system = items["c"].Score!;
+        Assert.Equal(("另一作曲者", 3, true, true, false), (system.Composer, system.ComposerRealmId, system.CopyingAllowed, system.Locked, system.Favorite));
+        // 标题为空：按类型的关联（未知），元数据照常返回。
+        Assert.Equal(InventoryNameState.Unknown, items["d"].Name.State.KnownValue);
+        Assert.Equal(" ", items["d"].Score!.Title);
+
+        var byComposer = area.Store.Items(new(Search: "另一作曲"));
+        Assert.Equal("c", Assert.Single(byComposer.Items).Item.Key);
+        Assert.Equal("a", Assert.Single(area.Store.Items(new(Search: "自制谱甲")).Items).Item.Key);
+    }
+
     private static void AssertHistory(InventoryReadModelSnapshot snapshot)
     {
         var item = Assert.Single(snapshot.Workspace!.Items);

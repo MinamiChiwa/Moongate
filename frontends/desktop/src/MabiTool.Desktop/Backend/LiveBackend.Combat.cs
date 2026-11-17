@@ -28,15 +28,15 @@ public sealed partial class LiveBackend
             return new(value.Enabled, string.Empty, false);
         var (text, problem) = value.State switch
         {
-            "waiting" => (Pick("正在等待识别本机角色（请在游戏里切换一次地图）", "正在等待識別本機角色（請在遊戲裡切換一次地圖）"), false),
+            "waiting" => (Pick("等待识别角色，请切换一次地图", "等待識別角色，請切換一次地圖"), false),
             "observing" => (string.Empty, false),
-            "failed" => (Pick($"自动观测未能开始：{Localization.CodeText.Reason(value.Reason)}，稍后自动重试", $"自動觀測未能開始：{Localization.CodeText.Reason(value.Reason)}，稍後自動重試"), true),
+            "failed" => (Pick("自动观测未开始：", "自動觀測未開始：") + Localization.CodeText.Reason(value.Reason), true),
             _ => value.Reason switch
             {
                 "combat.autoDisabled" => (Pick("自动观测已关闭", "自動觀測已關閉"), false),
-                "game.bindingRequired" => (Pick("尚未绑定游戏窗口，绑定后自动开始观测", "尚未綁定遊戲視窗，綁定後自動開始觀測"), true),
+                "game.bindingRequired" => (Pick("绑定游戏窗口后自动观测", "綁定遊戲視窗後自動觀測"), true),
                 null => (string.Empty, false),
-                var other => (Pick($"未抓包（{CaptureText.Reason(other) ?? Localization.CodeText.Reason(other)}），抓包运行后自动开始观测", $"未抓包（{CaptureText.Reason(other) ?? Localization.CodeText.Reason(other)}），抓包運行後自動開始觀測"), true)
+                var other => (Pick("未抓包：", "未抓包：") + (CaptureText.Reason(other) ?? Localization.CodeText.Reason(other)), true)
             }
         };
         return new(value.Enabled, text, problem);
@@ -51,13 +51,13 @@ public sealed partial class LiveBackend
         if (state is OperationState.Failed or OperationState.Interrupted)
             return new(false, StartFailure(operation.Problem?.Code));
         if (state is OperationState.Succeeded or OperationState.Cancelled or OperationState.CancelRequested) return null;
-        return new(true, Pick("正在等待识别本机角色（请在游戏里切换一次地图）", "正在等待識別本機角色（請在遊戲裡切換一次地圖）"));
+        return new(true, Pick("等待识别角色，请切换一次地图", "等待識別角色，請切換一次地圖"));
     }
 
     /// <summary>开始观测失败的原因：常见错误码给出短句，其余原样显示。</summary>
     internal static string StartFailure(string? code) => code switch
     {
-        null or "" => Pick("开始观测失败：后端没有给出原因", "開始觀測失敗：後端沒有給出原因"),
+        null or "" => Pick("开始观测失败", "開始觀測失敗"),
         var other => Pick("开始观测失败：", "開始觀測失敗：") + Localization.CodeText.Reason(other)
     };
 
@@ -121,6 +121,11 @@ public sealed partial class LiveBackend
                 selection.SelectTarget(argument);
                 Signal(); Notify();
                 return Task.CompletedTask;
+            // 明细窗口自己的选择：不改主页面的选择，不唤醒整轮刷新。
+            case "combat.detail.scope":
+            case "combat.detail.scope.live":
+            case "combat.detail.target":
+                return SelectDetailAsync(intent, argument);
         }
         // 测量开始后自动切到这次测量：只在发出请求后用户没有另选范围时生效。
         var issuedAt = selection.Version;

@@ -5,6 +5,20 @@ using Microsoft.Win32.SafeHandles;
 
 namespace MabiTool.Platform.Windows;
 
+/// <summary>
+/// 子进程的可选限制。<see cref="Environment"/> 为空时继承宿主环境，否则只传入这些变量；
+/// <see cref="JobMemoryBytes"/> 限制整个进程树的提交内存，<see cref="CpuRatePercent"/> 以整机 CPU 百分比硬性封顶；
+/// <see cref="RestrictUserInterface"/> 禁止使用 Job 外窗口的句柄、读写剪贴板、改系统参数与显示设置、注销关机。
+/// </summary>
+public sealed record ChildProcessOptions(
+    string? WorkingDirectory = null,
+    IReadOnlyDictionary<string, string>? Environment = null,
+    bool RedirectInput = false,
+    long? JobMemoryBytes = null,
+    int? CpuRatePercent = null,
+    int? ActiveProcessLimit = null,
+    bool RestrictUserInterface = false);
+
 /// <summary>进程创建时原子加入私有 Job；宿主退出时由内核收回子进程树。</summary>
 public sealed class WindowsOwnedChildProcess : IAsyncDisposable
 {
@@ -18,14 +32,28 @@ public sealed class WindowsOwnedChildProcess : IAsyncDisposable
     public int Id { get; }
     public StreamReader StandardOutput { get; }
     public StreamReader StandardError { get; }
+    /// <summary>只在 <see cref="ChildProcessOptions.RedirectInput"/> 为真时存在。</summary>
+    public Stream? StandardInput { get; }
     public bool HasExited => exited.Task.IsCompleted;
 
+    /// <summary>Job 内进程树曾经提交的内存峰值；读取失败时为空。</summary>
+    public long? PeakJobMemoryBytes
+    {
+        get
+        {
+            var value = new ExtendedLimitInformation();
+            return QueryInformationJobObject(job, 9, ref value, (uint)Marshal.SizeOf<ExtendedLimitInformation>(), 0)
+                ? (long)value.PeakJobMemory : null;
+        }
+    }
+
     private WindowsOwnedChildProcess(SafeFileHandle job, SafeFileHandle process, uint id,
-        SafeFileHandle output, SafeFileHandle error)
+        SafeFileHandle output, SafeFileHandle error, SafeFileHandle? input)
     {
         this.job = job; this.process = process; Id = checked((int)id);
         StandardOutput = new(new FileStream(output, FileAccess.Read, 4096, false), new UTF8Encoding(false));
         StandardError = new(new FileStream(error, FileAccess.Read, 4096, false), new UTF8Encoding(false));
+        if (input is not null) StandardInput = new FileStream(input, FileAccess.Write, 4096, false);
         wait = new(false, EventResetMode.ManualReset);
         wait.SafeWaitHandle = new SafeWaitHandle(process.DangerousGetHandle(), false);
         registration = ThreadPool.RegisterWaitForSingleObject(wait, (_, _) =>
@@ -35,26 +63,57 @@ public sealed class WindowsOwnedChildProcess : IAsyncDisposable
         }, null, Timeout.Infinite, true);
     }
 
-    public static WindowsOwnedChildProcess Start(string executable, IReadOnlyList<string> arguments)
+    public static WindowsOwnedChildProcess Start(string executable, IReadOnlyList<string> arguments) =>
+        Start(executable, arguments, new ChildProcessOptions());
+
+    public static WindowsOwnedChildProcess Start(string executable, IReadOnlyList<string> arguments, ChildProcessOptions options)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("私有进程 Job 需要 Windows");
         if (!Path.IsPathFullyQualified(executable) || arguments.Any(value => value is null || value.Contains('\0')))
             throw new ArgumentException("子进程需要绝对路径和有效参数");
-        SafeFileHandle? job = null, outputRead = null, outputWrite = null, errorRead = null, errorWrite = null, input = null;
-        nint attributes = 0, handles = 0, jobs = 0;
+        if (options.WorkingDirectory is { } directory && !Path.IsPathFullyQualified(directory))
+            throw new ArgumentException("子进程工作目录必须是绝对路径");
+        if (options.Environment?.Any(pair => pair.Key.Length == 0 || pair.Key.Contains('=') || pair.Key.Contains('\0') || pair.Value.Contains('\0')) == true)
+            throw new ArgumentException("子进程环境变量无效");
+        SafeFileHandle? job = null, outputRead = null, outputWrite = null, errorRead = null, errorWrite = null, input = null, inputWrite = null;
+        nint attributes = 0, handles = 0, jobs = 0, environment = 0;
         ProcessInformation created = default;
         var assigned = false;
         var attributesInitialized = false;
         try
         {
             job = CreateJobObjectW(0, null); Check(!job.IsInvalid);
-            var limits = new ExtendedLimitInformation { Basic = new() { LimitFlags = 0x2000 } };
+            // 0x2000：Job 句柄关闭时结束全部进程；0x400：未处理异常直接结束，不弹出系统错误报告窗口。
+            var flags = 0x2000u | 0x400u;
+            if (options.JobMemoryBytes is > 0) flags |= 0x200;
+            if (options.ActiveProcessLimit is > 0) flags |= 0x8;
+            var limits = new ExtendedLimitInformation
+            {
+                Basic = new() { LimitFlags = flags, ActiveProcessLimit = (uint)(options.ActiveProcessLimit ?? 0) },
+                JobMemory = (nuint)(options.JobMemoryBytes ?? 0)
+            };
             Check(SetInformationJobObject(job, 9, ref limits, (uint)Marshal.SizeOf<ExtendedLimitInformation>()));
+            if (options.CpuRatePercent is { } percent)
+            {
+                if (percent is < 1 or > 100) throw new ArgumentException("CPU 上限须在 1–100 之间");
+                var rate = new CpuRateControl { Flags = 0x1 | 0x4, Rate = (uint)(percent * 100) };
+                Check(SetInformationJobObject(job, 15, ref rate, (uint)Marshal.SizeOf<CpuRateControl>()));
+            }
+            if (options.RestrictUserInterface)
+            {
+                var restrictions = new UiRestrictions { Flags = 0xFF };
+                Check(SetInformationJobObject(job, 4, ref restrictions, (uint)Marshal.SizeOf<UiRestrictions>()));
+            }
             var security = new SecurityAttributes { Length = (uint)Marshal.SizeOf<SecurityAttributes>(), Inherit = true };
             Check(CreatePipe(out outputRead, out outputWrite, ref security, 0));
             Check(CreatePipe(out errorRead, out errorWrite, ref security, 0));
             Check(SetHandleInformation(outputRead, 1, 0)); Check(SetHandleInformation(errorRead, 1, 0));
-            input = CreateFileW("NUL", 0x80000000, 3, ref security, 3, 0, 0); Check(!input.IsInvalid);
+            if (options.RedirectInput)
+            {
+                Check(CreatePipe(out input, out inputWrite, ref security, 0));
+                Check(SetHandleInformation(inputWrite, 1, 0));
+            }
+            else { input = CreateFileW("NUL", 0x80000000, 3, ref security, 3, 0, 0); Check(!input.IsInvalid); }
             nuint bytes = 0;
             InitializeProcThreadAttributeList(0, 2, 0, ref bytes);
             attributes = Marshal.AllocHGlobal(checked((nint)bytes));
@@ -71,16 +130,24 @@ public sealed class WindowsOwnedChildProcess : IAsyncDisposable
                 Flags = 0x100, Input = input.DangerousGetHandle(), Output = outputWrite.DangerousGetHandle(),
                 Error = errorWrite.DangerousGetHandle() }, Attributes = attributes };
             var command = new StringBuilder(string.Join(" ", new[] { executable }.Concat(arguments).Select(Quote)));
-            Check(CreateProcessW(executable, command, 0, 0, true, 0x08080000, 0,
-                Path.GetDirectoryName(executable), ref startup, out created));
+            if (options.Environment is { } variables)
+            {
+                // CREATE_UNICODE_ENVIRONMENT：环境块按名称排序，以两个 NUL 结束。
+                var block = string.Concat(variables.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(pair => pair.Key + "=" + pair.Value + "\0")) + "\0";
+                environment = Marshal.StringToHGlobalUni(block);
+            }
+            Check(CreateProcessW(executable, command, 0, 0, true, 0x08080000 | (environment != 0 ? 0x400u : 0), environment,
+                options.WorkingDirectory ?? Path.GetDirectoryName(executable), ref startup, out created));
             var process = new SafeFileHandle(created.Process, true); created.Process = 0;
             WindowsOwnedChildProcess result;
-            try { result = new(job, process, created.Id, outputRead, errorRead); }
+            try { result = new(job, process, created.Id, outputRead, errorRead, inputWrite); }
             catch { TerminateJobObject(job, 1); process.Dispose(); throw; }
             assigned = true; return result;
         }
         finally
         {
+            if (environment != 0) Marshal.FreeHGlobal(environment);
             if (created.Thread != 0) CloseHandle(created.Thread);
             if (created.Process != 0) CloseHandle(created.Process);
             if (attributes != 0)
@@ -91,7 +158,7 @@ public sealed class WindowsOwnedChildProcess : IAsyncDisposable
             if (handles != 0) Marshal.FreeHGlobal(handles);
             if (jobs != 0) Marshal.FreeHGlobal(jobs);
             outputWrite?.Dispose(); errorWrite?.Dispose(); input?.Dispose();
-            if (!assigned) { job?.Dispose(); outputRead?.Dispose(); errorRead?.Dispose(); }
+            if (!assigned) { job?.Dispose(); outputRead?.Dispose(); errorRead?.Dispose(); inputWrite?.Dispose(); }
         }
     }
 
@@ -110,6 +177,7 @@ public sealed class WindowsOwnedChildProcess : IAsyncDisposable
         finally
         {
             registration.Unregister(null); wait.Dispose();
+            try { StandardInput?.Dispose(); } catch (IOException) { }
             StandardOutput.Dispose(); StandardError.Dispose(); process.Dispose(); job.Dispose();
         }
     }
@@ -143,6 +211,10 @@ public sealed class WindowsOwnedChildProcess : IAsyncDisposable
         public nuint ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory;
     }
     [StructLayout(LayoutKind.Sequential)]
+    private struct CpuRateControl { public uint Flags, Rate; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct UiRestrictions { public uint Flags; }
+    [StructLayout(LayoutKind.Sequential)]
     private struct StartupInfo
     {
         public uint Size; public nint Reserved, Desktop, Title; public uint X, Y, Width, Height, XChars, YChars, Fill, Flags;
@@ -158,6 +230,15 @@ public sealed class WindowsOwnedChildProcess : IAsyncDisposable
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetInformationJobObject(SafeFileHandle job, int information, ref ExtendedLimitInformation value, uint size);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetInformationJobObject(SafeFileHandle job, int information, ref CpuRateControl value, uint size);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetInformationJobObject(SafeFileHandle job, int information, ref UiRestrictions value, uint size);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryInformationJobObject(SafeFileHandle job, int information, ref ExtendedLimitInformation value, uint size, nint returned);
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CreatePipe(out SafeFileHandle read, out SafeFileHandle write, ref SecurityAttributes security, uint size);

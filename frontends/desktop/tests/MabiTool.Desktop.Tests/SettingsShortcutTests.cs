@@ -238,7 +238,7 @@ public sealed class SettingsShortcutTests
                 Dispatcher.UIThread.RunJobs();
                 await Task.Delay(20, limit.Token);
             }
-            Assert.StartsWith("已紧急停止（快捷键）：已中止本工具的游戏输入与自动操作", backend.GetRooms().Feedback!.Text);
+            Assert.StartsWith("已紧急停止（快捷键）：游戏输入与自动操作已中止", backend.GetRooms().Feedback!.Text);
             Assert.Empty(forwarded);
         }
         finally
@@ -293,7 +293,7 @@ public sealed class SettingsShortcutTests
         var plan = EmergencyStopFollowUp.Plan(EmergencyStopFollowUp.Button, null, receipt);
         Assert.True(plan.Failed);
         Assert.Contains("撤销 2 个输入占用", plan.Text);
-        Assert.Contains("color game.activityCancellationFailed", plan.Text);
+        Assert.Contains("染色：没能取消游戏操作", plan.Text);
         Assert.False(EmergencyStopFollowUp.Plan(EmergencyStopFollowUp.Button, null, receipt with { Failures = [] }).Failed);
     }
 

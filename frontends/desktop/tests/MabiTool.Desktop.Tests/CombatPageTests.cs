@@ -101,7 +101,7 @@ public sealed class CombatPageTests
             string[] Texts(string name) => window.GetVisualDescendants().OfType<ItemsControl>().Single(control => control.Name == name)
                 .GetVisualDescendants().OfType<TextBlock>().Select(text => text.Text ?? string.Empty).ToArray();
             Assert.Contains("18,420", Texts("KpiTiles"));
-            Assert.NotEmpty(Texts("CoverageTiles"));
+            Assert.NotEmpty(Texts("RateGrid"));
             backend.SampleDps = "20,000";
             backend.RaiseChanged();
             LayoutProbe.Render(window);
@@ -204,10 +204,11 @@ public sealed class CombatPageTests
                 column => column.Id.StartsWith("tag.breaked", StringComparison.Ordinal) || column.Id.StartsWith("tag.multi", StringComparison.Ordinal)
                     || column.Id.StartsWith("tag.fire", StringComparison.Ordinal) || column.Id == "elements");
             // 覆盖率四块总在；全部未知时攻击特性的其余块、首击与元素不显示、不占位。
-            Assert.False(Named<ItemsControl>(window, "TraitTiles").IsEffectivelyVisible);
+            var rates = VisibleTexts(Named<ItemsControl>(window, "RateGrid"));
+            Assert.DoesNotContain("无防备", rates);
+            Assert.DoesNotContain("多重打击", rates);
             Assert.False(Named<StackPanel>(window, "ElementsGroup").IsEffectivelyVisible);
             Assert.False(Named<StackPanel>(window, "FirstAttackGroup").IsEffectivelyVisible);
-            Assert.Equal(0, Named<ItemsControl>(window, "TraitTiles").Bounds.Height);
             Assert.Equal(0, Named<StackPanel>(window, "FirstAttackGroup").Bounds.Height);
             Assert.Equal(0, Named<StackPanel>(window, "ElementsGroup").Bounds.Height);
         }
@@ -327,5 +328,62 @@ public sealed class CombatPageTests
         Assert.True(model.IsTimerOpen);
         Assert.True(model.HasTimerError);
         Assert.Empty(backend.UiIntents);
+    }
+
+    [AvaloniaFact]
+    public void DetailWindowKeepsItsOwnScopeWithoutRefreshingTheMainPage()
+    {
+        var backend = new SampleBackend { SampleScope = CombatScopeKind.Segment };
+        using var main = new CombatPageModel(backend);
+        using var detail = main.Companion();
+        detail.SetDetailOpen(true);
+        var mainRefreshes = 0;
+        backend.Changed += (_, _) => mainRefreshes++;
+        // 窗口里切到整场：只改窗口自己的选择，不通知主页面。
+        detail.SelectScopeCommand.Execute("observation");
+        Assert.Equal(CombatScopeKind.Whole, detail.Scope.Kind);
+        Assert.Equal(CombatScopeKind.Segment, main.Scope.Kind);
+        Assert.Equal(0, mainRefreshes);
+        Assert.Equal(("combat.detail.scope", "observation"), backend.UiIntents.Last());
+        // 主页面切换范围也不改变窗口。
+        main.SelectScopeCommand.Execute("measurement");
+        Assert.Equal(CombatScopeKind.Measurement, main.Scope.Kind);
+        Assert.Equal(CombatScopeKind.Whole, detail.Scope.Kind);
+        // 整场曲线按本机时钟标注，悬停提示写时间与 DPS。
+        Assert.NotNull(detail.Timeline.Origin);
+        Assert.Matches(@"^\d\d:\d\d:\d\d · DPS [\d,]+$", detail.Timeline.Tips[0]);
+    }
+
+    [AvaloniaFact]
+    public async Task LiveDetailSelectionNeitherChangesNorWakesTheMainPage()
+    {
+        await using var backend = new LiveBackend(Path.Combine(Path.GetTempPath(), "moongate-missing-" + Guid.NewGuid().ToString("N"), "runtime", "instance.json"),
+            action => action());
+        var (main, detail) = (0, 0);
+        backend.Changed += (_, _) => main++;
+        backend.CombatDetailChanged += (_, _) => detail++;
+        backend.SetCombatDetailOpen(true);
+        await backend.SendIntentAsync("combat.detail.scope", "observation", TestContext.Current.CancellationToken);
+        await backend.SendIntentAsync("combat.detail.target", "ce-1", TestContext.Current.CancellationToken);
+        Assert.Equal(("observation", "ce-1"), (backend.GetCombatDetail().SelectedScope, backend.GetCombatDetail().SelectedTarget));
+        Assert.Equal(("segment", (string?)null), (backend.GetCombat().SelectedScope, backend.GetCombat().SelectedTarget));
+        Assert.Equal((0, 2), (main, detail));
+        await backend.SendIntentAsync("combat.scope", "measurement", TestContext.Current.CancellationToken);
+        Assert.Equal("observation", backend.GetCombatDetail().SelectedScope);
+    }
+
+    [AvaloniaFact]
+    public void HealingWidgetShowsTheSameHealingAsThePage()
+    {
+        var backend = new SampleBackend();
+        using var widget = new OverlayWidgetModel("combat.healing", backend);
+        var healing = backend.GetCombat().Healing!;
+        Assert.True(widget.IsHealing && widget.HealingAvailable);
+        Assert.Equal((healing.Hps, healing.Cast, healing.CastCount, healing.Effective),
+            (widget.HealingHps, widget.HealingCast, widget.HealingCount, widget.HealingEffective));
+        Assert.Equal("整场", widget.HealingScope);
+        backend.NoHealingData = true;
+        backend.RaiseChanged();
+        Assert.False(widget.HealingAvailable);
     }
 }

@@ -27,11 +27,17 @@ public sealed partial class CombatOperations
                 workspace.Encounter is { } encounter && encounter.Id == resource && CombatHistoryStore.ETag(encounter) == etag;
             if (!matches) throw new OperationException("revision.stale", "战斗状态已变化，请读取最新快照");
             var now = clock.GetUtcNow(); var mono = Now(job);
+            CombatEncounter? closed = null;
             try
             {
                 if (route == "start") job.Session.StartManual(now, mono);
                 else if (route == "close") job.Session.Close("manual-end", now, mono);
-                else if (route == "reset") job.Session.Reset(now, mono);
+                else if (route == "reset")
+                {
+                    // 重设清空整场、当前分段与定时测量：进行中的测量取消且不保存，最近一次测量结果一并清除。
+                    closed = job.Session.Reset(now, mono) ?? workspace.Encounter;
+                    await ResetMeasurementAsync(job);
+                }
                 else if (route == "split")
                 {
                     if (!job.Session.Split(now, mono)) throw new OperationException("combat.segmentInactive", "当前没有进行中的战斗分段");
@@ -39,7 +45,8 @@ public sealed partial class CombatOperations
                 else throw new OperationException("request.invalid", "战斗边界类型无效");
             }
             catch (InvalidOperationException error) { throw new OperationException("resource.busy", error.Message); }
-            var checkpoint = job.Session.Capture(); var result = checkpoint.Workspace.Encounter!;
+            var checkpoint = job.Session.Capture();
+            var result = closed is null ? checkpoint.Workspace.Encounter! : checkpoint.Encounters.FirstOrDefault(x => x.Id == closed.Id) ?? closed;
             try
             {
                 var receipt = new CombatBoundaryReceipt(principal, route, resource, key!, hash, CombatHistoryStore.WorkspaceETag(workspace), result);

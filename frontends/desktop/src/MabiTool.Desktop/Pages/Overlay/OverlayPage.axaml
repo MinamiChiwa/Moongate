@@ -25,7 +25,7 @@
         <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" ClipToBounds="True" />
       </DockPanel>
       <controls:ReflowPanel MinItemWidth="260" Spacing="12" Margin="0,4,0,0">
-        <TextBlock Classes="body muted" VerticalAlignment="Center" Text="{DynamicResource O.Status}" />
+        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Classes="body muted" VerticalAlignment="Center" Text="{DynamicResource O.StatusShort}" /><controls:HelpTip Text="{DynamicResource O.Status}" /></StackPanel>
         <StackPanel HorizontalAlignment="Right">
           <WrapPanel HorizontalAlignment="Right">
             <controls:SelectionBorder Classes="segmented" Margin="0,0,8,6" VerticalAlignment="Center">
@@ -111,7 +111,7 @@
             </StackPanel>
           </controls:Card>
 
-        <controls:Card x:Name="AppearancePanel" CardId="appearance" Title="{Binding SelectedTitle}" Size="OneByAuto"
+        <controls:Card x:Name="AppearancePanel" CardId="appearance" Title="{Binding SelectedTitle}" TitleTip="{DynamicResource O.SettingsHint}" Size="OneByAuto"
                        AllowedSizes="HalfByAuto,FullWidth,OneByThree,OneByFour">
           <StackPanel Spacing="12">
             <TextBlock Classes="note" Text="{DynamicResource O.NoSelection}" IsVisible="{Binding NoSelection}" />
@@ -176,8 +176,7 @@
               </controls:SelectionBorder>
               <Border Classes="inset" IsVisible="{Binding UsesImage}">
                 <StackPanel Spacing="6">
-                  <TextBlock Classes="strong" Text="{DynamicResource O.FrameImage}" />
-                  <TextBlock Classes="note" Text="{DynamicResource O.FrameImageHint}" />
+                  <StackPanel Orientation="Horizontal" Spacing="4"><TextBlock Classes="strong" Text="{DynamicResource O.FrameImage}" /><controls:HelpTip Text="{DynamicResource O.FrameImageHint}" /></StackPanel>
                   <TextBox x:Name="ImagePathBox" Classes="field" Text="{Binding ImagePath}"
                            PlaceholderText="{DynamicResource O.FrameImagePath}" />
                   <Button Classes="chip" HorizontalAlignment="Left" Content="{DynamicResource O.PickImage}" Click="OnPickImage" />
@@ -190,17 +189,15 @@
                         Command="{Binding RemoveWidgetCommand}" />
               </WrapPanel>
             </StackPanel>
-            <TextBlock Classes="note" Text="{DynamicResource O.SettingsHint}" />
           </StackPanel>
         </controls:Card>
 
-          <controls:Card x:Name="LibraryPanel" CardId="library" Title="{DynamicResource O.Library}" Padding="16" AllowedSizes="TwoByAuto,HalfByAuto">
+          <controls:Card x:Name="LibraryPanel" CardId="library" Title="{DynamicResource O.Library}" TitleTip="{DynamicResource O.LibraryHint}" Padding="16" AllowedSizes="TwoByAuto,HalfByAuto">
             <controls:Card.Actions>
               <Button x:Name="GameDataButton" Content="{DynamicResource O.GameDataEntry}" Command="{Binding OpenGameDataCommand}"
                       ToolTip.Tip="{DynamicResource O.GameDataEntryHint}" />
             </controls:Card.Actions>
             <StackPanel Spacing="10">
-              <TextBlock Classes="note" Text="{DynamicResource O.LibraryHint}" />
               <ItemsControl controls:StableItems.Source="{Binding Library}">
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="190" Spacing="8" /></ItemsPanelTemplate>
@@ -239,9 +236,8 @@
           <Button DockPanel.Dock="Right" x:Name="GameDataClose" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
                   Content="{DynamicResource S.ClosePicker}" Command="{Binding CloseGameDataCommand}"
                   AutomationProperties.Name="{DynamicResource S.ClosePicker}" />
-          <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource O.GameDataTitle}" />
+          <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="h2" FontSize="17" Text="{DynamicResource O.GameDataTitle}" /><controls:HelpTip Text="{DynamicResource O.GameDataHint}" /></StackPanel>
         </DockPanel>
-        <TextBlock DockPanel.Dock="Top" Classes="note" Margin="0,0,0,10" Text="{DynamicResource O.GameDataHint}" />
         <ScrollViewer controls:EdgeFade.IsEnabled="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <ItemsControl x:Name="GameDataList" controls:StableItems.Source="{Binding GameDataLibrary}">
             <ItemsControl.ItemTemplate>

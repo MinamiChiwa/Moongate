@@ -185,7 +185,7 @@ public sealed partial class InventoryHistoryStore
     {
         var current=snapshot.Workspace is {Current:true} w && w.Identity?.AccountId==account.AccountId && (identity is null || w.Identity.CharacterId==identity.CharacterId);
         if(!history && !current) return;
-        foreach(var item in items) rows.Add([account.AccountId,identity?.CharacterId??"",identity?.RawName??"账号共享",ContainerText(item.Container.KnownValue!.Value),item.TypeId.ToString(),Name(item.Type,account).RawName??"",item.Quantity?.ToString()??"",at.ToString("O"),"history",item.Category,item.Sheet??"",item.InstanceId?.ToString()??"",item.Key,item.Attributes.GetRawText(),item.Equipped?"true":"false"]);
+        foreach(var item in items) rows.Add([account.AccountId,identity?.CharacterId??"",identity?.RawName??"账号共享",ContainerText(item.Container.KnownValue!.Value),item.TypeId.ToString(),Name(item,InventoryScores.Info(item),account).RawName??"",item.Quantity?.ToString()??"",at.ToString("O"),"history",item.Category,item.Sheet??"",item.InstanceId?.ToString()??"",item.Key,item.Attributes.GetRawText(),item.Equipped?"true":"false"]);
         foreach(var cover in coverage.Where(c=>c.Complete)) rows.Add([account.AccountId,identity?.CharacterId??"",identity?.RawName??"账号共享",ContainerText(cover.Container.KnownValue!.Value),"","","",at.ToString("O"),"full_coverage",cover.Category,"","","","{}","false"]);
     }
     private static string? AccountFromFolder(string name,IEnumerable<string> accounts)

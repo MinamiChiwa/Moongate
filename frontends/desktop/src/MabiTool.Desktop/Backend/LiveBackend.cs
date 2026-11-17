@@ -79,10 +79,17 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                 current.Problem ?? Pick("连接后显示游戏输入的占用状态。", "連接後顯示遊戲輸入的佔用狀態。"),
                 EffectStage.Pending, EffectStage.Pending, EffectStage.Pending, false);
         if (current.Ownership is not { Owners.Count: > 0 } ownership)
-            return new(null, Pick("没有模块持有游戏输入", "沒有模組持有遊戲輸入"),
+        {
+            // 没有模块持有输入时，活动胶囊可以显示扩展设置的一句状态：标明扩展名称，不填写持有者，
+            // 持有输入的显示始终优先，扩展状态不会覆盖它。
+            if (ExtensionActivity() is { } extension)
+                return new(null, Pick("游戏输入空闲", "遊戲輸入空閒"), extension.Title,
+                    message ?? extension.Detail, EffectStage.Pending, EffectStage.Pending, EffectStage.Pending);
+            return new(null, Pick("游戏输入空闲", "遊戲輸入空閒"),
                 Pick("可以开始演奏、合奏或染色", "可以開始演奏、合奏或染色"),
-                message ?? Pick("DPS检测只读取数据，不占用输入，可与其他模块同时运行。", "DPS檢測只讀取資料，不佔用輸入，可與其他模組同時執行。"),
+                message ?? Pick("DPS检测不占用游戏输入", "DPS檢測不佔用遊戲輸入"),
                 EffectStage.Pending, EffectStage.Pending, EffectStage.Pending);
+        }
 
         var owner = ownership.Owners[0];
         var effect = current.OwnerOperation?.EffectStatus.KnownValue;
@@ -93,8 +100,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         var module = CodeText.Module(owner.OwnerId);
         return new(owner.OwnerId, Pick($"{module} 持有游戏输入{others}", $"{module} 持有遊戲輸入{others}"),
             current.OwnerOperation is { } operation
-                ? Pick($"进行中：{CodeText.Operation(operation.Kind)}（{OperationPhase(operation.Kind, operation.Phase)}）",
-                    $"進行中：{CodeText.Operation(operation.Kind)}（{OperationPhase(operation.Kind, operation.Phase)}）")
+                ? $"{CodeText.Operation(operation.Kind)} · {OperationPhase(operation.Kind, operation.Phase)}"
                 : Pick($"占用资源：{string.Join("、", owner.Resources.Select(CodeText.Resource))}",
                     $"佔用資源：{string.Join("、", owner.Resources.Select(CodeText.Resource))}"),
             message ?? EffectText(effect),
@@ -119,15 +125,15 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         CodeText.Phase(phase, kind == "color.search" ? ColorPhase : null);
 
     private static string? ColorPhase(string phase) =>
-        Pages.Dyeing.ColorStages.Name(phase) is var name && name != phase ? name : null;
+        Pages.Dyeing.ColorStages.Known.Contains(phase) ? Pages.Dyeing.ColorStages.Name(phase) : null;
 
     // 活动说明：受理、送出、游戏确认三段里走到了哪一步。
     internal static string EffectText(EffectStatus? effect) => effect switch
     {
-        EffectStatus.InputDispatched => Pick("已向游戏发送输入，等待游戏确认", "已向遊戲發送輸入，等待遊戲確認"),
+        EffectStatus.InputDispatched => Pick("已发送输入，等待游戏确认", "已發送輸入，等待遊戲確認"),
         EffectStatus.ObservedApplied => Pick("游戏已确认生效", "遊戲已確認生效"),
-        EffectStatus.Unknown => Pick("已发送输入，是否生效未知", "已發送輸入，是否生效未知"),
-        _ => Pick("已受理，尚未向游戏发送输入", "已受理，尚未向遊戲發送輸入")
+        EffectStatus.Unknown => Pick("已发送，是否生效未知", "已發送，是否生效未知"),
+        _ => Pick("已受理，尚未发送输入", "已受理，尚未發送輸入")
     };
 
     public BindingView GetGameBinding()
@@ -158,7 +164,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         var name = nickname is { Length: > 0 } ? nickname : window;
         return snapshot.State == "bound"
             ? new(name, region, Pick("已绑定游戏窗口", "已綁定遊戲視窗"), true, true, window)
-            : new(name, region, Pick($"游戏窗口状态：{CodeText.State(snapshot.State)}", $"遊戲視窗狀態：{CodeText.State(snapshot.State)}"), false, true, window);
+            : new(name, region, CodeText.State(snapshot.State), false, true, window);
     }
 
     public Avalonia.PixelRect? GetGameWindowBounds()
@@ -385,16 +391,15 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
             if (!current.Connected) throw new InvalidOperationException(Pick("未连接后端", "未連接後端"));
             result = await WithStorageRetryAsync(() => send(api, current, limit.Token), limit.Token);
         }
-        catch (OperationCanceledException) when (timeout is { } waited && limit.IsCancellationRequested
+        catch (OperationCanceledException) when (timeout is not null && limit.IsCancellationRequested
                                                  && !cancellationToken.IsCancellationRequested && !lifetime.IsCancellationRequested)
         {
-            result = Pick($"请求未完成：后端 {waited.TotalSeconds:0} 秒内没有回应", $"請求未完成：後端 {waited.TotalSeconds:0} 秒內沒有回應");
+            result = Pick("请求未完成：后端无响应", "請求未完成：後端無回應");
         }
         catch (Exception error) when (error is MabiToolApiException or InvalidOperationException or HttpRequestException
                                           or IOException or OperationCanceledException)
         {
-            var code = error is MabiToolApiException api ? CodeText.Reason(api.Problem?.Code ?? $"http.{api.Status}") : error.Message;
-            result = Pick($"请求未完成：{code}", $"請求未完成：{code}");
+            result = Pick("请求未完成：", "請求未完成：") + CodeText.Error(error);
         }
         lock (gate) notice = result;
         Signal();
@@ -430,6 +435,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                         await RefreshAsync(api, simulation, token);
                         await RefreshColorRunAsync(api, token);
                         await RefreshPagesAsync(api, token);
+                        await RefreshExtensionSurfacesAsync(api, token);
                         await RefreshCaptureAsync(api, token);
                         await RefreshRoomAsync(api, token);
                         await PumpScoreDurationsAsync(api, token);
@@ -454,7 +460,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
             {
                 // 工具根不可写或参数错误时宿主也无法在此启动；目录包里宿主停止或未能启动时写明宿主的情况。
                 var reason = Infrastructure.DesktopFiles.Problem ?? Infrastructure.PackagedHost.Problem ??
-                    (error is MabiToolApiException api ? CodeText.Reason(api.Problem?.Code ?? $"http.{api.Status}") : error.Message);
+                    CodeText.Error(error);
                 client = null;
                 lock (gate)
                 {
@@ -537,7 +543,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
             catch (MabiToolApiException error) { effectProblem = error.Problem?.Code ?? $"http.{error.Status}"; }
         // 首击只在 DPS检测页显示：页面切走后不读取它的时间线。
         var firstAttacks = visible ? await FirstAttacksAsync(api, combat.Data, range, history, chosen, token) : null;
-        await RefreshTimelineAsync(api, combat.Data, range, chosen, token);
+        await RefreshDetailAsync(api, combat.Data, history, range, rangeProblem, chosen.Key, token);
         var starting = await RefreshStartAsync(api, combat.Data, token);
 
         // 观测进行中每次刷新都通知（倒计时在走）；其余时候只在修订变化时通知，避免页面无谓重排。

@@ -9,10 +9,27 @@ namespace MabiTool.Desktop.Pages.Combat;
 /// DPS 随时间曲线的数据：每个桶的 DPS（桶内本人与计入的召唤物伤害 ÷ 桶宽）。<see cref="Unavailable"/> 不为空时曲线停用并写明原因；
 /// <see cref="Loading"/> 为真表示窗口刚打开、时间线还在读取。
 /// </summary>
-public sealed record CombatTimelineView(IReadOnlyList<double> Dps, double BucketSeconds, double SpanSeconds, string? Unavailable, bool Loading = false)
+/// <param name="Origin">横轴的起点：整场按本机时钟标注（第一个点的时刻），其余范围为空、按相对时间标注。</param>
+public sealed record CombatTimelineView(IReadOnlyList<double> Dps, double BucketSeconds, double SpanSeconds, string? Unavailable, bool Loading = false,
+    DateTimeOffset? Origin = null)
 {
     public static CombatTimelineView Pending { get; } = new([], 0, 0, null, true);
     public bool Available => Unavailable is null && !Loading && Dps.Count > 0;
+
+    /// <summary>第 <paramref name="index"/> 个点的横坐标：整场为本机时钟“21:30:15”，其余为相对时间“0:42”。</summary>
+    public string TimeAt(int index) => TimeOf(index * BucketSeconds);
+
+    private string TimeOf(double seconds) => Origin is { } origin
+        ? origin.AddSeconds(seconds).ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)
+        : CombatPageModel.DurationText(seconds * 1000);
+
+    /// <summary>每个点的悬停提示：横坐标（时间）与纵坐标（DPS 数值）。</summary>
+    public IReadOnlyList<string> Tips => Dps.Select((value, index) =>
+        $"{TimeAt(index)} · DPS {Math.Round(double.IsFinite(value) ? value : 0).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)}").ToList();
+
+    /// <summary>横轴范围与每点宽度，例如“0:00 – 2:30，每点 3 秒”或整场“21:30:00 – 21:45:10，每点 15 秒”。</summary>
+    public string SpanText => UiText.Pick($"{TimeOf(0)} – {TimeOf(SpanSeconds)}，每点 {BucketSeconds:0.#} 秒",
+        $"{TimeOf(0)} – {TimeOf(SpanSeconds)}，每點 {BucketSeconds:0.#} 秒");
 }
 
 /// <summary>图表里的一条排行：名称、数值文字、占比（0–1）与是否高亮（与表格选中的同一项）。</summary>
@@ -43,8 +60,8 @@ public sealed partial class CombatPageModel
     private string? highlighted;
     private bool detailOpen;
 
-    /// <summary>DPS 明细窗口用的模型：同一后端，范围、目标与主页面是同一个选择。</summary>
-    public CombatPageModel Companion() => new(backend, page: false);
+    /// <summary>DPS 明细窗口用的模型：同一后端，范围与目标是窗口自己的选择（与主页面互不影响）。</summary>
+    public CombatPageModel Companion() => new(backend, page: false, detail: true);
 
     /// <summary>窗口打开期间为真：后端适配层读取时间线分桶。</summary>
     public void SetDetailOpen(bool open)
@@ -61,9 +78,7 @@ public sealed partial class CombatPageModel
     public bool HasTimelineNote => TimelineNote.Length > 0;
     public string TimelinePeak => Timeline.Available
         ? UiText.Pick($"峰值 {Math.Round(Timeline.Dps.Max()):N0}", $"峰值 {Math.Round(Timeline.Dps.Max()):N0}") : string.Empty;
-    public string TimelineSpan => Timeline.Available
-        ? UiText.Pick($"0:00 – {CombatPageModel.DurationText(Timeline.SpanSeconds * 1000)}，每点 {Timeline.BucketSeconds:0.#} 秒",
-            $"0:00 – {CombatPageModel.DurationText(Timeline.SpanSeconds * 1000)}，每點 {Timeline.BucketSeconds:0.#} 秒") : string.Empty;
+    public string TimelineSpan => Timeline.Available ? Timeline.SpanText : string.Empty;
     public string HealingCurveNote => UiText.Pick("后端时间线分桶只含伤害，HPS 曲线暂不提供", "後端時間線分桶只含傷害，HPS 曲線暫不提供");
 
     public StableList<BarItem> SkillBars { get; } = [];

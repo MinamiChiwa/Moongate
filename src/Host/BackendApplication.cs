@@ -192,6 +192,23 @@ public static class BackendApplication
             builder.Services.AddSingleton(sp => new ExtensionInstaller(sp.GetRequiredService<PathService>().Resolve("extensions"),
                 Version.Parse(ApiContract.Version), sp.GetRequiredService<TimeProvider>()));
             AddBackground<ExtensionStartup>();
+            builder.Services.AddSingleton<ExtensionUiRegistry>();
+            builder.Services.AddSingleton(sp => new ExtensionFileRequests(sp.GetRequiredService<TimeProvider>()));
+            builder.Services.AddSingleton(sp => new ExtensionCapabilities(sp, sp.GetRequiredService<ExtensionInstaller>(), sp.GetRequiredService<TimeProvider>()));
+            builder.Services.AddSingleton(sp =>
+            {
+                var runtime = new ExtensionRuntime(sp.GetRequiredService<ExtensionInstaller>(),
+                    sp.GetRequiredService<ExtensionCapabilities>(), sp.GetRequiredService<TimeProvider>());
+                // 扩展命令接入中央快捷键：设置列出全部命令与可用性，按下时由运行时转给扩展。
+                if (sp.GetService<ShortcutSettingsService>() is { } shortcuts)
+                {
+                    shortcuts.ExtensionActions = runtime.ShortcutActions;
+                    runtime.ShortcutsChanged = () => shortcuts.RefreshAsync();
+                }
+                if (sp.GetService<ShortcutService>() is { } hotkeys) hotkeys.ExtensionAction = action => runtime.TriggerShortcut(action);
+                return runtime;
+            });
+            AddBackground(sp => sp.GetRequiredService<ExtensionRuntime>());
             AddBackground(sp => sp.GetRequiredService<StorageModuleDeletionOperations>());
             builder.Services.AddSingleton<SettingsImportOperations>();
             AddBackground(sp => sp.GetRequiredService<SettingsImportOperations>());

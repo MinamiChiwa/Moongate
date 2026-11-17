@@ -80,7 +80,7 @@ public sealed class CombatRangeMapperTests
         var partial = Encounter("enc", 1000, 10000, [], 100);
         var shown = CombatMapper.Map(new(true, true, Workspace(partial), [], null, null, [], Scope: "observation",
             Range: Range(partial, null, false, "combat.frameInvalid")));
-        Assert.Equal(("100", "不完整：抓包缺口（combat.frameInvalid）"), (shown.Kpis[0].Value, shown.Kpis[0].Note));
+        Assert.Equal(("100", "不完整：抓包缺口"), (shown.Kpis[0].Value, shown.Kpis[0].Note));
         // 当前分段且不选目标时直接用分段摘要，不受上一次范围结果影响。
         var segment = CombatMapper.Map(new(true, true, Workspace(Encounter("enc", 1000, 10000, [], 100)), [], null, null, [], Scope: "segment",
             Range: Range(result, null, false, "connection-changed")));
@@ -168,8 +168,8 @@ public sealed class CombatRangeMapperTests
         Assert.Equal((false, "开始观测失败：战斗来源不可用"), (LiveBackend.StartView(failed, null)!.Waiting, LiveBackend.StartView(failed, null)!.Text));
         Assert.Null(LiveBackend.StartView(operation, Workspace(null) with { Observation = Workspace(null).Observation with { Id = "op-1" } }));
 
-        Assert.Equal("正在等待识别本机角色（请在游戏里切换一次地图）", LiveBackend.AutoView(new(true, "waiting", null, "op-2", new(0)), null)!.Text);
-        Assert.Equal(("未抓包（抓包已停止），抓包运行后自动开始观测", true),
+        Assert.Equal("等待识别角色，请切换一次地图", LiveBackend.AutoView(new(true, "waiting", null, "op-2", new(0)), null)!.Text);
+        Assert.Equal(("未抓包：抓包已停止", true),
             (LiveBackend.AutoView(new(true, "off", "observation.captureStopped", null, new(0)), null)!.Text, LiveBackend.AutoView(new(true, "off", "observation.captureStopped", null, new(0)), null)!.Problem));
         Assert.Equal("", LiveBackend.AutoView(new(true, "observing", null, "obs", new(0)), Workspace(null))!.Text);
         Assert.Equal("自动观测已关闭", LiveBackend.AutoView(new(false, "off", "combat.autoDisabled", null, new(0)), null)!.Text);
@@ -201,7 +201,7 @@ public sealed class CombatRangeMapperTests
         Assert.Equal("measurement:m2", LiveBackend.FollowMeasurement("measurement:m1", "", "m1", Measurement("waiting", "m2", null)).Scope);
         // 首次读取（启动时已在进行的测量）只记下当前值，不切换范围。
         Assert.Equal("segment", LiveBackend.FollowMeasurement("segment", null, null, Measurement("running", "m1", null)).Scope);
-        foreach (var (phase, text) in new[] { ("waiting", "定时测量等待首次伤害，暂无数据"), ("running", "定时测量计时中，暂无数据") })
+        foreach (var (phase, text) in new[] { ("waiting", "等待首次伤害"), ("running", "定时测量计时中") })
         {
             var fresh = Encounter("m2", 0, 0, [], null, new("timed-measurement", null, null, null));
             var pending = CombatMapper.Map(new(true, true, Workspace(null), [record], null, null, [], Scope: "measurement:m2",
@@ -221,14 +221,23 @@ public sealed class CombatRangeMapperTests
     [AvaloniaFact]
     public void DetailWindowCurveUsesBackendBucketsAndLinksTableRowsWithRankings()
     {
-        // 曲线：每桶伤害 ÷ 桶宽；整场跨多个分段时停用并写明原因。
+        // 曲线：每桶伤害 ÷ 桶宽；单段按相对时间、整场按本机时钟合并各分段，悬停提示写时间与 DPS。
         var page = new CombatTimelinePage("enc", new(1), [], null,
             [new(0, 2000, Totals(4000), new(2)), new(2000, 4000, Totals(1000), new(1))], [], [], false);
         var view = CombatMapper.TimelineView(page, null);
         Assert.Equal([2000d, 500d], view.Dps);
         Assert.Equal((2d, 4d), (view.BucketSeconds, view.SpanSeconds));
-        Assert.Equal("observation-scope", LiveBackend.TimelineSource(Workspace(null), "observation", null).Problem);
-        Assert.Equal("整场跨多个分段，后端时间线分桶只按单个战斗记录提供", CombatMapper.TimelineView(null, "observation-scope").Unavailable);
+        Assert.Equal(["0:00 · DPS 2,000", "0:02 · DPS 500"], view.Tips);
+        Assert.Null(LiveBackend.TimelineSource(Workspace(null), "observation", null).Problem);
+        // 两段相隔 50 秒：横轴从第一段开始，分段之间为 0，提示写本机时刻。
+        var origin = new DateTimeOffset(2026, 11, 18, 12, 0, 0, TimeSpan.Zero);
+        IReadOnlyList<CombatDamageBucket> seconds = [new(0, 1000, Totals(2000), new(1)), new(1000, 2000, Totals(500), new(1))];
+        var whole = CombatMapper.WholeTimelineView([(origin, seconds), (origin.AddSeconds(54), seconds)]);
+        Assert.Equal(origin, whole.Origin);
+        Assert.Equal(56, whole.Dps.Count);
+        Assert.Equal([2000d, 500d, 0d], whole.Dps.Take(3));
+        Assert.Equal([2000d, 500d], whole.Dps.Skip(54).Take(2));
+        Assert.Equal(origin.AddSeconds(54).ToLocalTime().ToString("HH:mm:ss") + " · DPS 2,000", whole.Tips[54]);
         Assert.Equal(1000, CombatMapper.BucketWidth(10_000));
 
         // 表格选中“重擊”时技能排行同名条目高亮；再按一次取消。

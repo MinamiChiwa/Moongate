@@ -52,12 +52,20 @@ public sealed class CombatHealingMapperTests
         Assert.Equal(("总治疗量", "4,037"), (cast.Label, cast.Value));
         Assert.Equal("5 次，对自己 4,037、对他人 0", cast.Note);
         Assert.Equal(("HPS", "27", "最近 60 秒 40"), (perSecond.Label, perSecond.Value, perSecond.Note));
-        Assert.Equal("本人施放的治疗（对自己与队友）；HPS = 施放治疗量 ÷ 统计时长 2:31", data.Healing.Header);
+        Assert.Equal("本人施放的治疗（对自己与队友）；HPS = 施放治疗量 ÷ 统计时长 2:31（停手时与 DPS 一样冻结，截至最后一次有效伤害或施放治疗）", data.Healing.Header);
         Assert.Equal("", data.Healing.Note);
         Assert.Equal("45,817", received.Value);
         Assert.Equal("45 次，自疗 4,037、其他来源 41,780（协议不提供来源），过量 1,817", received.Note);
-        var row = Assert.Single(data.HealingTargets!);
-        Assert.Equal(new HealingTargetRow("本人", "4,037", "100%", "5"), row);
+        // 施放目标一行（HPS = 目标治疗量 ÷ 统计时长），末行为受到的治疗合计及有效与溢出；施放治疗没有有效量来源。
+        Assert.Equal(2, data.HealingTargets!.Count);
+        var row = data.HealingTargets[0];
+        Assert.Equal(("本人", "4,037", "100%", "5", "27"), (row.Name, row.Amount, row.Share, row.Count, row.Hps));
+        Assert.Equal(("未知", "未知"), (row.Effective, row.Overheal));
+        var receivedRow = data.HealingTargets[1];
+        Assert.Equal(("受到的治疗（合计）", "45,817", "45", "44,000", "1,817"),
+            (receivedRow.Name, receivedRow.Amount, receivedRow.Count, receivedRow.Effective, receivedRow.Overheal));
+        // 浮窗治疗元件读同一份治疗块。
+        Assert.Equal(("27", "4,037", "5", "96%"), (data.Healing.Hps, data.Healing.Cast, data.Healing.CastCount, data.Healing.Effective));
     }
 
     [AvaloniaFact]
@@ -68,6 +76,11 @@ public sealed class CombatHealingMapperTests
         Assert.Equal("最近 60 秒 未知", data.Healing.Tiles[0].Note);
         Assert.EndsWith("过量不可得：未与 HP 变化配对", data.Healing.Tiles[2].Note);
         Assert.DoesNotContain("过量 0", data.Healing.Tiles[2].Note);
+        // 有效量未配对：治疗明细与浮窗都写“未知”，原因在提示里。
+        var received = Assert.Single(data.HealingTargets!);
+        Assert.Equal(("未知", "未知"), (received.Effective, received.Overheal));
+        Assert.Equal("有效与溢出不可得：未与 HP 变化配对", received.EffectiveTip);
+        Assert.Equal("未知", data.Healing.Effective);
         Assert.EndsWith("过量不可得：HP 变化不一致", Map(Healing(null, null, "hp-mismatch")).Healing!.Tiles[2].Note);
     }
 
@@ -88,7 +101,7 @@ public sealed class CombatHealingMapperTests
             new("ce-a", "芙蕾雅", Amount(3000), new(3), false),
             new("other-targets", "other-targets", Amount(1037), new(2), false)
         ]));
-        Assert.Equal(["芙蕾雅", "其他目标"], data.HealingTargets!.Select(row => row.Name));
-        Assert.Equal(["74%", "26%"], data.HealingTargets!.Select(row => row.Share));
+        Assert.Equal(["芙蕾雅", "其他目标", "受到的治疗（合计）"], data.HealingTargets!.Select(row => row.Name));
+        Assert.Equal(["74%", "26%", "不适用"], data.HealingTargets!.Select(row => row.Share));
     }
 }

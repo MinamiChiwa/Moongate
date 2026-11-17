@@ -41,7 +41,8 @@ public static class BuiltInModules
                 new("combat.coverage", new("暴击、强击、连击覆盖率", "暴擊、強擊、連擊覆蓋率"), ["scale", "skin"]),
                 new("combat.self-effects", new("自身效果列", "自身效果列"), ["scale", "skin", "iconPack", "maxItems"]),
                 new("combat.target-effects", new("怪物效果列", "怪物效果列"), ["scale", "skin", "iconPack", "maxItems"]),
-                new("combat.measurement", new("定时测量", "定時測量"), ["scale", "skin"])
+                new("combat.measurement", new("定时测量", "定時測量"), ["scale", "skin"]),
+                new("combat.healing", new("治疗", "治療"), ["scale", "skin"])
             ]));
         catalog.Register(new ModuleDescriptor("rooms", "合奏", "奏", Color.Parse("#6F51E0"), ModuleOrigin.BuiltIn,
             () => new RoomsPage { DataContext = new RoomsPageModel(backend) },
@@ -59,6 +60,7 @@ public static class BuiltInModules
             ModuleOrigin.Shell, () => new SettingsPage { DataContext = new SettingsPageModel(backend) }));
         catalog.Register(new ModuleDescriptor("shell.diagnostics", new("诊断", "診斷"), new("诊", "診"), Color.Parse("#5F6B85"),
             ModuleOrigin.Shell, () => new DiagnosticsPage { DataContext = new DiagnosticsPageModel(backend) }));
+        ExtensionModules.Attach(catalog, backend);
         return catalog;
     }
 }

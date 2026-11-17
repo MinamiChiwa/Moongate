@@ -126,7 +126,7 @@ public sealed partial class LiveBackend
                 ? Pick("后端没有提供乐谱库", "後端沒有提供樂譜庫")
                 : library.Sources.Count == 0
                     ? Pick($"{library.ItemCount} 张乐谱，尚未从游戏同步", $"{library.ItemCount} 張樂譜，尚未從遊戲同步")
-                    : Pick($"{library.ItemCount} 张乐谱，来源状态：{library.Sources[0].RefreshStatus}", $"{library.ItemCount} 張樂譜，來源狀態：{library.Sources[0].RefreshStatus}");
+                    : Pick($"{library.ItemCount} 张乐谱，", $"{library.ItemCount} 張樂譜，") + SourceStatus(library.Sources[0].RefreshStatus);
         return new(status, search,
             [
                 new("all", Pick("全部乐谱", "全部樂譜"), Pick($"{page.Scores.Count} 张", $"{page.Scores.Count} 張"), "#161A26", selected is null),
@@ -135,12 +135,12 @@ public sealed partial class LiveBackend
             ],
             scores,
             page.Session is { } active
-                ? Pick($"{queue.Count} 首，{Localization.CodeText.Phase(System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(active.Phase.ToString()))}", $"{queue.Count} 首，{Localization.CodeText.Phase(System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(active.Phase.ToString()))}")
+                ? Pick($"{queue.Count} 首，", $"{queue.Count} 首，") + Localization.CodeText.Phase(System.Text.Json.JsonNamingPolicy.KebabCaseLower.ConvertName(active.Phase.ToString()))
                 : Pick("没有进行中的演奏", "沒有進行中的演奏"),
             queue,
             page.Session is not { } state ? [] :
             [
-                new(Pick("播放顺序", "播放順序"), $"{(state.Shuffle ? Pick("随机", "隨機") : Pick("依序", "依序"))}，{state.Repeat}"),
+                new(Pick("播放顺序", "播放順序"), $"{(state.Shuffle ? Pick("随机", "隨機") : Pick("依序", "依序"))}，{RepeatText(state.Repeat)}"),
                 new(Pick("曲间等待", "曲間等待"), Pick($"{state.GapSeconds} 秒", $"{state.GapSeconds} 秒"))
             ],
             new(current.Connected, canQueue, page.Session is { Phase: PerformancePhase.Idle, Items.Count: > 0 },
@@ -157,7 +157,7 @@ public sealed partial class LiveBackend
             InventoryContainer.Backpack => Pick("背包", "背包"),
             InventoryContainer.CharacterStorage => Pick("角色保管箱", "角色保管箱"),
             InventoryContainer.AccountStorage => Pick("公共保管箱", "公共保管箱"),
-            _ => container.RawValue
+            _ => Localization.CodeText.Unknown("container", container.RawValue, "未知位置", "未知位置")
         };
         var status = InventorySyncText.Status(current.Connected, GetCaptureStatus(), workspace);
         var pivot = page.Pivot;
@@ -167,8 +167,8 @@ public sealed partial class LiveBackend
             [new(Pick("道具", "道具"), pivot is null ? Pick("未读取", "未讀取") : Pick($"{pivot.Rows.Count} 种", $"{pivot.Rows.Count} 種"))],
             accounts.Select(account => new InventoryAccountOption(account.AccountId, InventoryAccountText.Label(account.AccountId, account.Label))).ToList(),
             pivot?.AccountId, pivot?.Characters ?? [], pivot?.Rows ?? [],
-            workspace?.Coverage.Select(coverage => new CoverageRow($"{Container(coverage.Container)}：{coverage.Category}",
-                coverage.Complete ? Pick("完整", "完整") : Pick($"不完整，{coverage.Reason ?? Pick("原因未知", "原因未知")}", $"不完整，{coverage.Reason ?? Pick("原因未知", "原因未知")}"),
+            workspace?.Coverage.Select(coverage => new CoverageRow($"{Container(coverage.Container)}：{InventoryCategoryNames.Display(coverage.Category)}",
+                coverage.Complete ? Pick("完整", "完整") : Pick("不完整：", "不完整：") + Localization.CodeText.Reason(coverage.Reason),
                 coverage.Complete)).ToList() ?? [],
             CatalogRows(page),
             InventoryResourceText.Rows(page.InventoryResources,
@@ -193,10 +193,10 @@ public sealed partial class LiveBackend
         var reason = page.Capabilities?.FirstOrDefault(item => item.Id == "inventory.catalog")?.ReasonCode;
         return [new(Pick("状态", "狀態"), reason switch
         {
-            "inventory.catalogExtracting" => Pick("正在从游戏客户端提取名称目录", "正在從遊戲用戶端提取名稱目錄"),
-            "inventory.catalogNotLoaded" or null => Pick("尚未生成：常驻抓包绑定游戏后自动提取", "尚未生成：常駐抓包綁定遊戲後自動提取"),
-            "inventory.sourceUnavailable" => Pick("提取失败：读取游戏客户端失败，下次启动游戏时重试", "提取失敗：讀取遊戲用戶端失敗，下次啟動遊戲時重試"),
-            var code => Pick($"提取失败：{code}，下次启动游戏时重试", $"提取失敗：{code}，下次啟動遊戲時重試")
+            "inventory.catalogExtracting" => Pick("正在提取名称目录", "正在提取名稱目錄"),
+            "inventory.catalogNotLoaded" or null => Pick("未生成，抓包绑定游戏后自动提取", "未生成，抓包綁定遊戲後自動提取"),
+            "inventory.sourceUnavailable" => Pick("提取失败，下次启动游戏时重试", "提取失敗，下次啟動遊戲時重試"),
+            var code => Pick("提取失败：", "提取失敗：") + Localization.CodeText.Reason(code)
         })];
     }
 
@@ -205,7 +205,7 @@ public sealed partial class LiveBackend
         var (current, page, _, _) = ReadPages();
         var extensions = current.Connected ? GetExtensions() : null;
         return new(current.Connected, page.Modules.Select(module => new ModuleState(module.Id, module.Version, module.Enabled,
-            Code(module.State), string.Join("、", module.Problems.Select(problem => problem.Message)),
+            Code(module.State), string.Join("、", module.Problems.Select(problem => Localization.CodeText.Readable(problem.Message) ?? Localization.CodeText.Reason(problem.Code)).Distinct()),
             ModuleText.Pick(module.DisplayNames), ModuleText.Pick(module.Descriptions), module.Essential == true)).ToList(), current.Connected,
             extensions is not null, extensions);
     }
@@ -255,7 +255,7 @@ public sealed partial class LiveBackend
                 new(Pick("下载进度", "下載進度"), unknown), new(Pick("上次安装", "上次安裝"), unknown)];
         var notApplicable = Pick("不适用", "不適用");
         var state = !update.Configured
-            ? Pick("不可用：只有运行发行压缩包解压出的 Moongate 时才能检查更新", "不可用：只有執行發行壓縮檔解壓出的 Moongate 時才能檢查更新")
+            ? Pick("不可用：仅发行压缩包版本支持", "不可用：僅發行壓縮檔版本支援")
             : update.State switch
             {
                 "checking" => Pick("正在检查", "正在檢查"),
@@ -263,12 +263,12 @@ public sealed partial class LiveBackend
                 "preparing" => Pick("准备下载", "準備下載"),
                 "downloading" => Pick("正在下载", "正在下載"),
                 "verifying" => Pick("正在校验", "正在校驗"),
-                "ready" => Pick("已下载并校验，可以安装", "已下載並校驗，可以安裝"),
-                "waitingForIdle" => Pick("等待演奏、染色、测量或房间活动结束", "等待演奏、染色、測量或房間活動結束"),
+                "ready" => Pick("已下载，可以安装", "已下載，可以安裝"),
+                "waitingForIdle" => Pick("等待当前活动结束", "等待目前活動結束"),
                 "applying" => Pick("正在安装", "正在安裝"),
                 "handedOff" => Pick("正在重启到新版本", "正在重新啟動到新版本"),
                 _ => update.Operation is { State.KnownValue: OperationState.Failed, Problem: { } problem }
-                    ? Pick("上次操作失败：", "上次操作失敗：") + problem.Code
+                    ? Pick("上次操作失败：", "上次操作失敗：") + Localization.CodeText.Reason(problem.Code)
                     : Pick("待命", "待命")
             };
         var available = update.Available is { } offer
@@ -283,10 +283,9 @@ public sealed partial class LiveBackend
         {
             null => update.Configured ? Pick("没有", "沒有") : notApplicable,
             { Outcome: "committed" } install => Pick("已更新到 ", "已更新到 ") + install.ReleaseId,
-            { Outcome: "rolledBack" } install => Pick($"安装 {install.ReleaseId} 失败，已回到 {install.PreviousReleaseId}（{install.FailureCode}）",
-                $"安裝 {install.ReleaseId} 失敗，已回到 {install.PreviousReleaseId}（{install.FailureCode}）"),
-            { Outcome: "aborted" } install => Pick($"{install.ReleaseId} 未安装（{install.FailureCode}）", $"{install.ReleaseId} 未安裝（{install.FailureCode}）"),
-            var install => Pick($"安装 {install.ReleaseId} 失败，旧版本也未自动恢复，请按说明手动升级", $"安裝 {install.ReleaseId} 失敗，舊版本也未自動復原，請依說明手動升級")
+            { Outcome: "rolledBack" } install => Pick($"安装 {install.ReleaseId} 失败，已回到 {install.PreviousReleaseId}", $"安裝 {install.ReleaseId} 失敗，已回到 {install.PreviousReleaseId}"),
+            { Outcome: "aborted" } install => Pick($"{install.ReleaseId} 未安装：", $"{install.ReleaseId} 未安裝：") + Localization.CodeText.Reason(install.FailureCode),
+            var install => Pick($"安装 {install.ReleaseId} 失败，请手动升级", $"安裝 {install.ReleaseId} 失敗，請手動升級")
         };
         return [new(Pick("当前版本", "目前版本"), update.InstalledReleaseId ?? (update.Configured ? unknown : notApplicable)),
             new(Pick("状态", "狀態"), state), new(Pick("可用更新", "可用更新"), available),
@@ -302,10 +301,12 @@ public sealed partial class LiveBackend
     private static List<ShortcutRow> ShortcutRows(State current, PageState page, Func<ShortcutChordSnapshot, string> chord)
     {
         var editable = page.ShortcutSettings?.Actions.Select(action => action.ActionId).ToHashSet(StringComparer.Ordinal) ?? [];
+        var actions = page.ShortcutSettings?.Actions ?? [];
+        string ActionName(string id) => LiveBackend.ActionName(id, actions);
         var registrations = page.Shortcuts.Concat(page.ShortcutSettings?.Registrations ?? [])
             .GroupBy(item => item.ActionId, StringComparer.Ordinal).Select(group => group.First()).ToList();
         var rows = registrations.Select(shortcut => new ShortcutRow(ActionName(shortcut.ActionId), chord(shortcut.Registered ?? shortcut.Configured),
-            shortcut.FailureCode is { } code ? $"{Code(shortcut.Status)}：{ShortcutFailure(code)}" : Code(shortcut.Status),
+            shortcut.FailureCode is { } code ? ShortcutFailure(code) : Code(shortcut.Status),
             shortcut.Registered is not null && shortcut.FailureCode is null, shortcut.ActionId,
             current.Connected && editable.Contains(shortcut.ActionId))).ToList();
         foreach (var binding in page.ShortcutSettings?.Bindings ?? [])
@@ -314,10 +315,11 @@ public sealed partial class LiveBackend
                     current.Connected && editable.Contains(binding.ActionId)));
         foreach (var action in page.ShortcutSettings?.Actions ?? [])
             if (rows.All(row => row.Id != action.ActionId))
-                rows.Add(new(ActionName(action.ActionId), Pick("未配置", "未設定"), Pick("未注册", "未註冊"), false,
+                rows.Add(new(ActionName(action.ActionId), Pick("未配置", "未設定"),
+                    action.UnavailableReason is { } unavailable ? Pick("不可用：", "不可用：") + ShortcutFailure(unavailable) : Pick("未注册", "未註冊"), false,
                     action.ActionId, current.Connected));
         if (rows.All(row => row.Id != "emergency-stop"))
-            rows.Add(new(ActionName("emergency-stop"), Pick("未知", "未知"), Pick("后端没有报告", "後端沒有回報"), false, "emergency-stop",
+            rows.Add(new(ActionName("emergency-stop"), Pick("未知", "未知"), Pick("未知", "未知"), false, "emergency-stop",
                 current.Connected && editable.Contains("emergency-stop")));
         return [.. rows.OrderBy(row => row.Id == "emergency-stop" ? 0 : 1)];
     }
@@ -325,19 +327,46 @@ public sealed partial class LiveBackend
     /// <summary>系统热键注册失败的原因（后端 WindowsGlobalShortcutSource 的码）；未收录的原样显示。</summary>
     internal static string ShortcutFailure(string code) => code switch
     {
-        "shortcut.inUse" => Pick("组合键已被其他程序或本工具的其他动作占用，请换一个组合", "組合鍵已被其他程式或本工具的其他動作佔用，請換一個組合"),
+        "shortcut.inUse" => Pick("组合键已被占用，请换一个", "組合鍵已被佔用，請換一個"),
         "shortcut.registrationFailed" => Pick("系统拒绝注册这个组合键", "系統拒絕註冊這個組合鍵"),
         "shortcut.stopped" => Pick("快捷键服务已停止", "快捷鍵服務已停止"),
+        "shortcut.conflictWithConfiguredAction" => Pick("与其他动作的组合相同", "與其他動作的組合相同"),
+        "extension.disabled" => Pick("扩展已停用", "擴充已停用"),
+        "extension.notRunning" => Pick("扩展未运行", "擴充未執行"),
+        "extension.permissionDenied" => Pick("未授予快捷键权限", "未授予快捷鍵權限"),
+        "extension.commandMissing" => Pick("扩展已没有这个命令", "擴充已沒有這個命令"),
         _ => Localization.CodeText.Reason(code)
     };
 
-    private static string ActionName(string actionId) => actionId switch
+    // 扩展命令的名称由后端给出（“扩展名：命令名”）；内建动作用本地文字。
+    private static string ActionName(string actionId, IReadOnlyList<ShortcutActionSnapshot> actions) =>
+        actions.FirstOrDefault(x => x.ActionId == actionId)?.Names is { Count: > 0 } names
+            ? Pages.Modules.ModuleText.Pick(names) ?? actionId : BuiltInActionName(actionId);
+
+    private static string BuiltInActionName(string actionId) => actionId switch
     {
         "emergency-stop" => Pick("紧急停止", "緊急停止"),
         "overlay-toggle" => Pick("显示或隐藏浮窗", "顯示或隱藏浮窗"),
         "overlay-click-through-toggle" => Pick("浮窗元件全部上锁或解锁", "浮窗元件全部上鎖或解鎖"),
         "combat-measurement-toggle" => Pick("开始／取消定时测量", "開始／取消定時測量"),
-        _ => Pick($"未登记的动作（{actionId}）", $"未登記的動作（{actionId}）")
+        _ => Localization.CodeText.Unknown("shortcut-action", actionId, "未知动作", "未知動作")
+    };
+
+    // 乐谱来源的同步状态（ScoreRefreshStatus）。
+    private static string SourceStatus(string status) => status switch
+    {
+        "complete" => Pick("已同步", "已同步"),
+        "partial" => Pick("部分同步", "部分同步"),
+        "failed" => Pick("同步失败", "同步失敗"),
+        _ => Code(status)
+    };
+
+    // 演奏队列的循环方式（PerformanceRepeatMode）。
+    private static string RepeatText(PerformanceRepeatMode mode) => mode switch
+    {
+        PerformanceRepeatMode.All => Pick("全部循环", "全部循環"),
+        PerformanceRepeatMode.One => Pick("单曲循环", "單曲循環"),
+        _ => Pick("不循环", "不循環")
     };
 
     // 后端状态码换成界面文字，统一经共用映射；没有收录的写成中文概括并括注原文。
@@ -348,7 +377,8 @@ public sealed partial class LiveBackend
         if (instrumentId is null) return Pick("未指定", "未指定");
         var definition = page.Instruments.FirstOrDefault(item => item.Id == instrumentId);
         // 乐器名称取游戏地区的原文，目录里没有时显示标识。
-        return definition?.DisplayNames.GetValueOrDefault("zh-TW") ?? definition?.DisplayNames.Values.FirstOrDefault() ?? instrumentId;
+        return definition?.DisplayNames.GetValueOrDefault("zh-TW") ?? definition?.DisplayNames.Values.FirstOrDefault()
+            ?? Localization.CodeText.Unknown("instrument", instrumentId, "未知乐器", "未知樂器");
     }
 
     private (State State, PageState Pages, string Search, string? Playlist) ReadPages()

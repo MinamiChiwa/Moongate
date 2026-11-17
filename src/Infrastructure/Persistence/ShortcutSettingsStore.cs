@@ -21,6 +21,15 @@ public sealed class ShortcutSettingsStore(SqliteStore database, TimeProvider? cl
     /// 发布 shortcut.triggered 的动作：前端执行的动作，以及后端已执行完的紧急停止（通知前端取消进行中的定时测量并在界面说明）。
     /// </summary>
     public static bool IsNotifiedAction(string? action) => IsFrontendAction(action) || action == "emergency-stop";
+    /// <summary>
+    /// 扩展清单声明的命令：<c>extension.&lt;发布者&gt;.&lt;名称&gt;.&lt;命令&gt;</c>。绑定按标识保存，扩展停用、卸载或命令移除后绑定仍保留，
+    /// 重新可用时恢复；按下时由宿主通知扩展，不发布 shortcut.triggered。
+    /// </summary>
+    public static bool IsExtensionAction(string? action) => action is { Length: <= 120 } &&
+        Regex.IsMatch(action, @"\Aextension\.[a-z][a-z0-9-]{0,31}\.[a-z][a-z0-9-]{0,31}\.[a-z][a-z0-9-]{0,31}\z", RegexOptions.CultureInvariant);
+    /// <summary>保留给紧急停止及其备用键、浮窗显隐与上锁的单键（F7–F10、Pause），扩展命令不能使用。</summary>
+    public static bool IsReservedChord(ShortcutChordSnapshot chord) => !chord.Control && !chord.Alt && !chord.Shift && !chord.Windows &&
+        ShortcutKeys.TryParse(chord.Key, out var key) && key is ShortcutKey.F7 or ShortcutKey.F8 or ShortcutKey.F9 or ShortcutKey.F10 or ShortcutKey.Pause;
     public static ShortcutSettingsSnapshot Default => new(new(0),
         [new("emergency-stop", "core"), new("overlay-toggle", "presentation"), new("overlay-click-through-toggle", "presentation"),
             new("combat-measurement-toggle", "combat-observation")],
@@ -31,11 +40,13 @@ public sealed class ShortcutSettingsStore(SqliteStore database, TimeProvider? cl
 
     public static ShortcutSettingsRequest Normalize(ShortcutSettingsRequest request)
     {
-        if (request?.Bindings is null || request.Bindings.Count > 32 ||
-            request.Bindings.Any(value => value is null || value.ActionId != "emergency-stop" && !IsFrontendAction(value.ActionId) || value.Chord is null ||
-                !ShortcutKeys.TryParse(value.Chord.Key, out _)) ||
+        if (request?.Bindings is null || request.Bindings.Count > 64 ||
+            request.Bindings.Any(value => value is null || value.ActionId != "emergency-stop" && !IsFrontendAction(value.ActionId) &&
+                !IsExtensionAction(value.ActionId) || value.Chord is null || !ShortcutKeys.TryParse(value.Chord.Key, out _)) ||
             request.Bindings.Select(value => value.ActionId).Distinct(StringComparer.Ordinal).Count() != request.Bindings.Count)
             throw new OperationException("request.invalid", "快捷键动作或组合无效");
+        if (request.Bindings.Any(value => IsExtensionAction(value.ActionId) && IsReservedChord(value.Chord)))
+            throw new OperationException("request.invalid", "F7–F10 与 Pause 保留给内建动作，扩展命令不能使用");
         var values = request.Bindings.Select(value =>
         {
             ShortcutKeys.TryParse(value.Chord.Key, out var key);

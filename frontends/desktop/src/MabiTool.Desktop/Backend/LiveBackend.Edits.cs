@@ -26,9 +26,9 @@ public sealed partial class LiveBackend
                 return Pick($"已注册 {registered}", $"已註冊 {registered}");
             }
             throw new RegistrationException(registration is null
-                ? Pick($"已保存 {chord}，后端没有报告注册状态", $"已儲存 {chord}，後端沒有回報註冊狀態")
-                : Pick($"已保存 {chord}，注册状态：{Code(registration.Status)}，{ShortcutFailure(registration.FailureCode ?? "unknown")}",
-                    $"已儲存 {chord}，註冊狀態：{Code(registration.Status)}，{ShortcutFailure(registration.FailureCode ?? "unknown")}"));
+                ? Pick($"已保存 {chord}，注册状态未知", $"已儲存 {chord}，註冊狀態未知")
+                : Pick($"已保存 {chord}，{ShortcutFailure(registration.FailureCode ?? "unknown")}",
+                    $"已儲存 {chord}，{ShortcutFailure(registration.FailureCode ?? "unknown")}"));
         }, cancellationToken);
 
     // 候选窗口每次都重新读取；与当前绑定是同一窗口（进程号、进程启动时间、窗口标识都相同）的一项标为当前。
@@ -128,7 +128,6 @@ public sealed partial class LiveBackend
 
     private static string Problem(Exception error)
     {
-        var code = error is MabiToolApiException api ? Localization.CodeText.Reason(api.Problem?.Code ?? $"http.{api.Status}") : error.Message;
-        return Pick($"请求未完成：{code}", $"請求未完成：{code}");
+        return Pick("请求未完成：", "請求未完成：") + Localization.CodeText.Error(error);
     }
 }

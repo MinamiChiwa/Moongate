@@ -188,9 +188,9 @@ public static class IconRegistry
         {
             manifest = JsonSerializer.Deserialize<AssetPackManifest>(File.ReadAllBytes(manifestPath), JsonOptions);
         }
-        catch (JsonException error)
+        catch (JsonException)
         {
-            problems.Add(Pick("pack.json 无法解析：", "pack.json 無法解析：") + error.Message);
+            problems.Add(Pick("pack.json 无法解析", "pack.json 無法解析"));
             return problems;
         }
 

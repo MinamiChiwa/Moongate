@@ -334,9 +334,9 @@ public sealed class RoomsPageModel : BackendPageModel<RoomsPageData>, IPageLifec
     }
 
     public string RoomTitle => Data.Room is { } room
-        ? Pick($"房间码 {room.Code} · {(Data.RoomConnected ? "已连接" : "连接中断，可重连恢复身份")}",
-            $"房間碼 {room.Code} · {(Data.RoomConnected ? "已連線" : "連線中斷，可重連恢復身分")}")
-        : Pick("创建公网房间，或粘贴完整邀请加入。", "建立公網房間，或貼上完整邀請加入。");
+        ? Pick($"房间码 {room.Code} · {(Data.RoomConnected ? "已连接" : "连接中断，可重连")}",
+            $"房間碼 {room.Code} · {(Data.RoomConnected ? "已連線" : "連線中斷，可重連")}")
+        : Pick("创建房间，或粘贴邀请加入", "建立房間，或貼上邀請加入");
 
     public string ConnectionSummary => !Data.Connected ? Pick("未连接后端", "未連接後端")
         : Data.Room is { } room ? (Data.RoomConnected ? Pick($"已连接 · 房间 {room.Code}", $"已連線 · 房間 {room.Code}") : Pick("连接中断", "連線中斷"))
@@ -712,14 +712,14 @@ public sealed class RoomsPageModel : BackendPageModel<RoomsPageData>, IPageLifec
 
     public IReadOnlyList<string> Receipts => Data.Room?.Round?.Receipts.TakeLast(8).Select(receipt =>
     {
-        var name = Data.Room.Members.FirstOrDefault(member => member.Id == receipt.MemberId)?.Nickname ?? receipt.MemberId;
+        var name = Data.Room.Members.FirstOrDefault(member => member.Id == receipt.MemberId)?.Nickname ?? Pick("已离开的成员", "已離開的成員");
         var status = receipt.Status switch
         {
             "executed" => Pick("已执行", "已執行"), "failed" => Pick("执行失败", "執行失敗"), "missed" => Pick("未能按时执行", "未能按時執行"),
-            "cancelled" => Pick("已取消", "已取消"), _ => receipt.Status
+            "cancelled" => Pick("已取消", "已取消"), _ => Localization.CodeText.State(receipt.Status)
         };
         return $"{(receipt.Simulated ? Pick("模拟操作", "模擬操作") : Pick("游戏操作", "遊戲操作"))}：{status} · {name}"
-               + (receipt.Detail is { Length: > 0 } detail ? " · " + detail : string.Empty);
+               + (MabiTool.Desktop.Backend.RoomReadinessText.Reason(receipt.Detail) is { Length: > 0 } detail ? " · " + detail : string.Empty);
     }).ToList() ?? [];
 
     public bool NoReceipts => Receipts.Count == 0;

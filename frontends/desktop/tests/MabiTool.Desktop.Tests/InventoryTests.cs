@@ -75,6 +75,32 @@ public sealed class InventoryTests
     }
 
     [Fact]
+    public void EachScoreIsOneRowNamedByItsTitleWithComposerInTheTip()
+    {
+        // 合成标题与作曲者。两张自制谱共用表编号 0，各有实例 ID。
+        InventoryItemView Score(ulong instance, string? title, string composer, string character) =>
+            new(new InventoryItem("MusicNoteItem", InventoryContainer.Backpack, "score-" + instance, new(0), new(instance), new(1), JsonDocument.Parse("{}").RootElement),
+                new InventoryNameAssociation(new("MusicNoteItem", new(0)), title, title, title is null ? InventoryNameState.Unknown : InventoryNameState.ItemInstance, null),
+                true, DateTimeOffset.UnixEpoch, ObservationQuality.Confirmed, CharacterId: character,
+                Score: new(new(0), title, composer, 1, null, null, true, false, null, null));
+        var account = AccountView() with { Characters = [.. AccountView().Characters.Select(c => c with { Coverage = [Cover("MusicNoteItem", InventoryContainer.Backpack)] })] };
+        var (_, rows) = InventoryPivotBuilder.Build(new(account,
+            new Dictionary<string, IReadOnlyList<InventoryItemView>> { ["c1"] = [Score(21, "合成乙谱", "合成作曲者", "c1"), Score(23, null, "合成作曲者", "c1")], ["c2"] = [Score(22, "合成甲谱", "另一作曲者", "c2")] }, []));
+
+        // 每张一行，按显示名排序；标题为空的写明“标题未知”。
+        Assert.Equal(["合成乙谱", "合成甲谱", "自制乐谱 · 标题未知"], rows.Select(row => row.Name));
+        var first = rows.Single(row => row.Name == "合成乙谱");
+        Assert.Equal(["1", "0", "未读取"], first.Backpack.Select(cell => cell.Text));
+        Assert.Equal(["0", "1", "未读取"], rows.Single(row => row.Name == "合成甲谱").Backpack.Select(cell => cell.Text));
+        Assert.Contains("乐谱实例标题", first.Tip);
+        Assert.Contains("作曲：合成作曲者", first.Tip);
+        Assert.Contains("上锁：未知", first.Tip);
+        Assert.Contains("该乐谱实例没有标题", rows.Single(row => row.Name == "自制乐谱 · 标题未知").Tip);
+        Assert.True(rows.Single(row => row.Name == "合成甲谱").Matches("另一作曲"));
+        Assert.False(first.Matches("另一作曲"));
+    }
+
+    [Fact]
     public async Task ReadingAnAccountQueriesOnceAndSplitsItemsByCharacter()
     {
         var queries = new List<InventoryItemQuery>();

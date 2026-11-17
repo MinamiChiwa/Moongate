@@ -17,6 +17,7 @@ public sealed partial class SettingsPage : UserControl
         base.OnAttachedToVisualTree(e);
         host = TopLevel.GetTopLevel(this);
         host?.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+        if (DataContext is SettingsPageModel model) ExtensionSettings.Attach(model.ExtensionBackend);
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)

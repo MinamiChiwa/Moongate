@@ -131,13 +131,27 @@ public sealed record HealingTile(string Label, string Value, string Note)
 public sealed record HealingView(bool Available, IReadOnlyList<HealingTile> Tiles, string Header = "", string Note = "")
 {
     public bool HasNote => Note.Length > 0;
+    /// <summary>浮窗治疗元件用的几项：HPS、总治疗量（本人施放）、施放次数、受到治疗的有效比例（未配对时为“未知”）。</summary>
+    public string Hps { get; init; } = "—";
+    public string Cast { get; init; } = "—";
+    public string CastCount { get; init; } = "—";
+    public string Effective { get; init; } = "—";
 }
 
-/// <summary>“治疗目标”表的一行：目标名称（本人标“本人”）、治疗量、占比与次数。</summary>
+/// <summary>
+/// 治疗明细表的一行：施放目标（本人标“本人”）或“受到的治疗（合计）”；治疗量、占比、次数、HPS、有效治疗与溢出。
+/// 没有来源的项为“未知”，不适用的项为“不适用”，不显示 0。
+/// </summary>
 /// <param name="NameTip">名称的悬停提示：其他玩家名称缺失时为“未知玩家（编号 N）”。</param>
 public sealed record HealingTargetRow(string Name, string Amount, string Share, string Count, string NameTip = "")
 {
     public string Tip => NameTip.Length > 0 ? NameTip : Name;
+    public string Hps { get; init; } = "—";
+    public string Effective { get; init; } = "—";
+    public string Overheal { get; init; } = "—";
+    /// <summary>有效与溢出为“未知”时的原因。</summary>
+    public string EffectiveTip { get; init; } = string.Empty;
+    public string EffectiveHint => EffectiveTip.Length > 0 ? EffectiveTip : Effective;
 }
 
 public sealed record EncounterRow(string Id, string When, string Target, string Length, string Dps, string Quality,
@@ -206,6 +220,9 @@ public sealed record ScopeView(CombatScopeKind Kind, string Title, IReadOnlyList
 {
     public bool IsIncomplete => Incomplete.Length > 0;
     public bool HasProblem => Problem.Length > 0;
+    /// <summary>标题的悬停提示：整场到期后写明原因与何时开始新的一场；没有时为标题本身。</summary>
+    public string TitleTip { get; init; } = string.Empty;
+    public string TitleHint => TitleTip.Length > 0 ? TitleTip : Title;
 }
 
 /// <summary>
@@ -283,6 +300,8 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
 {
     private readonly IDesktopBackend backend;
     private readonly bool page;
+    // 明细窗口的伴随模型：范围与目标是窗口自己的选择，读窗口的数据并只额外接收窗口的通知。
+    private readonly bool detail;
     private bool byTarget;
     private bool favoritesOnly;
     private bool stopping;
@@ -295,11 +314,13 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     private bool attached;
 
     /// <param name="page">DPS检测页本身为真；明细窗口的伴随模型为假，不改变页面的显示状态。</param>
-    public CombatPageModel(IDesktopBackend backend, bool page = true)
+    /// <param name="detail">明细窗口的伴随模型：范围与目标走窗口自己的选择，与主页面互不影响。</param>
+    public CombatPageModel(IDesktopBackend backend, bool page = true, bool detail = false)
     {
         this.backend = backend;
         this.page = page;
-        Data = backend.GetCombat();
+        this.detail = detail;
+        Data = Fetch();
         AttributionSegments = Data.Attribution.Select(part => part.Segment).ToList();
         ElementSegments = (Data.Elements?.Parts ?? []).Select(part => part.Segment).ToList();
         SyncLists();
@@ -362,9 +383,12 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
         });
         clock.Tick += (_, _) => RaiseClock();
         backend.Changed += OnBackendChanged;
+        if (detail) backend.CombatDetailChanged += OnBackendChanged;
         CombatEffectFavorites.Changed += OnFavoritesChanged;
         CombatEffectFavorites.CatalogChanged += OnCatalogChanged;
     }
+
+    private CombatPageData Fetch() => detail ? backend.GetCombatDetail() : backend.GetCombat();
 
     // ---- 开始观测的结果：等待识别角色（可取消）或失败原因 ----
 
@@ -571,13 +595,19 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     public bool HasBreak => Data.Break is not null;
     public StableList<CoverageTile> Classes { get; } = [];
     public bool HasClasses => Classes.Count > 0;
+    /// <summary>
+    /// 主数据下方的紧凑比率表：暴击、强击、连击、追击，已知时的无防备、破防、普攻、多重打击，以及间接与持续伤害；
+    /// 整场、当前分段与定时测量用同一份，分母口径与明细表相同。
+    /// </summary>
+    public StableList<CoverageTile> Rates { get; } = [];
 
     private void SelectScope(string? kind)
     {
         if (kind == "measurement")
         {
-            // 定时测量：取当前选中的测量，没有时取最近一次结果或历史里最新的一条。
-            var id = Scope.Measurements.FirstOrDefault(option => option.Current)?.Id ?? Measure.Last?.Id ?? Scope.Measurements.FirstOrDefault()?.Id;
+            // 定时测量：取当前选中的测量，没有时取进行中或最近一次结果；重设清除最近一次结果后不自动选历史记录（历史测量仍可在列表里选）。
+            var id = Scope.Measurements.FirstOrDefault(option => option.Current)?.Id ?? Measure.Last?.Id
+                ?? (Measure.Phase != MeasurementPhase.Idle ? Scope.Measurements.FirstOrDefault()?.Id : null);
             Intent("combat.scope", id is null ? "measurement" : "measurement:" + id);
             return;
         }
@@ -620,7 +650,10 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
         Raise(nameof(RemainingMs)); Raise(nameof(RunningText)); Raise(nameof(RunningProgress));
     }
 
-    private void Intent(string name, string? argument) => _ = backend.SendIntentAsync(name, argument, CancellationToken.None);
+    // 明细窗口里的范围与目标意图改走窗口自己的选择（combat.detail.*），主页面的选择不变。
+    private void Intent(string name, string? argument) => _ = backend.SendIntentAsync(
+        detail && name is "combat.scope" or "combat.scope.live" or "combat.target" ? "combat.detail." + name["combat.".Length..] : name,
+        argument, CancellationToken.None);
 
     public CombatPageData Data { get; private set; }
 
@@ -644,6 +677,7 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
         Coverage.Sync(Data.Coverage);
         Traits.Sync(Data.Traits ?? []);
         Classes.Sync(Data.Classes ?? []);
+        Rates.Sync([.. Data.Coverage, .. Data.Traits ?? [], .. Data.Classes ?? []]);
         AttributionParts.Sync(Data.Attribution);
         ElementParts.Sync(Data.Elements?.Parts ?? []);
         HealingTiles.Sync(Data.Healing?.Tiles ?? []);
@@ -671,6 +705,7 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
         if (!subscribed) return;
         subscribed = false;
         backend.Changed -= OnBackendChanged;
+        if (detail) backend.CombatDetailChanged -= OnBackendChanged;
         CombatEffectFavorites.Changed -= OnFavoritesChanged;
         CombatEffectFavorites.CatalogChanged -= OnCatalogChanged;
         if (page) backend.SetCombatPageVisible(false);
@@ -684,10 +719,11 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
         if (subscribed) return;
         subscribed = true;
         backend.Changed += OnBackendChanged;
+        if (detail) backend.CombatDetailChanged += OnBackendChanged;
         CombatEffectFavorites.Changed += OnFavoritesChanged;
         CombatEffectFavorites.CatalogChanged += OnCatalogChanged;
         Refreshing = page && backend.SetCombatPageVisible(true);
-        Apply(backend.GetCombat());
+        Apply(Fetch());
     }
     private bool subscribed = true;
     public IReadOnlyList<BarSegment> AttributionSegments { get; private set; }
@@ -811,14 +847,19 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     public string HealingNote => Data.Healing?.Note ?? string.Empty;
     public bool HasHealingNote => Data.Healing?.HasNote == true;
 
-    /// <summary>“治疗目标”表的列：目标、治疗量、占比、次数。</summary>
+    /// <summary>“治疗目标”表的列：目标、治疗量、占比、次数、HPS、有效治疗、溢出（主页面与明细窗口同一张表）。</summary>
     public IReadOnlyList<TableColumn> HealingColumns { get; } =
     [
         new() { Id = "name", HeaderKey = "C.ColTarget", Path = nameof(HealingTargetRow.Name), Width = 240, MinWidth = 120,
             Fill = true, CanHide = false, CellClasses = "strong", ToolTipPath = nameof(HealingTargetRow.Tip) },
         new() { Id = "amount", HeaderKey = "C.ColHealing", Path = nameof(HealingTargetRow.Amount), Kind = ColumnKind.Number, Width = 120 },
         new() { Id = "share", HeaderKey = "C.ColShare", Path = nameof(HealingTargetRow.Share), Kind = ColumnKind.Number, Width = 88 },
-        new() { Id = "count", HeaderKey = "C.ColHits", Path = nameof(HealingTargetRow.Count), Kind = ColumnKind.Number, Width = 88 }
+        new() { Id = "count", HeaderKey = "C.ColHits", Path = nameof(HealingTargetRow.Count), Kind = ColumnKind.Number, Width = 88 },
+        new() { Id = "hps", HeaderKey = "C.ColHps", Path = nameof(HealingTargetRow.Hps), Kind = ColumnKind.Number, Width = 96 },
+        new() { Id = "effective", HeaderKey = "C.ColEffective", Path = nameof(HealingTargetRow.Effective), Kind = ColumnKind.Number, Width = 110,
+            ToolTipPath = nameof(HealingTargetRow.EffectiveHint) },
+        new() { Id = "overheal", HeaderKey = "C.ColOverheal", Path = nameof(HealingTargetRow.Overheal), Kind = ColumnKind.Number, Width = 96,
+            ToolTipPath = nameof(HealingTargetRow.EffectiveHint) }
     ];
 
     /// <summary>明细表是否加入攻击特性与元素五列；表格横向滚动可到达。</summary>
@@ -829,6 +870,7 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
         if (subscribed && page) backend.SetCombatPageVisible(false);
         subscribed = false;
         backend.Changed -= OnBackendChanged;
+        if (detail) backend.CombatDetailChanged -= OnBackendChanged;
         CombatEffectFavorites.Changed -= OnFavoritesChanged;
         CombatEffectFavorites.CatalogChanged -= OnCatalogChanged;
         attached = false;
@@ -838,13 +880,13 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     private void OnBackendChanged(object? sender, EventArgs e)
     {
         Refreshing = false;
-        Apply(backend.GetCombat());
+        Apply(Fetch());
     }
 
     // 收藏或“只显示收藏”变化：重读同一份战斗数据（筛选在后端适配层统一套用）。
     private void OnFavoritesChanged(object? sender, EventArgs e)
     {
-        Apply(backend.GetCombat());
+        Apply(Fetch());
         SyncFavorites();
     }
 
@@ -874,7 +916,7 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     {
         var target = next.SelectedTarget;
         var scope = shown.Scope is { } held ? held with { Kind = next.Scope?.Kind ?? held.Kind, Measurements = next.Scope?.Measurements ?? held.Measurements,
-            Title = next.Scope?.Title ?? held.Title, Problem = string.Empty } : next.Scope;
+            Title = next.Scope?.Title ?? held.Title, TitleTip = next.Scope?.TitleTip ?? held.TitleTip, Problem = string.Empty } : next.Scope;
         return shown with
         {
             Status = next.Status, Actions = next.Actions, Measurement = next.Measurement, Location = next.Location, History = next.History,

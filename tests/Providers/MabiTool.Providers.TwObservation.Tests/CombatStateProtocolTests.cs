@@ -89,6 +89,9 @@ public sealed class CombatStateProtocolTests
         var session = new CombatSession("owner", "observation", replay.Source, replay.Observer.LocalEntity!, new("fixture-game"),
             CombatProtocolTests.At(0), healing: true);
         foreach (var frame in replay.Frames) Assert.True(session.Apply(frame));
+        // 片段末尾的脱战要经过 10 秒余量才结束分段。
+        var settled = Math.Max(end, session.MonotonicMs) + CombatSession.CombatLeftGraceMs + 1;
+        session.Tick(CombatProtocolTests.At(settled), settled);
         var checkpoint = session.Capture();
         return (checkpoint.Encounters.Where(x => x.Segment is not null).OrderBy(x => x.Segment!.Ordinal).ToList(),
             checkpoint.Workspace.Observation.LocalCombatState);

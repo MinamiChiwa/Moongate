@@ -155,13 +155,15 @@
                   <StackPanel Spacing="6">
                     <DockPanel>
                       <TextBlock DockPanel.Dock="Right" Classes="muted" FontSize="12" VerticalAlignment="Center" Text="{Binding TimelinePeak}" />
-                      <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource C.ChartDps}" />
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource C.ChartDps}" />
+                        <controls:HelpTip Text="{Binding HealingCurveNote}" />
+                      </StackPanel>
                     </DockPanel>
-                    <controls:LineChart x:Name="DpsChart" Values="{Binding Timeline.Dps}" Stroke="{StaticResource CombatBrush}"
+                    <controls:LineChart x:Name="DpsChart" Values="{Binding Timeline.Dps}" PointTips="{Binding Timeline.Tips}" Stroke="{StaticResource CombatBrush}"
                                         Grid="{DynamicResource HairlineBrush}" IsVisible="{Binding TimelineAvailable}" />
                     <TextBlock Classes="muted" FontSize="12" Text="{Binding TimelineSpan}" IsVisible="{Binding TimelineAvailable}" />
                     <TextBlock x:Name="TimelineNoteText" Classes="note" TextWrapping="Wrap" Text="{Binding TimelineNote}" IsVisible="{Binding HasTimelineNote}" />
-                    <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding HealingCurveNote}" />
                   </StackPanel>
                 </Border>
                 <Border Classes="panel" x:Name="TagChartPanel" Padding="16,12">
@@ -210,6 +212,21 @@
                   <TextBlock Classes="note" TextWrapping="Wrap" Text="{x:Static combat:CombatPageModel.TagTip}" />
                   <tables:DataTable x:Name="DetailTable" TableId="{Binding DamageTableId}" ColumnsSource="{Binding DamageColumns}"
                                     ItemsSource="{Binding Rows}" EmptyText="{DynamicResource C.Empty}" BodyMaxHeight="560" CanExport="True" />
+                </StackPanel>
+              </Border>
+
+              <!-- 治疗明细：按目标的治疗量、次数、HPS、有效与溢出，末行为受到的治疗合计；与主页面同一张表（同一套列设置）。 -->
+              <Border Classes="panel" x:Name="HealingDetailPanel" IsVisible="{Binding HasHealing}">
+                <StackPanel Spacing="8">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource C.HealingDetail}" />
+                    <controls:HelpTip Text="{Binding HealingHeader}" IsVisible="{Binding HasHealingHeader}" />
+                  </StackPanel>
+                  <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding HealingNote}" IsVisible="{Binding HasHealingNote}" />
+                  <TextBlock Classes="note" Text="{DynamicResource C.NoHealing}" IsVisible="{Binding NoHealing}" />
+                  <tables:DataTable x:Name="HealingDetailTable" TableId="combat.healingTargets" ColumnsSource="{Binding HealingColumns}"
+                                    ItemsSource="{Binding HealingTargets}" EmptyText="{DynamicResource C.Empty}" BodyMaxHeight="320"
+                                    IsVisible="{Binding HealingAvailable}" />
                 </StackPanel>
               </Border>
             </StackPanel>

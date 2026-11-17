@@ -43,7 +43,7 @@ public static class RoomFlow
         var mine = stopped.LastOrDefault(item => item.MemberId == selfId);
         if (mine is null && !(round.StopCommitted && timing?.StopRemaining(now) is <= 0)) return null;
         var pending = round.ParticipantIds.Count(id => stopped.All(item => item.MemberId != id));
-        var waiting = pending > 0 ? Pick($" · 等待全员停止（还有 {pending} 人）", $" · 等待全員停止（還有 {pending} 人）") : string.Empty;
+        var waiting = pending > 0 ? Pick($" · 还有 {pending} 人未停", $" · 還有 {pending} 人未停") : string.Empty;
         return mine?.Status switch
         {
             null when round.ParticipantIds.Contains(selfId ?? string.Empty) => (Pick("正在执行停止", "正在執行停止") + waiting, RoomTone.Info),
@@ -51,7 +51,7 @@ public static class RoomFlow
             "executed" => (Pick("已执行停止", "已執行停止") + waiting, RoomTone.Success),
             "cancelled" => (Pick("本机停止已取消", "本機停止已取消") + waiting, RoomTone.Warning),
             _ => (Pick("停止失败：", "停止失敗：") + (Backend.RoomReadinessText.Reason(mine.Detail) ?? Localization.CodeText.State(mine.Status))
-                  + Pick("，请在游戏中手动停止", "，請在遊戲中手動停止"), RoomTone.Error)
+                  + Pick("，请手动停止", "，請手動停止"), RoomTone.Error)
         };
     }
 
@@ -65,11 +65,11 @@ public static class RoomFlow
         return receipt?.Status switch
         {
             null => string.Empty,
-            "executed" => Pick(" 本机停止操作已执行，请确认游戏中已停止演奏。", " 本機停止操作已執行，請確認遊戲中已停止演奏。"),
-            "cancelled" => Pick(" 本机停止操作已取消。", " 本機停止操作已取消。"),
-            _ => Pick(" 本机停止操作没有执行：", " 本機停止操作沒有執行：")
+            "executed" => Pick(" 本机已停止，请确认游戏内已停。", " 本機已停止，請確認遊戲內已停。"),
+            "cancelled" => Pick(" 本机停止已取消。", " 本機停止已取消。"),
+            _ => Pick(" 本机停止失败：", " 本機停止失敗：")
                  + (Backend.RoomReadinessText.Reason(receipt.Detail) ?? Localization.CodeText.State(receipt.Status))
-                 + Pick("。请在游戏中手动停止演奏。", "。請在遊戲中手動停止演奏。")
+                 + Pick("，请手动停止。", "，請手動停止。")
         };
     }
 
@@ -103,12 +103,12 @@ public static class RoomFlow
 
         // 本机动作卡的身份说明（Ensemble.RefreshEnsembleRoster）。
         var roleLine = mode != "ensemble" ? string.Empty
-            : !inRoom ? Pick("入房后由房主分组并指定乐谱使用者。", "入房後由房主分組並指定樂譜使用者。")
+            : !inRoom ? Pick("入房后由房主分组。", "入房後由房主分組。")
             : self is null ? Pick("等待房间成员信息。", "等待房間成員資訊。")
-            : joiner ? Pick($"第 {self.Group} 组 · 第 {self.Order} 位加入。设置停止按键或按钮后点击“就绪”，等乐谱使用者开始后在游戏中加入。",
-                $"第 {self.Group} 組 · 第 {self.Order} 位加入。設定停止按鍵或按鈕後點擊「就緒」，等樂譜使用者開始後在遊戲中加入。")
-            : Pick($"第 {self.Group} 组 · 乐谱使用者。在背包中选好乐谱，设置乐谱使用按钮与停止快捷键。",
-                $"第 {self.Group} 組 · 樂譜使用者。在背包中選好樂譜，設定樂譜使用按鈕與停止快捷鍵。");
+            : joiner ? Pick($"第 {self.Group} 组 · 第 {self.Order} 位加入。设好停止键后点「就绪」。",
+                $"第 {self.Group} 組 · 第 {self.Order} 位加入。設好停止鍵後點「就緒」。")
+            : Pick($"第 {self.Group} 组 · 乐谱使用者。设好乐谱按钮与停止键。",
+                $"第 {self.Group} 組 · 樂譜使用者。設好樂譜按鈕與停止鍵。");
 
         // 阶段（RefreshStatusView）。本轮结束或没有本轮时显示就绪情况。
         string phase;
@@ -142,7 +142,7 @@ public static class RoomFlow
                     "executed" => Pick("本机操作已执行", "本機操作已執行"),
                     "failed" => Pick("本机操作失败", "本機操作失敗"),
                     "missed" => Pick("已错过执行时刻", "已錯過執行時刻"),
-                    _ => Pick("本机操作已结束，请查看执行记录", "本機操作已結束，請查看執行紀錄")
+                    _ => Pick("本机操作已结束", "本機操作已結束")
                 },
                 "committed" when timing?.StartRemaining(at) is { } remaining => (round.Mode == "emote", data.Simulation) switch
                 {
@@ -164,26 +164,26 @@ public static class RoomFlow
         string next;
         if (!inRoom) next = Pick("创建房间，或粘贴邀请加入。", "建立房間，或貼上邀請加入。");
         else if (!connected)
-            next = host ? Pick("连接已断开，可点击重新连接，或关闭房间。", "連線已中斷，可點擊重新連線，或關閉房間。")
-                : Pick("连接已断开，请点击重新连接；恢复后重新就绪。", "連線已中斷，請點擊重新連線；恢復後重新就緒。");
+            next = host ? Pick("连接已断开，可重连或关闭房间", "連線已中斷，可重連或關閉房間")
+                : Pick("连接已断开，重连后重新就绪", "連線已中斷，重連後重新就緒");
         else if (active)
         {
             next = !participating
-                ? host ? Pick("选中的成员正在参与本轮。你可以取消本轮或全员停止。", "選中的成員正在參與本輪。你可以取消本輪或全員停止。")
+                ? host ? Pick("可取消本轮或全员停止", "可取消本輪或全員停止")
                     : Pick("你正在旁观本轮。", "你正在旁觀本輪。")
                 : round!.Phase == "interrupted"
-                    ? host ? Pick("请选择全员停止，或继续演奏。", "請選擇全員停止，或繼續演奏。") : Pick("等待房主决定停止或继续。", "等待房主決定停止或繼續。")
+                    ? host ? Pick("请选择全员停止或继续", "請選擇全員停止或繼續") : Pick("等待房主决定停止或继续", "等待房主決定停止或繼續")
                     : joiner
-                        ? Pick("靠近本组乐谱使用者，按成员列表中的顺序加入。", "靠近本組樂譜使用者，按成員列表中的順序加入。")
-                        : data.Simulation ? Pick("正在模拟本轮操作，可在“执行记录与诊断”中查看结果。", "正在模擬本輪操作，可在「執行紀錄與診斷」中查看結果。")
-                            : Pick("开始前自动激活所选游戏窗口，请保持游戏在前台。", "開始前自動啟用所選遊戲視窗，請保持遊戲在前景。");
+                        ? Pick("按列表顺序加入本组演奏", "按列表順序加入本組演奏")
+                        : data.Simulation ? Pick("正在模拟，结果见执行记录", "正在模擬，結果見執行紀錄")
+                            : Pick("请保持游戏在前台", "請保持遊戲在前景");
         }
-        else if (!data.Simulation && data.GameWindowName is null) next = Pick("请在本机动作中选择游戏窗口。", "請在本機動作中選擇遊戲視窗。");
+        else if (!data.Simulation && data.GameWindowName is null) next = Pick("请在本机动作中选择游戏窗口", "請在本機動作中選擇遊戲視窗");
         else if (!data.Simulation && bindingError.Length > 0) next = bindingError;
         else if (!data.Simulation && preferences is not null && music && RoomLocalSettings.Stop(preferences, mode) is null)
-            next = Pick("请记录画面上的停止按钮，或设置停止快捷键。", "請記錄畫面上的停止按鈕，或設定停止快捷鍵。");
+            next = Pick("请设置停止按钮或停止键", "請設定停止按鈕或停止鍵");
         else if (!data.Simulation && preferences is not null && !joiner && RoomLocalSettings.Start(preferences, mode) is null)
-            next = Pick("请先设置开始按键，或点选游戏中的开始按钮。", "請先設定開始按鍵，或點選遊戲中的開始按鈕。");
+            next = Pick("请设置开始按键或按钮", "請設定開始按鍵或按鈕");
         else if (host)
             next = waiting.Count > 0
                     ? Pick("未就绪：", "未就緒：") + string.Join("、", waiting.Take(3)) + (waiting.Count > 3 ? Pick($" 等 {waiting.Count} 人", $" 等 {waiting.Count} 人") : string.Empty)
@@ -201,7 +201,7 @@ public static class RoomFlow
             {
                 var automatic = round.StopRule == "first-cycle";
                 var ending = round.HasStop
-                    ? !round.StopCommitted ? Pick("正在确认各成员能否停止演奏", "正在確認各成員能否停止演奏")
+                    ? !round.StopCommitted ? Pick("正在确认能否停止", "正在確認能否停止")
                         : timing?.StopRemaining(at) is { } stopIn
                             ? automatic
                                 ? Pick($"距离本机停止还有 {RoomClock.SecondsText(stopIn)}（总指挥一轮 · 估计）", $"距離本機停止還有 {RoomClock.SecondsText(stopIn)}（總指揮一輪 · 估計）")
@@ -212,11 +212,11 @@ public static class RoomFlow
                 var failures = round.Receipts.Count(item => item.Status is "failed" or "missed");
                 musicStatus = round.Phase switch
                 {
-                    "interrupted" => Pick($"总指挥：{Name(round.LeaderId)} · {interruption}。{ending}。由房主决定全停或继续。",
-                        $"總指揮：{Name(round.LeaderId)} · {interruption}。{ending}。由房主決定全停或繼續。"),
-                    "cancelled" => Pick($"本轮已取消：{interruption}。下一轮请重新准备并就绪。", $"本輪已取消：{interruption}。下一輪請重新準備並就緒。"),
-                    "stopped" => (failures > 0 ? Pick($"有 {failures} 次操作未执行成功，请查看“执行记录与诊断”并检查游戏。", $"有 {failures} 次操作未執行成功，請查看「執行紀錄與診斷」並檢查遊戲。") : string.Empty)
-                        + Pick("本轮已结束，请确认游戏中已停止演奏。下一轮请重新就绪。", "本輪已結束，請確認遊戲中已停止演奏。下一輪請重新就緒。"),
+                    "interrupted" => Pick($"总指挥：{Name(round.LeaderId)} · {interruption}。{ending}。",
+                        $"總指揮：{Name(round.LeaderId)} · {interruption}。{ending}。"),
+                    "cancelled" => Pick($"本轮已取消：{interruption}。", $"本輪已取消：{interruption}。"),
+                    "stopped" => (failures > 0 ? Pick($"有 {failures} 次操作失败，见执行记录。", $"有 {failures} 次操作失敗，見執行紀錄。") : string.Empty)
+                        + Pick("本轮已结束，请确认游戏内已停。", "本輪已結束，請確認遊戲內已停。"),
                     _ => Pick($"总指挥：{Name(round.LeaderId)} · {ending}。", $"總指揮：{Name(round.LeaderId)} · {ending}。")
                 };
                 musicStatus += StopReceiptText(round, data.SelfId);
@@ -247,20 +247,20 @@ public static class RoomFlow
         var canStart = host && roomUsable && !active && !settingsInvalid && !data.RoundBusy;
         var selfSelected = self is { Selected: true };
         var startIssue = !host || !roomUsable || active ? string.Empty
-            : selected.Count == 0 ? Pick("请先选择本轮参与者。", "請先選擇本輪參與者。")
+            : selected.Count == 0 ? Pick("请先选择本轮参与者", "請先選擇本輪參與者")
             : waiting.Count > 0 ? Pick("等待就绪：", "等待就緒：") + string.Join("、", waiting) + Pick("。", "。")
             : !selfSelected || data.Simulation ? string.Empty
-            : data.GameWindowName is null ? Pick("请先在本机动作中选择游戏窗口。", "請先在本機動作中選擇遊戲視窗。")
+            : data.GameWindowName is null ? Pick("请在本机动作中选择游戏窗口", "請在本機動作中選擇遊戲視窗")
             : bindingError.Length > 0 ? bindingError
             : preferences is not null && music && RoomLocalSettings.Stop(preferences, mode) is null
-                ? Pick("请记录画面上的停止按钮，或设置停止快捷键。", "請記錄畫面上的停止按鈕，或設定停止快捷鍵。")
+                ? Pick("请设置停止按钮或停止键", "請設定停止按鈕或停止鍵")
             : preferences is not null && !joiner && RoomLocalSettings.Start(preferences, mode) is null
-                ? Pick("请先设置开始按键，或点选游戏中的开始按钮。", "請先設定開始按鍵，或點選遊戲中的開始按鈕。")
+                ? Pick("请设置开始按键或按钮", "請設定開始按鍵或按鈕")
             : string.Empty;
         // 开始停用时的原因；本轮进行中与未连接由阶段文字说明。
         var startHint = !host || !roomUsable || active ? string.Empty
-            : data.RoundBusy ? Pick("正在等待上一次操作的结果…", "正在等待上一次操作的結果…")
-            : settingsInvalid ? Pick("倒计时、演奏时长或尾音保留填写有误，修正后才能开始。", "倒數、演奏時長或尾音保留填寫有誤，修正後才能開始。")
+            : data.RoundBusy ? Pick("等待上次操作的结果…", "等待上次操作的結果…")
+            : settingsInvalid ? Pick("倒计时或时长填写有误", "倒數或時長填寫有誤")
             : string.Empty;
         var beforeStart = active && round!.Phase is "preparing" or "committed";
         var startReached = active && (round!.Phase is "performing" or "interrupted"
@@ -273,7 +273,7 @@ public static class RoomFlow
         var countdownNote = active && round!.CountdownMs > 0
             ? Pick($"本轮倒计时 {RoomLocalSettings.Seconds(round.CountdownMs)} 秒。", $"本輪倒數 {RoomLocalSettings.Seconds(round.CountdownMs)} 秒。")
               + (round.RequestedCountdownMs > 0 && round.RequestedCountdownMs < round.CountdownMs
-                  ? Pick(" 已自动延长倒计时，为提前触发和网络传输留出时间。", " 已自動延長倒數，為提前觸發和網路傳輸留出時間。") : string.Empty)
+                  ? Pick(" 已自动延长。", " 已自動延長。") : string.Empty)
             : string.Empty;
         var tailRound = active ? Pick($"本轮 {RoomLocalSettings.Seconds(round!.TailHoldMs)} 秒", $"本輪 {RoomLocalSettings.Seconds(round!.TailHoldMs)} 秒")
             : Pick("由房主设置", "由房主設定");
@@ -302,30 +302,29 @@ public static class RoomFlow
     {
         "duration" => Pick($"结束方式：演奏 {RoomLocalSettings.Seconds(preferences?.MusicDurationMs ?? 30000)} 秒后全员停止。",
             $"結束方式：演奏 {RoomLocalSettings.Seconds(preferences?.MusicDurationMs ?? 30000)} 秒後全員停止。"),
-        "first-cycle" => Pick("总指挥需开启抓包识别。工具根据乐谱和开始时间估算一轮结束时间，届时全员停止。",
-            "總指揮需開啟抓包辨識。工具根據樂譜和開始時間估算一輪結束時間，屆時全員停止。"),
+        "first-cycle" => Pick("结束方式：总指挥一轮后全员停止。", "結束方式：總指揮一輪後全員停止。"),
         _ => Pick("结束方式：房主手动全员停止。", "結束方式：房主手動全員停止。")
     };
 
     /// <summary>停止方式旁的说明（原工具 LeaderPurposeText）。</summary>
     public static string LeaderPurpose(string stopRule) => stopRule switch
     {
-        "first-cycle" => Pick("按总指挥的乐谱估算一轮终点，保留尾音后全员停止。尾音保留由房主设置；总指挥提前结束时会提醒房主。",
-            "按總指揮的樂譜估算一輪終點，保留尾音後全員停止。尾音保留由房主設定；總指揮提前結束時會提醒房主。"),
-        "duration" => Pick("显示总指挥的乐谱；总指挥提前结束时可通知房主。全员按指定时长停止。", "顯示總指揮的樂譜；總指揮提前結束時可通知房主。全員按指定時長停止。"),
-        _ => Pick("显示总指挥的乐谱；总指挥提前结束时可通知房主。何时全员停止由房主决定。", "顯示總指揮的樂譜；總指揮提前結束時可通知房主。何時全員停止由房主決定。")
+        "first-cycle" => Pick("按总指挥乐谱估算一轮终点，保留尾音后全员停止。总指挥需开启抓包。",
+            "按總指揮樂譜估算一輪終點，保留尾音後全員停止。總指揮需開啟抓包。"),
+        "duration" => Pick("全员按指定时长停止。", "全員按指定時長停止。"),
+        _ => Pick("何时全员停止由房主决定。", "何時全員停止由房主決定。")
     };
 
     public static string InstrumentText(string instrument) => instrument.Length == 0 ? Pick("未指定", "未指定") : instrument;
 
     private static string CycleWaitingText(string? status) => status switch
     {
-        "too-late" => Pick("识别乐谱时已接近一轮结束，来不及安排自动停止，请房主手动全员停止", "辨識樂譜時已接近一輪結束，來不及安排自動停止，請房主手動全員停止"),
-        "participant-not-ready" => Pick("有成员尚未设置好停止操作，请房主手动全员停止", "有成員尚未設定好停止操作，請房主手動全員停止"),
-        "prepare-timeout" => Pick("未能及时确认所有成员的停止设置，请房主手动全员停止", "未能及時確認所有成員的停止設定，請房主手動全員停止"),
-        "interrupted-before-stop-commit" => Pick("尚未安排统一停止，请房主选择继续或全员停止", "尚未安排統一停止，請房主選擇繼續或全員停止"),
-        null => Pick("等待识别总指挥的乐谱和开始时间", "等待辨識總指揮的樂譜和開始時間"),
-        _ => Pick("等待识别总指挥本轮的乐谱和开始时间；房主可随时全员停止", "等待辨識總指揮本輪的樂譜和開始時間；房主可隨時全員停止")
+        "too-late" => Pick("来不及自动停止，请房主手动全停", "來不及自動停止，請房主手動全停"),
+        "participant-not-ready" => Pick("有成员未设好停止，请手动全停", "有成員未設好停止，請手動全停"),
+        "prepare-timeout" => Pick("未及时确认停止设置，请手动全停", "未及時確認停止設定，請手動全停"),
+        "interrupted-before-stop-commit" => Pick("未安排统一停止，请房主选择", "未安排統一停止，請房主選擇"),
+        null => Pick("等待识别总指挥乐谱", "等待辨識總指揮樂譜"),
+        _ => Pick("等待识别总指挥乐谱，可随时全停", "等待辨識總指揮樂譜，可隨時全停")
     };
 
     private static string InterruptionText(RoomInterruption detail, Func<string?, string> name)
@@ -334,7 +333,7 @@ public static class RoomFlow
         if (detail.EvidenceSource == "player-report") return Pick($"{who} 手动报告已提前停止", $"{who} 手動回報已提前停止");
         var reason = detail.Source switch
         {
-            "tool-connection" or "tool-session-replaced" => Pick("工具连接中断，请确认游戏状态。", "工具連線中斷，請確認遊戲狀態。"),
+            "tool-connection" or "tool-session-replaced" => Pick("工具连接中断", "工具連線中斷"),
             "participant-not-ready" => Pick("按键或按钮尚未设置好", "按鍵或按鈕尚未設定好"),
             "input-failure" => Pick("操作失败或未能按时执行", "操作失敗或未能按時執行"),
             "not-ready" => Pick("取消就绪", "取消就緒"),
@@ -345,6 +344,6 @@ public static class RoomFlow
             "game-observation" => Pick("报告演奏中断", "回報演奏中斷"),
             _ => Pick("本轮已取消或中断", "本輪已取消或中斷")
         };
-        return who + Pick("：", "：") + reason + (detail.Detail is { Length: > 0 } extra ? " · " + extra : string.Empty);
+        return who + Pick("：", "：") + reason + (Localization.CodeText.Readable(detail.Detail) is { } extra ? " · " + extra : string.Empty);
     }
 }

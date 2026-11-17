@@ -38,7 +38,7 @@ public sealed partial class LiveBackend
         }
         catch (Exception error) when (error is HttpRequestException or IOException or InvalidOperationException)
         {
-            return new(true, false, false, false, null, error.Message);
+            return new(true, false, false, false, null, Localization.CodeText.Error(error));
         }
     }
 
@@ -55,12 +55,12 @@ public sealed partial class LiveBackend
     /// <summary>后端拒绝：绑定已变化、输入被其他操作占用、没有权限，其余显示错误码。</summary>
     internal static GameWindowActivation Rejected(string code, string? holder) => new(true, false, false, false, code, code switch
     {
-        "input.bindingChanged" => Pick("游戏窗口绑定已变化，请重新选择游戏窗口", "遊戲視窗綁定已變化，請重新選擇遊戲視窗"),
+        "input.bindingChanged" => Pick("窗口绑定已变化，请重新选择", "視窗綁定已變化，請重新選擇"),
         "resource.busy" => holder is { Length: > 0 }
-            ? Pick($"游戏输入正被占用（{holder}）", $"遊戲輸入正被佔用（{holder}）")
-            : Pick("游戏输入正被其他操作占用", "遊戲輸入正被其他操作佔用"),
+            ? Pick($"游戏输入被{Localization.CodeText.Holder(holder)}占用", $"遊戲輸入被{Localization.CodeText.Holder(holder)}佔用")
+            : Pick("游戏输入被其他操作占用", "遊戲輸入被其他操作佔用"),
         "permission.denied" => Pick("没有控制游戏窗口的权限", "沒有控制遊戲視窗的權限"),
-        _ => Pick("请求未完成：", "請求未完成：") + Localization.CodeText.Reason(code)
+        _ => Localization.CodeText.Reason(code)
     });
 
     // Windows 只允许前台进程把前台让给别的进程：Moongate 仍在前台时，允许后端进程（本机发现文件里的进程号）前置窗口；读不到进程号时允许任意进程。

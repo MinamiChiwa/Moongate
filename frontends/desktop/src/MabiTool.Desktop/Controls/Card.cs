@@ -83,6 +83,8 @@ public sealed class Card : Control
     private readonly Path closedMark = new() { Data = Geometry.Parse("M0,0 L5,4 L0,8 Z") };
     private readonly Path openMark = new() { Data = Geometry.Parse("M0,1 L8,1 L4,6 Z") };
     private readonly TextBlock title = new();
+    // 标题之后的说明问号：TitleTip 是文字时显示，卡片的解释性说明都放这里，不占内容区的行。
+    private readonly HelpTip help = new() { Margin = new Thickness(6, 0, 0, 0), IsVisible = false };
     private readonly Decorator iconHost = new() { Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
     private readonly Decorator statusHost = new() { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
     private readonly Decorator actionsHost = new() { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
@@ -103,8 +105,9 @@ public sealed class Card : Control
         DockPanel.SetDock(chevron, Dock.Left);
         DockPanel.SetDock(iconHost, Dock.Left);
         DockPanel.SetDock(title, Dock.Left);
+        DockPanel.SetDock(help, Dock.Left);
         toggle.Classes.Add("sectionhead");
-        toggle.Content = new DockPanel { Children = { chevron, iconHost, title, statusHost } };
+        toggle.Content = new DockPanel { Children = { chevron, iconHost, title, help, statusHost } };
         toggle.IsChecked = true;
         toggle.IsCheckedChanged += (_, _) => SetCurrentValue(IsExpandedProperty, toggle.IsChecked == true);
         DockPanel.SetDock(actionsHost, Dock.Right);
@@ -127,7 +130,7 @@ public sealed class Card : Control
 
     public string? Title { get => GetValue(TitleProperty); set => SetValue(TitleProperty, value); }
 
-    /// <summary>标题文字上的悬停提示。</summary>
+    /// <summary>卡片的说明：文字显示为标题后的说明问号（悬停、聚焦或点按显示），其他内容作标题文字的悬停提示。</summary>
     public object? TitleTip { get => GetValue(TitleTipProperty); set => SetValue(TitleTipProperty, value); }
 
     /// <summary>标题左侧的图标。</summary>
@@ -303,7 +306,10 @@ public sealed class Card : Control
     {
         var expanded = !IsCollapsible || IsExpanded;
         title.Text = Title;
-        ToolTip.SetTip(title, TitleTip);
+        // 文字说明放进标题后的问号（键盘可达）；其他内容（控件）仍作标题的悬停提示。
+        help.Text = TitleTip as string;
+        help.IsVisible = TitleTip is string { Length: > 0 };
+        ToolTip.SetTip(title, TitleTip is string ? null : TitleTip);
         AutomationProperties.SetName(toggle, Title);
         iconHost.Child = Icon;
         iconHost.IsVisible = Icon is not null;

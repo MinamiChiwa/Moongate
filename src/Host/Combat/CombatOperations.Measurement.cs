@@ -205,6 +205,23 @@ public sealed partial class CombatOperations
         if (changed) await PublishMeasurementAsync();
     }
 
+    /// <summary>
+    /// 重设：会话已取消本观察进行中的测量，这里释放测量状态并清除最近一次结果（历史里保存的测量记录不变）。
+    /// 调用方持有任务锁，与开始、帧更新一样先任务锁再测量锁。
+    /// </summary>
+    private async Task ResetMeasurementAsync(Job job)
+    {
+        await measurementLock.WaitAsync();
+        try
+        {
+            if (measurementRun?.Job == job) measurementRun = null;
+            lastMeasurement = null; lastMeasurementId = null;
+            Interlocked.Increment(ref measurementRevision);
+        }
+        finally { measurementLock.Release(); }
+        await PublishMeasurementAsync();
+    }
+
     /// <summary>观察结束时收尾：已开始的测量以停止时点结束并标为不完整，返回需要随收尾检查点保存的记录与时间线。</summary>
     private (CombatEncounter[] Encounters, CombatTimelineRecord[] Timeline) FinishMeasurementOnStop(Job job, string reason)
     {

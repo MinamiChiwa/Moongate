@@ -143,6 +143,76 @@ public sealed class CombatSessionTests
         Assert.Equal(manualPaused.Summary.EncounterDps, manualFinal.Summary.EncounterDps);
         Assert.Equal(manualPaused.Summary.RollingDps, manualFinal.Summary.RollingDps);
     }
+    private static CombatFrame StateFrame(ulong sequence, double mono, CombatLocalState state) =>
+        Frame(sequence, mono) with { CombatStates = [new(state, At.AddMilliseconds(mono), mono, null)] };
+
+    [Fact]
+    public void LeavingCombatKeepsTheSegmentForTenSecondsAndThenEndsAtTheLastDamage()
+    {
+        var session = Session();
+        session.Apply(StateFrame(1, 900, CombatLocalState.InCombat));
+        session.Apply(Frame(2, 1000, [Damage("a", 1000)]));
+        session.Apply(StateFrame(3, 3000, CombatLocalState.NonCombat));
+        // 离开战斗 5 秒后回到战斗并续击：仍是同一分段，空档按停手口径计入分母。
+        session.Apply(StateFrame(4, 8000, CombatLocalState.InCombat));
+        session.Apply(Frame(5, 9000, [Damage("b", 9000)]));
+        session.Apply(StateFrame(6, 10000, CombatLocalState.CombatEnd));
+        session.Tick(At.AddMilliseconds(20000), 20000);
+        Assert.Equal("active", session.Capture().Workspace.Encounter!.Summary.BoundaryReason);
+        session.Tick(At.AddMilliseconds(20001), 20001);
+        var first = session.Capture().Workspace.Encounter!;
+        Assert.Equal(("combat-left", "200"), (first.Summary.BoundaryReason, first.Summary.AttributedDamage.ToString()));
+        Assert.Equal(8000, first.Summary.DpsDurationMs ?? first.Summary.DurationMs);
+        session.Apply(Frame(7, 25000, [Damage("c", 25000)]));
+        var next = session.Capture().Workspace.Encounter!;
+        Assert.NotEqual(first.Id, next.Id);
+        Assert.Equal("combat-entered", next.Segment!.StartReason);
+    }
+
+    [Fact]
+    public void WholeExpiresThreeMinutesAfterTheLastCombatActionAndRenewsOnTheNextDamage()
+    {
+        var session = Session();
+        session.Apply(Frame(1, 1000, [Damage("a", 1000)]));
+        // 受到伤害也是战斗动作：3 分钟从这一下重新计算。
+        session.Apply(Frame(2, 60000, [Damage("taken", 60000, from: Monster, target: Self)]));
+        session.Tick(At.AddMilliseconds(239999), 239999);
+        Assert.Null(session.Capture().Workspace.Observation.WholeExpired);
+        session.Tick(At.AddMilliseconds(240000), 240000);
+        var expired = session.Capture().Workspace;
+        Assert.Equal("idle-out-of-combat", expired.Observation.WholeExpired);
+        // 到期只作标记：上一场的分段（截止最后有效伤害）照常保留。
+        Assert.Equal(1, expired.Observation.WholeOrdinal);
+        Assert.Equal(1, expired.Encounter!.Segment!.Whole);
+        Assert.Equal("100", expired.Encounter.Summary.AttributedDamage.ToString());
+        session.Apply(Frame(3, 250000, [Damage("b", 250000)]));
+        var renewed = session.Capture().Workspace;
+        Assert.Equal(2, renewed.Encounter!.Segment!.Whole);
+        Assert.Equal(2, renewed.Observation.WholeOrdinal);
+        Assert.Null(renewed.Observation.WholeExpired);
+    }
+
+    [Fact]
+    public void ResetClearsTheSegmentTheWholeAndTheMeasurementButKeepsHistory()
+    {
+        var session = Session();
+        session.Apply(Frame(1, 1000, [Damage("a", 1000)]));
+        var measurement = session.BeginMeasurement(At.AddMilliseconds(1000), 1000, 60000, 0);
+        session.Apply(Frame(2, 2000, [Damage("b", 2000)]));
+        Assert.NotNull(session.MeasurementProgress());
+        var closed = session.Reset(At.AddMilliseconds(3000), 3000);
+        var checkpoint = session.Capture();
+        Assert.Contains(checkpoint.Encounters, x => x.Id == closed!.Id && x.Summary.Final && x.Summary.BoundaryReason == "reset");
+        Assert.Null(checkpoint.Workspace.Encounter);
+        Assert.Null(session.MeasurementProgress());
+        Assert.Contains(measurement, checkpoint.DeletedEncounters);
+        Assert.Equal(2, checkpoint.Workspace.Observation.WholeOrdinal);
+        session.Apply(Frame(3, 4000, [Damage("c", 4000)]));
+        var segment = session.Capture().Workspace.Encounter!.Segment!;
+        Assert.Equal("reset", segment.StartReason);
+        Assert.Equal(2, segment.Whole);
+    }
+
     [Fact]
     public void ManualResetAndLateFramesPreserveSeparateHistoryBoundaries()
     {
@@ -150,9 +220,9 @@ public sealed class CombatSessionTests
         var old = session.Capture().Workspace.Encounter!.Id;
         session.Reset(At.AddMilliseconds(2000), 2000); var next = session.Capture();
         Assert.Contains(next.Encounters, x => x.Id == old && x.Summary.Final && x.Summary.BoundaryReason == "reset");
-        Assert.NotEqual(old, next.Workspace.Encounter!.Id);
+        Assert.Null(next.Workspace.Encounter);
         session.Apply(Frame(2, 2500, [Damage("late", 1000)]));
-        Assert.Equal("0", session.Capture().Workspace.Encounter!.Summary.AttributedDamage.ToString());
+        Assert.Null(session.Capture().Workspace.Encounter);
         session.Stop("observation-stopped", At, 2500); Assert.False(session.Apply(Frame(3, 3000, [Damage("after-stop", 3000)])));
     }
     [Fact]

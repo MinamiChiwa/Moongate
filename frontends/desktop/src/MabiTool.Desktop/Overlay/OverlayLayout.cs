@@ -271,39 +271,116 @@ public sealed class OverlayLayoutStore
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>等待已提交的保存写完（读取同一文件之前与测试清理时）。</summary>
+    public void Flush()
+    {
+        if (path is not null) LayoutFileWriter.For(path).Flush();
+    }
+
     private Document Load()
     {
+        if (path is not null) LayoutFileWriter.For(path).Flush();
         if (path is not null && File.Exists(path))
             try
             {
                 var document = JsonSerializer.Deserialize<Document>(File.ReadAllBytes(path), Json);
-                if (document is { Layouts.Count: > 0 }) return document;
+                if (document is { Layouts.Count: > 0 })
+                {
+                    // 预设版面只按序号命名：名称不暗示浮窗会随游戏场景自动切换。早期按用途命名的两套预设在读入时改名。
+                    foreach (var layout in document.Layouts)
+                        layout.Name = (layout.Id, layout.Name) switch
+                        {
+                            ("performance", "演奏") => UiText.Pick("预设1", "預設1"),
+                            ("raid", "团队副本" or "團隊副本") => UiText.Pick("预设2", "預設2"),
+                            _ => layout.Name
+                        };
+                    return document;
+                }
             }
             catch (Exception error) when (error is JsonException or IOException or UnauthorizedAccessException) { }
         return new Document { Layouts = Defaults() };
     }
 
+    // 界面线程只序列化（得到这一刻的快照），写盘交给后台写入器。
     private void Save()
     {
         if (path is null) return;
-        try
+        LayoutFileWriter.For(path).Enqueue(JsonSerializer.SerializeToUtf8Bytes(new Document
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var temporary = path + ".tmp";
-            File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(new Document
+            ActiveId = Active.Id, Layouts = Layouts, HideFromCapture = HideFromCapture, HideWhenGameMinimized = HideWhenGameMinimized
+        }, Json));
+    }
+
+    /// <summary>
+    /// 版面文件的写入器，每个文件一个：在后台线程写盘，不占用界面线程；写盘期间到达的多次保存合并为最后一次。
+    /// 写盘线程是前台线程，程序正常退出前写完；先写临时文件再替换，中途退出也不留下半个文件。
+    /// </summary>
+    private sealed class LayoutFileWriter(string path)
+    {
+        private static readonly Dictionary<string, LayoutFileWriter> Writers = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object gate = new();
+        private byte[]? pending;
+        private bool running;
+
+        public static LayoutFileWriter For(string path)
+        {
+            var key = Path.GetFullPath(path);
+            lock (Writers)
             {
-                ActiveId = Active.Id, Layouts = Layouts, HideFromCapture = HideFromCapture, HideWhenGameMinimized = HideWhenGameMinimized
-            }, Json));
-            File.Move(temporary, path, true);
+                if (!Writers.TryGetValue(key, out var writer)) Writers[key] = writer = new LayoutFileWriter(key);
+                return writer;
+            }
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+
+        public void Enqueue(byte[] content)
+        {
+            lock (gate)
+            {
+                pending = content;
+                if (running) return;
+                running = true;
+            }
+            new Thread(Run) { IsBackground = false, Name = "Moongate overlay layout save" }.Start();
+        }
+
+        public void Flush()
+        {
+            lock (gate)
+                while (running) Monitor.Wait(gate);
+        }
+
+        private void Run()
+        {
+            while (true)
+            {
+                byte[] content;
+                lock (gate)
+                {
+                    if (pending is null)
+                    {
+                        running = false;
+                        Monitor.PulseAll(gate);
+                        return;
+                    }
+                    (content, pending) = (pending, null);
+                }
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                    var temporary = path + ".tmp";
+                    File.WriteAllBytes(temporary, content);
+                    File.Move(temporary, path, true);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            }
+        }
     }
 
     private static List<OverlayLayout> Defaults() =>
     [
         new()
         {
-            Id = "performance", Name = UiText.Pick("演奏", "演奏"),
+            Id = "performance", Name = UiText.Pick("预设1", "預設1"),
             Widgets =
             [
                 new() { WidgetId = "rooms.readiness", X = 1, Y = 0 }
@@ -311,7 +388,7 @@ public sealed class OverlayLayoutStore
         },
         new()
         {
-            Id = "raid", Name = UiText.Pick("团队副本", "團隊副本"),
+            Id = "raid", Name = UiText.Pick("预设2", "預設2"),
             Widgets =
             [
                 new() { WidgetId = "combat.dps", X = 1, Y = 0 },

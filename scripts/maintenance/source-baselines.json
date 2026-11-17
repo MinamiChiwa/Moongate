@@ -1067,8 +1067,8 @@
         "MinamiChiwa"
       ],
       "workingTree": {
-        "capturedAt": "2026-11-09T19:27:09.891214+00:00",
-        "sha256": "1d419609e59a1b27b1d5c3f057c21e4be72ea73c09bdd9a2cc7c5e010a40daa6"
+        "capturedAt": "2026-11-17T17:04:08.020861+00:00",
+        "sha256": "e7fb878799a25cb168b7818bf24c8462fbceb1291319e22c7371aafd14f70ce5"
       },
       "distributionLicense": {
         "id": "MIT",
@@ -1157,6 +1157,31 @@
         {
           "path": "dotnet/MabiAgent.Capture/Protocol.cs",
           "sha256": "77f7bd4c435fbf0fc58d0c3a80c3b2f76ba9f673bb3a5147dee2974a94c1317e",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows/TouchCursorPresentation.cs",
+          "sha256": "99466bbd7461e152c61c8495ce913e647ea62c3b82891b08ac241ad4dc33f234",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows/TouchGesturePlan.cs",
+          "sha256": "bfdc43380d1d31b21d7c40640b7e874611d6b238c5c3957b85233c1f1e4f93a4",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows/TouchInputOps.cs",
+          "sha256": "057346534af67d9679126aa546eac5229c5757f540a995418c52cbfb0a8cac73",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows/TouchPlatform.cs",
+          "sha256": "6f6386f0907133152aa62d2ccccb9972aa3169d794ec072e556000ad81e2a846",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows/WindowMessageInputOps.cs",
+          "sha256": "f99144582bc379e0c24ed8fde14fcc621e2d61b98a898b22fab19ce3cb9a2af0",
           "contentSource": "working-tree"
         }
       ]
@@ -1865,6 +1890,25 @@
         "src/Modules/Inventory/Adapters/InventoryHistoryStore.cs",
         "src/Modules/Inventory/Adapters/InventoryHistoryStore.Query.cs",
         "src/Modules/Inventory/Adapters/InventoryHistoryStore.Csv.cs"
+      ]
+    },
+    {
+      "id": "mabiagent-background-touch",
+      "source": "mabiagent",
+      "task": "unified-modular-backend:25.10",
+      "module": "game-access",
+      "entries": [
+        "dotnet/MabiAgent.Windows/TouchPlatform.cs",
+        "dotnet/MabiAgent.Windows/TouchGesturePlan.cs",
+        "dotnet/MabiAgent.Windows/TouchInputOps.cs",
+        "dotnet/MabiAgent.Windows/TouchCursorPresentation.cs",
+        "dotnet/MabiAgent.Windows/WindowMessageInputOps.cs"
+      ],
+      "acceptance": "后台触控与按键：不前置游戏、不移动用户鼠标；坐标为绑定客户区物理像素；接入租约、绑定核对、取消释放与紧急停止；条件不满足返回原因码",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Platform.Windows/WindowsBackgroundTouchInput.cs",
+        "src/ModuleSdk/GameBackgroundInput.cs"
       ]
     }
   ]

@@ -47,14 +47,14 @@ public static class CaptureText
     /// <summary>一行状态：抓包中写明网卡及其来源；未抓包写明原因。</summary>
     public static string Status(CaptureStatusView value)
     {
-        if (!value.Connected) return Pick("未连接后端，抓包状态未知。", "未連接後端，抓包狀態未知。");
-        if (value.Installed is null) return Pick("正在读取游戏观测组件状态…", "正在讀取遊戲觀測元件狀態…");
-        if (value.Installed == false) return Pick("抓包不可用：宿主未安装或未配置游戏观测组件。", "抓包不可用：宿主未安裝或未設定遊戲觀測元件。");
+        if (!value.Connected) return Pick("未连接后端", "未連接後端");
+        if (value.Installed is null) return Pick("正在读取抓包状态…", "正在讀取抓包狀態…");
+        if (value.Installed == false) return Pick("抓包不可用：未安装观测组件", "抓包不可用：未安裝觀測元件");
         var channel = value.Channel is { Length: > 0 } name
             ? Pick("网卡：", "網卡：") + name + (value.ChannelSource switch
             {
-                "automatic" => Pick("（按游戏连接自动选择）", "（依遊戲連線自動選擇）"),
-                "saved" => Pick("（已保存的网卡）", "（已儲存的網卡）"),
+                "automatic" => Pick("（自动）", "（自動）"),
+                "saved" => Pick("（已保存）", "（已儲存）"),
                 _ => string.Empty
             })
             : null;
@@ -63,9 +63,9 @@ public static class CaptureText
             "running" => Pick("抓包中", "抓包中") + (channel is null ? string.Empty : " · " + channel),
             "starting" => Pick("正在启动抓包…", "正在啟動抓包…") + (channel is null ? string.Empty : " · " + channel),
             "stopping" => Pick("正在停止抓包…", "正在停止抓包…"),
-            _ => Pick("未抓包：", "未抓包：") + (Reason(value.Reason, value.Enabled) ?? Pick("等待自动启动", "等待自動啟動")) + Pick("。", "。")
+            _ => Pick("未抓包：", "未抓包：") + (Reason(value.Reason, value.Enabled) ?? Pick("等待自动启动", "等待自動啟動")) + Pick("，", "，")
                  + (value.Automation == "failed" && value.NextAttemptAt is { } next
-                     ? Pick($"将于 {next.ToLocalTime():HH:mm:ss} 重试。", $"將於 {next.ToLocalTime():HH:mm:ss} 重試。") : string.Empty)
+                     ? Pick($"{next.ToLocalTime():HH:mm:ss} 重试", $"{next.ToLocalTime():HH:mm:ss} 重試") : string.Empty)
         };
     }
 
@@ -75,7 +75,7 @@ public static class CaptureText
     public static string Shell(CaptureStatusView value) => value switch
     {
         { Running: true, Character: { Length: > 0 } name } => name,
-        { Running: true } => Pick("抓包中 · 未识别角色，请切换一次地图", "抓包中 · 未辨識角色，請切換一次地圖"),
+        { Running: true } => Pick("未识别角色，请切换一次地图", "未辨識角色，請切換一次地圖"),
         { State: "starting" } => Pick("正在启动抓包…", "正在啟動抓包…"),
         _ => Status(value)
     };
@@ -89,25 +89,25 @@ public static class CaptureText
         var unknown = Pick("未知", "未知");
         if (location is null)
         {
-            var none = Pick("抓包尚未收到进图通知（切换一次地图后显示）", "抓包尚未收到進圖通知（切換一次地圖後顯示）");
+            var none = Pick("切换一次地图后显示", "切換一次地圖後顯示");
             return new(unknown, unknown, none, none);
         }
         var mapNote = location.MapReason switch
         {
             null => location.MapName ?? string.Empty,
-            "location.mapCatalogPending" => Pick("正在读取客户端地图名称", "正在讀取客戶端地圖名稱"),
-            "location.mapCatalogUnavailable" => Pick("无法读取客户端地图名称资源", "無法讀取客戶端地圖名稱資源"),
-            "location.mapUnknown" => Pick($"客户端地图表里没有这个地图（{location.ChannelSheetId}）", $"客戶端地圖表裡沒有這個地圖（{location.ChannelSheetId}）"),
-            var other => other
+            "location.mapCatalogPending" => Pick("正在读取地图名称", "正在讀取地圖名稱"),
+            "location.mapCatalogUnavailable" => Pick("无法读取地图名称", "無法讀取地圖名稱"),
+            "location.mapUnknown" => Pick("地图表里没有这个地图", "地圖表裡沒有這個地圖"),
+            var other => Localization.CodeText.Reason(other)
         };
         var (channel, channelNote) = location switch
         {
             { PermanentChannelIndex: { } index } => (Pick($"频道 {index}", $"頻道 {index}"),
-                Pick($"客户端频道序号 {index}，按此作为频道号显示", $"客戶端頻道序號 {index}，按此作為頻道號顯示")),
+                Pick($"客户端频道序号 {index}", $"客戶端頻道序號 {index}")),
             { ChannelReason: "location.channelNotPermanent" } => (Pick("副本频道", "副本頻道"),
-                Pick("此地图为非永久频道（如地下城副本），没有固定频道号", "此地圖為非永久頻道（如地下城副本），沒有固定頻道號")),
+                Pick("非永久频道，没有固定频道号", "非永久頻道，沒有固定頻道號")),
             { ChannelReason: "location.channelRuleUnknown" } => (unknown, Pick("地图名称表未读取，无法判断频道", "地圖名稱表未讀取，無法判斷頻道")),
-            { ChannelReason: "location.channelIndexUnresolved" } => (unknown, Pick("实例编号不符合永久频道规则，无法得出频道", "實例編號不符合永久頻道規則，無法得出頻道")),
+            { ChannelReason: "location.channelIndexUnresolved" } => (unknown, Pick("无法得出频道号", "無法得出頻道號")),
             { ChannelReason: { } other } => (unknown, Localization.CodeText.Reason(other)),
             _ => (unknown, Pick("没有频道信息", "沒有頻道資訊"))
         };
@@ -121,10 +121,10 @@ public static class CaptureText
         null => null,
         "observation.automaticCaptureDisabled" => Pick("自动抓包已关闭，可在设置中开启", "自動抓包已關閉，可在設定中開啟"),
         "input.bindingUnavailable" => Pick("尚未绑定游戏窗口", "尚未綁定遊戲視窗"),
-        "gameBuild.incompatible" => Pick("当前游戏版本尚未核验，抓包配置不可用", "目前遊戲版本尚未核驗，抓包設定不可用"),
-        "observation.channelNotFound" => Pick("没有网卡承载游戏连接，可在设置中用手动调试找出网卡", "沒有網卡承載遊戲連線，可在設定中用手動調試找出網卡"),
-        "observation.channelAmbiguous" => Pick("多张网卡都有游戏连接，请在设置中指定网卡", "多張網卡都有遊戲連線，請在設定中指定網卡"),
-        "observation.savedChannelMissing" => Pick("已保存的网卡当前不可用，请在设置中重新选择", "已儲存的網卡目前不可用，請在設定中重新選擇"),
+        "gameBuild.incompatible" => Pick("游戏版本未核验，暂不能抓包", "遊戲版本未核驗，暫不能抓包"),
+        "observation.channelNotFound" => Pick("找不到游戏网卡，可在设置中指定", "找不到遊戲網卡，可在設定中指定"),
+        "observation.channelAmbiguous" => Pick("多张网卡有游戏连接，请在设置中指定", "多張網卡有遊戲連線，請在設定中指定"),
+        "observation.savedChannelMissing" => Pick("已保存的网卡不可用，请重新选择", "已儲存的網卡不可用，請重新選擇"),
         "observation.channelDetecting" => Pick("正在检测网卡，结束后自动启动", "正在檢測網卡，結束後自動啟動"),
         "update.maintenanceActive" => Pick("正在安装更新，结束后自动启动", "正在安裝更新，結束後自動啟動"),
         _ => RoomReadinessText.CaptureReason(code) ?? Localization.CodeText.Reason(code)

@@ -104,7 +104,7 @@ public sealed class OverlayTests
         }
         finally
         {
-            File.Delete(path);
+            DeleteLayoutFile(path);
         }
     }
 
@@ -370,7 +370,7 @@ public sealed class OverlayTests
         {
             primary.Close();
             secondary.Close();
-            File.Delete(path);
+            DeleteLayoutFile(path);
         }
     }
 
@@ -504,8 +504,15 @@ public sealed class OverlayTests
         {
             primary.Close();
             secondary.Close();
-            File.Delete(path);
+            DeleteLayoutFile(path);
         }
+    }
+
+    // 版面在后台写盘：删除测试文件之前先等写完，免得删除与替换文件撞在一起。
+    private static void DeleteLayoutFile(string path)
+    {
+        new OverlayLayoutStore(path).Flush();
+        File.Delete(path);
     }
 
     private sealed class FakeCursor : IOverlayCursor
@@ -574,8 +581,188 @@ public sealed class OverlayTests
             OverlayDragTrace.PathOverride = null;
             primary.Close();
             secondary.Close();
-            File.Delete(path);
+            DeleteLayoutFile(path);
             File.Delete(trace);
+        }
+    }
+
+    // 用户实例的染色元件：左侧 125% 副显示器上，保存的尺寸 232×304，已解锁。
+    private static (OverlayLayoutStore Store, WidgetPlacement Color, OverlayWindow Primary, OverlayWindow Secondary, FakeCursor Cursor, string Path)
+        OpenUserColorWidget()
+    {
+        UiMotion.Enabled = false;
+        var path = Path.Combine(Path.GetTempPath(), "moongate-resize-" + Guid.NewGuid().ToString("N") + ".json");
+        var backend = new SampleBackend();
+        var catalog = BuiltInModules.CreateCatalog(backend);
+        var store = new OverlayLayoutStore(path);
+        var color = store.Place("color.current");
+        (color.Screen, color.X, color.Y, color.Width, color.Height, color.Locked) = (UserScreens[1].Key, 0.5, 0.5, 232, 304, false);
+        store.Commit();
+        var (primary, secondary) = OpenMonitorWindows(store, catalog, backend);
+        var cursor = new FakeCursor();
+        secondary.Canvas.Area = OverlayArea.ForScreen(UserScreens, UserScreens[1], 1.25);
+        secondary.Canvas.CursorSource = cursor;
+        LayoutProbe.Render(secondary);
+        return (store, color, primary, secondary, cursor, path);
+    }
+
+    // 副显示器窗口的逻辑坐标换成系统光标的物理坐标（左侧显示器原点 -1920,0，125%）。
+    private static PixelPoint OnSecondary(Point logical) =>
+        new((int)Math.Round(UserScreens[1].Bounds.X + logical.X * 1.25), (int)Math.Round(UserScreens[1].Bounds.Y + logical.Y * 1.25));
+
+    [AvaloniaFact]
+    public void HandleResizeByCursorPollingSettlesEvenWhenEveryLayoutPassPollsAgain()
+    {
+        // 实机崩溃：浮窗在每次排版后都轮询光标，改尺寸的轮询无论尺寸变没变都要求重新排版，排版与轮询互相触发，
+        // Avalonia 判定为无限排版循环（Infinite layout loop detected）并结束进程。这里按同样的接线驱动改尺寸。
+        var (store, color, primary, secondary, cursor, path) = OpenUserColorWidget();
+        var canvas = secondary.Canvas;
+        var layoutPasses = 0;
+        canvas.LayoutUpdated += (_, _) => { layoutPasses++; canvas.PollDrag(); };
+        try
+        {
+            var press = Center(canvas.HandleOf("color.current")!, secondary);
+            (cursor.Position, cursor.PrimaryButtonDown) = (OnSecondary(press), true);
+            secondary.MouseDown(press, MouseButton.Left);
+            Assert.True(canvas.IsManipulating);
+
+            // 拖过显示器右边界，一直拖到主显示器右下角：宽度停在副显示器工作区以内（扣除两侧边距），高度对齐 8 px 且不超出工作区。
+            cursor.Position = new PixelPoint(1900, 1079);
+            canvas.PollDrag();
+            LayoutProbe.Render(secondary);
+            var monitor = UserScreens[1].WorkingArea;
+            Assert.Equal(Math.Floor((monitor.Width / 1.25 - 24) / 8) * 8, color.Width);
+            Assert.InRange(color.Height!.Value, 304, monitor.Height / 1.25 - 24);
+            Assert.Equal(0, color.Height!.Value % 8);
+            Assert.True(canvas.BoundsOf("color.current")!.Value.Right <= monitor.Width / 1.25 + 0.5);
+            // 光标不动时再排版几次：尺寸不变，不再要求排版。
+            layoutPasses = 0;
+            LayoutProbe.Render(secondary);
+            LayoutProbe.Render(secondary);
+            Assert.InRange(layoutPasses, 0, 4);
+
+            // 拖到最小以下：停在元件的最小尺寸 200×120。
+            cursor.Position = OnSecondary(press - new Vector(2000, 2000));
+            canvas.PollDrag();
+            LayoutProbe.Render(secondary);
+            Assert.Equal((200d, 120d), (color.Width!.Value, color.Height!.Value));
+
+            // 主按键松开：结束并保存，最终尺寸合法。
+            cursor.Position = OnSecondary(press + new Vector(40, 24));
+            cursor.PrimaryButtonDown = false;
+            canvas.PollDrag();
+            Assert.False(canvas.IsManipulating);
+            var saved = new OverlayLayoutStore(path).Active.Widgets.Single(widget => widget.WidgetId == "color.current");
+            Assert.Equal((color.Width, color.Height), (saved.Width, saved.Height));
+            Assert.True(color.Width >= 200 && color.Height >= 120 && double.IsFinite(color.Width!.Value) && double.IsFinite(color.Height!.Value));
+
+            // 之后仍可操作：再拖动一次元件。
+            LayoutProbe.Render(secondary);
+            var frame = canvas.BoundsOf("color.current")!.Value;
+            var grab = frame.TopLeft + new Vector(24, 24);
+            (cursor.Position, cursor.PrimaryButtonDown) = (OnSecondary(grab), true);
+            secondary.MouseDown(grab, MouseButton.Left);
+            Assert.True(canvas.IsManipulating);
+            cursor.Position = OnSecondary(grab + new Vector(-96, -64));
+            cursor.PrimaryButtonDown = false;
+            canvas.PollDrag();
+            Assert.False(canvas.IsManipulating);
+            LayoutProbe.Render(secondary);
+            Assert.NotEqual(frame.TopLeft, canvas.BoundsOf("color.current")!.Value.TopLeft);
+        }
+        finally
+        {
+            primary.Close();
+            secondary.Close();
+            DeleteLayoutFile(path);
+        }
+    }
+
+    [AvaloniaFact]
+    public void GestureWhoseReleaseNeverArrivesEndsAfterTheIdleTimeout()
+    {
+        // 远程桌面可能丢掉松开：系统报告的主按键一直按住、光标不再移动。超过空闲时限后结束改尺寸并保存当时的尺寸。
+        var (store, color, primary, secondary, cursor, path) = OpenUserColorWidget();
+        var canvas = secondary.Canvas;
+        var clock = new ManualClock();
+        canvas.Clock = clock;
+        var trace = Path.ChangeExtension(path, ".log");
+        OverlayDragTrace.PathOverride = trace;
+        try
+        {
+            var press = Center(canvas.HandleOf("color.current")!, secondary);
+            (cursor.Position, cursor.PrimaryButtonDown) = (OnSecondary(press), true);
+            secondary.MouseDown(press, MouseButton.Left);
+            cursor.Position = OnSecondary(press + new Vector(64, 40));
+            canvas.PollDrag();
+            var resized = (color.Width, color.Height);
+            Assert.Equal((296d, 344d), resized);
+
+            clock.Advance(OverlayCanvas.GestureIdleTimeout - TimeSpan.FromSeconds(1));
+            canvas.PollDrag();
+            Assert.True(canvas.IsManipulating);
+            clock.Advance(TimeSpan.FromSeconds(2));
+            canvas.PollDrag();
+            Assert.False(canvas.IsManipulating);
+            var saved = new OverlayLayoutStore(path).Active.Widgets.Single(widget => widget.WidgetId == "color.current");
+            Assert.Equal(resized, (saved.Width, saved.Height));
+            // 诊断未打开也记下这次超时结束。
+            Assert.Contains("resize color.current ended: no input for 10 s", File.ReadAllText(trace));
+        }
+        finally
+        {
+            OverlayDragTrace.PathOverride = null;
+            File.Delete(trace);
+            primary.Close();
+            secondary.Close();
+            DeleteLayoutFile(path);
+        }
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        private DateTimeOffset now = new(2026, 11, 18, 0, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => now;
+        public void Advance(TimeSpan by) => now += by;
+    }
+
+    [AvaloniaFact]
+    public void ZoomButtonsAndPageScaleOnTheScaledMonitorStayInRangeAndSave()
+    {
+        // 125% 副显示器上用元件的“－／＋”与版面页的缩放改到最大与最小：倍率停在 0.5–2，外框尺寸有限，已保存，之后仍可拖动。
+        var (store, color, primary, secondary, cursor, path) = OpenUserColorWidget();
+        var canvas = secondary.Canvas;
+        var catalog = BuiltInModules.CreateCatalog(new SampleBackend(), store);
+        var model = new OverlayPageModel(catalog, catalog.Overlay!) { SelectedWidgetId = "color.current" };
+        try
+        {
+            for (var i = 0; i < 12; i++)
+            {
+                PressAt(secondary, Center(canvas.ZoomButtonOf("color.current", true)!, secondary));
+                LayoutProbe.Render(secondary);
+            }
+            Assert.Equal(WidgetPlacement.MaximumScale, color.Scale);
+            var large = canvas.BoundsOf("color.current")!.Value;
+            Assert.True(double.IsFinite(large.Width) && large.Width > 0 && large.Right <= secondary.Width + 0.5, large.ToString());
+            for (var i = 0; i < 20; i++) model.ScaleCommand.Execute("-");
+            LayoutProbe.Render(secondary);
+            Assert.Equal(WidgetPlacement.MinimumScale, color.Scale);
+            Assert.Equal(WidgetPlacement.MinimumScale, new OverlayLayoutStore(path).Active.Widgets.Single(widget => widget.WidgetId == "color.current").Scale);
+
+            var grab = canvas.BoundsOf("color.current")!.Value.TopLeft + new Vector(8, 8);
+            (cursor.Position, cursor.PrimaryButtonDown) = (OnSecondary(grab), true);
+            secondary.MouseDown(grab, MouseButton.Left);
+            Assert.True(canvas.IsManipulating);
+            cursor.PrimaryButtonDown = false;
+            canvas.PollDrag();
+            Assert.False(canvas.IsManipulating);
+        }
+        finally
+        {
+            model.Dispose();
+            primary.Close();
+            secondary.Close();
+            DeleteLayoutFile(path);
         }
     }
 
@@ -637,7 +824,7 @@ public sealed class OverlayTests
             primary.Close();
             secondary.Close();
             model.Dispose();
-            File.Delete(path);
+            DeleteLayoutFile(path);
         }
     }
 
@@ -723,7 +910,7 @@ public sealed class OverlayTests
         finally
         {
             window.Close();
-            File.Delete(path);
+            DeleteLayoutFile(path);
         }
     }
 
@@ -910,7 +1097,7 @@ public sealed class OverlayTests
             Assert.Equal(OverlayWidgetSizes.DefaultOf(descriptor),
                 OverlayWidgetSizes.Resolve(dps, OverlayWidgetSizes.DefaultOf(descriptor), OverlayWidgetSizes.MinimumOf(descriptor)));
         }
-        finally { File.Delete(path); }
+        finally { DeleteLayoutFile(path); }
     }
 
     [Fact]
@@ -935,7 +1122,7 @@ public sealed class OverlayTests
             Assert.Equal(WidgetPlacement.MinimumOpacity, new OverlayLayoutStore(path).Active.Widgets
                 .Single(widget => widget.WidgetId == "combat.dps").Opacity);
         }
-        finally { File.Delete(path); }
+        finally { DeleteLayoutFile(path); }
 
         // 浮窗上的按钮每点一次降 20%，到下限后回到不透明；编辑页的“－／＋”步进 10%，不越过 20% 与 100%。
         var cycle = new List<double>();
@@ -1327,7 +1514,7 @@ public sealed class OverlayTests
             var kept = reopened.Active.Widgets.Single(widget => widget.WidgetId == "performance.nearby");
             Assert.Equal((0.5, 1, 1.4, "solid"), (kept.X, kept.Y, kept.Scale, kept.Skin));
         }
-        finally { File.Delete(path); }
+        finally { DeleteLayoutFile(path); }
     }
 
     [AvaloniaTheory]

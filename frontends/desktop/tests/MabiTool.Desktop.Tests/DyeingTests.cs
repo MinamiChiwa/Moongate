@@ -544,8 +544,8 @@ public sealed class DyeingTests
         var exact = LiveBackend.PaletteRequest("#1F3A6B", ColorCodes.ExactHex, 8, true);
         Assert.Equal(("exact-hex", 0.0, "atlas"), (exact.MatchMode.RawValue, exact.Tolerance, exact.Image.RawValue));
         UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
-        Assert.Equal("染色引擎不可用：worker.crashed", LiveBackend.PaletteProblem("provider.unavailable", "worker.crashed"));
-        Assert.Equal("请求未完成：未知原因（request.invalid）", LiveBackend.PaletteProblem("request.invalid", null));
+        Assert.Equal("染色引擎不可用", LiveBackend.PaletteProblem("provider.unavailable", "worker.crashed"));
+        Assert.Equal("请求内容无效", LiveBackend.PaletteProblem("request.invalid", null));
     }
 
     [AvaloniaFact]
@@ -557,7 +557,7 @@ public sealed class DyeingTests
             Pump(window, 200);
             var card = model.Cards[1];
             Assert.False(card.Atlas.CanOpen);
-            Assert.Equal(UiText.Pick("后端没有配置染色引擎，无法计算目标色集合", "後端沒有設定染色引擎，無法計算目標色集合"), card.Atlas.Message);
+            Assert.Equal(UiText.Pick("未配置染色引擎，无法计算色集", "未設定染色引擎，無法計算色集"), card.Atlas.Message);
             Assert.Empty(card.Atlas.CountText);
             card.OpenAtlasCommand.Execute(null);
             Assert.False(model.IsAtlasOpen);
@@ -746,8 +746,8 @@ public sealed class DyeingTests
         Assert.Equal("模拟宿主没有真实的游戏窗口", simulated.Message);
         Assert.Equal("系统没有把游戏窗口切到前台", LiveBackend.Activation(new("epoch", false, "s", new(1), true, true, false, observed)).Message);
         var busy = LiveBackend.Rejected("resource.busy", "color.search");
-        Assert.Equal(("resource.busy", "游戏输入正被占用（color.search）"), (busy.ErrorCode, busy.Message));
-        Assert.Equal("游戏窗口绑定已变化，请重新选择游戏窗口", LiveBackend.Rejected("input.bindingChanged", null).Message);
+        Assert.Equal(("resource.busy", "游戏输入被染色寻色占用"), (busy.ErrorCode, busy.Message));
+        Assert.Equal("窗口绑定已变化，请重新选择", LiveBackend.Rejected("input.bindingChanged", null).Message);
         Assert.False(GameWindowActivation.Unbound.Missed);
     }
 
@@ -780,11 +780,13 @@ public sealed class DyeingTests
         foreach (var stage in new[] { "waiting", "discovery", "native_validate", "binding", "capture", "search", "observe",
                      "position", "restore", "verify", "refinement" })
             Assert.NotEqual(stage, ColorStages.Name(stage));
-        Assert.Equal("未知阶段（new_stage）", ColorRunText.Describe(Run("new_stage") with { Progress = Stage("new_stage") }).Title);
+        Assert.Equal("未知阶段", ColorRunText.Describe(Run("new_stage") with { Progress = Stage("new_stage") }).Title);
 
+        // 引擎说明在说明行显示短句，全文进悬停提示。
         var waiting = ColorRunText.Describe(Run("waiting") with { Progress = Stage("waiting") with { Message = "寻色已就绪，请进入染色界面；工具正在等待活动色板。F9 可停止。" } });
         Assert.Equal(("等待染色界面", ColorTone.Live), (waiting.Title, waiting.Tone));
-        Assert.Contains("请进入染色界面", waiting.Detail);
+        Assert.Equal("请进入染色界面", waiting.Detail);
+        Assert.Contains("工具正在等待活动色板", waiting.Tip);
         Assert.Contains("请在游戏内进入染色", ColorRunText.Describe(Run("waiting") with { Progress = Stage("waiting") }).Detail);
 
         // 截图寻色出一局结果后等待重试：运行仍在进行，说明不能重试的原因与当前实测。
@@ -797,31 +799,34 @@ public sealed class DyeingTests
         };
         Assert.True(ColorRunText.IsActive(retry));
         var waitingRetry = ColorRunText.Describe(retry);
-        Assert.Equal("本轮寻色已完成", waitingRetry.Title);
+        Assert.Equal("剩余时间不够重试", waitingRetry.Title);
         Assert.Contains("区域 2  #313131 · ΔE 1.50", waitingRetry.Detail);
-        Assert.Contains("剩余时间不足以完成重试", waitingRetry.Detail);
+        Assert.Contains("已保留当前颜色", waitingRetry.Detail);
 
         var denied = ColorRunText.Describe(Run("failed") with
         {
             StopReason = "unavailable",
             Result = new ColorRunResult("run", 0, "stopped", "unavailable", null, null, null) { StopDetail = "process_access", FailedStage = "game_build" }
         });
-        Assert.Equal(("无法读取游戏进程（权限被拒绝）", ColorTone.Warn), (denied.Title, denied.Tone));
-        Assert.Contains("以管理员身份运行", denied.Detail);
-        Assert.EndsWith("停在：核对游戏版本", denied.Detail);
+        Assert.Equal(("无法读取游戏进程", ColorTone.Warn), (denied.Title, denied.Tone));
+        Assert.Equal("以相同权限运行 Moongate", denied.Detail);
+        Assert.Contains("以管理员身份运行", denied.Tip);
+        Assert.EndsWith("停在：核对游戏版本", denied.Tip);
 
         var palette = ColorRunText.Describe(Run("failed") with
         {
             StopReason = "no_active_palette_timeout", Result = new ColorRunResult("run", 0, "stopped", "no_active_palette_timeout", null, null, null)
         });
         Assert.Equal("等待染色界面超时", palette.Title);
-        Assert.Equal("游戏失去焦点，已停止寻色", ColorRunText.Describe(Run("interrupted") with { StopReason = "input.focusChanged" }).Title);
+        Assert.Equal("游戏失去焦点，已停止", ColorRunText.Describe(Run("interrupted") with { StopReason = "input.focusChanged" }).Title);
         Assert.Equal("界面失联，寻色已停止", ColorRunText.Describe(Run("cancelled") with { StopReason = "frontend-lost" }).Title);
         Assert.Equal("已停止寻色", ColorRunText.Describe(Run("cancelled") with { StopReason = "user" }).Title);
         var port = ColorRunText.Describe(Run("failed") with { StopReason = "worker.portFailed" });
         Assert.Equal("与染色引擎的连接中断", port.Title);
-        Assert.Contains("引擎请求游戏窗口或输入失败", port.Detail);
-        Assert.Contains("未知原因（worker.newCode）", ColorRunText.Describe(Run("failed") with { StopReason = "worker.newCode" }).Detail);
+        Assert.Contains("组件请求游戏失败", port.Tip);
+        var unknown = ColorRunText.Describe(Run("failed") with { StopReason = "worker.newCode" });
+        Assert.Contains("未知原因", unknown.Tip);
+        Assert.DoesNotContain("worker.newCode", unknown.Title + unknown.Detail + unknown.Tip);
     }
 
     /// <summary>

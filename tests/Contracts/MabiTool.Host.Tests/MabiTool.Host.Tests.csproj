@@ -14,6 +14,8 @@
     <ProjectReference Include="../../EndToEnd/PersistenceProbe/MabiTool.PersistenceProbe.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../EndToEnd/ObservationProbe/MabiTool.ObservationProbe.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../EndToEnd/InventoryObservationProbe/MabiTool.InventoryObservationProbe.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../EndToEnd/ExtensionFixture/MabiTool.ExtensionFixture.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../../frontends/examples/extensions/kill-timer/Moongate.Examples.KillTimer.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <Import Project="../../../scripts/build/contract-generation.targets" />
 </Project>

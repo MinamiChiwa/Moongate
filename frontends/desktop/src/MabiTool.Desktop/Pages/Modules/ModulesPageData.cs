@@ -73,6 +73,11 @@ public sealed partial class ModulesPageModel : BackendPageModel<ModulesPageData>
         UninstallExtensionCommand = new RelayCommand(id => _ = UninstallAsync(id as string));
         UseAssetPackCommand = new RelayCommand(id => UseAssetPack(id as string));
         OpenExtensionsFolderCommand = new RelayCommand(_ => _ = OpenExtensionsFolderAsync());
+        ToggleGrantCommand = new RelayCommand(row => _ = ToggleGrantAsync(row as PermissionRow));
+        RestartExtensionCommand = new RelayCommand(id => _ = RestartAsync(id as string));
+        ShowLogsCommand = new RelayCommand(id => _ = ShowLogsAsync(id as string));
+        ToggleDevelopmentCommand = new RelayCommand(_ => _ = ToggleDevelopmentAsync());
+        LoadDevelopmentCommand = new RelayCommand(_ => _ = LoadDevelopmentAsync());
         OnDataChanged();
     }
 
@@ -197,7 +202,7 @@ public sealed partial class ModulesPageModel : BackendPageModel<ModulesPageData>
 
     private static string StateText(ModuleState? state) => state switch
     {
-        null => UiText.Pick("后端没有报告这个模块", "後端沒有回報這個模組"),
+        null => UiText.Pick("状态未知", "狀態未知"),
         { Problems.Length: > 0 } => $"{state.State}：{state.Problems}",
         _ => UiText.Pick($"{state.State}，版本 {state.Version}", $"{state.State}，版本 {state.Version}")
     };

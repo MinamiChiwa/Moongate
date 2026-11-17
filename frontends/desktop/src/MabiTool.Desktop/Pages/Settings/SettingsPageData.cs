@@ -46,6 +46,10 @@ public sealed partial class SettingsPageModel : BackendPageModel<SettingsPageDat
     /// <summary>设置页没有自己的计时器：切走后保留，回来时直接显示并重读一次。</summary>
     protected override bool Cacheable => true;
 
+    /// <summary>设置页“扩展”区的数据来源；表单由 <see cref="Controls.ExtensionSettingsView"/> 按后端的扩展界面目录生成。</summary>
+    public IDesktopBackend ExtensionBackend => Backend;
+    public string ExtensionSettingsTitle => UiText.Pick("扩展", "擴充");
+
     public SettingsPageModel(IDesktopBackend backend) : base(backend, source => source.GetSettings())
     {
         UseSimplifiedCommand = new RelayCommand(_ => Use(UiLanguage.SimplifiedChinese));

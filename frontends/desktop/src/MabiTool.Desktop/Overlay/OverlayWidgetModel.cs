@@ -108,6 +108,29 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     public bool IsSelfEffects => Live && WidgetId == "combat.self-effects";
     public bool IsTargetEffects => Live && WidgetId == "combat.target-effects";
     public bool IsMeasurement => Live && WidgetId == "combat.measurement";
+    public bool IsHealing => Live && WidgetId == "combat.healing";
+
+    /// <summary>暴击、强击、连击、追击比率（当前统计范围，与 DPS 页同一份）；DPS 元件与定时测量元件在数值下方列出。</summary>
+    public IReadOnlyList<CoverageTile> Rates => Combat.Coverage;
+    /// <summary>定时测量元件只在页面范围是定时测量（计时中自动切到这次测量、完成后切到结果）时列出比率。</summary>
+    public bool HasMeasureRates => Combat.Scope?.Kind == CombatScopeKind.Measurement && Rates.Count > 0 && !MeasureWaiting;
+
+    // 治疗元件：与 DPS 页治疗卡片同一份数据（当前统计范围）；后端没有治疗块时只显示“未读取治疗数据”。
+    public bool HealingAvailable => Combat.Healing is { Available: true };
+    public string HealingHps => Combat.Healing?.Hps ?? "—";
+    public string HealingCast => Combat.Healing?.Cast ?? "—";
+    public string HealingCount => Combat.Healing?.CastCount ?? "—";
+    public string HealingEffective => Combat.Healing?.Effective ?? "—";
+    public static string HealingCastLabel => UiText.Pick("总治疗量", "總治療量");
+    public static string HealingCountLabel => UiText.Pick("治疗次数", "治療次數");
+    public static string HealingEffectiveLabel => UiText.Pick("受到治疗有效", "受到治療有效");
+    /// <summary>统计范围：整场（到期后为“上一场”）、当前分段或定时测量。</summary>
+    public string HealingScope => Combat.Scope?.Kind switch
+    {
+        CombatScopeKind.Segment => UiText.Pick("当前分段", "目前分段"),
+        CombatScopeKind.Measurement => UiText.Pick("定时测量", "定時測量"),
+        _ => Combat.Scope?.TitleTip.Length > 0 ? UiText.Pick("上一场", "上一場") : UiText.Pick("整场", "整場")
+    };
 
     // 定时测量元件：空闲显示设定与最近一次结果，等待中显示“等待首次伤害”，计时显示剩余时间、进度、累计伤害与当前 DPS。
     // 剩余时间与页面相同，按本机单调时钟从后端读取时刻递减，元件显示且测量进行中时每 200 ms 重算。

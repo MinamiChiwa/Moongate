@@ -11,6 +11,7 @@ namespace MabiTool.Desktop.Overlay;
 /// 开始时的显示器枚举、各显示器浮窗窗口的范围与缩放、光标限制区域（ClipCursor）、前台窗口是否属于本程序、持有鼠标捕获的窗口；
 /// 拖动中每次取到的光标物理坐标、换算后的画布坐标、来源（轮询或指针事件）与判定的显示器；结束原因与最终落点。
 /// 只记坐标与窗口信息，不记录屏幕内容。拖动结束时一次写入工具根的 desktop/overlay-drag.log，超过 2 MB 时从头重写。
+/// 手势异常结束（<see cref="Fault"/>）不论是否打开都记一行。
 /// </summary>
 public static class OverlayDragTrace
 {
@@ -93,6 +94,20 @@ public static class OverlayDragTrace
         current?.Append('+').Append(clock.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture)).Append("ms ").AppendLine(note);
     }
 
+    /// <summary>
+    /// 手势异常结束（数值无效、异常、松开丢失后超时）：诊断打开时写进本段记录；未打开时也单独写一行，事后能查到发生过什么。
+    /// </summary>
+    internal static void Fault(string message)
+    {
+        if (current is not null)
+        {
+            Note("fault " + message);
+            return;
+        }
+        Write(string.Create(CultureInfo.InvariantCulture,
+            $"== {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff} fault {message}{System.Environment.NewLine}{System.Environment.NewLine}"));
+    }
+
     internal static void End(string reason, WidgetPlacement? placement)
     {
         if (current is not { } text) return;
@@ -103,12 +118,17 @@ public static class OverlayDragTrace
                 .Append(" width=").Append(placement.Width is { } w ? F(w) : "-").Append(" height=").Append(placement.Height is { } h ? F(h) : "-");
         if (samples >= MaxSamples) text.Append(" (samples truncated)");
         text.AppendLine().AppendLine();
+        Write(text.ToString());
+    }
+
+    private static void Write(string text)
+    {
         try
         {
             var path = PathOverride ?? FilePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             if (File.Exists(path) && new FileInfo(path).Length > MaxBytes) File.Delete(path);
-            File.AppendAllText(path, text.ToString(), Encoding.UTF8);
+            File.AppendAllText(path, text, Encoding.UTF8);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }

@@ -56,12 +56,13 @@
         <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
         <DockPanel Margin="{DynamicResource TitleReserve}">
           <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource G.Title}" />
+          <controls:HelpTip DockPanel.Dock="Left" Margin="8,0,0,0" Text="{DynamicResource G.Hint}" />
           <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" ClipToBounds="True" />
         </DockPanel>
         <DockPanel Margin="0,4,0,0">
           <Button x:Name="RefreshButton" DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Center"
                   Content="{DynamicResource G.Refresh}" Command="{Binding RefreshCommand}" />
-          <TextBlock Classes="body muted" VerticalAlignment="Center" Text="{DynamicResource G.Hint}" />
+          <Panel />
         </DockPanel>
       </StackPanel>
 
@@ -76,13 +77,12 @@
           -->
 
           <!-- 导出排查包：连接后仅拥有 diagnostics.export 时显示 -->
-          <controls:Card x:Name="ExportPanel" CardId="export" Title="{DynamicResource G.ExportTitle}" IsVisible="{Binding ShowExport}"
+          <controls:Card x:Name="ExportPanel" CardId="export" Title="{DynamicResource G.ExportTitle}" TitleTip="{DynamicResource G.ExportHint}" IsVisible="{Binding ShowExport}"
                          AllowedSizes="HalfByAuto" IsEnabled="{Binding Connected}">
             <controls:Card.Status>
               <TextBlock Classes="label" Text="{DynamicResource G.Offline}" IsVisible="{Binding !Connected}" />
             </controls:Card.Status>
             <StackPanel Spacing="10" DataContext="{Binding Export}" x:DataType="diag:DiagnosticsExportSection">
-              <TextBlock Classes="note" Text="{DynamicResource G.ExportHint}" />
               <controls:SelectionBorder Classes="segmented" HorizontalAlignment="Left">
                 <StackPanel Orientation="Horizontal">
                   <Button x:Name="ExportLatestButton" Classes="segment" Classes.active="{Binding UseLatest}"
@@ -106,13 +106,12 @@
           </controls:Card>
 
           <!-- 调试采集：连接后仅拥有 diagnostics.debug 时显示 -->
-          <controls:Card x:Name="CapturePanel" CardId="capture" Title="{DynamicResource G.CaptureTitle}" IsVisible="{Binding ShowCapture}"
+          <controls:Card x:Name="CapturePanel" CardId="capture" Title="{DynamicResource G.CaptureTitle}" TitleTip="{DynamicResource G.CaptureHint}" IsVisible="{Binding ShowCapture}"
                          IsEnabled="{Binding Connected}">
             <controls:Card.Status>
               <TextBlock Classes="label" Text="{DynamicResource G.Offline}" IsVisible="{Binding !Connected}" />
             </controls:Card.Status>
             <StackPanel Spacing="10" DataContext="{Binding Capture}" x:DataType="diag:DiagnosticsCaptureSection">
-              <TextBlock Classes="note" Text="{DynamicResource G.CaptureHint}" />
               <StackPanel x:Name="CaptureForm" Spacing="10" IsVisible="{Binding ShowForm}">
                 <TextBlock Classes="note muted" FontWeight="Bold" Text="{DynamicResource G.CaptureModules}" />
                 <ItemsControl x:Name="CaptureModuleChips" controls:StableItems.Source="{Binding ModuleChoices}" ItemTemplate="{StaticResource ChipTemplate}">
@@ -163,8 +162,7 @@
                 </StackPanel>
               </Border>
               <StackPanel x:Name="LiveBlock" Spacing="6" IsVisible="{Binding HasLive}">
-                <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource G.LiveTitle}" />
-                <TextBlock Classes="note" Text="{DynamicResource G.LiveHint}" />
+                <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="h2" FontSize="17" Text="{DynamicResource G.LiveTitle}" /><controls:HelpTip Text="{DynamicResource G.LiveHint}" /></StackPanel>
                 <Border Classes="inset">
                   <ScrollViewer x:Name="LiveScroller" MaxHeight="320" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl x:Name="LiveList" ItemsSource="{Binding LiveRows}" ItemTemplate="{StaticResource RecordTemplate}" />
@@ -218,9 +216,8 @@
           </controls:Card>
 
           <!-- 最近记录：从新到旧，“更多”继续往旧的读 -->
-          <controls:Card x:Name="RecordsPanel" CardId="records" Title="{DynamicResource G.RecordsTitle}">
+          <controls:Card x:Name="RecordsPanel" CardId="records" Title="{DynamicResource G.RecordsTitle}" TitleTip="{DynamicResource G.RecordsHint}">
             <StackPanel Spacing="8" DataContext="{Binding Records}" x:DataType="diag:DiagnosticsRecordsSection">
-              <TextBlock Classes="note" Text="{DynamicResource G.RecordsHint}" />
               <TextBlock Classes="note muted" FontWeight="Bold" Text="{DynamicResource G.FilterModule}" />
               <ItemsControl x:Name="RecordModuleChips" controls:StableItems.Source="{Binding ModuleChoices}" ItemTemplate="{StaticResource ChipTemplate}">
                 <ItemsControl.ItemsPanel>

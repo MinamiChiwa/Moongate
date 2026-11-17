@@ -37,10 +37,44 @@ public sealed partial class SampleBackend
     /// <summary>测试用：范围内另有这么多个目标（“小怪 1”…，伤害依次递减），用来检查目标标签折叠成一行。</summary>
     internal int ExtraRangeTargets { get; set; }
 
-    /// <summary>样本的 DPS 曲线：整场范围与真实后端一样停用并写明原因，其余范围给出 60 个点的示例。</summary>
-    public CombatTimelineView? GetCombatTimeline() => combatScope == CombatScopeKind.Whole
-        ? CombatMapper.TimelineView(null, "observation-scope")
-        : new(Enumerable.Range(0, 60).Select(i => 18000 + 6000 * Math.Sin(i / 6.0) + (i % 7) * 900.0).ToList(), 2.5, 150, null);
+    // 明细窗口自己的范围与目标；窗口打开时取主页面当时的选择。
+    private CombatScopeKind detailScope = CombatScopeKind.Whole;
+    private string? detailTarget;
+
+    public event EventHandler? CombatDetailChanged;
+
+    public void SetCombatDetailOpen(bool open)
+    {
+        if (open) (detailScope, detailTarget) = (combatScope, rangeTarget);
+    }
+
+    /// <summary>明细窗口的数据：按窗口自己的选择生成，主页面的选择不变。</summary>
+    public CombatPageData GetCombatDetail()
+    {
+        var shown = (combatScope, rangeTarget);
+        (combatScope, rangeTarget) = (detailScope, detailTarget);
+        try { return GetCombat(); }
+        finally { (combatScope, rangeTarget) = shown; }
+    }
+
+    private void ApplyDetailIntent(string intent, string? argument)
+    {
+        switch (intent)
+        {
+            case "combat.detail.scope":
+                var next = CombatMapper.ScopeKind(argument ?? "observation");
+                if (next != detailScope) detailTarget = null;
+                detailScope = next;
+                break;
+            case "combat.detail.scope.live": detailScope = CombatScopeKind.Whole; detailTarget = null; break;
+            case "combat.detail.target": detailTarget = string.IsNullOrEmpty(argument) ? null : argument; break;
+        }
+    }
+
+    /// <summary>样本的 DPS 曲线（明细窗口的范围）：整场按本机时钟、其余按相对时间，各 60 个点。</summary>
+    public CombatTimelineView? GetCombatTimeline() =>
+        new(Enumerable.Range(0, 60).Select(i => 18000 + 6000 * Math.Sin(i / 6.0) + (i % 7) * 900.0).ToList(), 2.5, 150, null,
+            Origin: detailScope == CombatScopeKind.Whole ? new DateTimeOffset(2026, 11, 14, 13, 30, 0, TimeSpan.Zero) : null);
 
     private void ApplyCombatIntent(string intent, string? argument)
     {

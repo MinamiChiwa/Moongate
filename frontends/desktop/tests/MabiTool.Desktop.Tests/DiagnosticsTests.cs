@@ -62,12 +62,12 @@ public sealed class DiagnosticsTests
             unknown.Rows.Select(row => $"{row.Label}={row.Value}"));
 
         // 映射不到文案的原因码带短句或原样显示；被截断与丢弃的条目写在探针上，被省略的探针写在顶部。
-        Assert.Equal("未设置开始或停止按键，请在本机动作里设置（input.actionMappingUnavailable）", blocks["rooms"].ReasonLine);
+        Assert.Equal("未设置按键（input.actionMappingUnavailable）", blocks["rooms"].ReasonLine);
         Assert.Equal("2 项因数量上限被截断，1 项不符合白名单被丢弃", blocks["rooms"].Notice);
         Assert.Equal("1 个探针因数量上限被省略，2 个探针因标识无效或重复被省略", model.Runtime.Notice);
         Assert.Contains("epoch-7f3a", model.Runtime.Header);
         Assert.Equal("该探针读取出错", DiagnosticsText.Reason("system.unexpectedError").Split('（')[0]);
-        Assert.Equal("后端返回了未登记的原因（some.unmapped.code）", DiagnosticsText.Reason("some.unmapped.code"));
+        Assert.Equal("未知原因（some.unmapped.code）", DiagnosticsText.Reason("some.unmapped.code"));
     }
 
     [AvaloniaFact]

@@ -6,7 +6,8 @@ namespace MabiTool.Contracts;
 public enum InventoryContainer { Backpack, CharacterStorage, AccountStorage }
 public enum InventoryFrameKind { Full, Delta, Invalidated }
 public enum InventoryDeltaKind { Upsert, Remove }
-public enum InventoryNameState { Unknown, Candidate, ClientCatalog, VerifiedSource, UserConfirmed, UserCleared }
+/// <summary>名称来源。<see cref="ItemInstance"/> 为道具实例自带的名称（乐谱的标题），其余按类别与类型编号关联。</summary>
+public enum InventoryNameState { Unknown, Candidate, ClientCatalog, VerifiedSource, UserConfirmed, UserCleared, ItemInstance }
 
 public sealed record InventoryTypeKey(string Category, UInt64String TypeId, string? Sheet = null);
 /// <param name="MasterCharacterId">登录数据 <c>AccountProfile.MasterCharacterId</c>（账户主角色 ID）；没有读出时为空。读模型据此确定账户：同一主角色的角色归入同一账户，并与游戏账户编号关联。</param>
@@ -60,9 +61,16 @@ public sealed record InventoryResourcesView(string? AccountId, string? Character
     UInt64String Revision, IReadOnlyList<InventoryResourceView> Items, IReadOnlyList<InventoryCharacterSlot>? Characters = null);
 public sealed record InventoryNameAssociation(InventoryTypeKey Type, string? RawName, string? DisplayName,
     OpenEnum<InventoryNameState> State, string? Source, string? Evidence = null, bool? IsInstrument = null);
+/// <param name="Score">乐谱（<c>MusicNoteItem</c>）实例自带的元数据，取自属性 <c>data</c>；其他类别为空。</param>
 public sealed record InventoryItemView(InventoryItem Item, InventoryNameAssociation Name, bool Current,
     DateTimeOffset LastObservedAt, OpenEnum<ObservationQuality> Quality, ObservationSource? Source = null,
-    string? CharacterId = null);
+    string? CharacterId = null, InventoryScoreInfo? Score = null);
+/// <summary>
+/// 一张乐谱的实例元数据（客户端 <c>MusicNoteItem</c> 记录）：表编号（自制谱为 0）、标题、作曲与编曲及其服务器 RealmId、
+/// 可复制、收藏、上锁、已标记废弃。读不出或格式不符的项为空。
+/// </summary>
+public sealed record InventoryScoreInfo(UInt64String? SheetId, string? Title, string? Composer, int? ComposerRealmId,
+    string? Arranger, int? ArrangerRealmId, bool? CopyingAllowed, bool? Favorite, bool? Locked, bool? Junked);
 public sealed record InventoryWorkspace(string Id, string GameSessionId, InventoryIdentity? Identity,
     UInt64String Generation, UInt64String Revision, UInt64String? BindingRevision,
     OpenEnum<ObservationQuality> Quality, bool Current, DateTimeOffset? LastObservedAt,

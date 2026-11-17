@@ -21,6 +21,9 @@ public sealed class ShortcutService(ColorRunOperations color, IGlobalShortcutSou
     private readonly CancellationTokenSource notificationStop = new();
     private Task dispatch = Task.CompletedTask;
     private int running;
+
+    /// <summary>扩展命令被按下时调用（参数为动作标识）；处理方须不阻塞热键线程。</summary>
+    public Action<string>? ExtensionAction { get; set; }
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         if (source is null) { if (settings is not null) await settings.RestoreAsync(cancellationToken); return; }
@@ -37,6 +40,12 @@ public sealed class ShortcutService(ColorRunOperations color, IGlobalShortcutSou
     private void OnAction(string action)
     {
         if (Volatile.Read(ref running) == 0) return;
+        if (ShortcutSettingsStore.IsExtensionAction(action))
+        {
+            // 扩展命令只在热键线程登记一次投递，由扩展运行时核对运行状态与 ui.shortcut 授权后通知扩展。
+            ExtensionAction?.Invoke(action);
+            return;
+        }
         if (action != "emergency-stop")
         {
             if (!ShortcutSettingsStore.IsFrontendAction(action)) return;
@@ -47,7 +56,7 @@ public sealed class ShortcutService(ColorRunOperations color, IGlobalShortcutSou
         {
             if (gameControl is not null) { gameControl.StopLocal(); return; }
             try { rooms?.EmergencyStop(); }
-            finally { try { controls?.Input.EmergencyStop(); } finally { color.EmergencyStop(); } }
+            finally { try { controls?.Input.EmergencyStop(); } finally { try { controls?.Background.EmergencyStop(); } finally { color.EmergencyStop(); } } }
         }
         // 后端已完成停止；再通知在线前端，由它取消进行中的定时测量并在界面说明。
         finally { Notify(action); }

@@ -25,7 +25,7 @@ public sealed partial class InventoryHistoryStore
                     .SelectMany(c => c.Items.Select(i => HistoricalView(i, c.LastObservedAt, a, c.Identity.CharacterId, snapshot, currentKeys, c.Source)))
                     .Concat(a.SharedItems.Select(i => HistoricalView(i, a.SharedObservedAt ?? DateTimeOffset.MinValue, a, null, snapshot, currentKeys, a.SharedSource))));
         var filtered = items.Where(i => (query.Container is null || query.Container.Value == i.Item.Container) &&
-            (query.Category is null || query.Category == i.Item.Category) && Search(i.Name.DisplayName ?? i.Item.TypeId.ToString(), query.Search))
+            (query.Category is null || query.Category == i.Item.Category) && (Search(i.Name.DisplayName ?? i.Item.TypeId.ToString(), query.Search) || InventoryScores.Matches(i.Score, query.Search!)))
             .OrderBy(i => i.Item.Category, StringComparer.Ordinal).ThenBy(i => i.Item.Container.RawValue, StringComparer.Ordinal).ThenBy(i => i.Item.Key, StringComparer.Ordinal).ToArray();
         var cursor = query with { Cursor = null }; var offset = Offset(query.Cursor, snapshot.Revision, cursor);
         var page = filtered.Skip(offset).Take(query.PageSize).ToArray();
@@ -87,8 +87,9 @@ public sealed partial class InventoryHistoryStore
     {
         var current = snapshot.Workspace is { Current: true } workspace && workspace.Identity?.AccountId == account.AccountId &&
             (character is null || workspace.Identity.CharacterId == character) && currentKeys.Contains(ItemKey(item));
-        return new(item, Name(item.Type, account), current, observedAt, current ? ObservationQuality.Confirmed : ObservationQuality.Stale, source,
-            ViewCharacter(item, character));
+        var score = InventoryScores.Info(item);
+        return new(item, Name(item, score, account), current, observedAt, current ? ObservationQuality.Confirmed : ObservationQuality.Stale, source,
+            ViewCharacter(item, character), score);
     }
     /// <summary>公共保管箱条目不属于任何角色，CharacterId 为空。</summary>
     private static string? ViewCharacter(InventoryItem item, string? character) => item.Container.KnownValue == InventoryContainer.AccountStorage ? null : character;

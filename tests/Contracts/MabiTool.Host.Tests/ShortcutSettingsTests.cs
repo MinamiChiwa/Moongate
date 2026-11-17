@@ -55,6 +55,36 @@ public sealed class ShortcutSettingsTests
     }
 
     [Fact]
+    public async Task ExtensionCommandsRegisterOnlyWhileAvailableAndKeepTheirBindings()
+    {
+        await using var area = new Area(); await using var source = new Source();
+        const string action = "extension.example.timer.reset";
+        string? reason = null;
+        var service = new ShortcutSettingsService(area.Store, source)
+        {
+            ExtensionActions = () => [new(action, "extension.example.timer", new Dictionary<string, string> { ["zh-Hans"] = "计时：清空" }, "extension:example.timer", reason)]
+        };
+        Assert.Equal("request.invalid", (await Assert.ThrowsAsync<OperationException>(() => service.UpdateAsync("owner",
+            new([new(action, new("F8", false, false, false, false))]), "extension-reserved", ShortcutSettingsStore.ETag(new(0))))).Code);
+
+        var saved = await service.UpdateAsync("owner", new([new(action, new("R", true, false, false, false))]), "extension-bind", ShortcutSettingsStore.ETag(new(0)));
+        Assert.Equal("registered", saved.Registrations.Single(x => x.ActionId == action).Status);
+        Assert.Contains(saved.Actions, x => x.ActionId == action && x.Source == "extension:example.timer");
+
+        // 扩展停用：绑定保留，注册撤下并写明原因；重新可用后按原绑定恢复。
+        reason = "extension.disabled";
+        await service.RefreshAsync();
+        var disabled = await service.GetAsync();
+        Assert.Contains(disabled.Bindings, x => x.ActionId == action);
+        Assert.Equal(("unavailable", "extension.disabled"), (disabled.Registrations.Single(x => x.ActionId == action).Status,
+            disabled.Registrations.Single(x => x.ActionId == action).FailureCode));
+        Assert.DoesNotContain(source.GetRegistrations(), x => x.ActionId == action);
+        reason = null;
+        await service.RefreshAsync();
+        Assert.Equal("registered", (await service.GetAsync()).Registrations.Single(x => x.ActionId == action).Status);
+    }
+
+    [Fact]
     public async Task OccupiedCustomCombinationReturnsActualFallback()
     {
         await using var area = new Area(); await using var source = new Source();

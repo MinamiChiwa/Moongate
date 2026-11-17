@@ -66,11 +66,10 @@
         其下读取范围与道具名称目录各一列、随内容。顺序与尺寸档在“编辑布局”里调整。一张卡片同一方向只有一个滚动区。
       -->
       <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
-        <controls:Card x:Name="ItemsPanel" CardId="items" Title="{DynamicResource I.Items}" Size="TwoByFour"
+        <controls:Card x:Name="ItemsPanel" CardId="items" Title="{DynamicResource I.Items}" TitleTip="{DynamicResource I.TableHint}" Size="TwoByFour"
                        AllowedSizes="TwoByThree,TwoByAuto,FullWidth" ScrollsBody="False">
           <!-- 说明行停靠在底部，表格占满其余高度、在表内滚动；随内容档时表体最高 470。 -->
           <DockPanel>
-            <TextBlock DockPanel.Dock="Bottom" Classes="note" Margin="0,10,0,0" Text="{DynamicResource I.TableHint}" />
             <tables:DataTable x:Name="ItemsTable" TableId="inventory.items" ColumnsSource="{Binding Columns}" ItemsSource="{Binding Rows}"
                               EmptyText="{DynamicResource I.NoItems}" CanExport="True" ExportFileName="{Binding ExportFileName}"
                               BodyMaxHeight="470">
@@ -124,10 +123,9 @@
           </controls:Card>
           <!-- 资源：账户级（客户端 AccountWallet 的成员）跟随账号下拉；角色级按所选账户下的角色分开（金币、银币、贡品在概况）。每项一行，明细在悬停提示；
                两组列表随内容展开，固定高度档由卡片外壳统一滚动（组内不再各自限高滚动）；未读取折叠。 -->
-          <controls:Card x:Name="ResourcesPanel" CardId="resources" Title="{DynamicResource I.Resources}" Size="OneByTwoAndHalf"
+          <controls:Card x:Name="ResourcesPanel" CardId="resources" Title="{DynamicResource I.Resources}" TitleTip="{DynamicResource I.ResourcesHint}" Size="OneByTwoAndHalf"
                          AllowedSizes="OneByThree,OneByFour,OneByAuto,HalfByAuto">
             <StackPanel Spacing="6">
-              <TextBlock Classes="note" Text="{DynamicResource I.ResourcesHint}" TextWrapping="Wrap" />
               <TextBlock Classes="label" Margin="0,4,0,0" Text="{DynamicResource I.AccountResources}" />
               <ItemsControl x:Name="AccountResourceList" controls:StableItems.Source="{Binding AccountResources}">
                 <ItemsControl.ItemTemplate>
@@ -192,10 +190,9 @@
               </controls:ExpandPanel>
             </StackPanel>
           </controls:Card>
-          <controls:Card x:Name="CoveragePanel" CardId="coverage" Title="{DynamicResource I.Coverage}" Size="OneByAuto"
+          <controls:Card x:Name="CoveragePanel" CardId="coverage" Title="{DynamicResource I.Coverage}" TitleTip="{DynamicResource I.CoverageHint}" Size="OneByAuto"
                          AllowedSizes="HalfByAuto,OneByOneAndHalf">
             <StackPanel Spacing="8">
-              <TextBlock Classes="note" Text="{DynamicResource I.CoverageHint}" />
               <ItemsControl controls:StableItems.Source="{Binding Data.Coverage}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate DataType="inventory:CoverageRow">

@@ -51,15 +51,19 @@ public static class InventoryAccountText
 public sealed record InventoryCharacter(string Id, string Name);
 
 /// <summary>
-/// 按道具类型汇总的一行。<see cref="RawName"/> 是客户端道具名称原文，没有名称时 <see cref="Name"/> 以类型编号显示；
-/// <see cref="NameState"/> 是后端名称关联的来源（为空表示名称目录尚未收录）。
+/// 按道具类型汇总的一行；带实例元数据的乐谱每张一行（<see cref="Score"/> 不为空）。<see cref="RawName"/> 是客户端道具名称原文或乐谱标题，
+/// 没有名称时 <see cref="Name"/> 以类型编号显示；<see cref="NameState"/> 是后端名称关联来源的枚举名（为空表示没有名称）。
 /// <see cref="Backpack"/> 与 <see cref="Storage"/> 按 <see cref="InventoryPageData.Characters"/> 的顺序排列。
 /// </summary>
 public sealed record InventoryPivotRow(string TypeKey, string? RawName, string TypeId, string? NameState, string Category, InventoryCount Total,
-    InventoryCount Shared, IReadOnlyList<InventoryCount> Backpack, IReadOnlyList<InventoryCount> Storage)
+    InventoryCount Shared, IReadOnlyList<InventoryCount> Backpack, IReadOnlyList<InventoryCount> Storage, InventoryScoreInfo? Score = null)
 {
-    /// <summary>玩家自制乐谱表编号为 0、没有表名，按实例合并为一行显示“自制乐谱”。</summary>
-    public string Name => RawName ?? (Composed ? UiText.Pick("自制乐谱", "自製樂譜")
+    /// <summary>
+    /// 乐谱行的名称是谱名；标题为空时写明“标题未知”，自制谱与系统谱分别标出。没有实例元数据的自制谱（表编号 0、没有表名）按类型合并为一行“自制乐谱”。
+    /// </summary>
+    public string Name => RawName ?? (Score is not null
+        ? Composed ? UiText.Pick("自制乐谱 · 标题未知", "自製樂譜 · 標題未知") : UiText.Pick($"乐谱 #{TypeId} · 标题未知", $"樂譜 #{TypeId} · 標題未知")
+        : Composed ? UiText.Pick("自制乐谱", "自製樂譜")
         : UiText.Pick($"类型 #{TypeId} · 名称未收录", $"類型 #{TypeId} · 名稱未收錄"));
 
     /// <summary>玩家自制乐谱（表编号 0，没有表名）。</summary>
@@ -70,6 +74,7 @@ public sealed record InventoryPivotRow(string TypeKey, string? RawName, string T
 
     public string NameSource => NameState switch
     {
+        null when Score is not null => UiText.Pick("该乐谱实例没有标题", "該樂譜實例沒有標題"),
         null when Composed => UiText.Pick("玩家自制乐谱没有固定名称表，按实例合并为一行", "玩家自製樂譜沒有固定名稱表，按實例合併為一行"),
         null => UiText.Pick("名称目录未收录该类型，以类型编号显示", "名稱目錄未收錄該類型，以類型編號顯示"),
         "Unknown" => UiText.Pick("未知", "未知"),
@@ -78,8 +83,23 @@ public sealed record InventoryPivotRow(string TypeKey, string? RawName, string T
         "VerifiedSource" => UiText.Pick("可信来源", "可信來源"),
         "UserConfirmed" => UiText.Pick("用户已确认", "使用者已確認"),
         "UserCleared" => UiText.Pick("用户已清除", "使用者已清除"),
+        "ItemInstance" => UiText.Pick("乐谱实例标题", "樂譜實例標題"),
         var other => other
     };
+
+    /// <summary>名称的悬停提示：名称来源；乐谱行再列出作曲、编曲、可复制、收藏与上锁，读不出的写“未知”。</summary>
+    public string Tip => Score is not { } score ? NameSource : string.Join('\n', NameSource,
+        UiText.Pick("作曲：", "作曲：") + Text(score.Composer), UiText.Pick("编曲：", "編曲：") + Text(score.Arranger),
+        UiText.Pick("可复制：", "可複製：") + Flag(score.CopyingAllowed), UiText.Pick("收藏：", "收藏：") + Flag(score.Favorite),
+        UiText.Pick("上锁：", "上鎖：") + Flag(score.Locked));
+
+    /// <summary>搜索命中谱名之外的作曲与编曲。</summary>
+    public bool Matches(string search) => Score is { } score &&
+        (score.Composer?.Contains(search, StringComparison.CurrentCultureIgnoreCase) == true ||
+         score.Arranger?.Contains(search, StringComparison.CurrentCultureIgnoreCase) == true);
+
+    private static string Text(string? value) => string.IsNullOrWhiteSpace(value) ? UiText.Pick("未知", "未知") : value;
+    private static string Flag(bool? value) => value switch { true => UiText.Pick("是", "是"), false => UiText.Pick("否", "否"), null => UiText.Pick("未知", "未知") };
 }
 
 public sealed record CoverageRow(string Label, string State, bool Complete);
@@ -247,11 +267,11 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
         new(InventoryPreference.SharedGroup, UiText.Pick("公共保管箱", "公共保管箱"), !InventoryPreference.HiddenGroups.Contains(InventoryPreference.SharedGroup), ToggleGroupCommand)
     ];
 
-    /// <summary>搜索词在名称、类别与备注里查找（不区分大小写）；只在已读取的行里筛，不改变后端数据。</summary>
+    /// <summary>搜索词在名称、类别、备注与乐谱的作曲、编曲里查找（不区分大小写）；只在已读取的行里筛，不改变后端数据。</summary>
     public IReadOnlyList<InventoryPivotRow> Rows => Data.Rows
         .Where(row => search.Length == 0 || row.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase)
                       || row.CategoryText.Contains(search, StringComparison.CurrentCultureIgnoreCase)
-                      || Note(row).Contains(search, StringComparison.CurrentCultureIgnoreCase))
+                      || Note(row).Contains(search, StringComparison.CurrentCultureIgnoreCase) || row.Matches(search))
         .ToList();
 
     /// <summary>透视表的列：名称、名称来源（默认隐藏）、类别、合计、公共保管箱、每个角色的角色保管箱与背包、备注。</summary>
@@ -288,7 +308,7 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
         var list = new List<TableColumn>
         {
             new() { Id = "name", HeaderKey = "I.ColName", Path = nameof(InventoryPivotRow.Name), Width = 240, MinWidth = 120, Fill = true, CanHide = false,
-                ToolTip = row => R(row).NameSource, CellClasses = "strong" },
+                ToolTip = row => R(row).Tip, CellClasses = "strong" },
             new() { Id = "source", HeaderKey = "I.ColNameSource", Value = row => R(row).NameSource, Width = 160, HiddenByDefault = true },
             new() { Id = "category", HeaderKey = "I.ColCategory", Value = row => R(row).CategoryText, Width = 110 },
             new() { Id = "total", HeaderKey = "I.ColTotal", Kind = ColumnKind.Number, Width = 96,

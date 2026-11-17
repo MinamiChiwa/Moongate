@@ -489,7 +489,13 @@ public sealed partial class InventoryHistoryStore : IInventoryReadModel
     private InventoryWorkspace ProjectWorkspace(InventoryWorkspace workspace, InventorySavedState saved)
     {
         var account = workspace.Identity is { } who ? saved.Accounts.GetValueOrDefault(who.AccountId) : null;
-        return workspace with { Items = workspace.Items.Select(i => i with { Name = Name(i.Item.Type, account) }).ToArray() };
+        return workspace with { Items = workspace.Items.Select(i => { var score = InventoryScores.Info(i.Item); return i with { Name = Name(i.Item, score, account), Score = score }; }).ToArray() };
+    }
+    /// <summary>条目的名称：乐谱有实例标题时为该标题（<see cref="InventoryScores.Name"/>），否则按类型关联。</summary>
+    private InventoryNameAssociation Name(InventoryItem item, InventoryScoreInfo? score, InventorySavedAccount? account)
+    {
+        var byType = Name(item.Type, account);
+        return InventoryScores.Name(item, score, byType.IsInstrument) ?? byType;
     }
     private InventoryNameAssociation Name(InventoryTypeKey type, InventorySavedAccount? account)
     {

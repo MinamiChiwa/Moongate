@@ -43,8 +43,8 @@ public sealed partial class LiveBackend
         var blocker = active ? null : StartBlocker(page.Capabilities?.FirstOrDefault(item => item.Id == CapabilityIds.ColorSearch),
             current.Binding?.Binding);
         var status = run is null
-            ? new ColorRunStatus(bound ? Pick("就绪", "就緒") : Pick("就绪 · 请先选择游戏窗口和目标颜色", "就緒 · 請先選擇遊戲視窗和目標顏色"),
-                bound ? Pick("在游戏内打开染色界面后点「开始」；F9 可随时停止。", "在遊戲內打開染色介面後點「開始」；F9 可隨時停止。") : string.Empty,
+            ? new ColorRunStatus(bound ? Pick("就绪", "就緒") : Pick("请先选择游戏窗口", "請先選擇遊戲視窗"),
+                bound ? Pick("打开游戏染色界面后点「开始」", "打開遊戲染色介面後點「開始」") : string.Empty,
                 ColorTone.Idle)
             : ColorRunText.Describe(run);
         var connected = current.Connected;
@@ -59,7 +59,7 @@ public sealed partial class LiveBackend
             new(connected && !active, connected && !active && blocker is null, active, active && run!.Interaction is { RetryEnabled: true },
                 connected && !active),
             Progress: active && run!.Progress is { } progress ? Progress(run.Id, progress, seen) : null,
-            StartBlocker: blocker ?? string.Empty, Detail: status.Detail) { OverlayGuide = status.Guide };
+            StartBlocker: blocker ?? string.Empty, Detail: status.Detail) { OverlayGuide = status.Guide, DetailTip = status.Tip };
     }
 
     /// <summary>
@@ -133,16 +133,14 @@ public sealed partial class LiveBackend
         if (capability?.Status.KnownValue == CapabilityStatus.Unavailable)
             return capability.ReasonCode switch
             {
-                "provider.unconfigured" => Pick("染色组件缺失：程序文件夹里没有 components\\color-engine，请重新解压完整的 Moongate 压缩包",
-                    "染色元件缺失：程式資料夾裡沒有 components\\color-engine，請重新解壓完整的 Moongate 壓縮檔"),
-                "component.missing" => Pick("染色组件不完整：缺少 Python 解释器或染色 Worker，请重新解压完整的 Moongate 压缩包",
-                    "染色元件不完整：缺少 Python 直譯器或染色 Worker，請重新解壓完整的 Moongate 壓縮檔"),
-                "storage.unavailable" => Pick("后端数据目录不可用，不能寻色", "後端資料目錄不可用，不能尋色"),
+                "provider.unconfigured" => Pick("染色组件缺失，请重新解压完整压缩包", "染色元件缺失，請重新解壓完整壓縮檔"),
+                "component.missing" => Pick("染色组件不完整，请重新解压完整压缩包", "染色元件不完整，請重新解壓完整壓縮檔"),
+                "storage.unavailable" => Pick("数据目录不可用，不能寻色", "資料目錄不可用，不能尋色"),
                 "platform.unsupported" => Pick("寻色需要 Windows", "尋色需要 Windows"),
-                var code => Pick("暂不能寻色：", "暫不能尋色：") + ColorStages.UnknownReason(code)
+                var code => Pick("暂不能寻色：", "暫不能尋色：") + Localization.CodeText.Reason(code)
             };
-        if (binding is null) return Pick("未绑定游戏窗口：先在左上角选择游戏窗口", "未綁定遊戲視窗：先在左上角選擇遊戲視窗");
-        if (binding.IsMinimized) return Pick("游戏窗口已最小化：先恢复游戏窗口再开始", "遊戲視窗已最小化：先還原遊戲視窗再開始");
+        if (binding is null) return Pick("未绑定游戏窗口，请在左上角选择", "未綁定遊戲視窗，請在左上角選擇");
+        if (binding.IsMinimized) return Pick("游戏窗口已最小化，请先还原", "遊戲視窗已最小化，請先還原");
         return null;
     }
 
@@ -223,7 +221,7 @@ public sealed partial class LiveBackend
                 var hash = Convert.ToHexStringLower(SHA256.HashData(bytes));
                 if (!string.Equals(hash, palette.Asset.Sha256, StringComparison.OrdinalIgnoreCase) ||
                     download.Sha256 is { Length: > 0 } header && !string.Equals(hash, header, StringComparison.OrdinalIgnoreCase))
-                    return new(null, Pick("目标色集合图校验不一致，请重试", "目標色集合圖校驗不一致，請重試"));
+                    return new(null, Pick("色集图校验不一致，请重试", "色集圖校驗不一致，請重試"));
                 using var image = new MemoryStream(bytes);
                 return new(new ColorAtlas(palette.ColorCount, palette.Tolerance, new Bitmap(image)), string.Empty);
             }
@@ -236,7 +234,7 @@ public sealed partial class LiveBackend
             }
             catch (Exception error) when (error is HttpRequestException or IOException or InvalidDataException or ArgumentException)
             {
-                return new(null, Pick($"请求未完成：{error.Message}", $"請求未完成：{error.Message}"));
+                return new(null, Localization.CodeText.Error(error));
             }
         }
     }
@@ -250,13 +248,11 @@ public sealed partial class LiveBackend
     /// <summary>出图失败的说明：排队已满与计算超时稍后重试；没有染色引擎、引擎不可用给出原因；其余显示错误码。</summary>
     internal static string PaletteProblem(string code, string? reason) => code switch
     {
-        "capability.unavailable" => Pick("后端没有配置染色引擎，无法计算目标色集合", "後端沒有設定染色引擎，無法計算目標色集合"),
+        "capability.unavailable" => Pick("未配置染色引擎，无法计算色集", "未設定染色引擎，無法計算色集"),
         "resource.busy" => Pick("色板计算排队已满，稍后重试", "色板計算排隊已滿，稍後重試"),
         "color.paletteTimeout" => Pick("色板计算超时，稍后重试", "色板計算逾時，稍後重試"),
-        "provider.unavailable" => reason is { Length: > 0 }
-            ? Pick($"染色引擎不可用：{reason}", $"染色引擎不可用：{reason}")
-            : Pick("染色引擎不可用", "染色引擎不可用"),
-        _ => Pick("请求未完成：", "請求未完成：") + ColorStages.UnknownReason(code)
+        "provider.unavailable" => Pick("染色引擎不可用", "染色引擎不可用"),
+        _ => Localization.CodeText.Reason(code)
     };
 
     public async Task<CaptureReply> CaptureScreenAsync(CancellationToken cancellationToken)

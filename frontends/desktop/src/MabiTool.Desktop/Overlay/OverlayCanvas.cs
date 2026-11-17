@@ -92,6 +92,13 @@ public sealed class OverlayCanvas : Panel
     private string? pressedZoomName;
     private string? hoveredWidgetId;
     private bool resizing;
+    // 手势开始前的摆放：手势因数值无效或异常中止时恢复。
+    private (double X, double Y, string? Screen, double? Width, double? Height) gestureStart;
+    // 手势最近一次有输入（光标移动或指针事件）的时间与轮询到的光标位置；光标不动时轮询不重算，空闲超时由此判定。
+    private DateTimeOffset lastActivity;
+    private PixelPoint? lastCursor;
+    // 正在应用一次拖动或轮询：期间引起的重排、通知再调用进来时直接返回。
+    private bool applying, polling;
     private IReadOnlyList<OverlayMonitor> monitors = [];
     private readonly Border banner;
 
@@ -178,6 +185,15 @@ public sealed class OverlayCanvas : Panel
     /// </summary>
     public IOverlayCursor? CursorSource { get; set; }
 
+    /// <summary>
+    /// 拖动或改尺寸期间超过这么久没有任何输入（光标不动、没有指针事件）而系统仍报告主按键按住时，按松开处理并保存当时的摆放。
+    /// 远程桌面可能丢掉松开，主按键状态停在按住，手势不会自行结束。
+    /// </summary>
+    public static readonly TimeSpan GestureIdleTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>判定空闲超时用的时钟；测试替换。</summary>
+    public TimeProvider Clock { get; set; } = TimeProvider.System;
+
     private string? ownMonitor;
 
     /// <summary>
@@ -220,7 +236,14 @@ public sealed class OverlayCanvas : Panel
         (store, catalog, backend) = (layouts, modules, source);
         layouts.Changed += OnStoreChanged;
         layouts.Moved += OnStoreMoved;
+        modules.Changed += OnCatalogChanged;
         Rebuild();
+    }
+
+    // 扩展模块随扩展运行状态增减元件：目录变化时按当前版面重建，已摆放但暂时没有提供者的元件保留摆放数据。
+    private void OnCatalogChanged(object? sender, EventArgs e)
+    {
+        if (store is not null && dragging is null) Rebuild();
     }
 
     public void Detach()
@@ -230,6 +253,7 @@ public sealed class OverlayCanvas : Panel
             store.Changed -= OnStoreChanged;
             store.Moved -= OnStoreMoved;
         }
+        if (catalog is not null) catalog.Changed -= OnCatalogChanged;
         store = null;
         ClearWidgets();
     }
@@ -672,6 +696,9 @@ public sealed class OverlayCanvas : Panel
     private void BeginManipulation(Slot slot, bool resize, PointerPressedEventArgs e, Control captureTarget)
     {
         (dragging, resizing) = (slot, resize);
+        var placement = slot.Placement;
+        gestureStart = (placement.X, placement.Y, placement.Screen, placement.Width, placement.Height);
+        (lastActivity, lastCursor) = (Clock.GetUtcNow(), null);
         dragOrigin = e.GetPosition(this);
         var frame = slot.Frame.Bounds;
         grab = frame is { Width: > 0, Height: > 0 }
@@ -688,15 +715,33 @@ public sealed class OverlayCanvas : Panel
     }
 
     /// <summary>
-    /// 按 <see cref="CursorSource"/> 取一次系统光标：拖动到光标所在位置（物理像素换成本画布的逻辑坐标），主按键已松开时结束并保存。
-    /// 浮窗的光标轮询在拖动期间每帧调用；指针移动事件也调用它，位置始终取自同一个来源。
+    /// 按 <see cref="CursorSource"/> 取一次系统光标：光标移动了就拖动到光标所在位置（物理像素换成本画布的逻辑坐标），
+    /// 主按键已松开时结束并保存，超过 <see cref="GestureIdleTimeout"/> 没有输入时同样结束。
+    /// 浮窗的光标定时器在拖动期间每 16 ms 调用；指针移动事件也调用它，位置始终取自同一个来源。
+    /// 光标没动时不重算摆放、不要求重新排版，所以排版之后再次轮询不会引起又一次排版。
     /// </summary>
     public void PollDrag()
     {
-        if (dragging is null || CursorSource is not { } cursor || area is not { } own) return;
-        if (cursor.Position is { } at)
-            DragTo(new Point((at.X - own.Pixels.X) / own.Scaling, (at.Y - own.Pixels.Y) / own.Scaling), "poll", at);
-        if (dragging is not null && !cursor.PrimaryButtonDown) Finish("released");
+        if (dragging is null || polling || CursorSource is not { } cursor || area is not { } own) return;
+        polling = true;
+        try
+        {
+            if (cursor.Position is { } at && at != lastCursor)
+            {
+                (lastCursor, lastActivity) = (at, Clock.GetUtcNow());
+                if (double.IsFinite(own.Scaling) && own.Scaling > 0)
+                    DragTo(new Point((at.X - own.Pixels.X) / own.Scaling, (at.Y - own.Pixels.Y) / own.Scaling), "poll", at);
+            }
+            if (dragging is not { } slot) return;
+            if (!cursor.PrimaryButtonDown) Finish("released");
+            else if (Clock.GetUtcNow() - lastActivity >= GestureIdleTimeout)
+            {
+                OverlayDragTrace.Fault(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"{(resizing ? "resize" : "drag")} {slot.Placement.WidgetId} ended: no input for {GestureIdleTimeout.TotalSeconds:0} s while the primary button stayed down"));
+                Finish("idle-timeout");
+            }
+        }
+        finally { polling = false; }
     }
 
     private void OnFramePressed(object? sender, PointerPressedEventArgs e)
@@ -730,6 +775,7 @@ public sealed class OverlayCanvas : Panel
     private void OnPointerMovedWhileDragging(object? sender, PointerEventArgs e)
     {
         if (dragging is null) return;
+        lastActivity = Clock.GetUtcNow();
         if (CursorSource is not null && area is not null) PollDrag();
         else DragTo(e.GetPosition(this), "pointer", null);
     }
@@ -746,7 +792,24 @@ public sealed class OverlayCanvas : Panel
     /// </summary>
     private void DragTo(Point point, string source, PixelPoint? physical)
     {
-        if (dragging is not { } slot) return;
+        // 应用中再进来（重排或通知回调）直接返回；无效的坐标不参与计算。
+        if (dragging is not { } slot || applying || !double.IsFinite(point.X) || !double.IsFinite(point.Y)) return;
+        applying = true;
+        try
+        {
+            if (!Apply(slot, point, source, physical)) Abort(slot, "invalid-value", null);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            // 任何异常都结束手势并恢复到开始前的摆放，不让它在下一次轮询里重复发生。
+            Abort(slot, "exception", error);
+        }
+        finally { applying = false; }
+    }
+
+    // 按光标位置更新摆放；算出的数值无效（非有限、非正）时返回假。
+    private bool Apply(Slot slot, Point point, string source, PixelPoint? physical)
+    {
         OverlayDragTrace.Sample(source, physical, point, MonitorAt(point)?.Key);
         var placement = slot.Placement;
         if (resizing)
@@ -754,15 +817,20 @@ public sealed class OverlayCanvas : Panel
             // 手柄改变外框在缩放前的宽高：拖动距离除以显示倍率，对齐 8 px，不小于元件的最小尺寸，也不超出所在显示器的工作区。
             var delta = point - dragOrigin;
             var factor = Factor(slot);
+            if (!double.IsFinite(factor) || factor <= 0) return false;
             var (area, dpi) = RegionOf(placement, Bounds.Size);
             var room = new Size(Math.Max(0, area.Width - Inset * dpi * 2) / factor, Math.Max(0, area.Height - Inset * dpi * 2) / factor);
             double Side(double start, double moved, double minimum, double limit) =>
                 Math.Max(minimum, Math.Min(Math.Round((start + moved / factor) / Grid) * Grid, Math.Max(minimum, limit)));
-            placement.Width = Side(sizeStart.Width, delta.X, slot.MinimumSize.Width, room.Width);
-            placement.Height = Side(sizeStart.Height, delta.Y, slot.MinimumSize.Height, room.Height);
+            var width = Math.Min(Side(sizeStart.Width, delta.X, slot.MinimumSize.Width, room.Width), WidgetPlacement.MaximumSide);
+            var height = Math.Min(Side(sizeStart.Height, delta.Y, slot.MinimumSize.Height, room.Height), WidgetPlacement.MaximumSide);
+            if (!double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0) return false;
+            // 尺寸没变时不改外框、不要求重新排版：排版后的光标轮询不会再引起一次排版。
+            if (width.Equals(placement.Width) && height.Equals(placement.Height)) return true;
+            (placement.Width, placement.Height) = (width, height);
             ApplySize(slot);
             InvalidateMeasure();
-            return;
+            return true;
         }
         var screen = placement.Screen;
         if (MonitorAt(point) is { } monitor && monitor.Key != MonitorOf(placement)?.Key) placement.Screen = monitor.Key;
@@ -775,11 +843,24 @@ public sealed class OverlayCanvas : Panel
         var free = new Size(region.Width - size.Width - inset * 2, region.Height - size.Height - inset * 2);
         var (x, y) = (free.Width <= 0 ? 0 : Math.Clamp((left - region.X - inset) / free.Width, 0, 1),
             free.Height <= 0 ? 0 : Math.Clamp((top - region.Y - inset) / free.Height, 0, 1));
-        if (x.Equals(placement.X) && y.Equals(placement.Y) && screen == placement.Screen) return;
+        if (!double.IsFinite(x) || !double.IsFinite(y)) return false;
+        if (x.Equals(placement.X) && y.Equals(placement.Y) && screen == placement.Screen) return true;
         (placement.X, placement.Y) = (x, y);
         // 各显示器的浮窗（包括本画布）随之重排；元件跨到另一块显示器时由那块显示器的浮窗接着显示。
         if (store is not null) store.NotifyMoved();
         else Refresh();
+        return true;
+    }
+
+    // 中止手势：摆放恢复到手势开始前，记一条诊断，按结束处理（各浮窗随之重排）。
+    private void Abort(Slot slot, string reason, Exception? error)
+    {
+        var placement = slot.Placement;
+        (placement.X, placement.Y, placement.Screen, placement.Width, placement.Height) = gestureStart;
+        OverlayDragTrace.Fault($"{(resizing ? "resize" : "drag")} {placement.WidgetId} aborted ({reason}) and restored"
+                               + (error is null ? string.Empty : $": {error.GetType().Name}: {error.Message}"));
+        ApplySize(slot);
+        Finish(reason);
     }
 
     // 画布上某一点所在的显示器；点落在显示器之间的空隙里时取距离最近的一块。
@@ -793,6 +874,7 @@ public sealed class OverlayCanvas : Panel
     private void OnPointerReleasedAfterDragging(object? sender, PointerReleasedEventArgs e)
     {
         if (dragging is null) return;
+        lastActivity = Clock.GetUtcNow();
         // 松开处的位置按同一来源再取一次，再结束并保存。
         if (CursorSource is not null && area is not null) PollDrag();
         if (dragging is not null) Finish("pointer-released");

@@ -120,9 +120,40 @@
                       <TextBlock Classes="body muted" FontSize="13" TextWrapping="Wrap" Text="{Binding Description}" IsVisible="{Binding HasDescription}" />
                       <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap" Text="{Binding State}" />
                       <TextBlock Classes="note" Text="{Binding Contents}" />
+                      <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap" Text="{Binding Runtime}" IsVisible="{Binding HasRuntime}" />
+                      <!-- 权限逐项开关：高风险排在后面并标明，撤销立即生效。 -->
+                      <ItemsControl controls:StableItems.Source="{Binding Permissions}" IsVisible="{Binding HasPermissions}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate DataType="modules:PermissionRow">
+                            <DockPanel Margin="0,0,0,6">
+                              <Button DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center" Content="{Binding ToggleLabel}"
+                                      IsEnabled="{Binding CanToggle}"
+                                      Command="{Binding $parent[UserControl].((modules:ModulesPageModel)DataContext).ToggleGrantCommand}"
+                                      CommandParameter="{Binding}" />
+                              <StackPanel>
+                                <TextBlock Classes="body" FontSize="13" TextWrapping="Wrap">
+                                  <Run Text="{Binding Name}" FontWeight="Bold" />
+                                  <Run Text=" · " />
+                                  <Run Text="{Binding Risk}" Classes.unconfirmed="{Binding High}" />
+                                  <Run Text=" · " />
+                                  <Run Text="{Binding Status}" />
+                                </TextBlock>
+                                <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding Description}" />
+                              </StackPanel>
+                            </DockPanel>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding Logs}" IsVisible="{Binding ShowsLogs}" MaxHeight="240" />
                       <WrapPanel>
                         <Button Classes="chip" Margin="0,0,8,0" Content="{Binding ToggleLabel}" IsEnabled="{Binding CanToggle}"
                                 Command="{Binding $parent[UserControl].((modules:ModulesPageModel)DataContext).ToggleExtensionCommand}"
+                                CommandParameter="{Binding Id}" />
+                        <Button Classes="chip" Margin="0,0,8,0" Content="{Binding RestartLabel}" IsVisible="{Binding HasRuntime}" IsEnabled="{Binding CanRestart}"
+                                Command="{Binding $parent[UserControl].((modules:ModulesPageModel)DataContext).RestartExtensionCommand}"
+                                CommandParameter="{Binding Id}" />
+                        <Button Classes="chip" Margin="0,0,8,0" Content="{Binding LogsLabel}" IsVisible="{Binding HasRuntime}"
+                                Command="{Binding $parent[UserControl].((modules:ModulesPageModel)DataContext).ShowLogsCommand}"
                                 CommandParameter="{Binding Id}" />
                         <Button Classes="chip" Margin="0,0,8,0" Content="{DynamicResource X.UseAssetPack}" IsVisible="{Binding CanUsePack}"
                                 Command="{Binding $parent[UserControl].((modules:ModulesPageModel)DataContext).UseAssetPackCommand}"
@@ -151,6 +182,14 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
+            </StackPanel>
+            <!-- 开发模式：用户显式开启后才能加载开发目录。 -->
+            <StackPanel Spacing="6" IsVisible="{Binding ExtensionsAvailable}">
+              <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding DevelopmentNote}" />
+              <WrapPanel>
+                <Button Classes="chip" Margin="0,0,8,0" Content="{Binding DevelopmentLabel}" Command="{Binding ToggleDevelopmentCommand}" />
+                <Button Classes="chip" Content="{Binding LoadDevelopmentLabel}" Command="{Binding LoadDevelopmentCommand}" IsEnabled="{Binding DevelopmentMode}" />
+              </WrapPanel>
             </StackPanel>
             <Button HorizontalAlignment="Left" Classes="chip" Content="{DynamicResource X.OpenExtensionsFolder}"
                     Command="{Binding OpenExtensionsFolderCommand}" IsEnabled="{Binding CanOpenExtensionsFolder}" />

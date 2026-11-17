@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "example.kill-timer",
+  "version": "1.0.0",
+  "hostApi": { "minimum": "1.0", "maximumExclusive": "2.0" },
+  "displayNames": { "zh-Hans": "击杀计时器", "zh-Hant": "擊殺計時器" },
+  "descriptions": {
+    "zh-Hans": "记录每次战斗从开始到击杀的用时，提供页面与浮窗元件",
+    "zh-Hant": "記錄每次戰鬥從開始到擊殺的用時，提供頁面與浮窗元件"
+  },
+  "runtime": { "protocol": 1, "kind": "dotnet", "entry": "Moongate.Examples.KillTimer.dll" },
+  "permissions": ["combat.read", "ui.page", "ui.overlay", "ui.settings", "storage.local"],
+  "settings": [
+    {
+      "key": "keep", "type": "number", "default": 10, "minimum": 5, "maximum": 50,
+      "labels": { "zh-Hans": "保留的击杀条数", "zh-Hant": "保留的擊殺筆數" }
+    },
+    {
+      "key": "showMilliseconds", "type": "toggle", "default": false,
+      "labels": { "zh-Hans": "用时显示毫秒", "zh-Hant": "用時顯示毫秒" }
+    }
+  ]
+}

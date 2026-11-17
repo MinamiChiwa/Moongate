@@ -127,7 +127,7 @@ public sealed class DiagnosticsExportSection : ObservableObject
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            reply = new(false, exception.Message, null, false, string.Empty);
+            reply = new(false, Localization.CodeText.Error(exception), null, false, string.Empty);
         }
         if (disposed) return;
         busy = false;
@@ -156,7 +156,7 @@ public sealed class DiagnosticsExportSection : ObservableObject
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            message = Pick($"保存失败：{exception.Message}", $"儲存失敗：{exception.Message}");
+            message = Pick("保存失败：", "儲存失敗：") + Localization.CodeText.Error(exception);
             failed = true;
         }
         Raise(string.Empty);

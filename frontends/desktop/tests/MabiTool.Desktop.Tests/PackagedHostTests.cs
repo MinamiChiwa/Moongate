@@ -80,7 +80,7 @@ public sealed class PackagedHostTests
         // 运行中停止（崩溃或被结束）：自动重新启动一次，连接状态写明后端已停止。
         var first = PackagedHost.AfterExit(-1, TimeSpan.FromMinutes(5), relaunched: false);
         Assert.True(first.Relaunch);
-        Assert.Contains("-1", first.Problem);
+        Assert.Contains("已停止", first.Problem);
         Assert.DoesNotContain("Moongate", first.Problem);
         // 重新启动后再次停止：不再重试，请用户重新打开。
         var second = PackagedHost.AfterExit(-1, TimeSpan.FromMinutes(5), relaunched: true);

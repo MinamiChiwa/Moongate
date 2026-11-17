@@ -29,7 +29,7 @@ public sealed class SettingsCaptureTests
         var window = LayoutProbe.Open(backend, 1280, 860, "shell.settings");
         try
         {
-            Assert.StartsWith("抓包中 · 网卡：Intel(R) Ethernet Connection (17) I219-V（按游戏连接自动选择）", Named<TextBlock>(window, "CaptureStatusText").Text);
+            Assert.StartsWith("抓包中 · 网卡：Intel(R) Ethernet Connection (17) I219-V（自动）", Named<TextBlock>(window, "CaptureStatusText").Text);
             Click(window, Named<Button>(window, "CaptureOffButton"));
             LayoutProbe.Settle();
             Assert.False(Assert.Single(backend.SavedCaptureSettings).AutomaticCapture);
@@ -136,7 +136,7 @@ public sealed class SettingsCaptureTests
         try
         {
             // 抓包未运行时地图与频道为“未知”，左上角写明未抓包的原因，按下前往设置页抓包区。
-            Assert.StartsWith("未抓包：多张网卡都有游戏连接", Named<TextBlock>(window, "CaptureLineText").Text);
+            Assert.StartsWith("未抓包：多张网卡有游戏连接", Named<TextBlock>(window, "CaptureLineText").Text);
             Assert.Equal(("未知", "未知"), (Named<TextBlock>(window, "MapText").Text, Named<TextBlock>(window, "ChannelText").Text));
             Click(window, Named<Button>(window, "CaptureChip"));
             LayoutProbe.Settle();

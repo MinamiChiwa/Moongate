@@ -247,9 +247,8 @@
                 <Button DockPanel.Dock="Right" x:Name="GamePickerRefresh" Classes="chip" Margin="10,0,0,0" VerticalAlignment="Center"
                         Content="{DynamicResource S.RefreshWindows}" Command="{Binding GamePicker.RefreshCommand}"
                         IsEnabled="{Binding GamePicker.CanAct}" AutomationProperties.Name="{DynamicResource S.RefreshWindows}" />
-                <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource S.PickWindow}" />
+                <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="h2" FontSize="17" Text="{DynamicResource S.PickWindow}" /><controls:HelpTip Text="{DynamicResource S.PickWindowHint}" /></StackPanel>
               </DockPanel>
-              <TextBlock DockPanel.Dock="Top" Classes="note" Margin="0,0,0,10" Text="{DynamicResource S.PickWindowHint}" />
               <TextBlock DockPanel.Dock="Top" x:Name="GamePickerLoading" Classes="body muted" Margin="0,0,0,6"
                          Text="{DynamicResource S.LoadingWindows}" IsVisible="{Binding GamePicker.IsLoading}" />
               <TextBlock DockPanel.Dock="Top" x:Name="GamePickerEmpty" Classes="body unconfirmed" Margin="0,0,0,6"
