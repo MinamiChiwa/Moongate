@@ -324,7 +324,7 @@
   <sys:String x:Key="X.RemoveAssets">移除素材包</sys:String>
   <sys:String x:Key="X.AssetsPersist">导入的素材包会记住，下次启动自动载入。</sys:String>
   <sys:String x:Key="X.Extensions">扩展</sys:String>
-  <sys:String x:Key="X.ExtensionsHint">只支持纯数据扩展；把扩展包放进扩展文件夹的 inbox 里即列为待安装</sys:String>
+  <sys:String x:Key="X.ExtensionsHint">把扩展包放进扩展文件夹的 inbox 里即列为待安装</sys:String>
   <sys:String x:Key="X.NoExtensions">还没有安装扩展</sys:String>
   <sys:String x:Key="X.PendingTitle">待安装（扩展文件夹的 inbox）</sys:String>
   <sys:String x:Key="X.Inspect">检查</sys:String>

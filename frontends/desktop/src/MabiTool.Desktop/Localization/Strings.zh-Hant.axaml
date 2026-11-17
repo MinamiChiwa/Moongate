@@ -324,7 +324,7 @@
   <sys:String x:Key="X.RemoveAssets">移除素材包</sys:String>
   <sys:String x:Key="X.AssetsPersist">匯入的素材包會記住，下次啟動自動載入。</sys:String>
   <sys:String x:Key="X.Extensions">擴充</sys:String>
-  <sys:String x:Key="X.ExtensionsHint">只支援純資料擴充；把擴充包放進擴充資料夾的 inbox 裡即列為待安裝</sys:String>
+  <sys:String x:Key="X.ExtensionsHint">把擴充包放進擴充資料夾的 inbox 裡即列為待安裝</sys:String>
   <sys:String x:Key="X.NoExtensions">還沒有安裝擴充</sys:String>
   <sys:String x:Key="X.PendingTitle">待安裝（擴充資料夾的 inbox）</sys:String>
   <sys:String x:Key="X.Inspect">檢查</sys:String>
