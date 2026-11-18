@@ -121,10 +121,11 @@ public static class ApiErrors
         foreach (var name in new[] { "sourceNotConfigured", "platformUnsupported", "versionRollback", "releaseIdentityMismatch",
             "assetHashMismatch", "assetLengthMismatch", "assetMetadataInvalid", "packageInvalid", "pathRejected", "planInvalid",
             "redirectHostRejected", "redirectInvalid", "releaseMetadataInvalid", "repositoryInvalid", "rootOverlap", "sourceAccessDenied",
-            "sourceHostRejected", "sourceResponseInvalid", "sourceUriInvalid", "manifestTooLarge", "metadataTooLarge" })
+            "sourceHostRejected", "sourceResponseInvalid", "sourceUriInvalid", "manifestTooLarge", "metadataTooLarge",
+            "manifestInvalid", "deltaInvalid", "deltaIncomplete", "targetTreeMismatch" })
             yield return new("update." + name, 422, false);
         foreach (var name in new[] { "allSourcesFailed", "allSourcesUnavailable", "assetDownloadFailed", "diskSpaceInsufficient",
-            "metadataTimeout", "networkUnavailable", "releaseAssetMissing", "sourceUnavailable", "storageUnavailable" })
+            "metadataTimeout", "networkUnavailable", "releaseAssetMissing", "sourceUnavailable", "storageUnavailable", "githubUnreachable" })
             yield return new("update." + name, 503, true);
         yield return new("update.rateLimited", 429, true);
         yield return new("update.stageExists", 409, false);

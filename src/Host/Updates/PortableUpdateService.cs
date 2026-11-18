@@ -10,8 +10,12 @@ using MabiTool.Providers.GitHubReleases;
 
 namespace MabiTool.Host.Updates;
 
+/// <param name="SizeBytes">完整包字节数。</param>
+/// <param name="DownloadKind"><c>incremental</c>（增量包）或 <c>full</c>（完整包）。</param>
+/// <param name="DownloadBytes">本次需要下载的字节数。</param>
 public sealed record UpdateCheckResult(bool UpdateAvailable, string ReleaseId, string ManifestSha256,
-    string? PlanId, DateTimeOffset? PlanExpiresAt, UpdateSourceKind Source, long? SizeBytes = null);
+    string? PlanId, DateTimeOffset? PlanExpiresAt, UpdateSourceKind Source, long? SizeBytes = null,
+    string? DownloadKind = null, long? DownloadBytes = null);
 
 public interface IUpdateCheckService
 {
@@ -53,7 +57,8 @@ public sealed class PortableInstallation
 }
 
 /// <summary>
-/// 解压版整包更新：检查 GitHub Releases 的最新发行，下载整包 zip 并核对 SHA-256，解压到工具根暂存目录并核对发行身份；
+/// 解压版更新：检查 GitHub Releases 的最新发行；有与本机版本对应的增量包时只下载增量包，用本机文件与增量内容构建新包根并按清单核对，
+/// 否则（或增量失败时）下载整包 zip 并核对 SHA-256，解压到工具根暂存目录并核对发行身份；
 /// 安装时在维护屏障内备份数据库、写事务日志、启动替换器后交出控制。替换、健康确认与回退由替换器完成。
 /// </summary>
 internal sealed class PortableUpdateService(PortableInstallation? installation, GitHubReleaseSource source, SqliteStore database,
@@ -75,16 +80,39 @@ internal sealed class PortableUpdateService(PortableInstallation? installation, 
         var candidate = await source.FindLatestAsync(current.Identity.Repository, current.Identity.Channel == "preview", token).ConfigureAwait(false);
         // 只提供比当前版本新的发行；仓库里的最新发行更旧（例如撤回了某个版本）时视为已是最新，不提供降级。
         if (candidate is null || candidate.Version.CompareTo(installed) <= 0)
-            return new(false, installed.ToString(), "", null, null, UpdateSourceKind.GithubApi);
+            return new(false, installed.ToString(), "", null, null, candidate?.Source ?? UpdateSourceKind.GithubDirect);
         var sha256 = await source.FetchChecksumAsync(candidate, token).ConfigureAwait(false);
-        var now = clock.GetUtcNow();
         var version = candidate.Version;
+        // 清单可选：缺失、无效，或与 .sha256、API 报告的长度不一致时按完整包处理。
+        var manifestBytes = await source.FetchManifestAsync(candidate, token).ConfigureAwait(false);
+        UpdateManifest? manifest = null;
+        if (manifestBytes is not null)
+        {
+            try { manifest = UpdateManifest.Parse(manifestBytes, version.ToString(), candidate.AssetName, sha256); }
+            catch (UpdatePackageException) { }
+            if (manifest is not null && candidate.AssetLength is { } listed && listed != manifest.Package.Size) manifest = null;
+        }
+        var length = manifest?.Package.Size ?? candidate.AssetLength ?? await source.FetchLengthAsync(candidate, token).ConfigureAwait(false);
+        var choice = manifest is null ? null : await DeltaUpdate.ChooseAsync(manifest, current.PackageRoot, current.Identity.DisplayVersion,
+            new UpdateIoBudget(null, barrier), token).ConfigureAwait(false);
+        UpdatePlanDelta? delta = null;
+        if (choice is not null)
+        {
+            var manifestSha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(manifestBytes!)).ToLowerInvariant();
+            await UpdatePlanStore.SaveManifestAsync(current.ToolRoot, manifestSha, manifestBytes!, token).ConfigureAwait(false);
+            delta = new(choice.Delta.Name, choice.Delta.Size, choice.Delta.Sha256,
+                candidate.Endpoints(choice.Delta.Name).Select(item => new UpdatePlanSource(item.Source.ToString(), item.Uri)).ToArray(),
+                manifestSha, choice.ReusedFiles, choice.DownloadedFiles, choice.DeletedFiles);
+        }
+        var now = clock.GetUtcNow();
         var plan = new UpdatePlan(1, Guid.NewGuid().ToString("N"), $"{version.Major}.{version.Minor}.{version.Patch}", version.ToString(),
-            version.IsPrerelease ? "preview" : "stable", candidate.Tag, candidate.AssetName, candidate.AssetLength, sha256,
+            version.IsPrerelease ? "preview" : "stable", candidate.Tag, candidate.AssetName, length, sha256,
             candidate.Package.Select(item => new UpdatePlanSource(item.Source.ToString(), item.Uri)).ToArray(),
-            UpdateSourceKind.GithubApi.ToString(), now, now + PlanLifetime);
+            candidate.Source.ToString(), now, now + PlanLifetime, delta);
         await UpdatePlanStore.SaveAsync(current.ToolRoot, plan, token).ConfigureAwait(false);
-        return new(true, plan.DisplayVersion, plan.Sha256, plan.PlanId, plan.ExpiresAt, UpdateSourceKind.GithubApi, plan.AssetLength);
+        await UpdatePlanStore.PruneManifestsAsync(current.ToolRoot, now, token).ConfigureAwait(false);
+        return new(true, plan.DisplayVersion, plan.Sha256, plan.PlanId, plan.ExpiresAt, candidate.Source, plan.AssetLength,
+            delta is null ? "full" : "incremental", delta?.AssetLength ?? plan.AssetLength);
     }
 
     public Task<UpdatePlan> ReadPlanAsync(string planId, CancellationToken token = default) =>
@@ -99,33 +127,76 @@ internal sealed class PortableUpdateService(PortableInstallation? installation, 
         var staged = UpdateLayout.StagedPackage(current.ToolRoot, plan.PlanId);
         if (StagedMatches(staged, plan))
             return Status(plan, plan.AssetLength, reusedStage: true) with { TotalBytes = new((ulong)plan.AssetLength) };
+        if (plan.Delta is { } delta)
+        {
+            try { return await DownloadDeltaAsync(current, plan, delta, report, token).ConfigureAwait(false); }
+            catch (Exception error) when (!token.IsCancellationRequested && DeltaFallback(error)) { }
+        }
         await report("preparing", Status(plan, 0), token).ConfigureAwait(false);
         // zip、解压出的包与暂存期间的旧版本同在工具根所在的卷上，按 zip 的三倍预留。
         if (availableBytes(current.ToolRoot) < plan.AssetLength * 3) throw new UpdatePackageException("update.diskSpaceInsufficient");
         var archive = ResumableAssetDownloader.CachePath(UpdateLayout.Downloads(current.ToolRoot), plan.Sha256);
-        var resumed = File.Exists(archive + ".part") ? new FileInfo(archive + ".part").Length : 0;
-        var budget = new UpdateIoBudget(readPolicy().MaximumBytesPerSecond, barrier);
-        using var downloader = new ResumableAssetDownloader(createHandler?.Invoke() ?? new HttpClientHandler { AllowAutoRedirect = false },
-            new() { Concurrency = 1 }, availableBytes, budget: budget);
-        using var progressStop = CancellationTokenSource.CreateLinkedTokenSource(token);
-        var progress = ReportProgressAsync(plan, () => Math.Min(plan.AssetLength, resumed + budget.DownloadedBytes), report, progressStop.Token);
-        AssetDownloadResult downloaded;
-        try
-        {
-            downloaded = await downloader.DownloadAsync(new(plan.Sources.Select(item => new AssetDownloadSource(item.Id, item.Uri)).ToArray(),
-                archive, plan.AssetLength, plan.Sha256), token).ConfigureAwait(false);
-        }
-        finally
-        {
-            progressStop.Cancel();
-            try { await progress.ConfigureAwait(false); } catch (OperationCanceledException) { }
-        }
+        var downloaded = await DownloadAssetAsync(plan, plan.Sources, archive, plan.AssetLength, plan.Sha256, report, token).ConfigureAwait(false);
         var verified = Status(plan, plan.AssetLength, source: downloaded.SourceId);
         await report("verifying", verified, token).ConfigureAwait(false);
         await PortableUpdatePackage.ExtractAsync(archive, current.ToolRoot, plan.PlanId, plan.DisplayVersion, token).ConfigureAwait(false);
         // 解压成功后 zip 不再需要；暂存目录就是安装的输入。
         File.Delete(archive);
         return verified with { TotalBytes = new((ulong)plan.AssetLength), DownloadedFiles = 1 };
+    }
+
+    /// <summary>增量下载：取得增量包并核对，用本机文件与增量内容构建新包根，按清单逐文件核对并核对发行身份。</summary>
+    private async Task<UpdateDownloadStatus> DownloadDeltaAsync(PortableInstallation current, UpdatePlan plan, UpdatePlanDelta delta,
+        Func<string, UpdateDownloadStatus, CancellationToken, Task> report, CancellationToken token)
+    {
+        var bytes = await UpdatePlanStore.ReadManifestAsync(current.ToolRoot, delta.ManifestSha256, token).ConfigureAwait(false)
+            ?? throw new UpdatePackageException("update.manifestInvalid");
+        var manifest = UpdateManifest.Parse(bytes, plan.DisplayVersion, plan.AssetName, plan.Sha256);
+        await report("preparing", Status(plan, 0, total: delta.AssetLength), token).ConfigureAwait(false);
+        // 增量包与构建出的新包根同在工具根所在的卷上。
+        if (availableBytes(current.ToolRoot) < delta.AssetLength + manifest.TotalBytes) throw new UpdatePackageException("update.diskSpaceInsufficient");
+        var archive = ResumableAssetDownloader.CachePath(UpdateLayout.Downloads(current.ToolRoot), delta.Sha256);
+        try
+        {
+            var downloaded = await DownloadAssetAsync(plan, delta.Sources, archive, delta.AssetLength, delta.Sha256, report, token).ConfigureAwait(false);
+            var verified = Status(plan, delta.AssetLength, source: downloaded.SourceId, total: delta.AssetLength);
+            await report("verifying", verified, token).ConfigureAwait(false);
+            await DeltaUpdate.StageAsync(manifest, archive, current.PackageRoot, current.ToolRoot, plan.PlanId,
+                new UpdateIoBudget(null, barrier), token).ConfigureAwait(false);
+            return verified with { TotalBytes = new((ulong)delta.AssetLength), ReusedFiles = delta.ReusedFiles, DownloadedFiles = delta.DownloadedFiles };
+        }
+        finally { if (File.Exists(archive)) File.Delete(archive); }
+    }
+
+    // 磁盘不足与计划失效时改用完整包也无济于事；其余增量失败（增量包 404、下载失败、缺内容、校验不过）改用完整包。
+    private static bool DeltaFallback(Exception error) => error switch
+    {
+        AssetDownloadException download => download.Code != "update.diskSpaceInsufficient",
+        UpdatePackageException package => package.Code is not ("update.diskSpaceInsufficient" or "update.planStale" or "update.planInvalid"),
+        IOException io => !UpdatePaths.IsDiskFull(io),
+        InvalidDataException => true,
+        _ => false
+    };
+
+    private async Task<AssetDownloadResult> DownloadAssetAsync(UpdatePlan plan, IReadOnlyList<UpdatePlanSource> sources, string path,
+        long length, string sha256, Func<string, UpdateDownloadStatus, CancellationToken, Task> report, CancellationToken token)
+    {
+        var resumed = File.Exists(path + ".part") ? new FileInfo(path + ".part").Length : 0;
+        var budget = new UpdateIoBudget(readPolicy().MaximumBytesPerSecond, barrier);
+        using var downloader = new ResumableAssetDownloader(createHandler?.Invoke() ?? new HttpClientHandler { AllowAutoRedirect = false },
+            new() { Concurrency = 1 }, availableBytes, budget: budget);
+        using var progressStop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var progress = ReportProgressAsync(plan, length, () => Math.Min(length, resumed + budget.DownloadedBytes), report, progressStop.Token);
+        try
+        {
+            return await downloader.DownloadAsync(new(sources.Select(item => new AssetDownloadSource(item.Id, item.Uri)).ToArray(),
+                path, length, sha256), token).ConfigureAwait(false);
+        }
+        finally
+        {
+            progressStop.Cancel();
+            try { await progress.ConfigureAwait(false); } catch (OperationCanceledException) { }
+        }
     }
 
     public async Task<bool> TransferAsync(string operationId, UpdatePlan frozenPlan, ActivityBarrier.MaintenanceLease maintenance, CancellationToken token)
@@ -199,18 +270,18 @@ internal sealed class PortableUpdateService(PortableInstallation? installation, 
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException) { return false; }
     }
 
-    private async Task ReportProgressAsync(UpdatePlan plan, Func<long> bytes, Func<string, UpdateDownloadStatus, CancellationToken, Task> report,
-        CancellationToken token)
+    private async Task ReportProgressAsync(UpdatePlan plan, long total, Func<long> bytes,
+        Func<string, UpdateDownloadStatus, CancellationToken, Task> report, CancellationToken token)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500), clock);
-        await report("downloading", Status(plan, bytes()), token).ConfigureAwait(false);
+        await report("downloading", Status(plan, bytes(), total: total), token).ConfigureAwait(false);
         while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
-            await report("downloading", Status(plan, bytes()), token).ConfigureAwait(false);
+            await report("downloading", Status(plan, bytes(), total: total), token).ConfigureAwait(false);
     }
 
-    private static UpdateDownloadStatus Status(UpdatePlan plan, long verified, bool reusedStage = false, string? source = null)
+    private static UpdateDownloadStatus Status(UpdatePlan plan, long verified, bool reusedStage = false, string? source = null, long? total = null)
     {
-        var length = new UInt64String((ulong)plan.AssetLength);
+        var length = new UInt64String((ulong)(total ?? plan.AssetLength));
         return new(plan.PlanId, plan.DisplayVersion, plan.Sha256, length, length, new(0), new((ulong)plan.AssetLength * 3), 0, 0, reusedStage,
             new((ulong)verified), length, source is null ? null : Enum.TryParse<UpdateSourceKind>(source, out var kind) ? kind : new OpenEnum<UpdateSourceKind>(source));
     }

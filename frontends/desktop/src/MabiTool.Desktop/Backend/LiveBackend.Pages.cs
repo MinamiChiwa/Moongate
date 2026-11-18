@@ -267,12 +267,23 @@ public sealed partial class LiveBackend
                 "waitingForIdle" => Pick("等待当前活动结束", "等待目前活動結束"),
                 "applying" => Pick("正在安装", "正在安裝"),
                 "handedOff" => Pick("正在重启到新版本", "正在重新啟動到新版本"),
-                _ => update.Operation is { State.KnownValue: OperationState.Failed, Problem: { } problem }
-                    ? Pick("上次操作失败：", "上次操作失敗：") + Localization.CodeText.Reason(problem.Code)
-                    : Pick("待命", "待命")
+                _ => update.Operation switch
+                {
+                    { State.KnownValue: OperationState.Failed, Problem: { } problem } =>
+                        Pick("上次操作失败：", "上次操作失敗：") + Localization.CodeText.Reason(problem.Code),
+                    { Kind: "update.check", State.KnownValue: OperationState.Succeeded } when update.Available is null =>
+                        Pick("已是最新版本", "已是最新版本"),
+                    _ => Pick("待命", "待命")
+                }
             };
         var available = update.Available is { } offer
-            ? offer.ReleaseId + (offer.SizeBytes is { } size ? $"（{Megabytes(size.Value)}）" : "")
+            ? offer.ReleaseId + (offer switch
+            {
+                { DownloadKind: "incremental", DownloadBytes: { } bytes } => Pick($"（增量更新 {Megabytes(bytes.Value)}）", $"（增量更新 {Megabytes(bytes.Value)}）"),
+                { DownloadKind: "full", DownloadBytes: { } bytes } => Pick($"（完整下载 {Megabytes(bytes.Value)}）", $"（完整下載 {Megabytes(bytes.Value)}）"),
+                { SizeBytes: { } size } => $"（{Megabytes(size.Value)}）",
+                _ => ""
+            })
             : update.Configured ? Pick("没有", "沒有") : notApplicable;
         var progress = notApplicable;
         if (update.Operation is { Kind: "update.download", Result: { ValueKind: System.Text.Json.JsonValueKind.Object } result } &&

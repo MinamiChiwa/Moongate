@@ -182,7 +182,8 @@ pwsh -NoProfile -File .\scripts\build\publish-backend.ps1 -Version 0.1.0 -Channe
 - 先在 `artifacts/packages/<ReleaseId>/` 生成目录包，再由 `scripts/build/package-archive.ps1` 打成 `artifacts/packages/Moongate-v<版本>-Windows-x64.zip` 与同名 `.sha256`（preview 渠道为 `Moongate-v<版本>-preview-Windows-x64.zip`）。
 - ZIP 解压后是单个 `Moongate` 文件夹：`Moongate.exe`（入口，源码在 `src/PortableLauncher`）、`components\`（各组件与随包运行时）、`licenses\`（第三方声明与 SPDX 清单）；首次运行生成 `userdata\`，保存全部数据、设置与版面。`components\core\launch-backend.cmd -Wait` 只启动后端并显示输出，用于排查启动失败。
 - `components\release.json` 是发行身份：版本、渠道、检查更新的仓库、入口与各组件的树哈希；宿主据此得知自己的版本，应用内更新用它核对下载包。
-- 每个版本在 GitHub Releases 发布 ZIP 与同名 `.sha256`，标签为 `v<版本>`，标题为 `Moongate <版本>`（预览版带 `-preview` 并标为预发布）；应用内更新从这里下载整包，核对 SHA-256、压缩包结构与发行身份后由 `Moongate.exe` 替换程序文件，失败时回退并恢复数据库。
+- 每个版本在 GitHub Releases 发布 ZIP 与同名 `.sha256`，标签为 `v<版本>`，标题为 `Moongate <版本>`（预览版带 `-preview` 并标为预发布）；应用内更新先直连 github.com 取最新版本（不通时改用 GitHub API），有对应本机版本的增量包时只下载变化的文件，否则下载整包；核对 SHA-256、文件清单、压缩包结构与发行身份后由 `Moongate.exe` 替换程序文件，失败时回退并恢复数据库。
+- **增量资产（0.1.2 起）。** 打包时加 `-UpdateBase <上一版完整包 zip 或其清单>`（可给多个），在完整包旁生成文件清单 `<完整包名>.manifest.json` 与增量包 `<完整包名>.update-from-<旧版本>.zip`；增量包只含新版里内容变化或新增的文件，打成单个文件。已有完整包时也可单独运行 `python scripts/build/package-update-assets.py --archive <新完整包> --base <旧完整包或清单>`。清单与增量包都作为附加资产上传。
 - **资产命名与排序。** GitHub Release 按文件名排序列出资产，完整包必须排在第一个，用户不滚动就能看到该下载的文件：
 
   | 资产 | 文件名 | 示例 |
@@ -191,7 +192,7 @@ pwsh -NoProfile -File .\scripts\build\publish-backend.ps1 -Version 0.1.0 -Channe
   | 校验值 | `Moongate-v<版本>-Windows-x64.zip.sha256` | `Moongate-v0.1.1-Windows-x64.zip.sha256` |
   | 其他资产（增量包、可选组件、调试符号等） | `Moongate-v<版本>-Windows-x64.zip.<小写字母开头的用途>…` | `Moongate-v0.1.1-Windows-x64.zip.update-from-0.1.0.zip` |
 
-  校验值与其他资产都以完整包的文件名为前缀，前缀在任何字符串比较（区分或不区分大小写、按区域规则）里都排在更长的名字前面，所以完整包总在第一个。发布脚本 `-AdditionalAssets` 接受其他资产，按这条规则核对文件名，并按序数、不区分大小写与区域规则各排序一次确认完整包在第一个，否则拒绝发布。应用内更新只按完整包与校验值的确切文件名取用，其他资产不影响更新。
+  校验值与其他资产都以完整包的文件名为前缀，前缀在任何字符串比较（区分或不区分大小写、按区域规则）里都排在更长的名字前面，所以完整包总在第一个。发布脚本 `-AdditionalAssets` 接受其他资产，按这条规则核对文件名，并按序数、不区分大小写与区域规则各排序一次确认完整包在第一个，否则拒绝发布。应用内更新按这套命名拼出完整包、校验值与清单的下载地址，增量包的文件名写在清单里；0.1.0、0.1.1 只按完整包与校验值的确切文件名取用资产，附加资产不影响它们更新。
 - **发布说明。** 每个版本在 `docs/` 下有 `release-notes-<版本>.md`（简体）与 `release-notes-<版本>.zh-TW.md`（繁体），两份开头各有一段版本提示与下载指引。Release 正文依次放简体与繁体的这段开头，再放简体全文与繁体全文。
 - Tesseract 的版本、来源与文件哈希按 `workers/color-engine/tesseract-lock.json` 核对，各组件的许可文字在 `workers/color-engine/tesseract-licenses/`；不符或缺失时打包在发布 .NET 组件之前停止。
 - 染色组件按引擎实际用到的模块瘦身：`scripts/build/package-color-runtime.py` 的 `SLIM_RULES` 逐条写明删除的文件与理由，删除后启动随包 Python 导入引擎全部模块并执行延迟导入，失败即停止打包；`tesseract.exe` 与 `libtesseract-5.dll` 移除调试信息，处理后哈希固定在锁定清单，识别输出须与原程序一致。

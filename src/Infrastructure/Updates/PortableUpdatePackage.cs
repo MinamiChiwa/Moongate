@@ -12,10 +12,17 @@ public sealed class UpdatePackageException(string code, string? detail = null) :
     public string Code { get; } = code;
 }
 
-/// <summary>一次检查得到的可安装发行：GitHub Release 的整包 zip、其 SHA-256 与下载地址。计划 ID 同时用作安装事务编号。</summary>
+/// <summary>
+/// 一次检查得到的可安装发行：GitHub Release 的整包 zip、其 SHA-256 与下载地址；选用增量时 <see cref="Delta"/> 记录增量包，
+/// 下载失败或校验不过时仍按整包字段改用完整包。计划 ID 同时用作安装事务编号。
+/// </summary>
 public sealed record UpdatePlan(int SchemaVersion, string PlanId, string Version, string DisplayVersion, string Channel, string Tag,
     string AssetName, long AssetLength, string Sha256, IReadOnlyList<UpdatePlanSource> Sources, string Source,
-    DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt);
+    DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, UpdatePlanDelta? Delta = null);
+
+/// <summary>选用的增量包、清单（按哈希保存在计划目录）与复用、下载、删除的文件数。</summary>
+public sealed record UpdatePlanDelta(string AssetName, long AssetLength, string Sha256, IReadOnlyList<UpdatePlanSource> Sources,
+    string ManifestSha256, int ReusedFiles, int DownloadedFiles, int DeletedFiles);
 
 /// <param name="Id">来源种类：<c>GithubDirect</c>（github.com 发行下载地址）或 <c>GithubApi</c>（REST API 资产地址）。</param>
 public sealed record UpdatePlanSource(string Id, Uri Uri);
@@ -43,6 +50,55 @@ public static class UpdatePlanStore
         File.Move(temporary, path, overwrite: true);
     }
 
+    /// <summary>清单按内容哈希保存为 <c>update/plans/manifest-&lt;sha256&gt;.json</c>，同一发行只存一份。</summary>
+    public static string ManifestPath(string toolRoot, string sha256)
+    {
+        if (!ReleaseIdentity.IsHash(sha256)) throw new UpdatePackageException("update.planInvalid");
+        return Path.Combine(UpdateLayout.Plans(toolRoot), "manifest-" + sha256 + ".json");
+    }
+
+    public static async Task SaveManifestAsync(string toolRoot, string sha256, byte[] bytes, CancellationToken token = default)
+    {
+        var path = ManifestPath(toolRoot, sha256);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        UpdatePaths.RejectLinks(path);
+        if (File.Exists(path) && ReleaseIdentity.FileSha256(path) == sha256) return;
+        var temporary = path + ".tmp";
+        await File.WriteAllBytesAsync(temporary, bytes, token).ConfigureAwait(false);
+        File.Move(temporary, path, overwrite: true);
+    }
+
+    /// <summary>读取计划引用的清单并核对哈希；缺失或不符时返回空。</summary>
+    public static async Task<byte[]?> ReadManifestAsync(string toolRoot, string sha256, CancellationToken token = default)
+    {
+        var path = ManifestPath(toolRoot, sha256);
+        UpdatePaths.RejectLinks(path);
+        if (!File.Exists(path)) return null;
+        var bytes = await File.ReadAllBytesAsync(path, token).ConfigureAwait(false);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant() == sha256 ? bytes : null;
+    }
+
+    /// <summary>删除未被有效计划引用的清单（计划过期后清单随之失效）。</summary>
+    public static async Task PruneManifestsAsync(string toolRoot, DateTimeOffset now, CancellationToken token = default)
+    {
+        var directory = UpdateLayout.Plans(toolRoot);
+        if (!Directory.Exists(directory)) return;
+        var referenced = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var file in Directory.EnumerateFiles(directory, "*.json"))
+        {
+            var id = Path.GetFileNameWithoutExtension(file);
+            if (!UpdateLayout.IsTransactionId(id)) continue;
+            try
+            {
+                var plan = await ReadAsync(toolRoot, id, token).ConfigureAwait(false);
+                if (plan.ExpiresAt > now && plan.Delta is { } delta) referenced.Add(delta.ManifestSha256);
+            }
+            catch (UpdatePackageException) { }
+        }
+        foreach (var file in Directory.EnumerateFiles(directory, "manifest-*.json"))
+            if (!referenced.Contains(Path.GetFileNameWithoutExtension(file)["manifest-".Length..])) File.Delete(file);
+    }
+
     public static async Task<UpdatePlan> ReadAsync(string toolRoot, string planId, CancellationToken token = default)
     {
         if (!UpdateLayout.IsTransactionId(planId)) throw new UpdatePackageException("update.planInvalid");
@@ -68,7 +124,11 @@ public static class UpdatePlanStore
             plan.AssetLength is < 1 or > PortableUpdatePackage.MaximumArchiveBytes || plan.Sources is not { Count: > 0 } ||
             plan.Sources.Any(source => source.Uri.Scheme != Uri.UriSchemeHttps) || plan.ExpiresAt <= plan.CreatedAt ||
             plan.Channel is not ("stable" or "preview") || plan.DisplayVersion.Length is 0 or > 64 ||
-            plan.AssetName != "Moongate-v" + plan.DisplayVersion + "-Windows-x64.zip")
+            plan.AssetName != "Moongate-v" + plan.DisplayVersion + "-Windows-x64.zip" ||
+            plan.Delta is { } delta && (!delta.AssetName.StartsWith(plan.AssetName + ".update-from-", StringComparison.Ordinal) ||
+                !delta.AssetName.EndsWith(".zip", StringComparison.Ordinal) || delta.AssetLength is < 1 or > PortableUpdatePackage.MaximumArchiveBytes ||
+                !ReleaseIdentity.IsHash(delta.Sha256) || !ReleaseIdentity.IsHash(delta.ManifestSha256) || delta.Sources is not { Count: > 0 } ||
+                delta.Sources.Any(source => source.Uri.Scheme != Uri.UriSchemeHttps) || delta.ReusedFiles < 0 || delta.DownloadedFiles < 0 || delta.DeletedFiles < 0))
             throw new UpdatePackageException("update.planInvalid");
     }
 }

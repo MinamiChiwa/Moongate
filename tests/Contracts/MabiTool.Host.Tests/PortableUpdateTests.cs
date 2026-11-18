@@ -108,6 +108,89 @@ public sealed class PortableUpdateTests : IDisposable
     }
 
     [Fact]
+    public async Task DirectCheckFollowsLatestRedirectAndStagesIncrementalUpdate()
+    {
+        var release = DeltaRelease();
+        var installation = new PortableInstallation(release.Installed, ToolRoot(release.Installed), ReleaseIdentity.Read(release.Installed)!);
+        var handler = release.Handler();
+        using var source = new GitHubReleaseSource(handler, retryCount: 0);
+        var service = Service(installation, source, release.Handler);
+
+        // 版本来自 releases/latest 的跳转地址，资产地址按文件名拼出，不访问 api.github.com。
+        Assert.Equal("v0.1.2", GitHubReleaseSource.ParseLatestRedirect(Repository, new Uri(LatestTag)));
+        Assert.Null(GitHubReleaseSource.ParseLatestRedirect(Repository, new Uri("https://github.com/MinamiChiwa/Moongate/releases")));
+        var offer = await service.CheckAsync(CancellationToken.None);
+        Assert.Equal(("0.1.2", "incremental", (long)release.Delta.Length), (offer.ReleaseId, offer.DownloadKind, offer.DownloadBytes!.Value));
+        Assert.DoesNotContain(handler.Requests, request => request.RequestUri!.Host == "api.github.com");
+        var plan = await service.ReadPlanAsync(offer.PlanId!);
+        Assert.Equal(Download + "Moongate-v0.1.2-Windows-x64.zip", plan.Sources[0].Uri.AbsoluteUri);
+        Assert.Equal((Download + DeltaName, 1, 5, 1),
+            (plan.Delta!.Sources[0].Uri.AbsoluteUri, plan.Delta.ReusedFiles, plan.Delta.DownloadedFiles, plan.Delta.DeletedFiles));
+
+        // 下载只取增量包：相同文件取自本机，变化与新增的取自增量包，清单之外的本机文件不进入暂存。
+        var status = await service.DownloadAsync(plan, (_, _, _) => Task.CompletedTask);
+        Assert.Equal((1, 5), (status.ReusedFiles, status.DownloadedFiles));
+        var staged = UpdateLayout.StagedPackage(installation.ToolRoot, plan.PlanId);
+        Assert.Equal("added", File.ReadAllText(Path.Combine(staged, "components", "core", "added.dll")));
+        Assert.False(File.Exists(Path.Combine(staged, "components", "core", "stale.dll")));
+        Assert.Null(ReleaseIdentity.Read(staged)!.Verify(staged));
+        Assert.DoesNotContain(handler.Requests.Concat(release.DownloadRequests), request =>
+            request.RequestUri!.AbsoluteUri == Download + "Moongate-v0.1.2-Windows-x64.zip");
+        Assert.DoesNotContain(Directory.EnumerateFiles(UpdateLayout.Downloads(installation.ToolRoot)), path => path.EndsWith(".blob", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task IncrementalUpdateFallsBackToFullPackage()
+    {
+        // 本机文件被改动，增量包缺少它需要的内容：检查直接选完整包。
+        var modified = DeltaRelease();
+        File.WriteAllText(Path.Combine(modified.Installed, "components", "core", "shared.dll"), "edited");
+        var installation = new PortableInstallation(modified.Installed, ToolRoot(modified.Installed), ReleaseIdentity.Read(modified.Installed)!);
+        using (var source = new GitHubReleaseSource(modified.Handler(), retryCount: 0))
+        {
+            var offer = await Service(installation, source, modified.Handler).CheckAsync(CancellationToken.None);
+            Assert.Equal(("full", (long)modified.Full.Length), (offer.DownloadKind, offer.DownloadBytes!.Value));
+            Assert.Null((await Service(installation, source).ReadPlanAsync(offer.PlanId!)).Delta);
+        }
+
+        // 增量包返回 404：同一次下载改用完整包。
+        var missing = DeltaRelease(deltaMissing: true);
+        installation = new PortableInstallation(missing.Installed, ToolRoot(missing.Installed), ReleaseIdentity.Read(missing.Installed)!);
+        using (var source = new GitHubReleaseSource(missing.Handler(), retryCount: 0))
+        {
+            var service = Service(installation, source, missing.Handler);
+            var plan = await service.ReadPlanAsync((await service.CheckAsync(CancellationToken.None)).PlanId!);
+            Assert.NotNull(plan.Delta);
+            var status = await service.DownloadAsync(plan, (_, _, _) => Task.CompletedTask);
+            Assert.Equal((ulong)missing.Full.Length, status.TotalBytes!.Value.Value);
+            Assert.Contains(missing.DownloadRequests, request => request.RequestUri!.AbsoluteUri == Download + "Moongate-v0.1.2-Windows-x64.zip");
+            Assert.Equal("0.1.2", ReleaseIdentity.Read(UpdateLayout.StagedPackage(installation.ToolRoot, plan.PlanId))!.DisplayVersion);
+        }
+
+        // 增量包里的内容与清单哈希不符：套用被拒绝、不留暂存，下载改用完整包。
+        var tampered = DeltaRelease(tamper: true);
+        installation = new PortableInstallation(tampered.Installed, ToolRoot(tampered.Installed), ReleaseIdentity.Read(tampered.Installed)!);
+        var manifest = UpdateManifest.Parse(tampered.Manifest, "0.1.2", "Moongate-v0.1.2-Windows-x64.zip", ReleaseIdentity.FileSha256(tampered.FullPath));
+        var deltaPath = Path.Combine(root, "tampered-delta.zip");
+        await File.WriteAllBytesAsync(deltaPath, tampered.Delta);
+        var transaction = Guid.NewGuid().ToString("N");
+        var rejected = await Assert.ThrowsAsync<UpdatePackageException>(() => DeltaUpdate.StageAsync(manifest, deltaPath, tampered.Installed,
+            installation.ToolRoot, transaction, new UpdateIoBudget()));
+        Assert.Equal("update.assetHashMismatch", rejected.Code);
+        Assert.False(Directory.Exists(UpdateLayout.Staging(installation.ToolRoot, transaction)));
+        Assert.False(Directory.Exists(UpdateLayout.Staging(installation.ToolRoot, transaction) + ".work"));
+        using (var source = new GitHubReleaseSource(tampered.Handler(), retryCount: 0))
+        {
+            var service = Service(installation, source, tampered.Handler);
+            var plan = await service.ReadPlanAsync((await service.CheckAsync(CancellationToken.None)).PlanId!);
+            await service.DownloadAsync(plan, (_, _, _) => Task.CompletedTask);
+            Assert.Contains(tampered.DownloadRequests, request => request.RequestUri!.AbsoluteUri == Download + "Moongate-v0.1.2-Windows-x64.zip");
+            var staged = UpdateLayout.StagedPackage(installation.ToolRoot, plan.PlanId);
+            Assert.Equal("new", File.ReadAllText(Path.Combine(staged, "components", "core", "MabiTool.Host.dll")));
+        }
+    }
+
+    [Fact]
     public void ReplacerSwapsInNewVersionAndCommitsAfterHealthMarker()
     {
         var (package, toolRoot, transaction) = Prepared();
@@ -248,11 +331,91 @@ public sealed class PortableUpdateTests : IDisposable
         return (package, toolRoot, transaction);
     }
 
-    private string Package(string name, string displayVersion, string marker)
+    private const string Download = "https://github.com/MinamiChiwa/Moongate/releases/download/v0.1.2/";
+    private const string LatestTag = "https://github.com/MinamiChiwa/Moongate/releases/tag/v0.1.2";
+    private const string DeltaName = "Moongate-v0.1.2-Windows-x64.zip.update-from-0.1.1.zip";
+
+    /// <summary>
+    /// 本机 0.1.1 与 GitHub 上的 0.1.2：两版共有 <c>shared.dll</c>，新版改了入口、宿主与声明并新增 <c>added.dll</c>，
+    /// 本机多出的 <c>stale.dll</c> 不在新版里。清单与增量包按 package-update-assets.py 的格式生成。
+    /// </summary>
+    private DeltaFixture DeltaRelease(bool deltaMissing = false, bool tamper = false)
+    {
+        // 共有文件取得足够大，使增量包小于完整包（与真实发行中不变的运行时同理）。
+        var shared = string.Concat(Enumerable.Range(0, 4000).Select(_ => Guid.NewGuid().ToString("N")));
+        var installed = Package("installed-" + Guid.NewGuid().ToString("N"), "0.1.1", "old",
+            new Dictionary<string, string> { ["shared.dll"] = shared, ["stale.dll"] = "old-only" });
+        var source = Path.Combine(root, "release-" + Guid.NewGuid().ToString("N"), "Moongate");
+        Package(source, "0.1.2", "new", new Dictionary<string, string> { ["shared.dll"] = shared, ["added.dll"] = "added" });
+        var full = Path.Combine(Path.GetDirectoryName(source)!, "Moongate-v0.1.2-Windows-x64.zip");
+        ZipFile.CreateFromDirectory(source, full, CompressionLevel.Fastest, includeBaseDirectory: true);
+        static Dictionary<string, (long Size, string Sha)> Files(string package) => Directory.EnumerateFiles(package, "*", SearchOption.AllDirectories)
+            .Where(path => !Path.GetRelativePath(package, path).StartsWith("userdata", StringComparison.Ordinal))
+            .ToDictionary(path => Path.GetRelativePath(package, path).Replace('\\', '/'), path => (new FileInfo(path).Length, ReleaseIdentity.FileSha256(path)));
+        var target = Files(source);
+        var local = Files(installed).Values.Select(item => item.Sha).ToHashSet();
+        var wanted = target.Where(item => !local.Contains(item.Value.Sha)).ToArray();
+        using var deltaStream = new MemoryStream();
+        using (var zip = new ZipArchive(deltaStream, ZipArchiveMode.Create, leaveOpen: true))
+            foreach (var (path, file) in wanted.DistinctBy(item => item.Value.Sha))
+            {
+                using var output = zip.CreateEntry(file.Sha).Open();
+                if (tamper && path.EndsWith("added.dll", StringComparison.Ordinal)) output.Write("tampered"u8);
+                else using (var input = File.OpenRead(Path.Combine(source, path))) input.CopyTo(output);
+            }
+        var delta = deltaStream.ToArray();
+        var fullBytes = File.ReadAllBytes(full);
+        var fullSha = ReleaseIdentity.FileSha256(full);
+        var manifest = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            schemaVersion = 1, product = "Moongate", displayVersion = "0.1.2",
+            package = new { name = "Moongate-v0.1.2-Windows-x64.zip", size = fullBytes.Length, sha256 = fullSha },
+            files = target.OrderBy(item => item.Key, StringComparer.Ordinal).Select(item => new { path = item.Key, size = item.Value.Size, sha256 = item.Value.Sha }),
+            deltas = new[]
+            {
+                new { fromVersion = "0.1.1", name = DeltaName, size = delta.Length, sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(delta)).ToLowerInvariant(),
+                    blobs = wanted.Select(item => item.Value.Sha).Distinct().Order(StringComparer.Ordinal).ToArray() }
+            }
+        });
+        return new(installed, full, fullBytes, delta, manifest, fullSha, deltaMissing);
+    }
+
+    private sealed record DeltaFixture(string Installed, string FullPath, byte[] Full, byte[] Delta, byte[] Manifest, string FullSha, bool DeltaMissing)
+    {
+        public List<HttpRequestMessage> DownloadRequests { get; } = [];
+
+        public FakeHandler Handler()
+        {
+            FakeHandler? handler = null;
+            handler = new FakeHandler(request =>
+            {
+                if (handler != Checks) DownloadRequests.Add(request);
+                return request.RequestUri!.AbsoluteUri switch
+                {
+                    "https://github.com/MinamiChiwa/Moongate/releases/latest" =>
+                        new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri(LatestTag) } },
+                    Download + "Moongate-v0.1.2-Windows-x64.zip.sha256" => Text(FullSha + "  Moongate-v0.1.2-Windows-x64.zip\n"),
+                    Download + "Moongate-v0.1.2-Windows-x64.zip.manifest.json" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Manifest) },
+                    Download + DeltaName when !DeltaMissing => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Delta) },
+                    Download + "Moongate-v0.1.2-Windows-x64.zip" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Full) },
+                    _ => new HttpResponseMessage(HttpStatusCode.NotFound)
+                };
+            });
+            Checks ??= handler;
+            return handler;
+        }
+
+        // 第一个处理器供 GitHubReleaseSource 检查使用，之后创建的供下载使用。
+        private FakeHandler? Checks { get; set; }
+    }
+
+    private string Package(string name, string displayVersion, string marker, IReadOnlyDictionary<string, string>? coreFiles = null)
     {
         var package = Path.IsPathRooted(name) ? name : Path.Combine(root, name);
         Directory.CreateDirectory(Path.Combine(package, "components", "core"));
         Directory.CreateDirectory(Path.Combine(package, "licenses"));
+        foreach (var (file, content) in coreFiles ?? new Dictionary<string, string>())
+            File.WriteAllText(Path.Combine(package, "components", "core", file), content);
         File.WriteAllText(Path.Combine(package, "components", "core", "MabiTool.Host.dll"), marker);
         File.WriteAllText(Path.Combine(package, "licenses", "THIRD_PARTY_NOTICES.txt"), marker);
         File.WriteAllText(Path.Combine(package, "Moongate.exe"), "exe-" + marker);

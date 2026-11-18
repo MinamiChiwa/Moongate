@@ -14,6 +14,8 @@
     [string]$PythonExecutable = 'python',
     [string]$TesseractDirectory,
     [string]$TesseractLicenseDirectory,
+    # 增量更新的出发版本：旧完整包 zip 或其 .manifest.json，可给多个；省略时只生成文件清单。
+    [string[]]$UpdateBase = @(),
     [switch]$NoRestore
 )
 $ErrorActionPreference = 'Stop'
@@ -198,7 +200,14 @@ try {
     [IO.Directory]::Move($workRoot, $outputRoot)
     $archive = & (Join-Path $repositoryRoot 'scripts/build/package-archive.ps1') -PackageDirectory $outputRoot -ArchivePath $archivePath
     $buildRecord.archive = [ordered]@{ name = $archive.name; sha256 = $archive.sha256; bytes = $archive.bytes; files = $archive.files }
+    # 应用内更新的文件清单与增量包，与完整包同目录，发布时作为附加资产上传。
+    $updateArguments = @('-I', '-S', '-B', '-X', 'utf8', (Join-Path $repositoryRoot 'scripts/build/package-update-assets.py'), '--archive', $archivePath)
+    foreach ($base in $UpdateBase) { $updateArguments += @('--base', [IO.Path]::GetFullPath($base)) }
+    $updateAssets = & $PythonExecutable @updateArguments | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw '生成文件清单与增量包失败' }
+    $buildRecord.updateAssets = @($updateAssets.assets | ForEach-Object { [IO.Path]::GetFileName($_) })
     [IO.File]::WriteAllText((Join-Path $outputRoot 'package-build.json'), ($buildRecord | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
     Write-Output "已构建目录包：$outputRoot"
     Write-Output "已生成解压版：$archivePath（SHA-256 $($archive.sha256)）"
+    Write-Output "已生成更新资产：$($updateAssets.assets -join '，')"
 } finally { Pop-Location }

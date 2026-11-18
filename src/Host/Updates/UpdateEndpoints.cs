@@ -16,7 +16,8 @@ internal sealed class UpdateApiService(PortableInstallation? installation, IUpda
             ? saved.Deserialize<UpdateCheckResult>(ContractJson.Options) : null;
         var available = installation is not null && result is { UpdateAvailable: true } && result.PlanExpiresAt > clock.GetUtcNow()
             ? new UpdateAvailable(result.ReleaseId, result.ManifestSha256, result.PlanId, result.PlanExpiresAt, result.Source,
-                result.SizeBytes is { } size ? new((ulong)size) : null) : null;
+                result.SizeBytes is { } size ? new((ulong)size) : null, result.DownloadKind,
+                result.DownloadBytes is { } download ? new((ulong)download) : null) : null;
         var last = installation is null ? null : UpdateResult.Read(installation.ToolRoot);
         var lastInstall = last is null ? null : new UpdateInstallResult(last.TransactionId, last.TransactionId, last.ToVersion, last.Outcome,
             null, last.Reason, last.FromVersion, new DateTimeOffset(DateTime.SpecifyKind(last.At, DateTimeKind.Utc)));
@@ -33,7 +34,7 @@ internal sealed class UpdateApiService(PortableInstallation? installation, IUpda
     public async Task<UpdatePlanSnapshot> Plan(string id, CancellationToken ct)
     {
         var plan = await downloads.ReadPlanAsync(id, ct);
-        var bytes = new UInt64String((ulong)plan.AssetLength);
+        var bytes = new UInt64String((ulong)(plan.Delta?.AssetLength ?? plan.AssetLength));
         return new(plan.PlanId, new(1), plan.DisplayVersion, plan.Sha256, plan.CreatedAt, plan.ExpiresAt, plan.ExpiresAt <= clock.GetUtcNow(),
             [], [], bytes, new((ulong)plan.AssetLength * 3));
     }

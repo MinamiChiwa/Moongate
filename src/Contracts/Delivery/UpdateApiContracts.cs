@@ -5,9 +5,11 @@ namespace MabiTool.Contracts;
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record UpdateCheckRequest;
 /// <summary>检查发现的新版本。解压版整包更新中 <c>ReleaseId</c> 为版本号（如 <c>0.2.0-preview</c>），
-/// <c>ManifestSha256</c> 为整包 zip 的 SHA-256，<c>SizeBytes</c> 为 zip 字节数。</summary>
+/// <c>ManifestSha256</c> 为整包 zip 的 SHA-256，<c>SizeBytes</c> 为 zip 字节数；<c>DownloadKind</c> 为本次下载方式
+/// （<c>incremental</c> 增量包、<c>full</c> 完整包），<c>DownloadBytes</c> 为本次需要下载的字节数。</summary>
 public sealed record UpdateAvailable(string ReleaseId, string ManifestSha256, string? PlanId,
-    DateTimeOffset? PlanExpiresAt, OpenEnum<UpdateSourceKind> Source, UInt64String? SizeBytes = null);
+    DateTimeOffset? PlanExpiresAt, OpenEnum<UpdateSourceKind> Source, UInt64String? SizeBytes = null,
+    string? DownloadKind = null, UInt64String? DownloadBytes = null);
 /// <summary>
 /// 更新状态。<c>State</c>：idle、checking、available、preparing/downloading/verifying、ready（已下载并校验、可安装）、
 /// waitingForIdle、applying、handedOff（已交给替换器，程序即将重启）、failed。<c>InstalledReleaseId</c> 为当前运行的版本号；
