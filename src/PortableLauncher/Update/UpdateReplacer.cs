@@ -19,10 +19,13 @@ internal interface IReplacerEnvironment
 
 internal sealed class ReplacerTimeouts
 {
-    /// <summary>等待前端、宿主退出并释放 <c>runtime/host.lock</c>。</summary>
-    internal TimeSpan ProcessExit { get; set; } = TimeSpan.FromSeconds(60);
-    /// <summary>启动新版本（或回退后的旧版本）到宿主写出健康标记：含前端启动、数据迁移与宿主就绪。</summary>
-    internal TimeSpan Health { get; set; } = TimeSpan.FromSeconds(180);
+    /// <summary>等待前端、宿主退出并释放 <c>runtime/host.lock</c>（含退出前的数据库检查点，机械硬盘上较慢）。</summary>
+    internal TimeSpan ProcessExit { get; set; } = TimeSpan.FromSeconds(120);
+    /// <summary>
+    /// 启动新版本（或回退后的旧版本）到宿主写出健康标记：含前端启动、数据迁移与宿主就绪。未签名的新程序首次运行时
+    /// 杀毒软件会逐个扫描，机械硬盘上冷启动可达数分钟。
+    /// </summary>
+    internal TimeSpan Health { get; set; } = TimeSpan.FromSeconds(300);
     /// <summary>文件被短暂占用（杀毒软件扫描、索引）时改名的重试次数，间隔从 200 ms 起倍增、单次不超过 3 秒。</summary>
     internal int MoveAttempts { get; set; } = 12;
     internal TimeSpan Poll { get; set; } = TimeSpan.FromMilliseconds(500);

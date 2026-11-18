@@ -41,13 +41,15 @@ public sealed partial class SampleBackend
         if (Offline) return CaptureStatusView.Offline;
         var running = CaptureState == "running";
         var reason = running ? null : CaptureReason ?? (sampleCaptureSettings.AutomaticCapture ? null : "observation.automaticCaptureDisabled");
-        var channel = sampleCaptureSettings.ChannelMode == GameCaptureSettings.ManualChannel ? sampleCaptureSettings.ChannelDescription : SampleChannels[0].Description;
+        // 自动模式全部网卡同时抓，示例来源为物理网卡；指定模式显示保存的网卡。
+        var manual = sampleCaptureSettings.ChannelMode == GameCaptureSettings.ManualChannel;
         return new(true, CaptureInstalled, sampleCaptureSettings.AutomaticCapture, CaptureState,
             running ? "running" : sampleCaptureSettings.AutomaticCapture ? "failed" : "off", reason,
-            running ? channel : null, running ? sampleCaptureSettings.ChannelMode == GameCaptureSettings.ManualChannel ? "saved" : "automatic" : null, null,
+            running && manual ? sampleCaptureSettings.ChannelDescription : null, running ? manual ? "saved" : "automatic" : null, null,
             running ? CaptureCharacter : null,
             // 示例位置：永久频道的地图名为游戏原文，频道号取客户端频道序号。
-            running ? new(975984897, "杜巴頓", 975984897, null, true, 5, "location.channelDisplayUnverified") : null, NpcapState);
+            running ? new(975984897, "杜巴頓", 975984897, null, true, 5, "location.channelDisplayUnverified") : null, NpcapState,
+            SourceKind: running && !manual ? "physical" : null);
     }
 
     public CaptureSettingsView? GetCaptureSettings()

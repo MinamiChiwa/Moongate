@@ -242,7 +242,7 @@ public sealed class PersistenceTests
         using var workspace = new Workspace(); using var lease = workspace.Lease();
         await using var store = SqliteStore.Open(lease, [Migration]);
         Assert.Equal(TimeSpan.FromMilliseconds(250), SqliteStore.TransactionBudget);
-        Assert.Equal(TimeSpan.FromMilliseconds(2000), SqliteStore.TransactionHardLimit);
+        Assert.Equal(TimeSpan.FromSeconds(30), SqliteStore.TransactionHardLimit);
         store.SoftTransactionBudget = TimeSpan.FromMilliseconds(20); store.HardTransactionLimit = TimeSpan.FromMilliseconds(400);
         var observed = new System.Collections.Concurrent.ConcurrentQueue<SqliteTransactionBudgetSample>();
         store.TransactionBudgetObserver = sample => { observed.Enqueue(sample); throw new IOException("injected telemetry failure"); };
@@ -285,12 +285,32 @@ public sealed class PersistenceTests
         Assert.Equal(2, observed.Count);
     }
 
+    /// <summary>慢盘或杀毒扫描下超过原 2 秒上限的写事务按默认上限照常提交，只记设计预算遥测。</summary>
+    [Fact]
+    public async Task WriteSlowerThanTheFormerTwoSecondLimitCommitsWithTelemetryOnly()
+    {
+        using var workspace = new Workspace(); using var lease = workspace.Lease();
+        await using var store = SqliteStore.Open(lease, [Migration]);
+        var observed = new System.Collections.Concurrent.ConcurrentQueue<SqliteTransactionBudgetSample>();
+        store.TransactionBudgetObserver = observed.Enqueue;
+        Assert.True(await store.WriteAsync(tx =>
+        {
+            tx.Execute("INSERT INTO fixture_values VALUES('slow-disk',1)");
+            Thread.Sleep(2100);
+            return SqliteStore.AppendEvent(tx, Event("slow-disk-event"));
+        }));
+        Assert.Equal(1L, store.ReadScalar("SELECT value FROM fixture_values WHERE id='slow-disk'"));
+        Assert.Equal("slow-disk-event", Assert.Single(store.ReadPendingEvents()).Event.EventId);
+        Assert.Equal("succeeded", Assert.Single(observed).Outcome);
+        Assert.Equal((1L, 0L), (store.SoftBudgetExceededCount, store.HardLimitExceededCount));
+    }
+
     [Fact]
     public async Task ReadersWaitBrieflyForAReleasedSlotAndFailWithRegisteredCodeAfterTheBound()
     {
         using var workspace = new Workspace(); using var lease = workspace.Lease();
         await using var store = SqliteStore.Open(lease, [Migration]);
-        Assert.Equal(TimeSpan.FromMilliseconds(250), SqliteStore.ReadCapacityWait);
+        Assert.Equal(TimeSpan.FromSeconds(5), SqliteStore.ReadCapacityWait);
         store.ReadSlotWait = TimeSpan.FromMilliseconds(1000);
         using var entered = new CountdownEvent(8); using var release = new SemaphoreSlim(0);
         var holders = Enumerable.Range(0, 8).Select(_ => Task.Factory.StartNew(() => store.Read(_ =>

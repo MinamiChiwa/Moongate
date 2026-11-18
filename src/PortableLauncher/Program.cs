@@ -86,7 +86,7 @@ internal static class Program
 
     internal static int Launch(string packageRoot, string[] args, bool watch)
     {
-        var plan = LaunchPlan.Create(packageRoot, Environment.Is64BitOperatingSystem);
+        var plan = LaunchPlan.Create(packageRoot, Environment.Is64BitOperatingSystem, WindowsBuild());
         if (plan.Problem is not null) return Fail(plan.Problem);
         var start = new ProcessStartInfo(plan.Desktop, LaunchPlan.CommandLine(args))
         {
@@ -105,6 +105,26 @@ internal static class Program
             return Fail($"桌面前端未能启动：{error.Message}\n\n可能被安全软件拦截，或程序文件已损坏；请重新完整解压下载的压缩包后再试。");
         }
     }
+
+    /// <summary>
+    /// 系统构建号。本程序没有声明 Windows 10 兼容性清单，<see cref="Environment.OSVersion"/> 在 .NET Framework 下会报告 6.2，
+    /// 因此直接读 <c>RtlGetVersion</c>；读不到时按满足下限处理，交给后续启动检查。
+    /// </summary>
+    private static int WindowsBuild()
+    {
+        var info = new OsVersionInfo { Size = Marshal.SizeOf(typeof(OsVersionInfo)) };
+        return RtlGetVersion(ref info) == 0 ? info.Build : LaunchPlan.MinimumWindowsBuild;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct OsVersionInfo
+    {
+        public int Size, Major, Minor, Build, Platform;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Service;
+    }
+
+    [DllImport("ntdll.dll")]
+    private static extern int RtlGetVersion(ref OsVersionInfo info);
 
     private static int Fail(string message)
     {

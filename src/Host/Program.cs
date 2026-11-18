@@ -2,12 +2,14 @@ using MabiTool.Host;
 using MabiTool.Infrastructure;
 using MabiTool.Host.Updates;
 using MabiTool.Host.Color;
+using MabiTool.ModuleSdk;
 
 // 游戏窗口绑定、截图与鼠标坐标统一用物理像素：在任何窗口与线程创建前声明每显示器 DPI 感知 v2（WindowsDpiAwareness）。
 if (OperatingSystem.IsWindows()) MabiTool.Platform.Windows.WindowsDpiAwareness.EnablePerMonitorV2();
 // 记录监听端口与是否已开始监听：启动失败按端口、数据目录与未知错误分别给出原因与退出码（HostStartupFailure）。
 var started = false;
 var port = 0;
+string? toolRoot = null;
 try
 {
     // 目录包前端拉起宿主时传入自己的进程号：前端结束后宿主随之按正常停止流程退出。
@@ -15,6 +17,7 @@ try
     var mock = hostArgs.Contains("--mock", StringComparer.Ordinal);
     if (hostArgs.Count(x => x == "--mock") > 1) throw new ArgumentException("--mock 不能重复");
     var requested = StorageOptions.FromArguments(hostArgs.Where(x => x != "--mock").ToArray());
+    toolRoot = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(requested.BootstrapDirectory)));
     // 工具根布局的程序文件夹被搬移、改名、复制或换用户后，先接管当前位置（权限与登记的路径），再打开数据根。
     var adopted = requested.LocatedByToolRoot && !mock ? DataRootLease.AdoptToolRootLayout(requested) : null;
     if (adopted?.PreviousDataRoot is { } previousRoot) Console.WriteLine($"程序文件夹位置已变化：数据从 {previousRoot} 改为在当前位置打开");
@@ -65,25 +68,35 @@ try
 }
 catch (StorageException error)
 {
-    Console.Error.WriteLine($"{error.Code}: {error.Message}");
-    Environment.ExitCode = 3;
+    Report(HostStartupDiagnosis.Describe(error, error.Code, error.Message, toolRoot));
 }
 catch (ArgumentException error)
 {
-    Console.Error.WriteLine(error.Message);
-    Environment.ExitCode = 2;
+    Report(new(nameof(ArgumentException), HostStartupReport.Reasons.Arguments, 2, error.Message));
 }
 catch (MabiTool.Infrastructure.Updates.UpdatePackageException error)
 {
     // 更新回退所需的数据库备份描述缺失或无效：保留事务日志，由用户按手动升级步骤处理。
-    Console.Error.WriteLine($"{error.Code}: {error.Message}");
-    Environment.ExitCode = 4;
+    Report(new(error.Code, HostStartupReport.Reasons.UpdateRecovery, 4, error.Message));
 }
 catch (Exception error)
 {
     // 启动阶段：端口被占用或不可用、文件访问与权限失败各有原因码与退出码；分不清的写出原始异常类型与消息。
     var failure = await HostStartupFailure.DescribeAsync(error, port, started);
-    Console.Error.WriteLine($"{failure.Code}: {failure.Message}");
+    Report(failure.ExitCode switch
+    {
+        HostStartupFailure.StorageExitCode => HostStartupDiagnosis.Describe(error, failure.Code, failure.Message, toolRoot),
+        HostStartupFailure.PortInUseExitCode => new(failure.Code, HostStartupReport.Reasons.PortInUse, failure.ExitCode, failure.Message),
+        HostStartupFailure.PortUnavailableExitCode => new(failure.Code, HostStartupReport.Reasons.PortUnavailable, failure.ExitCode, failure.Message),
+        _ => new(failure.Code, HostStartupReport.Reasons.Unknown, failure.ExitCode, failure.Message)
+    });
     if (failure.ExitCode == HostStartupFailure.UnknownExitCode) Console.Error.WriteLine(error);
-    Environment.ExitCode = failure.ExitCode;
+}
+
+// 原因写到标准错误：先是给人看的一行，再是给前端解析的启动失败记录（HostStartupReport）。
+static void Report(HostStartupReport report)
+{
+    Console.Error.WriteLine($"{report.Code}: {report.Message}");
+    Console.Error.WriteLine(report.Format());
+    Environment.ExitCode = report.ExitCode;
 }

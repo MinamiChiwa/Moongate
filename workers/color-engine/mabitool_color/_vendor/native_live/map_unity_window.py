@@ -1,7 +1,7 @@
 """Conditional corner mapping to project client pixels, without InputGeometry."""
 import numpy as np
 import copy
-from .read_dye_window_mapping import _fingerprint
+from .read_dye_window_mapping import _fingerprint, render_scale_viewport
 
 
 def map_unity_geometry_to_client(geometry,window,screen,*,pixel_mapping=None):
@@ -15,13 +15,19 @@ def map_unity_geometry_to_client(geometry,window,screen,*,pixel_mapping=None):
  if any(v.shape!=(2,) or not np.isfinite(v).all() for v in (size,extent,origin)) or np.any(size<=0):
   raise ValueError('Invalid window/screen coordinates')
  equal=bool(np.array_equal(size,extent))
+ render=None
  if not equal:
   if (not isinstance(pixel_mapping,dict) or pixel_mapping.get('source')!='win32_target_awareness_pixel_lattice'
       or pixel_mapping.get('coordinate_validation',{}).get('verified') is not True
       or pixel_mapping.get('physical_client_size')!=size.tolist()
-      or pixel_mapping.get('native_screen_size')!=extent.tolist()
-      or pixel_mapping.get('target_client_size')!=extent.tolist()):
+      or pixel_mapping.get('native_screen_size')!=extent.tolist()):
    raise ValueError('Unity and physical client extents differ; verified pixel mapping required')
+  if pixel_mapping.get('target_client_size')!=extent.tolist():
+   # Unity 渲染尺寸经视口映射到客户区：Unity 像素 → 目标客户区 (u / 缩放 + 原点) → 物理像素。
+   render=render_scale_viewport(pixel_mapping.get('target_client_size'),extent.astype(int).tolist(),
+    pixel_mapping.get('viewport_origin'),pixel_mapping.get('viewport_scale'))
+   if pixel_mapping.get('render_scale_verified') is not True or render is None:
+    raise ValueError('Unity and physical client extents differ; verified pixel mapping required')
  corners=np.asarray(geometry.get('predicted_unity_corners'),dtype=float)
  if corners.shape!=(4,2) or not np.isfinite(corners).all():raise ValueError('Four finite corner candidates required')
  low=corners.min(axis=0);high=corners.max(axis=0)
@@ -30,7 +36,10 @@ def map_unity_geometry_to_client(geometry,window,screen,*,pixel_mapping=None):
   raise ValueError('Corner candidates are not an ordered axis-aligned rectangle')
  if np.any(low<0) or np.any(high>extent):raise ValueError('Board candidate lies outside client extent')
  native=corners.copy();native[:,1]=extent[1]-corners[:,1]
- client=native*(size/extent)
+ if render is None:client=native*(size/extent)
+ else:
+  target=np.asarray(pixel_mapping['target_client_size'],dtype=float)
+  client=(native/np.asarray(render['viewport_scale'],dtype=float)+np.asarray(render['viewport_origin'],dtype=float))*(size/target)
  desktop=client+origin
  client_board=[float(client[:,0].min()),float(client[:,1].min()),float(client[:,0].max()),float(client[:,1].max())]
  desktop_board=[client_board[0]+origin[0],client_board[1]+origin[1],client_board[2]+origin[0],client_board[3]+origin[1]]

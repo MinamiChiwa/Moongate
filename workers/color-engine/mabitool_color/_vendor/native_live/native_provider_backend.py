@@ -365,6 +365,11 @@ class CurrentBuildBackend:
             ready_for_input=False)
         if first!=second or screen!=screen_after:raise ValueError('Window/Unity screen context changed')
         if screen.get('hwnd') is not None and screen['hwnd']!=first['hwnd']:
+            layout=getattr(getattr(self,'adapter',None),'unity_layout',None)
+            if getattr(layout,'located',False):
+                # 静态定位的 Screen 全局须在运行时指向绑定窗口，否则不是同一布局。
+                from .unity_layout import UnityLayoutMismatch
+                raise UnityLayoutMismatch('Located Screen global does not reference the bound game window')
             raise ValueError('Native Screen window handle differs from selected game window')
         equal=first['client_size_physical']==screen['size'];pixel_mapping=None
         diagnostics={}

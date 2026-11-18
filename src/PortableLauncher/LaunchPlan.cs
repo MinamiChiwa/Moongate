@@ -31,7 +31,14 @@ internal sealed class LaunchPlan
         ["DOTNET_ROOT"] = Runtime, ["DOTNET_ROOT_X64"] = Runtime, ["DOTNET_MULTILEVEL_LOOKUP"] = "0"
     };
 
-    internal static LaunchPlan Create(string packageRoot, bool is64BitOperatingSystem)
+    /// <summary>
+    /// 最低系统构建号：Windows 10 1703（15063）。宿主启动时声明每显示器 DPI 感知 v2（<c>SetProcessDpiAwarenessContext</c>，1703 起提供），
+    /// 游戏窗口读取用到的 <c>GetDpiForWindow</c>、<c>GetWindowDpiAwarenessContext</c> 为 1607 起提供；
+    /// 后台触控（1809）与浮窗不被截图（2004）在较旧系统上停用对应功能，不作为启动门槛。
+    /// </summary>
+    internal const int MinimumWindowsBuild = 15063;
+
+    internal static LaunchPlan Create(string packageRoot, bool is64BitOperatingSystem, int windowsBuild = MinimumWindowsBuild)
     {
         var root = Path.GetFullPath(packageRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var components = Path.Combine(root, "components");
@@ -40,6 +47,9 @@ internal sealed class LaunchPlan
         string? problem = null;
         if (!is64BitOperatingSystem)
             problem = "Moongate 需要 64 位的 Windows 10 或 Windows 11。";
+        else if (windowsBuild < MinimumWindowsBuild)
+            problem = $"Moongate 需要 Windows 10 1703（版本 15063）或更新的系统，当前系统版本为 {windowsBuild}。\n\n" +
+                      "请通过 Windows 更新升级系统后再运行。";
         else if (!Directory.Exists(components))
             problem = "Moongate.exe 旁边没有 components 文件夹。\n\n请把下载的压缩包完整解压到一个可写的文件夹" +
                       "（例如 D:\\Moongate），再运行解压出的 Moongate 文件夹里的 Moongate.exe；不要在压缩包查看器里直接运行。";

@@ -5,11 +5,12 @@ TouchArea, refresh engine layout, or emit input-ready geometry.
 """
 import math,struct
 
-SUPPORTED_UNITYPLAYER='e969642866c2195f16a0bd0e52ff8ffe87cad5b213fda9a62ca1564970e2fa26'
+from .build_adapters import UNITY_BUILD as SUPPORTED_UNITYPLAYER, supported_unityplayer
 
 
 def read_native_rect_cache(reader,managed_rect_address,*,unityplayer_sha256,check=lambda:None):
-    if unityplayer_sha256!=SUPPORTED_UNITYPLAYER:raise ValueError('Unsupported native UnityPlayer layout')
+    # 字段偏移随引擎版本：登记文件或本进程按同一引擎版本定位的文件。
+    if not supported_unityplayer(unityplayer_sha256):raise ValueError('Unsupported native UnityPlayer layout')
     check();reads={}
     def read(a,size):
         check();raw=reader.read(a,size)

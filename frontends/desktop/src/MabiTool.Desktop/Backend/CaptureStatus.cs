@@ -12,10 +12,13 @@ namespace MabiTool.Desktop.Backend;
 /// <see cref="Location"/> 是抓包运行中且观测未过期时的当前地图与频道，其余时候为空。
 /// <see cref="Npcap"/> 是后端运行时报告的 Npcap 安装状态（installed、missing），未读取或后端不报告时为空，按未知处理。
 /// <see cref="Build"/> 是绑定客户端的构建核对（已登记、已自动适配及单项停用），后端不报告时为空。
+/// <see cref="Hint"/> 是抓包运行中后端给出的提示原因：<c>observation.noGameFrames</c>（约 20 秒收不到游戏数据）或
+/// <c>observation.identityPending</c>（能分帧但还没有本机角色信息），其余时候为空。
+/// <see cref="SourceKind"/> 是自动模式下实际出数据的主来源类别（physical、wintun、tap、hyperv、virtual、loopback），没有时为空。
 /// </summary>
 public sealed record CaptureStatusView(bool Connected, bool? Installed, bool Enabled, string State, string? Automation, string? Reason,
     string? Channel, string? ChannelSource, DateTimeOffset? NextAttemptAt, string? Character = null, ObservedLocation? Location = null,
-    string? Npcap = null, GameBuildCheck? Build = null)
+    string? Npcap = null, GameBuildCheck? Build = null, string? Hint = null, string? SourceKind = null)
 {
     public const string NpcapMissingCode = "observation.npcapMissing";
     public static CaptureStatusView Offline { get; } = new(false, null, true, "stopped", null, null, null, null, null);
@@ -36,7 +39,9 @@ public sealed record CaptureStatusView(bool Connected, bool? Installed, bool Ena
         var fresh = snapshot is { State: "running", Latest: { Quality.KnownValue: not ObservationQuality.Stale } latest } ? latest : null;
         return new(connected, runtime?.Installed, automation?.Enabled ?? true, snapshot?.State ?? "stopped", automation?.State, reason,
             automation?.ChannelDescription ?? snapshot?.ChannelId, automation?.ChannelSource, automation?.NextAttemptAt,
-            fresh?.Value.Identity?.Nickname, fresh?.Value.Location, runtime?.Npcap, automation?.Build);
+            fresh?.Value.Identity?.Nickname, fresh?.Value.Location, runtime?.Npcap, automation?.Build,
+            snapshot?.State == "running" && automation?.State == "running" ? automation.Reason : null,
+            snapshot?.State == "running" ? automation?.SourceKind : null);
     }
 }
 
@@ -45,25 +50,20 @@ public static class CaptureText
 {
     private static string Pick(string simplified, string traditional) => UiText.Pick(simplified, traditional);
 
-    /// <summary>一行状态：抓包中写明网卡及其来源；未抓包写明原因。</summary>
+    /// <summary>一行状态：自动模式写明实际出数据的来源类别，指定模式写明网卡；未抓包写明原因。</summary>
     public static string Status(CaptureStatusView value)
     {
         if (!value.Connected) return Pick("未连接后端", "未連接後端");
         if (value.Installed is null) return Pick("正在读取抓包状态…", "正在讀取抓包狀態…");
         if (value.Installed == false) return Pick("抓包不可用：未安装观测组件", "抓包不可用：未安裝觀測元件");
-        var channel = value.Channel is { Length: > 0 } name
-            ? Pick("网卡：", "網卡：") + name + (value.ChannelSource switch
-            {
-                "automatic" => Pick("（自动）", "（自動）"),
-                "detected" => Pick("（自动检测）", "（自動檢測）"),
-                "saved" => Pick("（已保存）", "（已儲存）"),
-                _ => string.Empty
-            })
-            : null;
+        var channel = value.ChannelSource is "saved" or "request" && value.Channel is { Length: > 0 } name
+            ? Pick("网卡：", "網卡：") + name + (value.ChannelSource == "saved" ? Pick("（已指定）", "（已指定）") : string.Empty)
+            : Source(value.SourceKind) is { } source ? Pick("来源：", "來源：") + source : null;
         var build = Build(value.Build) is { } note ? " · " + note : string.Empty;
         return value.State switch
         {
-            "running" => Pick("抓包中", "抓包中") + (channel is null ? string.Empty : " · " + channel) + build,
+            "running" => Pick("抓包中", "抓包中") + (channel is null ? string.Empty : " · " + channel) + build
+                         + (value.Character is null && Waiting(value) is { } waiting ? " · " + waiting : string.Empty),
             "starting" => Pick("正在启动抓包…", "正在啟動抓包…") + (channel is null ? string.Empty : " · " + channel) + build,
             "stopping" => Pick("正在停止抓包…", "正在停止抓包…"),
             _ => Pick("未抓包：", "未抓包：") + (Reason(value.Reason, value.Enabled) ?? Pick("等待自动启动", "等待自動啟動")) + Pick("，", "，")
@@ -78,9 +78,34 @@ public static class CaptureText
     public static string Shell(CaptureStatusView value) => value switch
     {
         { Running: true, Character: { Length: > 0 } name } => name,
-        { Running: true } => Pick("未识别角色，请切换一次地图", "未辨識角色，請切換一次地圖"),
+        { Running: true } => Waiting(value) ?? Pick("未识别角色，请切换一次地图", "未辨識角色，請切換一次地圖"),
         { State: "starting" } => Pick("正在启动抓包…", "正在啟動抓包…"),
         _ => Status(value)
+    };
+
+    /// <summary>
+    /// 抓包运行中还没有数据时的统一提示（侧栏、设置页、DPS 与背包页共用）：约 20 秒收不到游戏数据时写明，
+    /// 能分帧但没有本机角色信息时请用户切换一次地图；其余时候为空。
+    /// </summary>
+    public static string? Waiting(CaptureStatusView value) => value is { Running: true, Character: null } ? value.Hint switch
+    {
+        "observation.noGameFrames" => Pick("收不到游戏数据", "收不到遊戲資料"),
+        "observation.identityPending" => Pick("等待角色信息，请切换一次地图", "等待角色資訊，請切換一次地圖"),
+        _ => null
+    } : null;
+
+    /// <summary>收不到游戏数据时的下一步（设置页状态下方）；其余时候为空。</summary>
+    public static string? Advice(CaptureStatusView value) => value is { Running: true, Character: null, Hint: "observation.noGameFrames" }
+        ? Pick("请确认 Npcap 已勾选回环支持，或在设置中指定网卡", "請確認 Npcap 已勾選迴環支援，或在設定中指定網卡") : null;
+
+    /// <summary>自动模式下数据来源类别的简短名称；没有来源或未知类别时为空。</summary>
+    public static string? Source(string? kind) => kind switch
+    {
+        "physical" => Pick("物理网卡", "實體網卡"),
+        "wintun" or "tap" => Pick("隧道（加速器）", "隧道（加速器）"),
+        "hyperv" or "virtual" => Pick("虚拟网卡", "虛擬網卡"),
+        "loopback" => Pick("回环（加速器）", "迴環（加速器）"),
+        _ => null
     };
 
     /// <summary>
@@ -135,19 +160,12 @@ public static class CaptureText
     }
 
     /// <summary>
-    /// 列出网卡后的定位结论（带游戏绑定时）：恰有一张网卡承载游戏连接时写明该网卡；没有或有多张时给出下一步。
-    /// 没有绑定（连接数未统计）时为空。
+    /// 列出网卡后的参考信息（带游戏绑定时）：恰有一张网卡承载游戏连接时写明该网卡；自动模式同时抓全部网卡，其余情况不给结论。
     /// </summary>
     public static string Located(IReadOnlyList<CaptureChannelOption> channels)
     {
-        if (channels.All(channel => channel.GameConnections is null)) return string.Empty;
         var matched = channels.Where(channel => channel.GameConnections > 0).ToArray();
-        return matched.Length switch
-        {
-            1 => Pick("，游戏连接在：", "，遊戲連線在：") + matched[0].Description,
-            0 => Pick("，未定位到游戏连接，可点“开始检测”", "，未定位到遊戲連線，可點「開始檢測」"),
-            _ => Pick("，多张网卡有游戏连接，请指定或检测", "，多張網卡有遊戲連線，請指定或檢測")
-        };
+        return matched.Length == 1 ? Pick("，游戏连接在：", "，遊戲連線在：") + matched[0].Description : string.Empty;
     }
 
     /// <summary>未抓包的原因：自动启动的等待与失败原因，以及共享捕获的故障码。</summary>
@@ -160,11 +178,11 @@ public static class CaptureText
         "gameBuild.incompatible" => Pick("未识别为台服客户端，暂不能抓包", "未辨識為台服用戶端，暫不能抓包"),
         "gameBuild.verifying" => Pick("正在核对新版游戏，稍后自动开始", "正在核對新版遊戲，稍後自動開始"),
         "gameBuild.verifyFailed" => Pick("读不到游戏文件，请重启游戏后重试", "讀不到遊戲檔案，請重啟遊戲後重試"),
-        "observation.channelNotFound" => Pick("找不到游戏网卡，请在设置中检测或指定", "找不到遊戲網卡，請在設定中檢測或指定"),
-        "observation.channelAmbiguous" => Pick("多张网卡有游戏连接，请在设置中检测或指定", "多張網卡有遊戲連線，請在設定中檢測或指定"),
+        "observation.channelChanged" => Pick("网卡设置已更改，正在按新设置重新开始", "網卡設定已變更，正在按新設定重新開始"),
         "observation.savedChannelMissing" => Pick("已保存的网卡不可用，请重新选择", "已儲存的網卡不可用，請重新選擇"),
         "observation.channelDetecting" => Pick("正在检测网卡，结束后自动启动", "正在檢測網卡，結束後自動啟動"),
         "update.maintenanceActive" => Pick("正在安装更新，结束后自动启动", "正在安裝更新，結束後自動啟動"),
+        "observation.npcapLoopbackMissing" => Pick("Npcap 未启用回环抓包，请重装并勾选回环支持", "Npcap 未啟用迴環擷取，請重裝並勾選迴環支援"),
         _ => RoomReadinessText.CaptureReason(code) ?? Localization.CodeText.Reason(code)
     };
 }

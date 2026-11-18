@@ -112,7 +112,7 @@ public static class BackendApplication
                 : GameControlContext.Create(sp.GetRequiredService<ResourceLeaseCoordinator>(), clock ?? TimeProvider.System, mock)));
         builder.Services.AddSingleton(sp => new GameBindingService(sp.GetRequiredService<GameControlContext>(),
             windowSource, info, clock ?? TimeProvider.System,
-            sp.GetRequiredService<LocalAuthService>()));
+            sp.GetRequiredService<LocalAuthService>(), sp.GetService<ILoggerFactory>()?.CreateLogger("MabiTool.Host.Game.Binding")));
         builder.Services.AddSingleton(sp =>
         {
             var configured = observationOptions?.Invoke(sp.GetService<PathService>());

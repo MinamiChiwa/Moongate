@@ -23,44 +23,32 @@ public sealed class CaptureAutomationTests
     private static readonly string First = new('1', 32), Second = new('2', 32);
 
     [Fact]
-    public void ChannelsAreMatchedByTheGameConnectionLocalAddress()
+    public void ListedChannelsCountGameConnectionsAndAutomaticModeChoosesNone()
     {
-        CaptureDevice ethernet = new("eth", "以太网", ["192.168.1.5"]), vpn = new("vpn", "虚拟网卡", ["10.8.0.2"]),
-            loopback = new("lo", "回环", []) { IsLoopback = true };
-        var data = CaptureChannels.DataConnections([new("192.168.1.5", 50000, "203.0.113.9", 1111), new("192.168.1.5", 50001, "203.0.113.9", 443)]);
-        Assert.Single(data);
-        var options = NpcapObservationSource.Annotate([ethernet, vpn, loopback], data);
-        Assert.Equal([1, 0, 0], options.Select(value => value.GameConnections!.Value));
-        Assert.True(options[2].Loopback);
-        var choice = CaptureChannelSelection.Select(options, GameCaptureSettings.Default);
-        Assert.Equal(NpcapObservationSource.ChannelId("eth"), choice.ChannelId); Assert.Equal("automatic", choice.Source); Assert.False(choice.AnyAddress);
-
-        var proxied = NpcapObservationSource.Annotate([ethernet, loopback], CaptureChannels.DataConnections([new("127.0.0.1", 50000, "127.0.0.1", 1111)]));
-        Assert.Equal(NpcapObservationSource.ChannelId("lo"), CaptureChannelSelection.Select(proxied, GameCaptureSettings.Default).ChannelId);
-        // 没有数据端口时取进程全部连接。
-        Assert.Single(CaptureChannels.DataConnections([new("10.8.0.2", 50000, "203.0.113.9", 443)]));
+        // 实采（UU 加速器 Wintun 隧道）：数据连接远端 :16000、两条远端 443、一条进程自连；列出网卡只作诊断统计。
+        CaptureDevice ethernet = new("eth", "Realtek Gaming 2.5GbE", ["192.168.2.155"]), wintun = new("wintun", "UU Wintun Tunnel", ["172.19.84.237"]),
+            hyperv = new("hv", "Hyper-V Virtual Ethernet Adapter", ["172.25.160.1"]), loopback = new("lo", "Adapter for loopback traffic capture", []) { IsLoopback = true };
+        CaptureConnection data = new("172.19.84.237", 1714, "43.212.230.170", 16000), tls = new("172.19.84.237", 14408, "18.166.193.141", 443),
+            self = new("127.0.0.1", 7740, "127.0.0.1", 7739), peer = new("127.0.0.1", 7739, "127.0.0.1", 7740);
+        CaptureConnection[] owned = [data, tls, self, peer];
+        var options = NpcapObservationSource.Annotate([ethernet, wintun, hyperv, loopback], owned.Where(value => !NativeCaptureBoundary.SelfConnection(value, owned)).ToArray());
+        Assert.Equal([0, 2, 0, 0], options.Select(value => value.GameConnections!.Value));
+        Assert.Equal(["physical", "wintun", "hyperv", "loopback"], new[] { ethernet, wintun, hyperv, loopback }.Select(value => value.Kind));
         Assert.Null(NpcapObservationSource.Annotate([ethernet], null)[0].GameConnections);
+        // 自动模式不选网卡，设置里留下的网卡（旧版指定或检测确认后切回自动）不读取。
+        var leftover = GameCaptureSettings.Default with { ChannelId = First, ChannelDescription = "A" };
+        var choice = CaptureChannelSelection.Select(options, leftover);
+        Assert.Equal(((string?)null, "automatic"), (choice.ChannelId, choice.Source));
     }
 
     [Fact]
-    public void SelectionReportsNoMatchAmbiguityAndSavedChannels()
+    public void ManualModeUsesOnlyTheSavedChannel()
     {
-        CaptureChannelOption a = new(First, "A", ["10.0.0.2"], false, 1), b = new(Second, "B", ["10.0.0.3"], false, 1), none = new(Second, "B", [], false, 0);
-        Assert.Equal("observation.channelNotFound", Assert.Throws<OperationException>(() =>
-            CaptureChannelSelection.Select([a with { GameConnections = 0 }, none], GameCaptureSettings.Default)).Code);
-        Assert.Equal("observation.channelAmbiguous", Assert.Throws<OperationException>(() =>
-            CaptureChannelSelection.Select([a, b], GameCaptureSettings.Default)).Code);
-        var saved = GameCaptureSettings.Default with { ChannelId = Second, ChannelDescription = "B" };
-        Assert.Equal(Second, CaptureChannelSelection.Select([a, b], saved).ChannelId);
-        var manual = saved with { ChannelMode = GameCaptureSettings.ManualChannel };
-        var chosen = CaptureChannelSelection.Select([a, none], manual);
-        Assert.Equal(Second, chosen.ChannelId); Assert.True(chosen.AnyAddress);
+        CaptureChannelOption a = new(First, "A", ["10.0.0.2"], false, 1), b = new(Second, "B", [], false, 0);
+        var manual = GameCaptureSettings.Default with { ChannelMode = GameCaptureSettings.ManualChannel, ChannelId = Second, ChannelDescription = "B" };
+        var chosen = CaptureChannelSelection.Select([a, b], manual);
+        Assert.Equal((Second, "saved"), (chosen.ChannelId, chosen.Source));
         Assert.Equal("observation.savedChannelMissing", Assert.Throws<OperationException>(() => CaptureChannelSelection.Select([a], manual)).Code);
-        // 用户指定网卡的地址对不上游戏连接时仍按连接五元组捕获；自动选择保持地址匹配。
-        var device = new CaptureDevice("wintun", "虚拟网卡", []);
-        CaptureConnection connection = new("10.8.0.2", 50000, "203.0.113.9", 1111);
-        Assert.Empty(NativeCaptureBoundary.SelectConnections([connection], device, true));
-        Assert.Equal(connection, Assert.Single(NativeCaptureBoundary.SelectConnections([connection], device, true, anyAddress: true)));
     }
 
     [Fact]
@@ -83,19 +71,31 @@ public sealed class CaptureAutomationTests
         var flood = new ChannelTrafficDetector([(First, "A")]);
         for (var i = 0; i < ChannelTrafficDetector.MaximumPackets + 10; i++) flood.Record(0, 1);
         Assert.True(flood.BudgetExhausted); Assert.Equal(ChannelTrafficDetector.MaximumPackets, flood.TotalPackets);
+
+        // 检测以分帧为准：物理网卡上包更多（加速器对外流量），回环上能分帧，选回环。
+        var framed = new ChannelTrafficDetector([(First, "以太网"), (Second, "回环")]);
+        for (var i = 0; i < 300; i++) framed.Record(0, 1400);
+        for (var i = 0; i < 5; i++) framed.Record(1, 40, framed: true);
+        Assert.Equal(Second, framed.Decide(true).Winner);
     }
 
     [Fact]
-    public void DetectionPacketReadsPayloadFromHeadersOfTruncatedFrames()
+    public async Task ResidentCaptureWithoutGameFramesReportsNoFramesWithoutSwitching()
     {
-        var ip = new byte[40]; ip[0] = 0x45; ip[9] = 6; ip[2] = 0x05; ip[3] = 0xdc; ip[32] = 0x50; // 1500 字节 IP，20 字节 TCP 头
-        var ethernet = new byte[14 + 40]; ethernet[12] = 0x08; ip.CopyTo(ethernet, 14);
-        Assert.Equal(1460, DetectionPacket.Payload(1, ethernet));
-        var loopback = new byte[4 + 40]; ip.CopyTo(loopback, 4);
-        Assert.Equal(1460, DetectionPacket.Payload(0, loopback));
-        Assert.Equal(1460, DetectionPacket.Payload(228, ip));
-        ethernet[12] = 0x86; Assert.Equal(0, DetectionPacket.Payload(1, ethernet));
-        Assert.Equal(0, DetectionPacket.Payload(1, new byte[10]));
+        // 合成 Worker 只发状态报告、不分帧：约 20 秒（此处缩短为 1 秒）收不到游戏数据时自动抓包原因为 noGameFrames，同一捕获继续运行、不换网卡。
+        var grace = GameObservationService.HealthGrace;
+        GameObservationService.HealthGrace = TimeSpan.FromSeconds(1);
+        try
+        {
+            using var area = Current(); await using var app = area.Build("auto", automation: true); await app.StartAsync();
+            using var client = GameObservationApiTests.Area.Owner(app);
+            var first = await Wait(client, value => value.State == "running");
+            Assert.Null(first.ChannelId); Assert.Equal("automatic", first.Automation!.ChannelSource);
+            var hinted = await Wait(client, value => value.State == "running" && value.Automation?.Reason == GameObservationService.NoGameFrames);
+            Assert.Equal(("running", first.CaptureId), (hinted.Automation!.State, hinted.CaptureId));
+            await app.StopAsync();
+        }
+        finally { GameObservationService.HealthGrace = grace; }
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed class CaptureAutomationTests
         using var area = Current(); await using var app = area.Build("auto", automation: true); await app.StartAsync();
         using var client = GameObservationApiTests.Area.Owner(app);
         var running = await Wait(client, value => value.State == "running" && value.Automation?.State == "running");
-        Assert.Equal(Tw20261110CombatProtocol.CaptureProfile, running.Profile); Assert.Equal(First, running.ChannelId);
+        Assert.Equal(Tw20261110CombatProtocol.CaptureProfile, running.Profile); Assert.Null(running.ChannelId);
         Assert.Equal(0, running.SubscriberCount); Assert.Equal("automatic", running.Automation!.ChannelSource);
         var service = app.Services.GetRequiredService<GameObservationService>();
         var pid = service.Runtime().WorkerProcessId!.Value; Assert.True(service.Resident);
@@ -202,36 +202,66 @@ public sealed class CaptureAutomationTests
         await app.StopAsync();
     }
 
-    [Theory]
-    [InlineData("auto-none", "observation.channelNotFound")]
-    [InlineData("auto-many", "observation.channelAmbiguous")]
-    public async Task AutomaticSelectionFailuresAreReportedAndRetriedWithBackoff(string mode, string code)
+    [Fact]
+    public void CaptureSummaryFieldsAllReachTheDiagnosticRecord()
     {
-        using var area = Current(); await using var app = area.Build(mode, automation: true); await app.StartAsync();
+        // 诊断事件每条至多保留 12 个字段：登记表里不能有超过上限的事件，摘要拆成两条后全部字段都写进记录。
+        Assert.All(DiagnosticEvents.All, definition => Assert.True(definition.Fields.Count <= DiagnosticSanitizer.MaximumFields, definition.Code));
+        var records = new List<DiagnosticRecord>();
+        var trace = new DiagnosticTrace(); trace.AttachPersistence(record => { records.Add(record); return true; });
+        var device = new CaptureDeviceCounters(First, "wintun", 101, false, "link:113", true, new(9), new(8), new(1), new(5), new(4096));
+        var counters = new CaptureDiagnostics().Snapshot(0, 0) with { Devices = [device] };
+        foreach (var (definition, fields) in GameObservationService.SummaryEvents(30_000, "automatic", counters, true, 120, 450, 9000)) trace.Emit(definition, fields);
+        var summary = records.Single(record => record.Event == "observation.capture.summary").Fields!;
+        Assert.Equal(DiagnosticEvents.CaptureSummary.Fields.Count, summary.Count);
+        var parse = records.Single(record => record.Event == "observation.capture.parse").Fields!;
+        Assert.Equal(DiagnosticEvents.CaptureParse.Fields.Count, parse.Count);
+        Assert.Equal(("true", "120", "450", "9000"), (parse["identity"], parse["reportAgeMs"], parse["combatAgeMs"], parse["inventoryAgeMs"]));
+        var perDevice = records.Single(record => record.Event == "observation.capture.device").Fields!;
+        Assert.Equal(DiagnosticEvents.CaptureDevice.Fields.Count, perDevice.Count);
+        Assert.Equal(("wintun", "101", "link:113", "4096"), (perDevice["kind"], perDevice["linkType"], perDevice["issue"], perDevice["candidateDropped"]));
+    }
+
+    [Fact]
+    public async Task ChangingTheChannelSettingWhileRunningRestartsTheCaptureWithTheNewChannel()
+    {
+        using var area = Current(); await using var app = area.Build("auto-many", automation: true); await app.StartAsync();
         using var client = GameObservationApiTests.Area.Owner(app);
-        var failed = await Wait(client, value => value.Automation?.State == "failed");
-        Assert.Equal(code, failed.Automation!.Reason); Assert.NotNull(failed.Automation.NextAttemptAt);
-        Assert.Null(app.Services.GetRequiredService<GameObservationService>().Runtime().WorkerProcessId);
-        Assert.Empty(Directory.GetFiles(area.Root, "capture-start-*"));
-        if (mode == "auto-many")
-        {
-            // 用户指定后立即按新设置重试，使用保存的网卡。
-            var settings = await Settings(client);
-            await Save(client, settings.Value with { ChannelMode = GameCaptureSettings.ManualChannel, ChannelId = Second, ChannelDescription = "合成回环" },
-                settings.ETag, "manual-channel");
-            var running = await Wait(client, value => value.State == "running");
-            Assert.Equal(Second, running.ChannelId); Assert.Equal("saved", running.Automation!.ChannelSource);
-        }
+        var automatic = await Wait(client, value => value.State == "running");
+        var settings = await Settings(client);
+        await Save(client, settings.Value with { ChannelMode = GameCaptureSettings.ManualChannel, ChannelId = Second, ChannelDescription = "合成回环" },
+            settings.ETag, "switch-to-manual");
+        var manual = await Wait(client, value => value.State == "running" && value.CaptureId != automatic.CaptureId);
+        Assert.Equal((Second, "saved"), (manual.ChannelId, manual.Automation!.ChannelSource));
+        settings = await Settings(client);
+        await Save(client, settings.Value with { ChannelMode = GameCaptureSettings.AutomaticChannel }, settings.ETag, "switch-to-automatic");
+        var again = await Wait(client, value => value.State == "running" && value.CaptureId != manual.CaptureId);
+        Assert.Equal(((string?)null, "automatic"), (again.ChannelId, again.Automation!.ChannelSource));
+        Assert.Equal(["all", Second, "all"], (await File.ReadAllLinesAsync(Path.Combine(area.Root, "capture-channels"))).Where(line => line.Length > 0));
         await app.StopAsync();
     }
 
     [Fact]
-    public async Task UnlocatedChannelIsChosenByTrafficDetectionBeforeFailing()
+    public async Task MissingSavedChannelIsReportedAndRetriedWithBackoff()
     {
-        using var area = Current(); await using var app = area.Build("auto-detect", automation: true); await app.StartAsync();
+        // 自动模式不枚举网卡即启动（合成网卡列表两张都有游戏连接也不报多网卡）；指定的网卡不在时 savedChannelMissing，改为存在的网卡后立即重试。
+        using var area = Current(); await using var app = area.Build("auto-many", automation: true); await app.StartAsync();
         using var client = GameObservationApiTests.Area.Owner(app);
+        var automatic = await Wait(client, value => value.State == "running");
+        Assert.Equal(((string?)null, "automatic"), (automatic.ChannelId, automatic.Automation!.ChannelSource));
+        Assert.Empty(Directory.GetFiles(area.Root, "channel-query-*"));
+        var settings = await Settings(client);
+        await Save(client, settings.Value with { AutomaticCapture = false }, settings.ETag, "pause-capture");
+        await Wait(client, value => value.State == "stopped");
+        settings = await Settings(client);
+        await Save(client, settings.Value with { AutomaticCapture = true, ChannelMode = GameCaptureSettings.ManualChannel, ChannelId = new string('3', 32),
+            ChannelDescription = "已拔出的网卡" }, settings.ETag, "missing-channel");
+        var failed = await Wait(client, value => value.Automation?.State == "failed");
+        Assert.Equal("observation.savedChannelMissing", failed.Automation!.Reason); Assert.NotNull(failed.Automation.NextAttemptAt);
+        settings = await Settings(client);
+        await Save(client, settings.Value with { ChannelId = Second, ChannelDescription = "合成回环" }, settings.ETag, "manual-channel");
         var running = await Wait(client, value => value.State == "running");
-        Assert.Equal(First, running.ChannelId); Assert.Equal("detected", running.Automation!.ChannelSource);
+        Assert.Equal((Second, "saved"), (running.ChannelId, running.Automation!.ChannelSource));
         await app.StopAsync();
     }
 

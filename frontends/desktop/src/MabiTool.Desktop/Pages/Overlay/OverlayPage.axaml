@@ -101,8 +101,11 @@
                 <Button x:Name="LockAllButton" Classes="chip" Classes.active="{Binding AllLocked}" Margin="0,0,6,6"
                         Content="{DynamicResource O.LockAll}" Command="{Binding ToggleAllLocksCommand}"
                         ToolTip.Tip="{DynamicResource O.LockAllHint}" />
+                <!-- 录屏时隐藏用 WDA_EXCLUDEFROMCAPTURE，Windows 10 2004 之前没有：停用并在提示里写明。 -->
                 <Button Classes="chip" Classes.active="{Binding HideFromCapture}" Margin="0,0,6,6"
-                        Content="{DynamicResource O.HideFromCapture}" Command="{Binding ToggleCaptureCommand}" />
+                        Content="{DynamicResource O.HideFromCapture}" Command="{Binding ToggleCaptureCommand}"
+                        IsEnabled="{Binding CaptureSupported}" ToolTip.ShowOnDisabled="True"
+                        ToolTip.Tip="{Binding CaptureHint}" />
                 <!-- 缺省关闭：浮窗是屏幕级的独立窗口，始终显示；开启后游戏窗口最小化期间整个浮窗不显示。 -->
                 <Button x:Name="HideWithGameButton" Classes="chip" Classes.active="{Binding HideWithGame}" Margin="0,0,0,6"
                         Content="{DynamicResource O.HideWithGame}" Command="{Binding ToggleHideWithGameCommand}"

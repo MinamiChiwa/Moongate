@@ -20,31 +20,6 @@ public sealed class NativeCombatCaptureTests
         Assert.Equal(valid, NativeCaptureBoundary.CompletePacket(captured, wire));
 
     [Fact]
-    public void LoopbackFlagAllowsAddresslessDeviceAndFiltersAuxiliaryPorts()
-    {
-        var loopback = new CaptureDevice("synthetic", "loopback", []) { IsLoopback = true };
-        var data = new CaptureConnection("127.0.0.1", 4321, "127.0.0.1", 1111);
-        var auxiliary = data with { RemotePort = 8133 };
-        var remote = data with { RemoteAddress = "192.0.2.1" };
-        Assert.Equal(data, Assert.Single(NativeCaptureBoundary.SelectConnections([data, auxiliary, remote], loopback, true)));
-        Assert.Equal(2, NativeCaptureBoundary.SelectConnections([data, auxiliary, remote], loopback, false).Count);
-        Assert.Empty(NativeCaptureBoundary.SelectConnections([data], loopback with { IsLoopback = false }, true));
-    }
-
-    [Fact]
-    public void OwnedDataConnectionsCanBeReboundWithoutAuxiliaryChurn()
-    {
-        var device = new CaptureDevice("synthetic", "test", ["192.0.2.2"]);
-        var original = new CaptureConnection("192.0.2.2", 4000, "198.51.100.2", 1111);
-        var auxiliary = original with { RemotePort = 8134 };
-        var first = NativeCaptureBoundary.SelectConnections([original, auxiliary], device, true);
-        Assert.True(first.SetEquals(NativeCaptureBoundary.SelectConnections([original, auxiliary with { LocalPort = 4003 }], device, true)));
-        var next = original with { LocalPort = 4001 };
-        Assert.False(first.SetEquals(NativeCaptureBoundary.SelectConnections([next], device, true)));
-        Assert.Equal(next, Assert.Single(NativeCaptureBoundary.SelectConnections([next], device, true)));
-    }
-
-    [Fact]
     public void CaptureParametersAreFixedBeforeActivation()
     {
         var calls = new List<string>(); var closed = 0;

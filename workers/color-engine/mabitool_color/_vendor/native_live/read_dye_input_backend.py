@@ -1,8 +1,15 @@
 """Read current-build legacy mouse branch and viewport; no game calls/input."""
 import math,struct,time
-from .read_native_rect import SUPPORTED_UNITYPLAYER
 from .read_unity_screen import unityplayer_module_base
 from .build_adapters import TW_ADAPTER
+
+
+class InputAssistantActive(ValueError):
+    """The game's input event assistant is set and may answer mouse position/buttons itself."""
+    capability_reason='input_assistant'
+    def __init__(self,assistant_type):
+        super().__init__('Input assistant overrides legacy mouse')
+        self.assistant_type=assistant_type
 
 
 def viewport_mapping_is_verified(origin, scale, mapping):
@@ -42,14 +49,25 @@ def read_input_backend(backend,deadline,*,check=lambda:None,clock=time.monotonic
         manager_class=pointer(manager);name=r.class_name(manager_class)
         if name!='MM.Client.Framework.InputSystem.InputManager':raise ValueError('Input backend branch differs')
         assistant=struct.unpack('<Q',read(manager+r.fields(manager_class)['inputEventAssistant'],8))[0]
-        if assistant!=0:raise ValueError('Input assistant overrides legacy mouse')
+        if assistant!=0:
+            # IInputEventAssistant 声明 TryGetMousePosition/TryGetMouseButton：非空时鼠标位置可能被它接管。
+            try:kind=r.class_name(pointer(assistant))
+            except (ValueError,OSError):kind=None
+            raise InputAssistantActive(kind)
         function=struct.unpack('<Q',read(base+adapter.mouse_getter_cache_rva,8))[0]
-        if function!=unity+layout.mouse_getter_rva:raise ValueError('Legacy mouse getter unresolved or differs')
+        if function!=unity+layout.mouse_getter_rva:
+            if getattr(layout,'located',False):
+                from .unity_layout import UnityLayoutMismatch
+                raise UnityLayoutMismatch('Located mouse getter differs from the GameAssembly cache')
+            raise ValueError('Legacy mouse getter unresolved or differs')
         screen=pointer(unity+layout.screen_global_rva);viewport=read(screen+layout.viewport_offset,24)
         origin=list(struct.unpack('<2i',viewport[:8]));scale=list(struct.unpack('<2f',viewport[16:]))
         mapping=getattr(backend,'win_pixel_mapping',None)
         if not viewport_mapping_is_verified(origin,scale,mapping):
             raise ValueError('Viewport requires a verified target-awareness pixel mapping')
+        if (isinstance(mapping,dict) and mapping.get('render_scale_verified') is True
+                and (mapping.get('viewport_origin')!=origin or mapping.get('viewport_scale')!=[float(v) for v in scale])):
+            raise ValueError('Viewport differs from the verified render-scale pixel mapping')
         for (address,size),raw in reads.items():
             guard()
             if r.read(address,size)!=raw:raise ValueError('Input branch or viewport changed during read')

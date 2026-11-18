@@ -40,6 +40,8 @@ public sealed partial class GameBindingService
         var observation = windows[0].Observation;
         var identity = (observation.ProcessId, observation.ProcessStartTime, observation.WindowIdentity);
         lock (gate) { if (autoAttempted == identity) return false; autoAttempted = identity; }
+        // 游戏以管理员身份运行时不自动绑定；手动选择时给出原因（game.elevated）。
+        if (source.AccessProblem(observation) is "game.elevated") return false;
         var prepared = await source.PrepareAsync(observation, ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
         if (!SameIdentity(prepared, observation)) return false;

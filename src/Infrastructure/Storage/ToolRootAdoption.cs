@@ -29,8 +29,10 @@ public sealed partial class DataRootLease
         catch (StorageException) { throw; }
         catch (Exception error) when (error is UnauthorizedAccessException or InvalidOperationException or System.Security.Principal.IdentityNotMappedException)
         {
-            throw new StorageException("storage.permissionDenied",
-                "程序文件夹里的数据属于其他 Windows 用户，当前用户无权改为自己独占。请用原来的 Windows 用户启动，或以管理员身份取得该程序文件夹的所有权后再启动", error);
+            var state = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(options.BootstrapDirectory)) ?? options.BootstrapDirectory;
+            throw new StorageException("storage.otherOwner",
+                "程序文件夹里的数据属于其他 Windows 用户或另一台电脑，当前用户无权读取或改为自己独占。请用原来的 Windows 用户启动；" +
+                $"或以管理员身份打开命令提示符，依次运行 takeown /f \"{state}\" /r /d y 与 icacls \"{state}\" /reset /t /q，再重新打开 Moongate", error);
         }
         catch (Exception error) when (error is IOException or JsonException or ArgumentException or SqliteException)
         {
@@ -45,11 +47,21 @@ public sealed partial class DataRootLease
         var data = StoragePaths.ValidateLocal(StorageOptions.DefaultDataRoot(bootstrap));
         var repaired = false;
         foreach (var directory in new[] { bootstrap, data, Path.Combine(toolRoot, ToolRoot.RuntimeName) })
-            if (Directory.Exists(directory) && !LocalDiscoverySecurity.IsPrivate(directory))
+        {
+            if (!Directory.Exists(directory)) continue;
+            if (!LocalDiscoverySecurity.IsPrivate(directory))
             {
                 LocalDiscoverySecurity.MakePrivate(directory);
                 repaired = true;
             }
+            // 从光盘、只读压缩包或其他电脑复制来的文件可能带只读属性，宿主打开锁文件与数据库时会被拒绝写入。
+            if (new DirectoryInfo(directory).EnumerateFiles().Any(file => file.IsReadOnly))
+            {
+                foreach (var file in new DirectoryInfo(directory).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint }))
+                    if (file.IsReadOnly) file.IsReadOnly = false;
+                repaired = true;
+            }
+        }
         var configPath = Path.Combine(bootstrap, "data-root.json");
         if (!File.Exists(configPath) || DataMaintenanceJournal.HasPending(bootstrap)) return repaired ? new(null, true) : null;
         string? previous = null;

@@ -37,7 +37,7 @@ public sealed partial class GameObservationService
         var enabled = captureSettings.Read().AutomaticCapture;
         var choice = autoChoice;
         return new(enabled, autoState, autoReason, choice?.ChannelId ?? channelId, choice?.Description, choice?.Source, nextAttemptUtc,
-            BuildCheck(controls.Bindings.LastKnown?.Session));
+            BuildCheck(controls.Bindings.LastKnown?.Session), state == "running" ? PrimarySourceKind(captureCounters) : null);
     }
     /// <summary>快照里的构建核对摘要；按最近一次已刷新的绑定读取，不查询窗口或客户端文件。</summary>
     private GameBuildCheck? BuildCheck(GameSession? binding)
@@ -61,7 +61,7 @@ public sealed partial class GameObservationService
         }
         if (changed)
         {
-            trace?.Emit(DiagnosticEvents.AutomationChanged, new DiagnosticFields().Value("state", next).Value("reason", code));
+            TraceAutomation(next, code);
             Notify();
         }
     }
@@ -74,56 +74,19 @@ public sealed partial class GameObservationService
         activity.Dispose(); activity = null;
     }
 
-    /// <summary>自动探测承载网卡的流量检测时长；游戏连接持续有下行数据时提前结束。</summary>
-    internal static int AutomaticDetectionMs { get; set; } = 10_000;
-
     /// <summary>
-    /// 按设置确定网卡。自动模式下游戏连接的本机地址不在任何网卡上（VPN、加速器的虚拟网卡）或同时在多张网卡上时，
-    /// 在同一 Worker 内对候选网卡做一次短时流量检测，按收到游戏下行数据的网卡选定（来源 detected）；仍定位不到时报告原错误码。
-    /// 结果写入诊断事件 observation.channel.selected。
+    /// 按设置确定抓包设备。自动模式不选网卡（Worker 打开全部设备，不读取设置里留下的网卡）；指定模式先在同一 Worker 内枚举网卡，
+    /// 保存的网卡不在时报 savedChannelMissing。失败写入诊断事件 observation.channel.selected，成功时的打开结果由运行后的计数写出。
     /// </summary>
     private async Task<CaptureChannelChoice> ResolveChannelAsync(WorkerSession session, GameSession binding, GameCaptureSettings settings, CancellationToken ct)
     {
         if (!OperatingSystem.IsWindows()) throw new OperationException("observation.workerUnavailable", "观察组件需要 Windows");
-        var channels = await QueryChannelsAsync(session, binding, ct);
-        var matched = channels.Count(value => value.GameConnections > 0);
-        void Trace(string? source, string? code) => trace?.Emit(DiagnosticEvents.ChannelSelected, new DiagnosticFields()
-            .Value("source", source).Value("reason", code).Count("candidates", channels.Length).Count("matched", matched));
-        try
+        if (settings.ChannelMode != GameCaptureSettings.ManualChannel) return CaptureChannelChoice.Automatic;
+        try { return CaptureChannelSelection.Select(await QueryChannelsAsync(session, binding, ct), settings); }
+        catch (OperationException error)
         {
-            var choice = CaptureChannelSelection.Select(channels, settings);
-            Trace(choice.Source, null); return choice;
+            trace?.Emit(DiagnosticEvents.ChannelSelected, new DiagnosticFields().Value("source", "saved").Value("reason", error.Code)); throw;
         }
-        catch (OperationException error) when (error.Code is "observation.channelNotFound" or "observation.channelAmbiguous" &&
-            settings.ChannelMode == GameCaptureSettings.AutomaticChannel)
-        {
-            var winner = await DetectChannelAsync(session, binding, ct);
-            if (winner is not null && channels.FirstOrDefault(value => value.Id == winner) is { } detected)
-            {
-                Trace("detected", null); return new(detected.Id, detected.Description, "detected");
-            }
-            Trace(null, error.Code); throw;
-        }
-        catch (OperationException error) { Trace(null, error.Code); throw; }
-    }
-
-    /// <summary>在给定 Worker 上做一次短时网卡流量检测，返回判定的网卡；没有游戏连接、流量不足或检测失败时为空。</summary>
-    [SupportedOSPlatform("windows")]
-    private static async Task<string?> DetectChannelAsync(WorkerSession session, GameSession binding, CancellationToken ct)
-    {
-        try
-        {
-            var request = await session.BeginAsync(new("observation.channels.detect", JsonSerializer.SerializeToElement(new
-            {
-                processId = binding.ProcessId, processStartTime = binding.ProcessStartTime, durationMs = AutomaticDetectionMs
-            }, ContractJson.Options), Guid.NewGuid().ToString("N"), binding.BindingRevision.ToString(), "0"), ct);
-            var events = DrainAsync(request, ct);
-            var terminal = await request.Completion.WaitAsync(ct);
-            await events;
-            return terminal.Kind == "result" && terminal.Payload.TryGetProperty("detection", out var result)
-                ? Validate(result.Deserialize<ChannelProgress>(ContractJson.Options)).WinnerChannelId : null;
-        }
-        catch (Exception error) when (error is WorkerException or JsonException or IOException) { return null; }
     }
 
     /// <summary>启动捕获 Worker，在同一进程内先确定网卡再开始捕获；调用方持有 lifecycle，失败由调用方停止。</summary>
@@ -133,7 +96,8 @@ public sealed partial class GameObservationService
     {
         var id = Guid.NewGuid().ToString("N");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct, shutdown.Token);
-        deadline.CancelAfter(TimeSpan.FromSeconds(60));
+        // 含 Worker 启动握手（至多 60 秒）与确定网卡。
+        deadline.CancelAfter(ChannelListTimeout);
         moduleDemand = await modules.AcquireAsync("game-access", "observation-" + id, deadline.Token);
         var configuration = Configuration();
         InventoryWorkerAssets.CleanDirectory(configuration.AssetRoot);
@@ -158,11 +122,12 @@ public sealed partial class GameObservationService
         var arguments = known is null
             ? JsonSerializer.SerializeToElement(new { gameSessionId = binding.Id, region = binding.Region,
                 processId = binding.ProcessId, processStartTime = binding.ProcessStartTime,
-                channelId = choice.ChannelId, profile = requestedProfile, anyAddress = choice.AnyAddress }, ContractJson.Options)
+                channelId = choice.ChannelId, profile = requestedProfile }, ContractJson.Options)
             : JsonSerializer.SerializeToElement(new { gameSessionId = binding.Id, region = binding.Region,
                 processId = binding.ProcessId, processStartTime = binding.ProcessStartTime,
-                channelId = choice.ChannelId, profile = requestedProfile, anyAddress = choice.AnyAddress, localIdentity = known }, ContractJson.Options);
+                channelId = choice.ChannelId, profile = requestedProfile, localIdentity = known }, ContractJson.Options);
         call = await session.BeginAsync(new("observation.capture", arguments, id, binding.BindingRevision.ToString(), "0"), deadline.Token);
+        lock (gate) CaptureRequested();
     }
 
     private async Task AutomateAsync(CancellationToken ct)
@@ -182,10 +147,14 @@ public sealed partial class GameObservationService
             if (worker is not null && BlockingDemands == 0 && resident) await StopCoreAsync("update.maintenanceActive", fault: false);
             SetAutomation("waiting", "update.maintenanceActive"); return;
         }
+        CaptureChannelChoice? current;
+        lock (gate) current = worker is not null && resident ? autoChoice : null;
+        // 运行中改了网卡设置（指定网卡、换一张、切回自动）：按受控停止结束当前捕获，随后在本轮按新设置重新启动；模块订阅以观察缺口结束后照常重新登记。
+        if (current is not null && !Matches(current, settings)) await StopCoreAsync(ChannelChanged, fault: false);
         if (worker is not null)
         {
             lock (gate) if (!resident && state is "running" or "starting") resident = true;
-            SetAutomation(state == "running" ? "running" : "starting", null); return;
+            SetAutomation(state == "running" ? "running" : "starting", state == "running" ? RunningHint : null); return;
         }
         if (DetectionRunning) { SetAutomation("waiting", "observation.channelDetecting"); return; }
         var binding = controls.Bindings.Recent?.Session;
@@ -229,6 +198,11 @@ public sealed partial class GameObservationService
             ScheduleRetry(code);
         }
     }
+    internal const string ChannelChanged = "observation.channelChanged";
+    /// <summary>当前捕获的设备选择是否仍符合设置：自动模式为全部设备，指定模式为保存的那张网卡。</summary>
+    private static bool Matches(CaptureChannelChoice choice, GameCaptureSettings settings) => settings.ChannelMode == GameCaptureSettings.ManualChannel
+        ? choice.Source == "saved" && choice.ChannelId == settings.ChannelId
+        : choice.Source == "automatic";
     /// <summary>自动启动失败或常驻捕获故障后按退避时间再试；游戏会话或设置修订变化时由 <see cref="AutomateAsync"/> 立即重试。</summary>
     private void ScheduleRetry(string code)
     {

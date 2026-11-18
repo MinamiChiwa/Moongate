@@ -15,12 +15,17 @@ public sealed partial class SqliteStore : IAsyncDisposable
     public const int MaximumOutboxEvents = 10000;
     public static readonly TimeSpan PublishedEventRetention = TimeSpan.FromMinutes(10);
     public const int MaximumEventBytes = 64 * 1024;
-    /// <summary>写事务设计预算（软预算）：超过时照常提交并记录遥测。</summary>
+    /// <summary>写事务设计预算（软预算）：超过时照常提交，记录遥测并以 Warning 写入日志。</summary>
     public static readonly TimeSpan TransactionBudget = TimeSpan.FromMilliseconds(250);
-    /// <summary>写事务硬上限：超过时整笔回滚；取值按基准机实测校准。</summary>
-    public static readonly TimeSpan TransactionHardLimit = TimeSpan.FromMilliseconds(2000);
-    /// <summary>读槽全部占用时的最长等待；与设计预算一致，超过说明存在长读或积压。</summary>
-    public static readonly TimeSpan ReadCapacityWait = TimeSpan.FromMilliseconds(250);
+    /// <summary>
+    /// 写事务挂起上限：只拦截失控或挂起的事务（超过时整笔回滚）。机械硬盘、杀毒软件实时扫描或低配机器上正常写入可达数秒，
+    /// 这类超出设计预算的写入照常提交，只记诊断告警。
+    /// </summary>
+    public static readonly TimeSpan TransactionHardLimit = TimeSpan.FromSeconds(30);
+    /// <summary>读槽等待的设计预算：超过时照常等待并记一次诊断告警。</summary>
+    public static readonly TimeSpan ReadSlotBudget = TimeSpan.FromMilliseconds(250);
+    /// <summary>读槽全部占用时的最长等待；超过说明存在长读或严重积压，返回可重试错误。</summary>
+    public static readonly TimeSpan ReadCapacityWait = TimeSpan.FromSeconds(5);
     public const int RetainedBudgetSamples = 32;
     private readonly PathService paths;
     private readonly TimeProvider storageClock;
@@ -47,6 +52,10 @@ public sealed partial class SqliteStore : IAsyncDisposable
     internal TimeSpan SoftTransactionBudget { get; set; } = TransactionBudget;
     internal TimeSpan HardTransactionLimit { get; set; } = TransactionHardLimit;
     internal TimeSpan ReadSlotWait { get; set; } = ReadCapacityWait;
+    /// <summary>读槽等待超过 <see cref="ReadSlotBudget"/> 后取得槽位时的遥测（实际等待时长）；观察器失败不影响读取。</summary>
+    internal Action<TimeSpan>? ReadSlotWaitObserver { get; set; }
+    private long slowReadSlotWaits;
+    internal long SlowReadSlotWaitCount => Interlocked.Read(ref slowReadSlotWaits);
     private readonly Queue<SqliteTransactionBudgetSample> budgetSamples = new();
     private long softBudgetExceeded, hardLimitExceeded;
     internal long SoftBudgetExceededCount => Interlocked.Read(ref softBudgetExceeded);
@@ -108,6 +117,13 @@ public sealed partial class SqliteStore : IAsyncDisposable
         try
         {
             connection.Open();
+            // 首次建库在写入身份表之前中断（文件已建出但没有任何表）：数据根还没有记录数据库身份时按新库续建。
+            if (existed && lease.DatabaseId is null)
+            {
+                using var tables = connection.CreateCommand();
+                tables.CommandText = "SELECT count(*) FROM sqlite_master";
+                if ((long)tables.ExecuteScalar()! == 0) existed = false;
+            }
             string databaseId;
             if (existed)
             {
@@ -371,8 +387,18 @@ public sealed partial class SqliteStore : IAsyncDisposable
     public T Read<T>(Func<SqliteConnection, T> read)
     {
         if (Volatile.Read(ref stopped) != 0) throw new ObjectDisposedException(nameof(SqliteStore));
-        // 短时并发尖峰在有界等待内取得槽位；超过上限返回可重试错误，不长期阻塞调用线程。
-        if (!readers.Wait(0) && !readers.Wait(ReadSlotWait)) throw new StorageException("storage.readCapacityExceeded", "数据库读并发已满");
+        // 并发尖峰与慢盘上的长读在有界等待内取得槽位，超过设计预算只记诊断；超过上限返回可重试错误，不长期阻塞调用线程。
+        if (!readers.Wait(0))
+        {
+            var waitStarted = Stopwatch.GetTimestamp();
+            if (!readers.Wait(ReadSlotWait)) throw new StorageException("storage.readCapacityExceeded", "数据库读并发已满");
+            var waited = Stopwatch.GetElapsedTime(waitStarted);
+            if (waited > ReadSlotBudget)
+            {
+                Interlocked.Increment(ref slowReadSlotWaits);
+                try { ReadSlotWaitObserver?.Invoke(waited); } catch (Exception) { }
+            }
+        }
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref stopped) != 0, this);

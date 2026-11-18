@@ -483,6 +483,9 @@
   <sys:String x:Key="G.LiveTitle">即時記錄</sys:String>
   <sys:String x:Key="G.LiveHint">採集進行中即時顯示，最多保留最近 500 筆；記錄同時寫入採集檔案。</sys:String>
   <sys:String x:Key="G.ExportTitle">匯出排查包</sys:String>
+  <sys:String x:Key="G.StartupTitle">匯出啟動記錄</sys:String>
+  <sys:String x:Key="G.StartupHint">後端沒有啟動時也能匯出：主機的啟動失敗原因、程式資料夾是否可寫、磁碟與檔案系統、是否以系統管理員身分執行、Windows 與程式版本；使用者名稱等已替換。儲存位置在儲存對話方塊裡選擇。</sys:String>
+  <sys:String x:Key="G.StartupExport">匯出啟動記錄</sys:String>
   <sys:String x:Key="G.Offline">未連接後端，連接後依權限可用</sys:String>
   <sys:String x:Key="G.ExportHint">匯出所選工作階段的記錄與採集資訊；儲存位置在儲存對話方塊裡選擇，選定後才寫出檔案。</sys:String>
   <sys:String x:Key="G.ExportLatest">最近一次除錯採集</sys:String>

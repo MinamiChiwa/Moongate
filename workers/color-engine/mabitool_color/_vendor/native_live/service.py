@@ -29,6 +29,8 @@ def _prepare(pid,folder,check,hwnd=None,*,expected_creation=None):
     try:
         save();check()
         configure_ocr(strict=True,check=check);check()
+        from mabitool_color._vendor import vision
+        diagnostic['ocr_warmup']=vision.OCR_WARMUP
         timer=prepare_timer_assets();check();glyphs=prepare_hex_assets();check()
         diagnostic['stage']='game_build';save();check()
         backend=CurrentBuildBackend(pid,output_root=folder/'native-captures',check=check,
@@ -88,6 +90,10 @@ def unavailable_reason(error):
         return 'coordinate_mapping'
     if any(s in message for s in ('DPI','physical window','physical client')):return 'window_measurement'
     if any(s in message for s in ('Tesseract','OCR','文字识别组件')):return 'ocr_assets'
+    # 准备完成后的本局校验：窗口与 Unity 屏幕、输入方式、进程身份各自给出原因，不再统一落到 preparation。
+    if any(s in message for s in ('Window','window','Unity screen','Native Screen')):return 'window_context'
+    if any(s in message for s in ('Input ','input backend','Input backend','mouse getter','Input assistant')):return 'input_backend'
+    if any(s in message for s in ('Process ended','Process changed','process identity','Process identity')):return 'process_changed'
     return 'preparation'
 
 
@@ -257,7 +263,7 @@ def run_native_search(owner,rules,*,mode='search',target=None,activate=False,ser
         'actual_input_attempts','maximum','average','restored','best_current','screenshot_verified',
         'server_confirmation_verified','enabled_regions','rules','region_count','available_regions',
         'selected_server','failure_recovery',
-        'refinement_stop','unavailable_reason','session_stop_reason','interruption_reason','stop_diagnostic',
+        'refinement_stop','unavailable_reason','stop_detail','session_stop_reason','interruption_reason','stop_diagnostic',
         'last_verified_colors','last_verified_deltas','last_verified_captured_monotonic',
         'last_verified_screenshot')})
     return result

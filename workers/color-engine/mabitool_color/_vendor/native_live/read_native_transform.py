@@ -4,12 +4,12 @@ import struct
 import sys
 
 from mabitool_color._vendor.native_transform_matrix import local_to_world_matrix
-from .read_native_rect import SUPPORTED_UNITYPLAYER
+from .build_adapters import supported_unityplayer
 
 
 def read_native_transform_matrix(reader, managed_transform_address, *, unityplayer_sha256,
                                  max_depth=64, check=lambda: None):
-    if unityplayer_sha256 != SUPPORTED_UNITYPLAYER:
+    if not supported_unityplayer(unityplayer_sha256):
         raise ValueError('Unsupported Transform layout build')
     if type(max_depth) is not int or not 1 <= max_depth <= 256:
         raise ValueError('Invalid Transform depth limit')

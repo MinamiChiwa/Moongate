@@ -483,6 +483,9 @@
   <sys:String x:Key="G.LiveTitle">实时记录</sys:String>
   <sys:String x:Key="G.LiveHint">采集进行中实时显示，最多保留最近 500 条；记录同时写入采集文件。</sys:String>
   <sys:String x:Key="G.ExportTitle">导出排查包</sys:String>
+  <sys:String x:Key="G.StartupTitle">导出启动记录</sys:String>
+  <sys:String x:Key="G.StartupHint">后端没有启动时也能导出：宿主的启动失败原因、程序文件夹是否可写、磁盘与文件系统、是否以管理员身份运行、Windows 与程序版本；用户名等已替换。保存位置在保存对话框里选择。</sys:String>
+  <sys:String x:Key="G.StartupExport">导出启动记录</sys:String>
   <sys:String x:Key="G.Offline">未连接后端，连接后按权限可用</sys:String>
   <sys:String x:Key="G.ExportHint">导出所选会话的记录与采集信息；保存位置在保存对话框里选择，选定后才写出文件。</sys:String>
   <sys:String x:Key="G.ExportLatest">最近一次调试采集</sys:String>

@@ -5,11 +5,19 @@ import numpy as np
 from PIL import Image
 from mabitool_color._vendor.input_gestures import PointerGesture
 from .dye_action_checkpoint import record_action_checkpoint, _binding
-from mabitool_color._vendor.vision import recognize,read_codes,_swatch_distance
+from mabitool_color._vendor.vision import recognize,read_codes,_swatch_distance,ocr_counters,ocr_time_scale
 from .probe_timer import read_timer
 from mabitool_color._vendor.dye_regions import region_count as validate_region_count
 from .session_status import (PaletteEnded,SessionBindingChanged,SessionProbeUnstable,
     session_diagnostic,changed_token_fields)
+
+
+class DisplayScaleMismatch(ValueError):
+    """截图尺寸与本局核对的客户区物理像素不同（通常是显示缩放或 DPI 虚拟化）。"""
+    capability_reason='display_scale'
+    def __init__(self,captured,expected):
+        super().__init__('Captured physical client extent mismatch')
+        self.captured=captured;self.expected=expected
 
 
 class FrameReadTimeout(TimeoutError):
@@ -135,8 +143,12 @@ def read_probe_frame(image,*,deadline,check=lambda:None,clock=time.monotonic,pre
     scene=recognize(image,with_ocr=False,region_count=region_count) if native_board is None else _recognize_native_layout(image,native_board,region_count)
     guard()
     fallback_reads=[];codes=[None]*len(scene.cards);cache_hits=[False]*len(scene.cards);keys=[];samples=[]
+    # 每块色卡的读字记录：识别调用、超时与空结果次数，以及最接近的读数与色块色差。
+    hex_reads=[dict(region=index+1,ocr_calls=0,ocr_timeouts=0,ocr_empty=0,best_text=None,best_swatch_distance=None)
+        for index in range(len(scene.cards))]
     def frame_record(**extra):
         return dict(hex=codes,region_count=region_count,hex_fallback_reads=fallback_reads,hex_cache_hits=cache_hits,
+            hex_read_diagnostics=hex_reads,
             hex_recognition_sources=['exact_card_pixels_cache' if hit else 'screenshot_text' if code is not None else 'unresolved'
                 for hit,code in zip(cache_hits,codes)],
             timer_layout_assumption='measured_anchor_with_top_left_HUD_prior',
@@ -156,8 +168,16 @@ def read_probe_frame(image,*,deadline,check=lambda:None,clock=time.monotonic,pre
             if code is not None:continue
             enabled=[i==index for i in range(len(codes))]
             kwargs={} if text_fallback is None else dict(text_fallback=text_fallback)
-            one=read_codes(image,scene.cards,scene.markers,enabled=enabled,
-                deadline=deadline,clock=clock,check=check,**kwargs)
+            before=ocr_counters();candidates=[];row=hex_reads[index]
+            try:
+                one=read_codes(image,scene.cards,scene.markers,enabled=enabled,
+                    deadline=deadline,clock=clock,check=check,candidate_diagnostics=candidates,**kwargs)
+            finally:
+                after=ocr_counters()
+                row['ocr_timeouts']+=after[0]-before[0];row['ocr_calls']+=after[1]-before[1];row['ocr_empty']+=after[2]-before[2]
+                for item in candidates:
+                    if item['card_index']==index and item['best_text'] is not None:
+                        row.update(best_text=item['best_text'],best_swatch_distance=item['best_swatch_distance'])
             if one[index] is not None:codes[index]=one[index]
     try:
         for index,card in enumerate(scene.cards):
@@ -194,6 +214,7 @@ def read_probe_frame(image,*,deadline,check=lambda:None,clock=time.monotonic,pre
                 # its strict gate in read_codes; no swatch generates HEX text.
                 accepted=result.get('glyphs_unambiguous') is True and distance is not None and distance<=3
                 fallback_reads.append(dict(card_index=index,**result,swatch_distance=distance,swatch_accepted=accepted))
+                if distance is not None:hex_reads[index].update(best_text=value,best_swatch_distance=distance)
                 if accepted:codes[index]=value
             if any(code is None for code in codes):
                 # Only unresolved screenshot text needs expensive OCR.
@@ -424,7 +445,8 @@ class ProjectProbeIO:
                 raise ObservationInterrupted('Screenshot capture transport failed') from exc
             captured=time.monotonic()
             expected=self.last_observation['window_context']['window']['client_size_physical']
-            if [image.shape[1],image.shape[0]]!=list(expected):raise ValueError('Captured physical client extent mismatch')
+            if [image.shape[1],image.shape[0]]!=list(expected):
+                raise DisplayScaleMismatch([image.shape[1],image.shape[0]],list(expected))
             path=self.folder/(label+'_frame'+str(index)+'.png')
             writer=getattr(self,'evidence_writer',None)
             if writer is None or writer.stopped.is_set():
@@ -434,7 +456,8 @@ class ProjectProbeIO:
             board=self.last_observation['window_mapping_candidate']['client_board_candidate']
             region_count=_observation_region_count(self.last_observation)
             try:
-                decoded=read_probe_frame(image,deadline=min(deadline,time.monotonic()+5),check=self._input_guard,
+                # 每帧读字时限按准备时的识别实测耗时放宽，慢电脑上不因固定 5 秒截断读字。
+                decoded=read_probe_frame(image,deadline=min(deadline,time.monotonic()+5*ocr_time_scale()),check=self._input_guard,
                     previous_timer=self.previous_timer,captured_at=captured,hex_fallback=getattr(self,'hex_fallback',None),
                     timer_mode='advisory',card_cache=self.card_cache,
                     native_board=board,region_count=region_count,read_colors=read_colors)
@@ -450,7 +473,7 @@ class ProjectProbeIO:
                     # it remains unresolved or the read is interrupted.
                     try:
                         decoded=reread_conflicting_hex(image,decoded,self.last_client_hex,
-                            deadline=min(deadline,time.monotonic()+5.),check=self._input_guard,card_cache=self.card_cache)
+                            deadline=min(deadline,time.monotonic()+5.*ocr_time_scale()),check=self._input_guard,card_cache=self.card_cache)
                     finally:
                         try:
                             path.with_suffix('.decoded.json').write_text(json.dumps(dict(decoded,
@@ -460,7 +483,10 @@ class ProjectProbeIO:
                             # Optional conflict diagnostics must not replace
                             # F9 or the real session-deadline exception.
                             decoded['diagnostic_write_error']=type(exc).__name__+': '+str(exc)
-                decoded=merge_native_hex(decoded,self.last_client_hex)
+                try:decoded=merge_native_hex(decoded,self.last_client_hex)
+                except ValueError as exc:
+                    # 核验原因按这一帧的逐卡读数判定。
+                    exc.decoded_frames=[*frames,decoded];raise
             if decoded['remaining_seconds'] is not None:self.previous_timer=(decoded['remaining_seconds'],captured)
             # Visually observed card centers should follow the actual native
             # equal columns; this detects a gross wrong screen/viewport.

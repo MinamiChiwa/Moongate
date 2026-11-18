@@ -363,7 +363,7 @@
           "path": "work/studio/native_live/read_dye_window_mapping.py",
           "sha256": "af03ef5b5a197ec48ecf43e0e444245d6e9b5ff9ae5ddfb483e9cf08c40161f0",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_dye_window_mapping.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；Unity 渲染尺寸与客户区不同时按 Screen 视口核对并记录渲染缩放映射，其余算法保持来源实现"
         },
         {
           "path": "work/studio/native_live/same_session_dye_planner.py",
@@ -609,13 +609,13 @@
           "path": "work/studio/native_live/adaptive_build.py",
           "sha256": "5933b54cfba299ca69dbefd455aa4c6cee67765666f61faae5d7b464fef1e479",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/adaptive_build.py",
-          "adaptation": "保留原基线；同步原仓库提交 3c2942e（PR #18）的 v2 地址发现修复，按目标类有效 64 位读取引用判定唯一槽位，排除无关标记、窄字段和写入指令"
+          "adaptation": "保留原基线；同步原仓库提交 3c2942e（PR #18）的 v2 地址发现修复，按目标类有效 64 位读取引用判定唯一槽位，排除无关标记、窄字段和写入指令；UnityPlayer 未登记时改用同引擎版本的静态定位布局"
         },
         {
           "path": "work/studio/native_live/build_adapters.py",
           "sha256": "b3ea25b01489b21231cd4209a1988288ec6e6f50dcf7dd7db6ae37a60495006a",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/build_adapters.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；Unity 布局增加诊断鼠标缓存偏移与本进程静态定位登记；算法保持来源实现"
         },
         {
           "path": "work/studio/native_live/build_layout.py",
@@ -651,7 +651,7 @@
           "path": "work/studio/native_live/controller.py",
           "sha256": "b1888c2a7049e354a676b6a4ac2fd366229fa82612e7d8069f4df85311798ddf",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/controller.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；复用原定位、候选排序和预算；允许候选与重试共存，重试批次增加 epoch，避免低精度 Windows 单调时钟重复 ID，保留独立实测快照。"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；复用原定位、候选排序和预算；允许候选与重试共存，重试批次增加 epoch，避免低精度 Windows 单调时钟重复 ID，保留独立实测快照；色卡等待发布核验未通过的原因，遮挡或识别超时持续时提前结束。"
         },
         {
           "path": "work/studio/native_live/dye_action_checkpoint.py",
@@ -693,7 +693,7 @@
           "path": "work/studio/native_live/map_unity_window.py",
           "sha256": "51c231b13f14c241b9b3ccbf169364f16be468616188006d31f57f8a928f3dc2",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/map_unity_window.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；渲染缩放时色板按同一视口投影到客户区；算法保持来源实现"
         },
         {
           "path": "work/studio/native_live/native_provider_backend.py",
@@ -711,19 +711,19 @@
           "path": "work/studio/native_live/project_closed_loop_io.py",
           "sha256": "2b55c10a8038a3f039c959a51498c8d10d097d3022d68658ceae3ac6312511ae",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/project_closed_loop_io.py",
-          "adaptation": "本地导入加包前缀；中央代理模式用类型化 release 释放鼠标，输入凭据记录宿主代理来源；保留原闭环校验、手势及重试算法。"
+          "adaptation": "本地导入加包前缀；中央代理模式用类型化 release 释放鼠标，输入凭据记录宿主代理来源；截图核验未通过时按逐卡读数与窗口遮挡给出结构化原因；保留原闭环校验、手势及重试算法。"
         },
         {
           "path": "work/studio/native_live/project_probe_io.py",
           "sha256": "ff8a013469b1f98ba0abad5fe178275ee32ef95c6a7287270f65d73c4f15e782",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/project_probe_io.py",
-          "adaptation": "本地导入加包前缀；注入代理时使用其输入来源和类型化 release，截图/输入与中央停止经注入端口；保留原色板与进程绑定校验。"
+          "adaptation": "本地导入加包前缀；注入代理时使用其输入来源和类型化 release，截图/输入与中央停止经注入端口；逐卡记录识别超时、空结果与色差，读字时限按识别实测放宽；保留原色板与进程绑定校验。"
         },
         {
           "path": "work/studio/native_live/read_dye_input_backend.py",
           "sha256": "caf061dc2a5081f68dc11e9c5011014e0639a04d2bae0326ac24b48aa73a4013",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_dye_input_backend.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；输入辅助非空与定位布局不符给出专门原因，渲染缩放映射须与视口一致；算法保持来源实现"
         },
         {
           "path": "work/studio/native_live/read_dye_motion.py",
@@ -735,19 +735,19 @@
           "path": "work/studio/native_live/read_native_mouse_diagnostic.py",
           "sha256": "c29eacf6baa4f5f7f427a6292de5451a698a68253a00b9a0a29eab3960094db8",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_native_mouse_diagnostic.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；鼠标缓存偏移取自 Unity 布局；算法保持来源实现"
         },
         {
           "path": "work/studio/native_live/read_native_rect.py",
           "sha256": "02d0791900da35c21289b0b81ad42abec0cf835bb92f964f531c0dc87f3f4a96",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_native_rect.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；接受登记或同引擎版本定位的 UnityPlayer；算法保持来源实现"
         },
         {
           "path": "work/studio/native_live/read_native_transform.py",
           "sha256": "2636a5001e4268900a68b710d2b01dc061835ff80111eb7fc4a5758f6884ef50",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_native_transform.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；接受登记或同引擎版本定位的 UnityPlayer；算法保持来源实现"
         },
         {
           "path": "work/studio/native_live/read_toucharea_geometry.py",
@@ -765,7 +765,7 @@
           "path": "work/studio/native_live/read_unity_screen.py",
           "sha256": "a9b3fb4aab4f81886d9f0afc9b1a60e9ab9889ce7514caeae7580a3594c0f3eb",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/read_unity_screen.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；Screen 全局偏移取自 Unity 布局并读出视口；算法保持来源实现"
         },
         {
           "path": "work/studio/native_live/refinement.py",
@@ -807,7 +807,7 @@
           "path": "work/studio/native_live/service.py",
           "sha256": "3e4d457ff18dbd62368e361ba0631a752ba15e2f18622b8f222141bd6c74c7ad",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/service.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；候选事件与选择回调转发至运行上下文，截图和输入保留统一端口。"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；候选事件与选择回调转发至运行上下文，截图和输入保留统一端口；结果带核验细分原因与 OCR 预热记录。"
         },
         {
           "path": "work/studio/native_live/session_status.py",
@@ -951,7 +951,7 @@
           "path": "work/studio/vision.py",
           "sha256": "dd653f888a6f666a993f844e0b4c2ae7653cb28c965eeb77df7c6f7406a9e915",
           "localPath": "workers/color-engine/mabitool_color/_vendor/vision.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；OCR 只定位染色组件内（或 MABITOOL_COLOR_TESSERACT_DIRECTORY 指定）的 Tesseract，不搜索系统安装，缺失时给出原因码；算法保持来源实现"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；OCR 只定位染色组件内（或 MABITOOL_COLOR_TESSERACT_DIRECTORY 指定）的 Tesseract，不搜索系统安装，缺失时给出原因码；以组件目录为工作目录相对传 tessdata，预热后按实测放宽时限，超时重试并与空结果分别计数；算法保持来源实现"
         },
         {
           "path": "work/studio/native_live/__init__.py",

@@ -55,6 +55,16 @@ public sealed class ColorWorkerResultsTests
         Assert.Equal("unverified", result.Outcome);
     }
 
+    /// <summary>截图核验未通过的原因（带区域序号）作为细分原因；准备失败原因优先，不是原因码形状的值不采用。</summary>
+    [Fact]
+    public void VerificationReasonBecomesTheStopDetail()
+    {
+        ColorRunResult Read(object payload) => ColorWorkerResults.ReadResult(Frame("result", payload), Profile(), Source, new(1));
+        Assert.Equal("hex_mismatch.2", Read(new { region_count = 2, stop_reason = "initial_visual_timeout", stop_detail = "hex_mismatch.2" }).StopDetail);
+        Assert.Equal("render_scale", Read(new { region_count = 0, stop_reason = "unavailable", unavailable_reason = "render_scale", stop_detail = "occluded" }).StopDetail);
+        Assert.Null(Read(new { region_count = 2, stop_reason = "observation_failed", stop_detail = "C:\\路径 不是原因码" }).StopDetail);
+    }
+
     [Theory]
     [InlineData(15, true)]
     [InlineData(-1, false)]

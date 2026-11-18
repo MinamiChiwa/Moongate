@@ -23,6 +23,8 @@ public sealed class GameStreamCounters
     private readonly Dictionary<int, ulong> types = [];
     private readonly ulong[] resets = new ulong[Enum.GetValues<GameStreamResetCause>().Length];
     private ulong segments, bytes, outOfOrder, retransmitted, frames, dispatched, decompressFailures, otherFrames;
+    /// <summary>已分帧的累计帧数；捕获按设备统计分帧时读取前后差值。</summary>
+    public ulong Frames { get { lock (gate) return frames; } }
     internal void Segment(int length) { lock (gate) { segments++; bytes += (ulong)length; } }
     internal void OutOfOrder() { lock (gate) outOfOrder++; }
     internal void Retransmitted() { lock (gate) retransmitted++; }

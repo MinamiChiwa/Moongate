@@ -123,6 +123,30 @@ def _cursor_proof(api,hwnd,guard,diagnostics=None):
     return dict(stationary_route_verified=False,reader_cursor_route_status=reason,reason=reason)
 
 
+class RenderScaleUnavailable(ValueError):
+    """Unity renders at a size that the window's viewport does not map onto the client."""
+    capability_reason='render_scale'
+
+
+def render_scale_viewport(target,native,origin,scale):
+    """Viewport mapping client units onto a different Unity render size, or None.
+
+    The legacy mouse getter computes floor((client - origin) * scale). The
+    content area (client minus the letterbox on both sides) times the scale
+    must reproduce the Unity Screen size within one pixel on each axis.
+    """
+    if (not isinstance(origin,(list,tuple)) or not isinstance(scale,(list,tuple)) or len(origin)!=2 or len(scale)!=2
+            or any(type(v) is not int or v<0 for v in origin)
+            or any(type(v) not in (int,float) or not math.isfinite(v) or v<=0 for v in scale)):
+        return None
+    for axis in range(2):
+        content=target[axis]-2*origin[axis]
+        if content<=0 or abs(content*scale[axis]-native[axis])>1:return None
+        # 内容区最后一个客户区像素必须落在 Unity 画面以内。
+        if math.floor((target[axis]-origin[axis]-1-origin[axis])*scale[axis])>native[axis]-1:return None
+    return dict(viewport_origin=list(origin),viewport_scale=[float(v) for v in scale])
+
+
 def _fingerprint(record):
     return hashlib.sha256(json.dumps({k:v for k,v in record.items() if k!='mapping_sha256'},
         sort_keys=True,allow_nan=False).encode()).hexdigest()
@@ -133,9 +157,14 @@ def read_pixel_mapping(window,screen,deadline,check=lambda:None,*,clock=time.mon
     guard=_guard(deadline,check,clock);guard()
     hwnd,size,origin,native,binding=_coordinates(window,screen);api=api or _Win32MappingAPI()
     w,h=size
+    render=None
     with api.target_context(hwnd):
         guard();target=list(api.client_size(hwnd))
-        if target!=native:raise ValueError('Native Screen extent differs from target-awareness client units')
+        if target!=native:
+            # 全屏低分辨率或分辨率缩放：Unity 渲染尺寸经视口映射到客户区，只在视口与两边尺寸自洽时接受。
+            render=render_scale_viewport(target,native,screen.get('viewport_origin'),screen.get('viewport_scale'))
+            if render is None:
+                raise RenderScaleUnavailable('Unity render size differs from the client and its viewport does not map it')
         expected_edges=[[origin[0],origin[1]],[origin[0]+w,origin[1]],
                         [origin[0],origin[1]+h],[origin[0]+w,origin[1]+h]]
         edges=[]
@@ -186,6 +215,7 @@ def read_pixel_mapping(window,screen,deadline,check=lambda:None,*,clock=time.mon
         stationary_route_scope='initial_reader_process_observation_only',**cursor),
         ready_for_input=False,inputs_sent=0,
         scope='Exact Win32 target-awareness integer axis map; supported legacy route assumption, no game event instrumentation')
+    if render is not None:record.update(render,render_scale_verified=True)
     record['mapping_sha256']=_fingerprint(record)
     return record
 
@@ -200,6 +230,9 @@ def validate_pixel_mapping(record,window,screen,deadline,check=lambda:None,*,clo
     if (record.get('physical_client_size')!=size or record.get('native_screen_size')!=native
             or record.get('coordinate_validation',{}).get('verified') is not True):
         raise ValueError('Window pixel mapping proof differs')
+    if record.get('render_scale_verified') is True and (record.get('viewport_origin')!=screen.get('viewport_origin')
+            or record.get('viewport_scale')!=[float(v) for v in screen.get('viewport_scale') or ()]):
+        raise ValueError('Window pixel mapping viewport changed')
     api=api or _Win32MappingAPI()
     with api.target_context(hwnd):
         guard()

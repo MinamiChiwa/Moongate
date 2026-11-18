@@ -14,22 +14,67 @@ from mabitool_color._vendor.marker_geometry import refine_marker_center
 
 OCR_AVAILABLE = None
 OCR_CONFIG = ''
+# Tesseract 以组件目录为工作目录、相对路径传 tessdata：程序按 ANSI 代码页解析命令行，
+# 工具根路径里系统编码无法表示的字符不会进入它的参数。
+OCR_CWD = None
+# 单次识别时限与每帧读字时限的放大倍数，按准备时的预热实测耗时设置。
+OCR_TIMEOUT = 2.
+OCR_TIME_SCALE = 1.
+OCR_WARMUP = None
+_OCR_STATS = threading.local()
 
-def _ocr_probe(args,*,check=None):
+
+def ocr_counters():
+    """本线程累计的 (超时次数, 识别调用次数, 空结果次数)，按差值归到单块色卡。"""
+    return (getattr(_OCR_STATS,'timeouts',0),getattr(_OCR_STATS,'calls',0),getattr(_OCR_STATS,'empty',0))
+
+
+def _count(name):
+    setattr(_OCR_STATS,name,getattr(_OCR_STATS,name,0)+1)
+
+
+def ocr_time_scale():
+    return OCR_TIME_SCALE
+
+
+def _ocr_probe(args,*,check=None,input=None,cwd=None,timeout=5):
     flags=getattr(subprocess,'CREATE_NO_WINDOW',0)
-    if check is None:return subprocess.run(args,capture_output=True,timeout=5,creationflags=flags)
-    check();end=time.monotonic()+5
-    process=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=flags)
+    if check is None:return subprocess.run(args,input=input,capture_output=True,timeout=timeout,creationflags=flags,cwd=cwd)
+    check();end=time.monotonic()+timeout
+    process=subprocess.Popen(args,stdin=subprocess.PIPE if input is not None else None,
+        stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=flags,cwd=cwd)
     try:
+        pending=input
         while True:
             check();remaining=end-time.monotonic()
-            if remaining<=0:raise subprocess.TimeoutExpired(args,5)
-            try:stdout,stderr=process.communicate(timeout=min(.05,remaining));break
-            except subprocess.TimeoutExpired:continue
+            if remaining<=0:raise subprocess.TimeoutExpired(args,timeout)
+            try:stdout,stderr=process.communicate(input=pending,timeout=min(.05,remaining));break
+            except subprocess.TimeoutExpired:pending=None;continue
         check();return subprocess.CompletedProcess(args,process.returncode,stdout,stderr)
     except BaseException:
         if process.poll() is None:process.kill()
         process.communicate();raise
+
+
+def _path_encodable(path):
+    """工具根路径能否用当前 ANSI 代码页表示；不能时组件按绝对路径读不到文件。"""
+    if os.name!='nt':return True
+    try:str(path).encode('mbcs',errors='strict');return True
+    except (UnicodeEncodeError,LookupError):return False
+
+
+def _warmup_png():
+    image=Image.new('L',(96,32),255)
+    buffer=io.BytesIO();image.save(buffer,format='PNG')
+    return buffer.getvalue()
+
+
+def _calibrate(seconds):
+    """按预热后稳态一次识别的耗时放宽单次时限（2–10 秒）与每帧读字时限。"""
+    global OCR_TIMEOUT, OCR_TIME_SCALE
+    steady=max(0.,float(seconds))
+    OCR_TIMEOUT=min(10.,max(2.,6*steady))
+    OCR_TIME_SCALE=min(4.,max(1.,steady/.35))
 
 
 TESSERACT_DIRECTORY_VARIABLE = 'MABITOOL_COLOR_TESSERACT_DIRECTORY'
@@ -54,7 +99,7 @@ def tesseract_directory():
 
 def configure_ocr(strict=False,*,check=None):
     """Check the bundled OCR executable and English data before a timed capture."""
-    global OCR_AVAILABLE, OCR_CONFIG
+    global OCR_AVAILABLE, OCR_CONFIG, OCR_CWD, OCR_WARMUP
     with _OCR_LOCK:
         OCR_CONFIG = ''
         if check is not None:check()
@@ -66,20 +111,41 @@ def configure_ocr(strict=False,*,check=None):
         elif not exe.is_file() or not (data_dir/'eng.traineddata').is_file():
             failure=('ocr.componentMissing','文字识别组件缺失：程序文件夹的 components\\color-engine\\tesseract 里没有 Tesseract 程序或英文识别数据，请重新解压完整的 Moongate 压缩包。')
         else:
+            unreadable=('ocr.pathUnreadable','文字识别组件读不到所在路径：Moongate 文件夹路径里有系统编码不支持的字，请把整个文件夹移到 D:\\Moongate 这类纯英文路径。')
             try:
                 # --list-langs includes the installation path in its header, whose
                 # encoding can follow the Windows locale. Only the ASCII language
                 # identifiers matter; decoding that header as UTF-8 can reject a
                 # working installation.
-                probe=_ocr_probe([str(exe),'--list-langs','--tessdata-dir',str(data_dir)],check=check)
+                probe=_ocr_probe([str(exe),'--list-langs','--tessdata-dir','tessdata'],check=check,cwd=str(directory))
                 if probe.returncode!=0 or b'eng' not in [line.strip() for line in probe.stdout.splitlines()]:
-                    failure=('ocr.componentInvalid','文字识别组件不可用：染色组件内的 Tesseract 无法加载英文识别数据，请修复或重新安装染色组件。')
+                    failure=unreadable if not _path_encodable(directory) else (
+                        'ocr.componentInvalid','文字识别组件不可用：染色组件内的 Tesseract 无法加载英文识别数据，请修复或重新安装染色组件。')
+                else:
+                    # 首次启动常被安全软件扫描拖慢：预热一次，再按稳态耗时放宽时限。
+                    args=[str(exe),'stdin','stdout','-l','eng','--tessdata-dir','tessdata','--psm','7']
+                    started=time.monotonic()
+                    first=_ocr_probe(args,check=check,input=_warmup_png(),cwd=str(directory),timeout=20)
+                    cold=time.monotonic()-started;started=time.monotonic()
+                    second=_ocr_probe(args,check=check,input=_warmup_png(),cwd=str(directory),timeout=20)
+                    steady=time.monotonic()-started
+                    if first.returncode!=0 or second.returncode!=0:
+                        failure=unreadable if not _path_encodable(directory) else (
+                            'ocr.componentInvalid','文字识别组件不可用：染色组件内的 Tesseract 无法识别图片，请修复或重新安装染色组件。')
+                    else:
+                        _calibrate(steady)
+                        OCR_WARMUP=dict(cold_seconds=round(cold,3),steady_seconds=round(steady,3),
+                            timeout_seconds=OCR_TIMEOUT,time_scale=OCR_TIME_SCALE)
             except InterruptedError:raise
-            except (OSError,subprocess.TimeoutExpired):
-                failure=('ocr.componentInvalid','文字识别组件不可用：染色组件内的 Tesseract 无法启动，请修复或重新安装染色组件。')
+            except subprocess.TimeoutExpired:
+                failure=('ocr.componentInvalid','文字识别组件不可用：染色组件内的 Tesseract 20 秒内没有完成识别，请关闭占用大的程序后重试。')
+            except OSError:
+                failure=unreadable if not _path_encodable(directory) else (
+                    'ocr.componentInvalid','文字识别组件不可用：染色组件内的 Tesseract 无法启动，请修复或重新安装染色组件。')
         if failure is None:
             pytesseract.pytesseract.tesseract_cmd=str(exe)
-            OCR_CONFIG=f'--tessdata-dir "{data_dir}"'
+            OCR_CONFIG='--tessdata-dir tessdata'
+            OCR_CWD=str(directory)
             OCR_AVAILABLE = True
             return True
         OCR_AVAILABLE = False
@@ -98,7 +164,7 @@ def _check_ocr_deadline(deadline, clock, check):
 
 def _ocr_text(image, *, lang='eng', config='', timeout=2,
               deadline=None, clock=time.monotonic, check=lambda:None):
-    """Use binary pipes so OCR never depends on temporary-file path encoding."""
+    """Use binary pipes and the component working directory so OCR never depends on path encoding."""
     if not isinstance(image, Image.Image):image=Image.fromarray(image)
     buffer=io.BytesIO()
     image.save(buffer,format='PNG')
@@ -112,7 +178,7 @@ def _ocr_text(image, *, lang='eng', config='', timeout=2,
     remaining=_check_ocr_deadline(deadline,clock,check)
     process_timeout=timeout if remaining is None else min(timeout,remaining)
     try:
-        result=subprocess.run(args,input=buffer.getvalue(),capture_output=True,
+        result=subprocess.run(args,input=buffer.getvalue(),capture_output=True,cwd=OCR_CWD,
             timeout=process_timeout,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     finally:
         _check_ocr_deadline(deadline,clock,check)
@@ -121,33 +187,50 @@ def _ocr_text(image, *, lang='eng', config='', timeout=2,
     return result.stdout.decode('utf-8',errors='replace')
 
 
-def _tesseract(image, config, timeout=2, *,
+def _tesseract(image, config, timeout=None, *,
                deadline=None, clock=time.monotonic, check=lambda:None):
-    """Return OCR text, degrading to an empty result when Tesseract is absent."""
+    """Return OCR text, degrading to an empty result when Tesseract is absent.
+
+    Timeouts and empty reads are counted separately (``ocr_counters``); a
+    timeout is retried once with a doubled allowance when the shared
+    observation deadline still leaves room for it.
+    """
     global OCR_AVAILABLE
     if OCR_AVAILABLE is None:
         # 截图路径不经过精准准备；首次识别前定位组件内 Tesseract，不使用 PATH 默认命令。
         configure_ocr()
     if OCR_AVAILABLE is False:
         return ''
-    try:
-        budget={} if deadline is None else dict(deadline=deadline,clock=clock,check=check)
-        text = _ocr_text(image, lang='eng', config=' '.join(filter(None,(OCR_CONFIG,config))), timeout=timeout,**budget).strip()
-        OCR_AVAILABLE = True
-        return text
-    except TimeoutError:
-        # Observation expiry is a stage outcome, not a missing OCR runtime.
-        raise
-    except (pytesseract.TesseractNotFoundError, OSError):
-        OCR_AVAILABLE = False
-        return ''
-    except (pytesseract.TesseractError, UnicodeDecodeError, subprocess.TimeoutExpired):
-        # An unreadable frame or localized subprocess diagnostic must not
-        # disable every subsequent OCR attempt in this session.
-        return ''
-    except RuntimeError as exc:
-        if 'timeout' not in str(exc).lower():raise
-        return ''
+    allowance=OCR_TIMEOUT if timeout is None else max(float(timeout),OCR_TIMEOUT)
+    budget={} if deadline is None else dict(deadline=deadline,clock=clock,check=check)
+    for attempt in range(2):
+        _count('calls')
+        try:
+            text = _ocr_text(image, lang='eng', config=' '.join(filter(None,(OCR_CONFIG,config))), timeout=allowance,**budget).strip()
+            OCR_AVAILABLE = True
+            if not text:_count('empty')
+            return text
+        except TimeoutError:
+            # Observation expiry is a stage outcome, not a missing OCR runtime.
+            raise
+        except (pytesseract.TesseractNotFoundError, OSError):
+            OCR_AVAILABLE = False
+            return ''
+        except subprocess.TimeoutExpired:
+            _count('timeouts')
+            if attempt or deadline is not None and float(deadline)-clock()<allowance*2:
+                return ''
+            allowance*=2
+        except (pytesseract.TesseractError, UnicodeDecodeError):
+            # An unreadable frame or localized subprocess diagnostic must not
+            # disable every subsequent OCR attempt in this session.
+            _count('empty')
+            return ''
+        except RuntimeError as exc:
+            if 'timeout' not in str(exc).lower():raise
+            _count('timeouts')
+            return ''
+    return ''
 
 def normalize_hex(value):
     s=value.strip().upper().lstrip('#')
@@ -292,7 +375,8 @@ def _swatch_distance(value,samples):
 
 
 def read_codes(image,cards,markers=None,enabled=None, *,
-               deadline=None,clock=time.monotonic,check=lambda:None,text_fallback=None,fallback_diagnostics=None):
+               deadline=None,clock=time.monotonic,check=lambda:None,text_fallback=None,fallback_diagnostics=None,
+               candidate_diagnostics=None):
     """Read actual HEX values within an optional shared observation deadline."""
     _check_ocr_deadline(deadline,clock,check)
     def read_text(reader,*args,**kwargs):
@@ -388,6 +472,10 @@ def read_codes(image,cards,markers=None,enabled=None, *,
         # Require a close swatch match; a plausible six-digit OCR string alone
         # must not turn a low-nibble misread into a successful HEX check.
         value=candidates[0][1] if candidates and candidates[0][0]<3 else None
+        if candidate_diagnostics is not None:
+            candidate_diagnostics.append(dict(card_index=index,
+                best_text=candidates[0][1] if candidates else None,
+                best_swatch_distance=float(candidates[0][0]) if candidates else None))
         out.append(value)
     _check_ocr_deadline(deadline,clock,check)
     return out

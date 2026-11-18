@@ -76,7 +76,7 @@ public sealed class TwClientFingerprintTests
     }
 
     [Fact]
-    public async Task LinkedClientDirectoriesAreRejectedBeforeHashing()
+    public async Task LinkedClientDirectoriesAreRejectedUntilResolvedToTheFinalPath()
     {
         using var area = new Area(); var link = area.Root + "-link";
         try
@@ -97,6 +97,13 @@ public sealed class TwClientFingerprintTests
             var image = Path.Combine(link, TwClientFingerprint.ImageName);
             Assert.Null(TwClientFingerprint.ReadFileStamps(image));
             Assert.False(await TwClientFingerprint.MatchesFilesAsync(image, area.Hashes, CancellationToken.None));
+            if (!OperatingSystem.IsWindows()) return;
+            // 解析为最终路径后（安装迁到别处、再用联接挂回原路径）：文件戳与哈希和直接按真实目录读取一致。
+            var final = TwClientFingerprint.ResolveFinalPath(image);
+            Assert.NotNull(final);
+            Assert.Equal(TwClientFingerprint.ReadFileStamps(area.Image)!, TwClientFingerprint.ReadFileStamps(final)!);
+            Assert.True(await TwClientFingerprint.MatchesFilesAsync(final, area.Hashes, CancellationToken.None));
+            Assert.Equal(await TwClientFingerprint.HashAsync(area.Image, CancellationToken.None), await TwClientFingerprint.HashAsync(final, CancellationToken.None));
         }
         finally { if (Directory.Exists(link)) Directory.Delete(link); }
     }

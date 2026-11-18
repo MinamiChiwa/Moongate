@@ -180,7 +180,7 @@ public static class ObservationWorkerApplication
                         ?? throw new WorkerException("worker.frameInvalid");
                     if (string.IsNullOrWhiteSpace(request.GameSessionId) || request.GameSessionId.Length > 128 ||
                         request.Region != "TW" || request.ProcessId <= 0 || request.ProcessStartTime.Offset != TimeSpan.Zero ||
-                        !WorkerProtocol.IsId(request.ChannelId) || request.Profile != MabiTool.Providers.TwObservation.TwGameProtocol.CaptureProfile &&
+                        request.ChannelId is not null && !WorkerProtocol.IsId(request.ChannelId) || request.Profile != MabiTool.Providers.TwObservation.TwGameProtocol.CaptureProfile &&
                         !MabiTool.Providers.TwObservation.Combat.Tw20261110CombatProtocol.IsCaptureProfile(request.Profile) || frame.BindingRevision == "0")
                         throw new WorkerObservationException("observation.profileUnavailable");
                     if (!request.TryKnownIdentity(out _)) throw new WorkerException("worker.frameInvalid");

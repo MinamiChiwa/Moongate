@@ -339,13 +339,70 @@ public sealed class StorageTests
         Directory.CreateDirectory(workspace.Root);
         var userFile = Path.Combine(workspace.Root, "keep.txt");
         File.WriteAllText(userFile, "keep");
-        Assert.Equal("storage.rootNotEmpty", Assert.Throws<StorageException>(() => DataRootLease.Open(workspace.Options with { Initialize = true })).Code);
+        var foreign = Assert.Throws<StorageException>(() => DataRootLease.Open(workspace.Options with { Initialize = true }));
+        Assert.Equal("storage.rootNotEmpty", foreign.Code);
+        Assert.Contains("keep.txt", foreign.Message);
         Assert.Equal("keep", File.ReadAllText(userFile));
         File.Delete(userFile);
         using (DataRootLease.Open(workspace.Options with { Initialize = true })) { }
         File.WriteAllText(workspace.Configuration, "{broken");
         Assert.Equal("storage.unavailable", Assert.Throws<StorageException>(() => DataRootLease.Open(workspace.Options)).Code);
         Assert.Equal("{broken", File.ReadAllText(workspace.Configuration));
+    }
+
+    /// <summary>
+    /// 首次初始化在取得写锁后、发布身份标记前中断（实机：所有者校验失败）：数据根只剩写锁、发布标记的临时文件与空的标准子目录，
+    /// 引导目录只有 bootstrap.lock。再次以初始化方式打开时续做完成，得到有效身份标记与引导配置；有用户数据的子目录仍被拒绝并报出该项。
+    /// </summary>
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public void InitializationInterruptedBeforeTheMarkerResumesAndForeignContentIsNamed()
+    {
+        using var workspace = new Workspace();
+        // 与初始化相同：目录由宿主建为当前用户独占，锁文件继承该权限。
+        LocalDiscoverySecurity.EnsureDirectory(Path.GetDirectoryName(workspace.Configuration)!);
+        LocalDiscoverySecurity.EnsureDirectory(workspace.Root);
+        File.WriteAllBytes(Path.Combine(Path.GetDirectoryName(workspace.Configuration)!, "bootstrap.lock"), []);
+        File.WriteAllBytes(Path.Combine(workspace.Root, "writer.lock"), []);
+        var temporary = Path.Combine(workspace.Root, Guid.NewGuid().ToString("N") + ".tmp");
+        File.WriteAllText(temporary, "{\"version\":2}");
+        Directory.CreateDirectory(Path.Combine(workspace.Root, "store"));
+        Assert.Equal("storage.notInitialized", Assert.Throws<StorageException>(() => DataRootLease.Open(workspace.Options)).Code);
+        string rootId;
+        using (var lease = DataRootLease.Open(workspace.Options with { Initialize = true })) rootId = lease.Paths.RootId;
+        Assert.True(File.Exists(Path.Combine(workspace.Root, ".mabitool-data-root.json")));
+        Assert.False(File.Exists(temporary));
+        Assert.Equal(rootId, JsonNode.Parse(File.ReadAllText(workspace.Configuration))!["rootId"]!.GetValue<string>());
+        using (var reopened = DataRootLease.Open(workspace.Options)) Assert.Equal(rootId, reopened.Paths.RootId);
+
+        using var other = new Workspace();
+        LocalDiscoverySecurity.EnsureDirectory(other.Root);
+        Directory.CreateDirectory(Path.Combine(other.Root, "store"));
+        File.WriteAllBytes(Path.Combine(other.Root, "writer.lock"), []);
+        File.WriteAllText(Path.Combine(other.Root, "store", "main.sqlite"), "data");
+        var error = Assert.Throws<StorageException>(() => DataRootLease.Open(other.Options with { Initialize = true }));
+        Assert.Equal("storage.rootNotEmpty", error.Code);
+        Assert.Contains("store" + Path.DirectorySeparatorChar, error.Message);
+        Assert.Equal("data", File.ReadAllText(Path.Combine(other.Root, "store", "main.sqlite")));
+        Assert.False(File.Exists(other.Configuration));
+    }
+
+    /// <summary>身份标记已发布、引导配置尚未写出时中断，随后整个文件夹被搬走：在新位置续做初始化，权威引导目录改为当前位置。</summary>
+    [Fact]
+    public void InitializationInterruptedAfterTheMarkerResumesAfterTheFolderMoved()
+    {
+        using var original = new Workspace();
+        using (DataRootLease.Open(original.Options with { Initialize = true })) { }
+        File.Delete(original.Configuration);
+        using var moved = new Workspace();
+        Directory.Move(Path.GetDirectoryName(original.Configuration)!, Path.GetDirectoryName(moved.Configuration)!);
+        Directory.Move(original.Root, moved.Root);
+        string rootId;
+        using (var lease = DataRootLease.Open(moved.Options with { Initialize = true })) rootId = lease.Paths.RootId;
+        var marker = JsonNode.Parse(File.ReadAllText(Path.Combine(moved.Root, ".mabitool-data-root.json")))!;
+        Assert.Equal(Path.GetDirectoryName(moved.Configuration), marker["authorityBootstrap"]!.GetValue<string>());
+        Assert.Equal(rootId, JsonNode.Parse(File.ReadAllText(moved.Configuration))!["rootId"]!.GetValue<string>());
+        using (DataRootLease.Open(moved.Options)) { }
     }
 
     [Fact]
@@ -551,6 +608,47 @@ public sealed class StorageTests
             locked.SetAccessControl(security);
             Directory.Delete(root, true);
         }
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public void FileGrantedToAnotherPrincipalInsideAPrivateDirectoryIsRepairedBeforeUse()
+    {
+        // 数据目录本身是当前用户独占，其中的锁文件被安全软件等加上了其他主体的访问规则：先改回当前用户独占再使用，不当作被占用。
+        var root = Path.Combine(StorageTestWorkspace.Repository, "artifacts", "tmp", "private-file-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            LocalDiscoverySecurity.EnsureDirectory(root);
+            var file = new FileInfo(Path.Combine(root, "writer.lock"));
+            File.WriteAllBytes(file.FullName, []);
+            var users = new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinUsersSid, null);
+            var security = file.GetAccessControl();
+            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(users,
+                System.Security.AccessControl.FileSystemRights.Read, System.Security.AccessControl.AccessControlType.Allow));
+            file.SetAccessControl(security);
+            Assert.False(LocalDiscoverySecurity.IsPrivate(root));
+            LocalDiscoverySecurity.ValidateFile(file.FullName);
+            Assert.True(LocalDiscoverySecurity.IsPrivate(root));
+
+            // 目录本身不是独占时不修复单个文件，原因写明对象与多出的主体。
+            var shared = new DirectoryInfo(Path.Combine(root, "shared"));
+            shared.Create();
+            var other = Path.Combine(shared.FullName, "bootstrap.lock");
+            File.WriteAllBytes(other, []);
+            var directorySecurity = shared.GetAccessControl();
+            directorySecurity.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(users, System.Security.AccessControl.FileSystemRights.Read,
+                System.Security.AccessControl.InheritanceFlags.ObjectInherit, System.Security.AccessControl.PropagationFlags.None,
+                System.Security.AccessControl.AccessControlType.Allow));
+            shared.SetAccessControl(directorySecurity);
+            var fileSecurity = new FileInfo(other).GetAccessControl();
+            fileSecurity.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(users,
+                System.Security.AccessControl.FileSystemRights.Read, System.Security.AccessControl.AccessControlType.Allow));
+            new FileInfo(other).SetAccessControl(fileSecurity);
+            var error = Assert.Throws<IOException>(() => LocalDiscoverySecurity.ValidateFile(other));
+            Assert.Contains("bootstrap.lock", error.Message);
+            Assert.Contains("还授予了", error.Message);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
     [Fact]

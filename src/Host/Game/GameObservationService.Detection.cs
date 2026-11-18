@@ -48,7 +48,8 @@ public sealed partial class GameObservationService
         var configuration = Configuration();
         var id = Guid.NewGuid().ToString("N");
         var stop = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
-        stop.CancelAfter(TimeSpan.FromSeconds(request.DurationSeconds + 15));
+        // 检测时长之外留出 Worker 启动握手（至多 60 秒）的余量。
+        stop.CancelAfter(TimeSpan.FromSeconds(request.DurationSeconds + 60));
         IDisposable? hold = null; IAsyncDisposable? module = null; WorkerSession? session = null; WorkerCall? request0;
         try
         {

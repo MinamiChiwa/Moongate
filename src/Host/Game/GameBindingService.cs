@@ -42,7 +42,7 @@ public sealed record GameControlContext(GameSessionBindingTracker Bindings, Reso
 }
 
 public sealed partial class GameBindingService(GameControlContext controls, IGameWindowSource? source, SystemInfo info, TimeProvider time,
-    LocalAuthService? auth = null)
+    LocalAuthService? auth = null, ILogger? logger = null)
 {
     private sealed record Candidate(string Owner, SelectableGameWindow Window, long Created, GameWindowCandidate Snapshot);
     private sealed record Receipt(string Hash, GameBindingSnapshot Snapshot, long Created);
@@ -99,6 +99,7 @@ public sealed partial class GameBindingService(GameControlContext controls, IGam
                 throw new OperationException("resource.notFound", "游戏窗口候选不存在");
             if (time.GetElapsedTime(candidate.Created) >= TimeSpan.FromMinutes(5)) throw new OperationException("game.selectionExpired", "游戏窗口候选已到期");
         }
+        RejectInaccessible(candidate.Window.Observation);
         var prepared = await source.PrepareAsync(candidate.Window.Observation, ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
         if (!SameIdentity(prepared, candidate.Window.Observation))
@@ -125,6 +126,7 @@ public sealed partial class GameBindingService(GameControlContext controls, IGam
             if (source is null || !candidates.TryGetValue(request.CandidateId, out var candidate) || candidate.Owner != owner)
                 throw new OperationException("resource.notFound", "游戏窗口候选不存在");
             if (time.GetElapsedTime(candidate.Created) >= TimeSpan.FromMinutes(5)) throw new OperationException("game.selectionExpired", "游戏窗口候选已到期");
+            RejectInaccessible(candidate.Window.Observation);
             if (!SameIdentity(source.Refresh(candidate.Window.Observation), candidate.Window.Observation)) throw new OperationException("input.bindingChanged", "候选游戏进程或窗口已变化");
             if (receipts.Count >= 1000) throw new OperationException("resource.capacityExceeded", "游戏绑定回执达到上限");
             controls.Input.EmergencyStop();
@@ -174,6 +176,17 @@ public sealed partial class GameBindingService(GameControlContext controls, IGam
                 result.Attempted, result.Restored, result.Foreground, time.GetUtcNow());
         }
         finally { controls.Leases.Release(lease.Id); }
+    }
+    /// <summary>游戏以管理员身份运行而 Moongate 没有时拒绝绑定：系统会丢弃发往它的输入，绑定后各项输入功能都会静默失效。</summary>
+    private void RejectInaccessible(GameWindowObservation observation)
+    {
+        switch (source?.AccessProblem(observation))
+        {
+            case null: return;
+            case "game.elevated": throw new OperationException("game.elevated", "游戏以管理员身份运行，请以管理员身份运行 Moongate");
+            // Moongate 已是管理员却读不到游戏令牌（其他用户或受保护进程等）：不拦截，记一条诊断供排查。
+            case var other: logger?.LogWarning("游戏窗口访问检查：{code}，进程 {pid}，继续绑定", other, observation.ProcessId); return;
+        }
     }
     private static bool SameIdentity(GameWindowObservation? current, GameWindowObservation selected) => current is not null &&
         current.ProcessId == selected.ProcessId && current.ProcessStartTime == selected.ProcessStartTime &&

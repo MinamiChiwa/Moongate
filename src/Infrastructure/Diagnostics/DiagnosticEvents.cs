@@ -18,11 +18,25 @@ public static class DiagnosticEvents
         ["build", "registeredName", "assembly", "metadata", "unity", "captureUsable", "identity", "music", "combat"]);
     /// <summary>自动抓包状态变化：state 为 off/waiting/starting/running/failed，reason 为等待或失败原因码。</summary>
     public static readonly DiagnosticEventDefinition AutomationChanged = new("observation.automation.changed", Observation, "observation.capture", DiagnosticLevel.Info,
-        ["state", "reason"]);
-    /// <summary>抓包网卡的选择结果：source 为 automatic/saved/detected/request，失败时 reason 为原因码；
-    /// candidates 为网卡数，matched 为承载游戏连接本机地址的网卡数。</summary>
+        ["state", "reason", "repeats"]);
+    /// <summary>抓包设备的打开结果：source 为 automatic（全部设备）/saved/request，opened 与 failed 为打开成功与失败（含跳过）的设备数，
+    /// primary 为当前主来源类别；指定网卡不可用时 reason 为原因码。打开结果或主来源变化时记录。</summary>
     public static readonly DiagnosticEventDefinition ChannelSelected = new("observation.channel.selected", Observation, "observation.capture", DiagnosticLevel.Info,
-        ["source", "reason", "candidates", "matched"]);
+        ["source", "reason", "opened", "failed", "primary"]);
+    /// <summary>抓包流量摘要（流量计数）：捕获开始后第 10、30 秒，之后每 60 秒且有变化时一条，同一时点另有 <see cref="CaptureParse"/>。
+    /// 不含地址、端口与载荷。packets/bytes 为收到的包与字节，filtered 为不属于游戏连接的包，truncated 与 driverDropped 为截断与驱动丢包，
+    /// connections 为当前接收连接数，segments 为交给重组的数据段。</summary>
+    public static readonly DiagnosticEventDefinition CaptureSummary = new("observation.capture.summary", Observation, "observation.capture", DiagnosticLevel.Info,
+        ["elapsedSeconds", "source", "packets", "bytes", "filtered", "truncated", "driverDropped", "connections", "segments"]);
+    /// <summary>抓包流量摘要（解析与产出状态），与 <see cref="CaptureSummary"/> 同时写出：frames 为分帧成功数，dispatched 为分发数，
+    /// decompressFailures 与 rejected 为解码失败与拒绝数，identity 为是否已取得本机身份，各 *AgeMs 为对应产出距今毫秒（没有产出时省略）。</summary>
+    public static readonly DiagnosticEventDefinition CaptureParse = new("observation.capture.parse", Observation, "observation.capture", DiagnosticLevel.Info,
+        ["elapsedSeconds", "frames", "dispatched", "decompressFailures", "rejected", "identity", "reportAgeMs", "combatAgeMs", "inventoryAgeMs"]);
+    /// <summary>流量摘要的按设备分项，每条摘要后逐设备一条：index 为设备序号，kind 为 physical/wintun/tap/hyperv/virtual/loopback，
+    /// linkType 为链路类型值（未打开为 -1），opened 与 issue 为打开结果，primary 为是否主来源，packets、portPackets、gameStreams、frames
+    /// 为收包、游戏端口包、确认的游戏流与分帧数，candidateDropped 为确认前超出候选缓冲而丢弃的字节。不含设备名与地址。</summary>
+    public static readonly DiagnosticEventDefinition CaptureDevice = new("observation.capture.device", Observation, "observation.capture", DiagnosticLevel.Info,
+        ["elapsedSeconds", "index", "kind", "linkType", "opened", "issue", "primary", "packets", "portPackets", "gameStreams", "frames", "candidateDropped"]);
     public static readonly DiagnosticEventDefinition WorkerStarted = new("observation.worker.started", Observation, "observation.worker", DiagnosticLevel.Info, ["pid"]);
     public static readonly DiagnosticEventDefinition WorkerStopped = new("observation.worker.stopped", Observation, "observation.worker", DiagnosticLevel.Info,
         ["end", "exitCode", "terminatedByHost"]);
@@ -75,7 +89,7 @@ public static class DiagnosticEvents
     public static readonly DiagnosticEventDefinition ChannelClosed = new("worker.channel.closed", null, "worker.channel", DiagnosticLevel.Debug,
         ["exitCode", "terminatedByHost"]);
 
-    public static IReadOnlyList<DiagnosticEventDefinition> All { get; } = [BindingChanged, GameBuildChecked, AutomationChanged, ChannelSelected, WorkerStarted, WorkerStopped, WorkerFaulted, CaptureStarted,
+    public static IReadOnlyList<DiagnosticEventDefinition> All { get; } = [BindingChanged, GameBuildChecked, AutomationChanged, ChannelSelected, CaptureSummary, CaptureParse, CaptureDevice, WorkerStarted, WorkerStopped, WorkerFaulted, CaptureStarted,
         CaptureEnded, InventorySynced, InventoryFrameState, InventoryFrameRejected, SegmentStarted, SegmentEnded, CombatFrameRejected, HostLog, ColorRunStarted, ColorRunEnded, RoomConnection, DebugCaptureStarted, DebugCaptureEnded, LegacyDataImported, HostPortFallback,
         FrameRejected, CaptureGap, InterestsChanged, SubscriptionChanged, ConnectionChanged, InventoryFrame,
         ChannelConnected, ChannelRequest, ChannelFault, ChannelClosed];

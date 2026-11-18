@@ -10,9 +10,14 @@ public sealed record ColorWorkerOptions(string PythonExecutable, string WorkerDi
     public int IdleRetentionSeconds { get; init; } = 60;
     public string EntryModule { get; init; } = "mabitool_color.worker";
     public IReadOnlyList<string> Arguments { get; init; } = [];
-    public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(30);
+    /// <summary>Python 冷启动到握手：杀毒软件首次扫描随包解释器与标准库时可达数十秒，取通用 Worker 允许的上限。</summary>
+    public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(60);
     public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromSeconds(1);
-    public TimeSpan HeartbeatTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    /// <summary>
+    /// 心跳丢失判定。首次运行寻色时才导入 numpy／cv2，加载扩展模块期间解释器锁被占住、心跳线程无法回应，
+    /// 杀毒软件扫描这些大文件时可达十余秒；按 30 秒判定，不把慢导入当成进程失联。
+    /// </summary>
+    public TimeSpan HeartbeatTimeout { get; init; } = TimeSpan.FromSeconds(30);
     public TimeSpan CancellationGrace { get; init; } = TimeSpan.FromSeconds(2);
 }
 

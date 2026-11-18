@@ -448,10 +448,27 @@ public sealed partial class RoomSessionManager : BackgroundService, IAsyncDispos
         return entry;
     }
 
-    private static Task ConnectEndpointAsync(Entry entry, string endpoint, CancellationToken token) =>
-        string.Equals(entry.Client.Endpoint, endpoint, StringComparison.Ordinal) && entry.Client.IsConnected
-            ? Task.CompletedTask
-            : entry.Client.ConnectAsync(endpoint, token);
+    private static async Task ConnectEndpointAsync(Entry entry, string endpoint, CancellationToken token)
+    {
+        if (string.Equals(entry.Client.Endpoint, endpoint, StringComparison.Ordinal) && entry.Client.IsConnected) return;
+        try { await entry.Client.ConnectAsync(endpoint, token); }
+        catch (Exception error) when (!token.IsCancellationRequested && IsLanEndpoint(endpoint) &&
+            error is System.Net.WebSockets.WebSocketException or IOException or System.Net.Sockets.SocketException)
+        {
+            // 局域网地址连不上最常见的原因是房主电脑的 Windows 防火墙没有放行 Moongate（dotnet.exe），或网络类型为“公用”。
+            throw new OperationException("room.lanUnreachable",
+                "连不上房主的局域网地址：请房主在 Windows 防火墙中允许 Moongate（dotnet.exe）通过“专用”网络，并把当前网络设为“专用”");
+        }
+    }
+
+    /// <summary>房主给出的局域网房间地址：ws:// 加私有网段 IPv4 字面地址（10/8、172.16/12、192.168/16）。</summary>
+    internal static bool IsLanEndpoint(string endpoint)
+    {
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || uri.Scheme != "ws" ||
+            !System.Net.IPAddress.TryParse(uri.Host, out var address) || address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) return false;
+        var bytes = address.GetAddressBytes();
+        return bytes[0] == 10 || bytes[0] == 172 && bytes[1] is >= 16 and <= 31 || bytes[0] == 192 && bytes[1] == 168;
+    }
 
     private Entry Find(string owner) => entries.TryGetValue(owner, out var entry)
         ? entry : throw new OperationException("resource.notFound", "当前没有房间会话");

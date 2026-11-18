@@ -7,6 +7,8 @@ from .dye_action_checkpoint import _binding
 from mabitool_color._vendor.input_gestures import PointerGesture
 from .read_dye_input_backend import read_input_backend, input_backend_binding
 from .dye_visual_readiness import VisualNotReady, INITIAL_LAYOUT_ERRORS
+from .frame_verification import VerificationFailed, classify
+from .window_occlusion import find_occluders, palette_capture_rect
 from .dye_hex_glyphs import read_card_glyphs, prepare_hex_assets
 from .session_status import SessionStatusError
 
@@ -89,6 +91,24 @@ class ProjectClosedLoopIO(ProjectProbeIO):
         from .adaptive_build import is_adaptive,session_input_allowed
         needs_proof=is_adaptive(getattr(self.backend,'adapter',None)) and not session_input_allowed(self.backend)
         return self.frames(label,deadline,read_colors=needs_proof)
+    def _verification_failure(self,label,frames,error):
+        """按逐卡读数与窗口遮挡给出核验未通过的原因，并写入运行目录。"""
+        occluders=[]
+        try:
+            window=self.last_observation['window_context']['window']
+            board=self.last_observation['window_mapping_candidate']['client_board_candidate']
+            occluders=find_occluders(window['hwnd'],palette_capture_rect(board,window['client_origin_physical']))
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            occluders=[];occlusion_error=type(exc).__name__+': '+str(exc)
+        else:occlusion_error=None
+        verification=classify(frames,self.last_client_hex,occluders=occluders,error=error)
+        if occlusion_error is not None:verification['occlusion_error']=occlusion_error
+        verification.update(label=label,observed_monotonic=time.monotonic(),inputs_sent=self.input_attempts)
+        try:(self.folder/(label+'.verification.json')).write_text(json.dumps(verification,indent=2),encoding='utf-8')
+        except OSError:pass
+        self.last_verification=verification
+        return VerificationFailed(str(error) if error is not None else 'Adaptive build requires complete independent screenshot HEX',
+            verification,layout_diagnostic=getattr(error,'layout_diagnostic',None))
     def frames(self,label,deadline,*,read_colors=True):
         try:
             frames=super().frames(label,deadline,read_colors=read_colors)
@@ -96,7 +116,7 @@ class ProjectClosedLoopIO(ProjectProbeIO):
             if is_adaptive(getattr(self.backend,'adapter',None)) and not session_input_allowed(self.backend):
                 if any(frame.get('screenshot_hex_verified') is not True
                        or frame.get('hex_source')!=['screenshot']*len(self.last_client_hex or []) for frame in frames):
-                    raise VisualNotReady('Adaptive build requires complete independent screenshot HEX')
+                    raise self._verification_failure(label,frames,None)
                 enable_session_input(self.backend,self.reference,
                     dict(self.last_observation,client_hex=self.last_client_hex),frames)
                 self.backend.build_diagnostic['session_capability']='model_verified'
@@ -114,8 +134,8 @@ class ProjectClosedLoopIO(ProjectProbeIO):
                 error=type(exc).__name__+': '+str(exc),retryable_observation=bool(retryable),
                 layout_diagnostic=getattr(exc,'layout_diagnostic',None),
                 observed_monotonic=time.monotonic(),inputs_sent=self.input_attempts),indent=2),encoding='utf-8')
-            if isinstance(exc,VisualNotReady):raise
-            if retryable:raise VisualNotReady(str(exc)) from exc
+            if isinstance(exc,VerificationFailed):raise
+            if retryable:raise self._verification_failure(label,getattr(exc,'decoded_frames',None),exc) from exc
             raise
     def perform_candidate(self,record,label,deadline):
         # The controller admits actual preparation/readback and complete routes

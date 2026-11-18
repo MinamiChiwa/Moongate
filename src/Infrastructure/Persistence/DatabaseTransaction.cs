@@ -43,10 +43,10 @@ public sealed class DatabaseTransaction
         shutdown.ThrowIfCancellationRequested();
         var elapsed = Stopwatch.GetElapsedTime(started);
         CheckedElapsed = elapsed;
-        // 设计预算只记录遥测；硬上限拦截失控事务并整笔回滚。
+        // 设计预算只记录遥测；挂起上限拦截失控事务并整笔回滚。
         if (elapsed > hardLimit)
         {
-            var error = new StorageException("storage.transactionBudgetExceeded", "写事务超过执行硬上限，变更已回滚");
+            var error = new StorageException("storage.transactionBudgetExceeded", "写事务超过挂起上限，变更已回滚");
             error.Data["transactionElapsedMs"] = (long)elapsed.TotalMilliseconds; throw error;
         }
     }

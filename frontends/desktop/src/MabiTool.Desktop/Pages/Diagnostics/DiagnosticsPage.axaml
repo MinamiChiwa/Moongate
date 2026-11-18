@@ -105,6 +105,16 @@
             </StackPanel>
           </controls:Card>
 
+          <!-- 导出启动记录：不依赖后端，未连接时也可用 -->
+          <controls:Card x:Name="StartupPanel" CardId="startup" Title="{DynamicResource G.StartupTitle}" TitleTip="{DynamicResource G.StartupHint}"
+                         AllowedSizes="HalfByAuto">
+            <StackPanel Spacing="10" DataContext="{Binding Startup}" x:DataType="diag:DiagnosticsStartupSection">
+              <Button x:Name="StartupExportButton" HorizontalAlignment="Left" Content="{DynamicResource G.StartupExport}" Command="{Binding ExportCommand}" />
+              <TextBlock x:Name="StartupMessage" Classes="body" Text="{Binding Message}" IsVisible="{Binding HasMessage}"
+                         Classes.unconfirmed="{Binding Failed}" />
+            </StackPanel>
+          </controls:Card>
+
           <!-- 调试采集：连接后仅拥有 diagnostics.debug 时显示 -->
           <controls:Card x:Name="CapturePanel" CardId="capture" Title="{DynamicResource G.CaptureTitle}" TitleTip="{DynamicResource G.CaptureHint}" IsVisible="{Binding ShowCapture}"
                          IsEnabled="{Binding Connected}">

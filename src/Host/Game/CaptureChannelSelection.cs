@@ -4,34 +4,23 @@ using MabiTool.Contracts;
 namespace MabiTool.Host.Game;
 
 /// <summary>
-/// 选定的抓包网卡；Source 为 automatic（按游戏连接本机地址）、detected（地址定位不到时由自动流量检测选定）、
-/// saved（用户指定或检测确认后保存）或 request（调用方指定）。
+/// 抓包设备的选择：Source 为 automatic（全部设备同时抓，<see cref="ChannelId"/> 为空）、saved（设置里指定的网卡）或 request（调用方指定）。
 /// </summary>
-public sealed record CaptureChannelChoice(string ChannelId, string Description, string Source)
+public sealed record CaptureChannelChoice(string? ChannelId, string? Description, string Source)
 {
-    /// <summary>保存或检测确认的网卡收到过游戏下行数据，地址对不上时捕获仍按游戏连接五元组过滤。</summary>
-    public bool AnyAddress => Source is "saved" or "detected";
+    public static CaptureChannelChoice Automatic { get; } = new(null, null, "automatic");
 }
 
 public static class CaptureChannelSelection
 {
     /// <summary>
-    /// 自动模式：只有一张网卡承载游戏数据连接的本机地址时选中它；多张时若其中有已保存网卡则用它，否则报 ambiguous；
-    /// 没有时报 notFound。指定模式：已保存网卡存在即用，否则报 savedChannelMissing。
+    /// 自动模式不选网卡（不读取设置里留下的 ChannelId）；指定模式下保存的网卡仍在时只抓它，否则报 savedChannelMissing。
     /// </summary>
     public static CaptureChannelChoice Select(IReadOnlyList<CaptureChannelOption> channels, GameCaptureSettings settings)
     {
-        if (settings.ChannelMode == GameCaptureSettings.ManualChannel)
-        {
-            var saved = channels.FirstOrDefault(value => value.Id == settings.ChannelId)
-                ?? throw new OperationException("observation.savedChannelMissing", "已保存的网卡当前不可用");
-            return new(saved.Id, saved.Description, "saved");
-        }
-        var matched = channels.Where(value => value.GameConnections > 0).ToArray();
-        if (matched.Length == 1) return new(matched[0].Id, matched[0].Description, "automatic");
-        if (matched.Length == 0) throw new OperationException("observation.channelNotFound", "没有网卡承载游戏连接的本机地址");
-        var preferred = matched.FirstOrDefault(value => value.Id == settings.ChannelId);
-        return preferred is not null ? new(preferred.Id, preferred.Description, "saved")
-            : throw new OperationException("observation.channelAmbiguous", "多张网卡承载游戏连接，请在设置中指定");
+        if (settings.ChannelMode != GameCaptureSettings.ManualChannel) return CaptureChannelChoice.Automatic;
+        var saved = channels.FirstOrDefault(value => value.Id == settings.ChannelId)
+            ?? throw new OperationException("observation.savedChannelMissing", "已保存的网卡当前不可用");
+        return new(saved.Id, saved.Description, "saved");
     }
 }

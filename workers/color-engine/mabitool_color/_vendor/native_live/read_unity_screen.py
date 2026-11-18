@@ -5,7 +5,7 @@ import struct
 from ctypes import wintypes
 from pathlib import Path
 
-from .read_native_rect import SUPPORTED_UNITYPLAYER
+from .build_adapters import unity_layout_for
 from .runtime_read import P
 
 
@@ -47,22 +47,33 @@ def unityplayer_module_base(reader, *, expected_path=None, check=lambda:None):
 
 
 def read_unity_screen_extent(reader,module_base,*,unityplayer_sha256,check=lambda:None):
-    if unityplayer_sha256!=SUPPORTED_UNITYPLAYER:raise ValueError('Unsupported Screen layout build')
+    layout=unity_layout_for(unityplayer_sha256)
+    if layout is None:raise ValueError('Unsupported Screen layout build')
     if type(module_base) is not int or module_base<=0 or module_base%4096:raise ValueError('Invalid UnityPlayer base')
     reads={}
     def read(a,size):
         check();raw=reader.read(a,size)
         if len(raw)!=size or reads.setdefault((a,size),raw)!=raw:raise ValueError('Short/changed Screen read')
         return raw
-    state=struct.unpack('<Q',read(module_base+0x1b23390,8))[0]
-    if not state or state%8:raise ValueError('Null/unaligned Screen state')
-    width=struct.unpack('<i',read(state+0xfc,4))[0]
-    height=struct.unpack('<i',read(state+0x108,4))[0]
-    hwnd=struct.unpack('<Q',read(state+0xe0,8))[0]
-    if not 1<=width<=65536 or not 1<=height<=65536:raise ValueError('Invalid Unity screen extent')
+    try:
+        state=struct.unpack('<Q',read(module_base+layout.screen_global_rva,8))[0]
+        if not state or state%8:raise ValueError('Null/unaligned Screen state')
+        width=struct.unpack('<i',read(state+0xfc,4))[0]
+        height=struct.unpack('<i',read(state+0x108,4))[0]
+        hwnd=struct.unpack('<Q',read(state+0xe0,8))[0]
+        if not 1<=width<=65536 or not 1<=height<=65536:raise ValueError('Invalid Unity screen extent')
+        # 视口：鼠标 getter 按 floor((客户区 − 原点) × 缩放) 换算到 Unity 像素。
+        viewport=read(state+layout.viewport_offset,24)
+        origin=list(struct.unpack('<2i',viewport[:8]));scale=[float(v) for v in struct.unpack('<2f',viewport[16:])]
+    except ValueError as exc:
+        if layout.located:
+            from .unity_layout import UnityLayoutMismatch
+            raise UnityLayoutMismatch('Located Screen global unreadable: '+str(exc)) from exc
+        raise
     for (a,size),raw in reads.items():
         check()
         if reader.read(a,size)!=raw:raise ValueError('Unity screen extent changed')
     return dict(source='current_build_native_screen_fields',module_base=module_base,state_address=state,
-                size=[width,height],hwnd=hwnd,ready_for_input=False,
+                size=[width,height],hwnd=hwnd,viewport_origin=origin,viewport_scale=scale,
+                layout_id=layout.layout_id,ready_for_input=False,
                 scope='Original Screen getters field semantics; double-read only, no frame atomicity or desktop mapping proof')

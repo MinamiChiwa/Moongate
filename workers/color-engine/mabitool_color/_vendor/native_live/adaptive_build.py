@@ -11,7 +11,8 @@ from collections import OrderedDict
 from threading import Lock
 from pefile import PEFormatError
 
-from .build_adapters import BuildAdapter, BuildUnsupported, UNITY_LAYOUT, select_adapter
+from .build_adapters import (BuildAdapter, BuildUnsupported, select_adapter, unity_layout_for,
+                             register_located_unity)
 from .il2cpp_discovery import Build
 from .managed_layout_contract import CONTRACT_ID, LAYOUTS
 
@@ -91,10 +92,25 @@ def _class_slot(build, entry):
     return own.pop(), marker
 
 
+def resolve_unity_layout(files, hashes, check=lambda: None):
+    """Registered UnityPlayer layout, or one located from the file's static features."""
+    known = unity_layout_for(hashes.get('unityplayer'))
+    if known is not None:
+        return known
+    from .unity_layout import locate_unity_layout, UnityEngineUnsupported
+    path = files.get('unityplayer') if isinstance(files, dict) else None
+    if path is None:
+        raise UnityEngineUnsupported(hashes, 'UnityPlayer file unavailable')
+    try:
+        return register_located_unity(locate_unity_layout(path, hashes['unityplayer'], check=check))
+    except UnityEngineUnsupported as exc:
+        exc.hashes = dict(hashes)
+        raise
+
+
 def discover_adapter(files, hashes, check=lambda: None):
     check()
-    if hashes.get('unityplayer') != UNITY_LAYOUT.sha256:
-        raise BuildUnsupported(hashes, 'Unsupported UnityPlayer build; native layout requires review')
+    unity = resolve_unity_layout(files, hashes, check)
     build = None
     try:
         build = Build(files, hashes, check)
@@ -112,7 +128,7 @@ def discover_adapter(files, hashes, check=lambda: None):
             palette_uninitialized_marker=palette_marker, input_class_rva=input_slot,
             input_class_uninitialized_marker=input_marker, mouse_getter_cache_rva=mouse.pop(),
             capability='diagnostic_only', managed_layout_id=CONTRACT_ID,
-            managed_layout_evidence_sha256=evidence, _discovery_authority=_AUTHORITY)
+            managed_layout_evidence_sha256=evidence, unity_layout=unity, _discovery_authority=_AUTHORITY)
     except (ValueError, IndexError, StopIteration, struct.error, PEFormatError) as exc:
         raise BuildUnsupported(hashes, 'Adaptive build discovery rejected: ' + str(exc)) from exc
     finally:

@@ -28,7 +28,8 @@ internal sealed record LocatedLogin(LoginWallet Wallet, InventoryWireValue? JamI
 /// </para>
 /// <list type="bullet">
 /// <item>钱包：22 个 int64 都在 [0, 10^12]、深渊副本货币字典项数 ≤ 10 且键不重复，并且从该处起 <c>Wallet</c> 到 <c>FollowCameraForceAngle</c>
-/// 全部读通、技能栏 <c>SkillSlot</c> 至少一项。</item>
+/// 全部读通。只有一个位置读通时直接采用；多个位置读通时取技能栏 <c>SkillSlot</c> 至少一项的那一个；都没有技能（新角色）时，
+/// 取其前面恰好接着读通 <c>JamItemInventory</c> 到 <c>SkillReserve</c>、止于该位置的那一个（全零的钱包容易在错位处也读通）。</item>
 /// <item>补充时间：两个 RealTime（Unix 毫秒）为 0 或在 2020–2040 年之间且不同时为 0，并且从该处起 <c>SilverCoin</c> 读到 <c>AccountProfile</c> 的下一个根字段全部读通。</item>
 /// <item>JamItem：钱包定位后，在钱包之前 8 KiB 内找从该处起 <c>JamItemInventory</c> 到 <c>SkillReserve</c>（钱包前一个根字段）全部读通、且恰好止于钱包起点的位置。
 /// 非空的 JamItem 字典末尾常是数量的高 4 字节 0，从那里读成“空字典”也能止于钱包起点；因此多个位置满足时，其余位置都落在最前一个位置读出的
@@ -44,6 +45,8 @@ internal static class LoginWalletLocator
     private const long TimeFloor = 1_577_836_800_000, TimeCeiling = 2_208_988_800_000;
     /// <summary>每段最多做完整类型化读取的候选数；超出时按读不到处理，避免异常数据拖长解码。</summary>
     private const int CandidateBudget = 4096;
+    /// <summary>钱包段读通的位置最多记下的个数；超过时按技能栏非空的位置取舍。</summary>
+    private const int WalletCandidateLimit = 64;
     /// <summary>JamItem 段的搜索窗口：实采中 <c>JamItemInventory</c> 到钱包之间 846–912 字节。</summary>
     private const int JamWindow = 8 * 1024;
 
@@ -60,8 +63,9 @@ internal static class LoginWalletLocator
         if (wallet >= 0 && followCamera > wallet && skillSlot > wallet && skillSlot < followCamera &&
             root[wallet].Type is { } walletType && schema.Type(walletType).Fields.Length == 23)
         {
-            var found = new List<(int Offset, InventoryWireValue Value)>(); var tested = 0;
-            for (var at = from; at <= body.Length - 180 && found.Count < 2; at++)
+            // 读通的位置先全部记下；技能栏非空只用来在多个位置之间取舍（新角色的技能栏可能为空）。
+            var found = new List<(int Offset, InventoryWireValue Value, bool Skills)>(); var tested = 0;
+            for (var at = from; at <= body.Length - 180 && found.Count(item => item.Skills) < 2 && found.Count < WalletCandidateLimit; at++)
             {
                 if ((at & 0xfff) == 0) cancellation.ThrowIfCancellationRequested();
                 if (!WalletShape(body, at)) continue;
@@ -70,18 +74,22 @@ internal static class LoginWalletLocator
                 reader.Seek(at);
                 try
                 {
-                    InventoryWireValue? captured = null;
+                    InventoryWireValue? captured = null; var skills = false;
                     for (var i = wallet; i <= followCamera; i++)
                     {
                         var value = reader.Value(root[i].Type, 1, i == wallet || i == skillSlot);
                         if (i == wallet) captured = value;
-                        if (i == skillSlot && value.Field("SkillSlots")?.Pairs is not { Count: > 0 }) throw new InvalidDataException("inventory.skillSlotsEmpty");
+                        if (i == skillSlot) skills = value.Field("SkillSlots")?.Pairs is { Count: > 0 };
                     }
-                    found.Add((at, captured!));
+                    found.Add((at, captured!, skills));
                 }
                 catch (InvalidDataException) { }
             }
-            if (found.Count == 1) { walletAt = found[0].Offset; values = Values(found[0].Value); walletReason = values is null ? "inventory.walletInvalid" : null; }
+            var chosen = found.Count == 1 ? found : found.Where(item => item.Skills).ToList();
+            // 多个位置读通且都没有技能（新角色）：取前面恰好接着读通 JamItemInventory 到 SkillReserve、止于该位置的那一个。
+            if (chosen.Count == 0 && found.Count > 1 && jam >= 0 && jam < wallet)
+                chosen = found.Where(item => JamCandidates(body, schema, root, jam, wallet, from, item.Offset, cancellation).Count > 0).ToList();
+            if (chosen.Count == 1) { walletAt = chosen[0].Offset; values = Values(chosen[0].Value); walletReason = values is null ? "inventory.walletInvalid" : null; }
             else if (walletReason != "inventory.walletCandidateBudget") walletReason = found.Count == 0 ? "inventory.walletNotFound" : "inventory.walletAmbiguous";
         }
         if (silver >= 0 && passDeep == silver + 1 && profile > passDeep && profile + 1 < root.Length)
@@ -122,29 +130,37 @@ internal static class LoginWalletLocator
         InventoryWireValue? jamItems = null; string? jamReason = walletAt < 0 ? "inventory.walletNotFound" : "inventory.walletLayoutUnsupported";
         if (walletAt >= 0 && jam >= 0 && jam < wallet)
         {
-            var found = new List<InventoryWireValue>();
-            for (var at = Math.Max(from, walletAt - JamWindow); at < walletAt && found.Count < 16; at++)
-            {
-                if ((at & 0xfff) == 0) cancellation.ThrowIfCancellationRequested();
-                var reader = new InventoryWireReader(body, schema, cancellation);
-                reader.Seek(at);
-                try
-                {
-                    InventoryWireValue? captured = null;
-                    for (var i = jam; i < wallet; i++)
-                    {
-                        var value = reader.Value(root[i].Type, 1, i == jam);
-                        if (i == jam) captured = value;
-                    }
-                    if (reader.Offset == walletAt) found.Add(captured!);
-                }
-                catch (InvalidDataException) { }
-            }
+            var found = JamCandidates(body, schema, root, jam, wallet, from, walletAt, cancellation);
             // 其余位置都在最前一个读出的 JamItemInventory 之内：是从真字典尾部读成的空字典，取最前一个。
             if (found.Count is > 0 and < 16 && found.Skip(1).All(value => value.Start > found[0].Start && value.Start < found[0].End)) { jamItems = found[0]; jamReason = null; }
             else jamReason = found.Count == 0 ? "inventory.jamItemNotFound" : "inventory.jamItemAmbiguous";
         }
         return new(new(values, silverAt, passAt, walletReason, refillReason, memberships, masterCharacter), jamItems, jamReason);
+    }
+
+    /// <summary>钱包起点之前 <see cref="JamWindow"/> 内，从该处起 <c>JamItemInventory</c> 到钱包前一个根字段全部读通、且恰好止于钱包起点的位置（至多 16 个）。</summary>
+    private static List<InventoryWireValue> JamCandidates(byte[] body, InventoryWireSchema schema, (string Name, string? Type)[] root, int jam, int wallet,
+        int from, int walletAt, CancellationToken cancellation)
+    {
+        var found = new List<InventoryWireValue>();
+        for (var at = Math.Max(from, walletAt - JamWindow); at < walletAt && found.Count < 16; at++)
+        {
+            if ((at & 0xfff) == 0) cancellation.ThrowIfCancellationRequested();
+            var reader = new InventoryWireReader(body, schema, cancellation);
+            reader.Seek(at);
+            try
+            {
+                InventoryWireValue? captured = null;
+                for (var i = jam; i < wallet; i++)
+                {
+                    var value = reader.Value(root[i].Type, 1, i == jam);
+                    if (i == jam) captured = value;
+                }
+                if (reader.Offset == walletAt) found.Add(captured!);
+            }
+            catch (InvalidDataException) { }
+        }
+        return found;
     }
 
     /// <summary>会员字典：键为 MembershipSheetId（按线上 4 字节读成无符号），值里的 ExpireTime 为 Unix 毫秒；形状不符时整体为空（未知）。</summary>

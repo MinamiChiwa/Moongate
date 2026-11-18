@@ -10,10 +10,11 @@ using MabiTool.Providers.TwObservation.ItemCatalog;
 
 namespace MabiTool.Observation.Worker;
 
+/// <param name="ChannelId">指定网卡（只在该设备上抓包）；省略时打开全部设备。</param>
 /// <param name="LocalIdentity">宿主为同一游戏会话（同一进程）记住的最近确认本机身份，Worker 重启后作为跨连接沿用的初值；可省略。</param>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ObservationCaptureRequest(string GameSessionId, string Region, int ProcessId,
-    DateTimeOffset ProcessStartTime, string ChannelId, string Profile, bool AnyAddress = false, ObservedGameIdentity? LocalIdentity = null)
+    DateTimeOffset ProcessStartTime, string? ChannelId, string Profile, ObservedGameIdentity? LocalIdentity = null)
 {
     /// <summary>校验后的初值身份；字段不合规时返回 false。</summary>
     internal bool TryKnownIdentity(out GameIdentity? identity)
@@ -31,7 +32,7 @@ public sealed record ObservationCaptureRequest(string GameSessionId, string Regi
 public interface IObservationCaptureSource
 {
     IReadOnlyList<CaptureChannelOption> Channels();
-    /// <summary>带游戏进程时为每张网卡统计本机地址落在其上的游戏数据连接数。</summary>
+    /// <summary>带游戏进程时为每张网卡统计本机地址落在其上的游戏进程连接数（诊断）。</summary>
     IReadOnlyList<CaptureChannelOption> Channels(CaptureChannelQuery? query) => Channels();
     Task<ChannelDetectionProgress> DetectChannelsAsync(ChannelDetectionRequest request, Func<ChannelDetectionProgress, Task> progress, CancellationToken ct) =>
         Task.FromException<ChannelDetectionProgress>(new MabiTool.Infrastructure.Workers.WorkerException("worker.methodUnsupported"));
@@ -55,12 +56,7 @@ public sealed class NpcapObservationSource : IObservationCaptureSource
     {
         if (request.Region != "TW") throw new WorkerObservationException("inventory.buildUnsupported");
         using var game = SelectedGameProcess.Open(request.ProcessId, request.ProcessStartTime);
-        var directory = Path.GetDirectoryName(game.ImagePath)!;
-        MabiTool.ModuleSdk.LocalDiscoverySecurity.RejectLinks(directory);
-        foreach (var path in Directory.EnumerateFiles(directory, "GameAssembly.dll")) MabiTool.ModuleSdk.LocalDiscoverySecurity.RejectLinks(path);
-        foreach (var path in Directory.EnumerateDirectories(directory, "*_Data"))
-            MabiTool.ModuleSdk.LocalDiscoverySecurity.RejectLinks(Path.Combine(path, "il2cpp_data", "Metadata", "global-metadata.dat"));
-        var layout = ClientLayoutReader.Read(directory, ct);
+        var layout = ClientLayoutReader.Read(ClientDirectory(game.ImagePath), ct);
         ReleaseLayoutBuffers();
         // 钱包货币的名称、说明与补充间隔来自客户端表；读不到时资源照常按变化消息更新，只是没有名称与倒计时。
         try { layout = layout with { Resources = ClientResourceCatalog.Read(ClientItemCatalogLocation.Resolve(game.ImagePath), ct) }; }
@@ -73,6 +69,19 @@ public sealed class NpcapObservationSource : IObservationCaptureSource
         lock (inventoryGate) prepared = (request, layout, profile);
         return new InventoryClientPrepared(profile);
     }, ct);
+    /// <summary>
+    /// 库存布局读取的客户端目录：<paramref name="imagePath"/> 是已解析联接与符号链接的最终路径（<see cref="SelectedGameProcess.ImagePath"/>），
+    /// 目录、GameAssembly.dll 与 metadata 仍逐级拒绝重解析点，解析后被换成链接时拒绝。
+    /// </summary>
+    internal static string ClientDirectory(string imagePath)
+    {
+        var directory = Path.GetDirectoryName(imagePath)!;
+        MabiTool.ModuleSdk.LocalDiscoverySecurity.RejectLinks(directory);
+        foreach (var path in Directory.EnumerateFiles(directory, "GameAssembly.dll")) MabiTool.ModuleSdk.LocalDiscoverySecurity.RejectLinks(path);
+        foreach (var path in Directory.EnumerateDirectories(directory, "*_Data"))
+            MabiTool.ModuleSdk.LocalDiscoverySecurity.RejectLinks(Path.Combine(path, "il2cpp_data", "Metadata", "global-metadata.dat"));
+        return directory;
+    }
     public Task<InventoryCatalogData> ReadInventoryCatalogAsync(InventoryClientRequest request, CancellationToken ct) => Task.Run(() =>
     {
         using var game = SelectedGameProcess.Open(request.ProcessId, request.ProcessStartTime);
@@ -105,17 +114,28 @@ public sealed class NpcapObservationSource : IObservationCaptureSource
     public IReadOnlyList<CaptureChannelOption> Channels(CaptureChannelQuery? query)
     {
         IReadOnlyList<CaptureConnection>? data = null;
+        var devices = CaptureChannels.Devices();
         if (query is not null)
         {
             using var game = SelectedGameProcess.Open(query.ProcessId, query.ProcessStartTime);
-            data = CaptureChannels.DataConnections(CaptureChannels.Connections(game.ProcessId));
+            var owned = CaptureChannels.Connections(game.ProcessId);
+            data = owned.Where(connection => !NativeCaptureBoundary.SelfConnection(connection, owned)).Take(32).ToArray();
         }
-        return Annotate(CaptureChannels.Devices(), data);
+        return Annotate(devices, data);
     }
-    /// <summary>按游戏数据连接的本机地址（或两端回环）统计每张网卡承载的连接数；未给连接时不统计。</summary>
-    internal static IReadOnlyList<CaptureChannelOption> Annotate(IReadOnlyList<CaptureDevice> devices, IReadOnlyList<CaptureConnection>? data) =>
-        devices.Take(128).Select(value => new CaptureChannelOption(ChannelId(value.Name), value.Description,
-            value.Addresses, value.IsLoopback, data?.Count(connection => NativeCaptureBoundary.MatchesDevice(value, connection)))).ToArray();
+    /// <summary>全部网卡的本机地址；判断游戏连接是否连向本机代理。</summary>
+    internal static IReadOnlySet<string> LocalAddresses(IReadOnlyList<CaptureDevice> devices) =>
+        devices.SelectMany(value => value.Addresses).ToHashSet(StringComparer.Ordinal);
+    /// <summary>
+    /// 诊断：统计每张网卡承载的游戏进程连接数（进程自连除外）：远端是本机地址时计入回环适配器，否则计入本机地址所在的网卡
+    /// （见 <see cref="NativeCaptureBoundary.MatchesDevice"/>）；未给连接时不统计。捕获不按它选择网卡。
+    /// </summary>
+    internal static IReadOnlyList<CaptureChannelOption> Annotate(IReadOnlyList<CaptureDevice> devices, IReadOnlyList<CaptureConnection>? data)
+    {
+        var locals = LocalAddresses(devices);
+        return devices.Take(128).Select(value => new CaptureChannelOption(ChannelId(value.Name), value.Description,
+            value.Addresses, value.IsLoopback, data?.Count(connection => NativeCaptureBoundary.MatchesDevice(value, connection, locals)))).ToArray();
+    }
     public async Task<ChannelDetectionProgress> DetectChannelsAsync(ChannelDetectionRequest request, Func<ChannelDetectionProgress, Task> progress, CancellationToken ct)
     {
         using var game = SelectedGameProcess.Open(request.ProcessId, request.ProcessStartTime);
@@ -133,10 +153,12 @@ public sealed class NpcapObservationSource : IObservationCaptureSource
             _ => throw new WorkerObservationException("observation.profileUnavailable")
         };
         using var game = SelectedGameProcess.Open(request.ProcessId, request.ProcessStartTime);
-        var device = CaptureChannels.Devices().SingleOrDefault(value => ChannelId(value.Name) == request.ChannelId)
-            ?? throw new WorkerObservationException("observation.channelUnavailable");
+        var devices = CaptureChannels.Devices();
+        // 自动模式打开全部设备；指定网卡时只打开那一张。
+        IReadOnlyList<CaptureDevice> selected = request.ChannelId is null ? devices
+            : [devices.SingleOrDefault(value => ChannelId(value.Name) == request.ChannelId) ?? throw new WorkerObservationException("observation.channelUnavailable")];
         request.TryKnownIdentity(out var known);
-        await CaptureChannels.ObserveAsync(game, device, request.GameSessionId, context, ct, layout, request.AnyAddress, known).ConfigureAwait(false);
+        await CaptureChannels.ObserveAsync(game, selected, request.GameSessionId, context, ct, layout, known).ConfigureAwait(false);
     }
     internal static GameCaptureReport Project(CaptureObservation report, MapLocationResolver? maps = null)
     {

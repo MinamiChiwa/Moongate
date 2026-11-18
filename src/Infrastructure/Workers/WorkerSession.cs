@@ -16,9 +16,11 @@ public sealed record WorkerProcessOptions(string Executable, string WorkerDirect
 {
     public IReadOnlyList<string> Arguments { get; init; } = [];
     public IReadOnlyDictionary<string, string> EnvironmentVariables { get; init; } = new Dictionary<string, string>();
-    public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(30);
+    /// <summary>进程启动到握手完成；杀毒软件首次扫描 Worker 程序与依赖时较慢，取允许的上限 60 秒。</summary>
+    public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(60);
     public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromSeconds(1);
-    public TimeSpan HeartbeatTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    /// <summary>心跳丢失判定（也是未指定期限的命令的默认期限）；机器繁忙或扫描时 5 秒会误判，取 15 秒。进程退出时管道断开，读取循环即时发现。</summary>
+    public TimeSpan HeartbeatTimeout { get; init; } = TimeSpan.FromSeconds(15);
     public TimeSpan CancellationGrace { get; init; } = TimeSpan.FromSeconds(2);
     internal string InactiveRequestCode { get; init; } = "worker.requestInactive";
     /// <summary>通道调试事件的入口及所属模块；为空时不记录。</summary>

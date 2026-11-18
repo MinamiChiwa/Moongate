@@ -237,8 +237,10 @@ public sealed class MabiToolApiException(int status, ApiProblem? problem)
         endpoint.UserInfo.Length != 0 || endpoint.Query.Length != 0 || endpoint.Fragment.Length != 0 || endpoint.AbsolutePath != "/")
       throw new ArgumentException("An explicit loopback HTTP origin is required", nameof(endpoint));
     this.endpoint = endpoint; this.token = token;
-    http = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = Timeout.InfiniteTimeSpan };
+    http = new HttpClient(handler ?? CreateLoopbackHandler()) { Timeout = Timeout.InfiniteTimeSpan };
   }
+  /// <summary>The default handler for the loopback API: never uses the system proxy or HTTP_PROXY/HTTPS_PROXY, so local requests stay on 127.0.0.1.</summary>
+  public static HttpClientHandler CreateLoopbackHandler() => new() { AllowAutoRedirect = false, UseCookies = false, UseProxy = false };
   private static string ModuleId(string id) {
     if (!System.Text.RegularExpressions.Regex.IsMatch(id, @"\A[a-z][a-z0-9-]{0,63}\z"))
       throw new ArgumentException("Module ID is invalid", nameof(id));

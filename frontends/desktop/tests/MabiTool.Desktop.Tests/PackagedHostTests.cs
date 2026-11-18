@@ -87,4 +87,38 @@ public sealed class PackagedHostTests
         Assert.False(second.Relaunch);
         Assert.Contains("Moongate", second.Problem);
     }
+
+    [Fact]
+    public void HostStartupReportOnStandardErrorBecomesASpecificReasonWithoutCodes()
+    {
+        // 宿主写到标准错误的启动失败记录是纯 ASCII 的一行；前端解析后按原因分类写短句与做法，不出现英文原因码，也不要求运行命令行。
+        var report = new HostStartupReport("storage.permissionDenied", HostStartupReport.Reasons.ProtectedLocation, 3, @"程序文件夹位于“C:\Program Files\Moongate”");
+        var line = report.Format();
+        Assert.All(line, character => Assert.True(character < 128));
+        var record = new HostLaunchRecord(DateTimeOffset.Now);
+        record.Error("storage.permissionDenied: 程序文件夹位于受保护目录");
+        record.Error(line);
+        Assert.Equal(report, record.Report);
+        Assert.Single(record.ErrorTail);
+
+        var (relaunch, problem) = PackagedHost.AfterExit(3, TimeSpan.FromSeconds(2), relaunched: false, record.Report);
+        Assert.False(relaunch);
+        Assert.Contains("系统保护目录", problem);
+        Assert.DoesNotContain("toolRoot", problem);
+        Assert.DoesNotContain("launch-backend", problem);
+        var text = StartupFailureText.For(3, record.Report);
+        Assert.True(text.Status.Length <= 16 && text.Hint.Length <= 20);
+        // 没有记录时按退出码说明，并指向诊断页的启动记录。
+        Assert.Contains("启动记录", PackagedHost.FailureMessage(3));
+
+        // 导出的启动记录写明退出码与原因分类，并替换用户名。
+        record.Finish(3, TimeSpan.FromSeconds(2), null);
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var exported = StartupRecordExport.Sanitize(StartupRecordExport.Compose(DateTimeOffset.Now, [record], Path.Combine(profile, "Moongate", "userdata"),
+            Path.Combine(profile, "Moongate", "components", "desktop"), null));
+        Assert.Contains("退出码：3", exported);
+        Assert.Contains(HostStartupReport.Reasons.ProtectedLocation, exported);
+        Assert.Contains("%USERPROFILE%", exported);
+        Assert.DoesNotContain(Environment.UserName, exported, StringComparison.OrdinalIgnoreCase);
+    }
 }

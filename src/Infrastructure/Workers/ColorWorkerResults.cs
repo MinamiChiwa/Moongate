@@ -44,7 +44,8 @@ public static class ColorWorkerResults
             // 细分原因与准备步骤只作原因码使用：引擎的错误原文可能含本机路径，不进入运行记录。
             return new(frame.RunId, count, outcome, Code(raw, "stop_reason"), best, last, current)
             {
-                StopDetail = Code(raw, "unavailable_reason") ?? Code(raw, "interruption_reason"),
+                // 截图核验未通过与观察失败的细分原因（stop_detail）排在准备失败与中断原因之后。
+                StopDetail = Code(raw, "unavailable_reason") ?? Code(raw, "interruption_reason") ?? Code(raw, "stop_detail"),
                 FailedStage = Code(raw, "preparation_stage"),
                 BestCurrent = raw.TryGetProperty("best_current", out var kept) && kept.ValueKind is JsonValueKind.True or JsonValueKind.False
                     ? kept.GetBoolean() : null

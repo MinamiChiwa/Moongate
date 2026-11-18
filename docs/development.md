@@ -22,7 +22,7 @@
 - **Host** 是唯一的业务权威：模块状态机、队列、计划、停止条件与持久化都在后端。目录包里前端带 `--owner-process` 启动宿主，前端结束后宿主按正常停止流程退出；单独启动的宿主不随前端退出。只监听 `127.0.0.1`，默认端口 19998；该端口被其他软件占用或被系统保留时改用系统分配的端口，前端从 `runtime/instance.json` 取实际地址。
 - **模块**在同一进程内运行，通过公开应用接口协作，不读写其他模块的私有表。内置模块：core、game-access、music-library、performance、rooms、synchronization、color、environment、presentation、combat-observation、inventory。performance（游戏内演奏）与 environment（游戏内时间、天气等）当前返回 `module.notImplemented`。
 - **Provider** 把具体数据源（台服抓包、回放、GitHub Releases、隧道）适配为统一的观测、能力与操作接口。
-- **Worker** 隔离原生依赖和重计算：观察 Worker 负责 Npcap 共享抓包，绑定游戏窗口并确定网卡后常驻；染色 Worker 按任务启动。
+- **Worker** 隔离原生依赖和重计算：观察 Worker 负责 Npcap 共享抓包，绑定游戏窗口后在全部网卡上按游戏进程端口常驻抓包；染色 Worker 按任务启动。
 - **Operation** 表示后端受理的异步工作，分别给出受理、执行／输入提交与观测到的效果，支持幂等键、取消与重启后的中断恢复。
 - **游戏输入**统一经过活动租约与紧急停止仲裁，输入热路径不等待界面、数据库、网络或重计算。
 - **RoomServer** 是可自托管的合奏房间服务，只协调房间与校时，不下发任意键码或坐标。

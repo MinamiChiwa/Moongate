@@ -12,8 +12,11 @@ namespace MabiTool.Platform.Windows;
 public sealed class WindowsGameWindowSource : IGameWindowSource
 {
     private readonly HashSet<string> processes = new(["MabinogiMobile"], StringComparer.OrdinalIgnoreCase);
-    /// <summary>显式准备时核对过的客户端：文件戳不变时沿用构建标识（已登记构建为布局标识，其余为未登记构建的哈希标识）。</summary>
-    private sealed record PreparedFiles(int ProcessId, DateTimeOffset StartedAt, string ImagePath, IReadOnlyList<TwClientFileStamp> Files,
+    /// <summary>
+    /// 显式准备时核对过的客户端：文件戳不变时沿用构建标识（已登记构建为布局标识，其余为未登记构建的哈希标识）。
+    /// <see cref="ImagePath"/> 是进程报告的映像路径，<see cref="FinalPath"/> 是解析联接与符号链接后的路径，文件戳与哈希按后者读取。
+    /// </summary>
+    private sealed record PreparedFiles(int ProcessId, DateTimeOffset StartedAt, string ImagePath, string FinalPath, IReadOnlyList<TwClientFileStamp> Files,
         TwClientHashes Hashes, string Build);
     private readonly object preparedGate = new();
     private readonly Dictionary<(int Pid, DateTimeOffset StartedAt), PreparedFiles> prepared = [];
@@ -38,7 +41,7 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
     {
         lock (preparedGate)
             return prepared.TryGetValue((selected.ProcessId, selected.ProcessStartTime), out var client) && client.Build == selected.GameBuild
-                ? new(client.ImagePath, new Dictionary<string, string>(StringComparer.Ordinal)
+                ? new(client.FinalPath, new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     [TwClientFingerprint.AssemblyFile] = client.Hashes.AssemblySha256, [TwClientFingerprint.MetadataFile] = client.Hashes.MetadataSha256,
                     [TwClientFingerprint.UnityFile] = client.Hashes.UnitySha256
@@ -57,23 +60,36 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
         {
             using var process = Process.GetProcessById(selected.ProcessId);
             if (process.HasExited || process.StartTime.ToUniversalTime() != selected.ProcessStartTime.UtcDateTime) return null;
-            image = ImagePath(process);
+            image = WindowsProcessAccess.ImagePath(selected.ProcessId);
         }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception) { return null; }
-        if (image is null) return fresh with { GameBuild = null };
-        var before = TwClientFingerprint.ReadFileStamps(image);
-        var hashes = before is null ? null : await TwClientFingerprint.HashAsync(image, ct).ConfigureAwait(false);
+        // 安装经联接或符号链接挂到原路径时按最终路径核对文件；解析不了时按原路径核对（含链接的路径会被拒绝）。
+        var final = image is null ? null : TwClientFingerprint.ResolveFinalPath(image) ?? image;
+        if (image is null || final is null) return fresh with { GameBuild = null };
+        var before = TwClientFingerprint.ReadFileStamps(final);
+        var hashes = before is null ? null : await TwClientFingerprint.HashAsync(final, ct).ConfigureAwait(false);
         if (before is null || hashes is null) return Refresh(selected);
-        var after = TwClientFingerprint.ReadFileStamps(image);
+        var after = TwClientFingerprint.ReadFileStamps(final);
         fresh = Refresh(selected);
         if (fresh is null || after is null || !before.SequenceEqual(after)) return fresh;
         lock (preparedGate)
         {
             if (prepared.Count >= 32) prepared.Remove(prepared.Keys.First());
-            prepared[key] = new(selected.ProcessId, selected.ProcessStartTime, image, after, hashes, TwClientFingerprint.BuildId(hashes));
+            prepared[key] = new(selected.ProcessId, selected.ProcessStartTime, image, final, after, hashes, TwClientFingerprint.BuildId(hashes));
         }
         return Refresh(selected);
     }
+
+    /// <summary>
+    /// 游戏进程完整性级别高于 Moongate（游戏以管理员身份运行）时为 <c>game.elevated</c>：系统会丢弃发往它的模拟输入。
+    /// Moongate 已以管理员身份运行却读不到游戏令牌时为 <c>game.integrityUnreadable</c>，只记诊断，不拦截绑定。
+    /// </summary>
+    public string? AccessProblem(GameWindowObservation selected) => WindowsProcessAccess.CompareIntegrity(selected.ProcessId) switch
+    {
+        ElevationVerdict.Higher => "game.elevated",
+        ElevationVerdict.UnreadableWhileElevated => "game.integrityUnreadable",
+        _ => null
+    };
     /// <summary>轮次输入准备与停止前调用：按实际回读的前台状态判断，不只看 SetForegroundWindow 的返回值。</summary>
     public bool TryActivate(GameWindowObservation selected)
     {
@@ -116,38 +132,29 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
             if (!processes.Contains(process.ProcessName)) return null;
             var start = new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero);
             if (expected is not null && (expected.ProcessId != (int)pid || expected.ProcessStartTime != start)) return null;
-            // 客户区原点与尺寸取物理像素（见 WindowsDpiAwareness），与截图和鼠标坐标处于同一坐标系，负坐标的副屏照常。
-            var rect = default(Rect); var point = new Point();
-            using (var physical = WindowsDpiAwareness.Enter())
-                if (!physical.Physical || !GetClientRect(window, out rect) || !ClientToScreen(window, ref point)) return null;
-            var minimized = IsIconic(window); var width = rect.Right - rect.Left; var height = rect.Bottom - rect.Top;
-            if (width <= 0 || height <= 0)
+            // 客户区原点与尺寸取物理像素、DPI 取显示器有效 DPI（见 WindowsClientGeometry），与截图和鼠标坐标处于同一坐标系，
+            // 游戏窗口未声明 DPI 感知或为系统级感知时同样成立，负坐标的副屏照常。
+            if (WindowsClientGeometry.Read(window) is not { } client) return null;
+            var minimized = IsIconic(window); var bounds = client.Bounds;
+            if (bounds.Width <= 0 || bounds.Height <= 0)
             {
                 if (expected is null || !minimized) return null;
-                width = expected.Bounds.Width; height = expected.Bounds.Height; point.X = expected.Bounds.X; point.Y = expected.Bounds.Y;
+                bounds = expected.Bounds;
             }
-            var dpi = GetDpiForWindow(window); if (dpi == 0) return null;
             string? build = null;
             lock (preparedGate)
-                if (prepared.TryGetValue(((int)pid, start), out var client))
+                if (prepared.TryGetValue(((int)pid, start), out var files))
                 {
-                    var image = ImagePath(process);
-                    var stamps = image is not null && image.Equals(client.ImagePath, StringComparison.OrdinalIgnoreCase)
-                        ? TwClientFingerprint.ReadFileStamps(image) : null;
-                    if (stamps is not null && client.Files.SequenceEqual(stamps)) build = client.Build;
+                    var image = WindowsProcessAccess.ImagePath((int)pid);
+                    var stamps = image is not null && image.Equals(files.ImagePath, StringComparison.OrdinalIgnoreCase)
+                        ? TwClientFingerprint.ReadFileStamps(files.FinalPath) : null;
+                    if (stamps is not null && files.Files.SequenceEqual(stamps)) build = files.Build;
                     else prepared.Remove(((int)pid, start));
                 }
-            return new("TW", (int)pid, start, new(unchecked((ulong)window)), build, new(point.X, point.Y, width, height), dpi, dpi, minimized);
+            return new("TW", (int)pid, start, new(unchecked((ulong)window)), build, bounds, client.Dpi, client.Dpi, minimized);
         }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or OverflowException) { return null; }
     }
-    private static string? ImagePath(Process process)
-    {
-        var path = new StringBuilder(32768); var length = path.Capacity;
-        return QueryFullProcessImageName(process.Handle, 0, path, ref length) ? path.ToString() : null;
-    }
-    [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
-    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
     private delegate bool EnumWindow(nint window, nint data);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindow callback, nint data);
     [DllImport("user32.dll")] private static extern bool IsWindow(nint window);
@@ -155,9 +162,6 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
     [DllImport("user32.dll")] private static extern nint GetWindow(nint window, uint command);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint process);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(nint window, StringBuilder text, int count);
-    [DllImport("user32.dll")] private static extern bool GetClientRect(nint window, out Rect rectangle);
-    [DllImport("user32.dll")] private static extern bool ClientToScreen(nint window, ref Point point);
-    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint window);
     [DllImport("user32.dll")] private static extern bool IsIconic(nint window);
     [DllImport("user32.dll")] private static extern bool ShowWindow(nint window, int command);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
@@ -165,6 +169,4 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
     [DllImport("user32.dll")] private static extern bool BringWindowToTop(nint window);
     [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint attachTo, bool on);
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool QueryFullProcessImageName(nint process, uint flags, StringBuilder name, ref int length);
 }

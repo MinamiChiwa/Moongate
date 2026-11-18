@@ -53,10 +53,11 @@ public sealed record GameCaptureSettings(UInt64String Revision, bool AutomaticCa
     public static GameCaptureSettings Default => new(new(0), true, AutomaticChannel, null, null, true);
 }
 /// <summary>常驻抓包的自动启动状态。State 为 off/waiting/starting/running/failed；Reason 为固定错误码。
-/// ChannelSource 为 automatic、detected（地址定位不到时自动流量检测选定）、saved 或 request。</summary>
+/// ChannelSource 为 automatic（全部网卡同时抓，ChannelId 为空）、saved（设置里指定的网卡）或 request。</summary>
 /// <param name="Build">绑定客户端的构建核对；没有台服绑定或旧宿主时为空。</param>
+/// <param name="SourceKind">实际出数据的主来源类别：physical、wintun、tap、hyperv、virtual 或 loopback；还没有游戏流或旧宿主时为空。</param>
 public sealed record GameCaptureAutomation(bool Enabled, string State, string? Reason, string? ChannelId,
-    string? ChannelDescription, string? ChannelSource, DateTimeOffset? NextAttemptAt, GameBuildCheck? Build = null);
+    string? ChannelDescription, string? ChannelSource, DateTimeOffset? NextAttemptAt, GameBuildCheck? Build = null, string? SourceKind = null);
 /// <summary>
 /// 绑定客户端的构建核对。State：registered（已登记构建）、adapted（未登记构建，已按运行时核对启用）、verifying（正在读取客户端核对）、
 /// failed（读不到客户端或分帧所需的协议表，不能抓包）。Disabled 为核对不过而单独停用的能力：identity（本机身份与地图频道）、

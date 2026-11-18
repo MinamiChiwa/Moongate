@@ -76,6 +76,9 @@ public static class ColorRunText
         if (progress.Total is > 0 and var total)
             title += "  " + (progress.Current ?? 0).ToString(CultureInfo.InvariantCulture) + "/" + total.ToString(CultureInfo.InvariantCulture);
         var (body, tip) = progress.Message is { } message ? Message(message) : DefaultBody(progress.Stage);
+        // 等待色卡核验时带未通过原因：说明行换成该原因的做法，原因进悬停提示。
+        if (progress.Status is null && Verification(progress.Reason) is { } waiting)
+            (body, tip) = (waiting.Action, JoinTip(waiting.Title + Pick("：", "：") + waiting.Tip, tip));
         return new(title, Join(Lines(progress.Reading, Pick("当前颜色 · 游戏读数", "目前顏色 · 遊戲讀數")), body), ColorTone.Live) { Tip = tip };
     }
 
@@ -172,6 +175,8 @@ public static class ColorRunText
             "无法截取游戏客户区；确认游戏窗口没有最小化。", "無法擷取遊戲用戶區；確認遊戲視窗沒有最小化。"),
         "permission.missing" => Unavailable("permission.missing"),
         "gameBuild.incompatible" => Unavailable("game_build"),
+        "color.mediaFeaturesMissing" => T("缺少 Windows 媒体功能包", "缺少 Windows 媒體功能套件", "安装媒体功能包后重开", "安裝媒體功能套件後重開",
+            "Windows N 版需在可选功能中安装媒体功能包。", "Windows N 版需在選用功能中安裝媒體功能套件。"),
         "operation.executionFailed" => T("染色引擎运行出错", "染色引擎執行出錯", "请重新开始", "請重新開始",
             "已停止输入；详细记录已写入诊断（诊断页可导出）。", "已停止輸入；詳細記錄已寫入診斷（診斷頁可匯出）。"),
         "provider.unavailable" or "provider.unconfigured" or "component.missing" => T("染色组件不可用", "染色元件不可用", "重新解压完整压缩包", "重新解壓完整壓縮檔",
@@ -261,8 +266,12 @@ public static class ColorRunText
                 return T("未能唯一绑定染色板", "未能唯一綁定染色板", "只打开一个染色板", "只打開一個染色板", "检测到多个活动色板候选；可在诊断页导出记录。", "偵測到多個活動色板候選；可在診斷頁匯出記錄。");
             case "no_active_palette_timeout" or "no_active_session":
                 return T("等待染色界面超时", "等待染色介面逾時", "先打开染色界面再开始", "先打開染色介面再開始", "等待期间未找到已验证的活动染色板，本轮没有发送操作。", "等待期間未找到已驗證的活動染色板，本輪沒有發送操作。");
+            case "initial_visual_timeout" when Verification(result.StopDetail) is { } failed:
+                return failed;
             case "initial_visual_timeout":
                 return T("色卡布局识别未完成", "色卡佈局辨識未完成", "以游戏当前画面为准", "以遊戲目前畫面為準", "已检测到本局染色板，但色卡或取色点未完成截图核对，本轮未发送操作。", "已偵測到本局染色板，但色卡或取色點未完成截圖核對，本輪未發送操作。");
+            case "observation_failed" when Verification(result.StopDetail) is { } failed:
+                return failed;
             case "user_candidate_observed" when verified:
                 return T("所选方案已复核", "所選方案已複核", "在游戏内决定是否套用", "在遊戲內決定是否套用", "已保留您选择的方案；可查看各区域实测色差。", "已保留您選擇的方案；可查看各區域實測色差。");
             case "candidate_recovery_unconfirmed":
@@ -328,10 +337,62 @@ public static class ColorRunText
         "server_selection" => T("服务器与窗口不匹配", "伺服器與視窗不匹配", "确认绑定的是台服游戏", "確認綁定的是台服遊戲", "Moongate 只适配台服客户端。", "Moongate 只適配台服用戶端。"),
         "gameBinding.invalid" or "input.bindingChanged" => T("游戏窗口绑定已变化", "遊戲視窗綁定已變化", "重新选择游戏窗口", "重新選擇遊戲視窗",
             "精准读取与当前绑定的游戏窗口不符。", "精準讀取與目前綁定的遊戲視窗不符。"),
-        _ => new(Pick("游戏或窗口条件不支持", "遊戲或視窗條件不支援"), Pick("检查游戏版本、窗口和权限", "檢查遊戲版本、視窗和權限"),
-            JoinTip(Pick("详情已写入诊断记录。", "詳情已寫入診斷記錄。"), reason is null or "preparation" ? string.Empty
+        "window_context" => T("未能核对游戏窗口", "未能核對遊戲視窗", "保持游戏窗口不动后重试", "保持遊戲視窗不動後重試",
+            "核对时游戏窗口的尺寸、位置或画面状态发生变化，或同时找到多个游戏窗口。不要拖动、缩放或最小化游戏窗口；仍失败时可改用截图寻色。",
+            "核對時遊戲視窗的尺寸、位置或畫面狀態發生變化，或同時找到多個遊戲視窗。不要拖動、縮放或最小化遊戲視窗；仍失敗時可改用截圖尋色。"),
+        "input_backend" => T("未能核对游戏输入方式", "未能核對遊戲輸入方式", "可改用截图寻色", "可改用截圖尋色",
+            "游戏的输入状态读取前后不一致（例如正在切换界面或加载）；回到普通界面后重试。", "遊戲的輸入狀態讀取前後不一致（例如正在切換介面或載入）；回到一般介面後重試。"),
+        "process_changed" => T("游戏进程已变化", "遊戲程序已變化", "重新选择游戏窗口", "重新選擇遊戲視窗",
+            "校验期间游戏退出或重新启动。", "校驗期間遊戲結束或重新啟動。"),
+        "unity_engine" => T("游戏引擎已更新", "遊戲引擎已更新", "可改用截图寻色", "可改用截圖尋色",
+            "游戏引擎已更新，精准寻色暂不可用，可改用截图寻色。", "遊戲引擎已更新，精準尋色暫不可用，可改用截圖尋色。"),
+        "render_scale" => T("画面分辨率无法对应", "畫面解析度無法對應", "改为窗口化后重试", "改為視窗化後重試",
+            "请改为窗口化或把分辨率设为与显示器一致。", "請改為視窗化或把解析度設為與顯示器一致。"),
+        "input_assistant" => T("游戏输入被辅助接管", "遊戲輸入被輔助接管", "可改用截图寻色", "可改用截圖尋色",
+            "游戏启用了输入辅助，模拟鼠标可能无效。", "遊戲啟用了輸入輔助，模擬滑鼠可能無效。"),
+        "ocr.componentMissing" => T("文字识别组件缺失", "文字辨識元件缺失", "重新解压完整压缩包", "重新解壓完整壓縮檔",
+            "染色组件里没有文字识别程序或数据。", "染色元件裡沒有文字辨識程式或資料。"),
+        "ocr.componentInvalid" => T("文字识别组件无法启动", "文字辨識元件無法啟動", "重新解压完整压缩包", "重新解壓完整壓縮檔",
+            "文字识别程序无法启动或加载数据。", "文字辨識程式無法啟動或載入資料。"),
+        "ocr.pathUnreadable" => T("文字识别读不到路径", "文字辨識讀不到路徑", "移到纯英文路径的文件夹", "移到純英文路徑的資料夾",
+            "程序文件夹路径含系统编码不支持的字。", "程式資料夾路徑含系統編碼不支援的字。"),
+        _ when Verification(reason) is { } failed => failed,
+        _ => new(Pick("精准寻色校验未通过", "精準尋色校驗未通過"), Pick("可改用截图寻色", "可改用截圖尋色"),
+            JoinTip(Pick("检查游戏窗口与权限后重试；详情已写入诊断记录。", "檢查遊戲視窗與權限後重試；詳情已寫入診斷記錄。"), reason is null or "preparation" ? string.Empty
                 : Localization.CodeText.Unknown("color-unavailable", reason, "未知原因", "未知原因")))
     };
+
+    /// <summary>
+    /// 截图核验未通过与观察失败的细分原因：遮挡、识别超时、未读出、色码不一致、色块偏差、布局、显示缩放。
+    /// 原因码可带“.区域序号”，悬停提示写明区域；未登记的原因返回 null，由调用处用原有说明。
+    /// </summary>
+    private static Text? Verification(string? code)
+    {
+        if (code is null) return null;
+        var dot = code.IndexOf('.');
+        var kind = dot < 0 ? code : code[..dot];
+        var region = dot > 0 && int.TryParse(code[(dot + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var number) && number is >= 1 and <= 3
+            ? Pick($"（区域 {number}）", $"（區域 {number}）") : string.Empty;
+        Text? text = kind switch
+        {
+            "occluded" => T("色卡被其他窗口遮挡", "色卡被其他視窗遮擋", "移开遮挡窗口后重试", "移開遮擋視窗後重試",
+                "染色画面上方有窗口，本轮未操作。", "染色畫面上方有視窗，本輪未操作。"),
+            "ocr_timeout" => T("色码识别超时", "色碼辨識逾時", "关闭占用大的程序后重试", "關閉佔用大的程式後重試",
+                "电脑较忙，文字识别来不及完成。", "電腦較忙，文字辨識來不及完成。"),
+            "ocr_unread" => T("未读出色卡色码", "未讀出色卡色碼", "保持染色画面清晰可见", "保持染色畫面清晰可見",
+                "截图里的色码文字未能识别。", "截圖裡的色碼文字未能辨識。"),
+            "hex_mismatch" => T("色码核对不一致", "色碼核對不一致", "关闭画面滤镜后重试", "關閉畫面濾鏡後重試",
+                "截图色码与游戏数据不同，本轮未操作。", "截圖色碼與遊戲資料不同，本輪未操作。"),
+            "swatch_mismatch" => T("色块颜色有偏差", "色塊顏色有偏差", "关闭滤镜或夜间模式", "關閉濾鏡或夜間模式",
+                "截图色块与色码相差过大。", "截圖色塊與色碼相差過大。"),
+            "layout" => T("色卡布局识别未完成", "色卡佈局辨識未完成", "保持染色画面完整可见", "保持染色畫面完整可見",
+                "截图中的色卡或取色点未能识别。", "截圖中的色卡或取色點未能辨識。"),
+            "display_scale" => T("显示缩放导致画面尺寸不一致", "顯示縮放導致畫面尺寸不一致", "还原游戏窗口后重试", "還原遊戲視窗後重試",
+                "截图尺寸与游戏画面像素不符。", "截圖尺寸與遊戲畫面像素不符。"),
+            _ => null
+        };
+        return text is null ? null : new(text.Title, text.Action, text.Tip + region);
+    }
 
     /// <summary>精准寻色失败时停在的步骤：准备步骤与运行阶段。</summary>
     internal static string StageName(string stage) => stage switch

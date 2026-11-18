@@ -9,8 +9,14 @@ namespace MabiTool.Contracts;
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ObservationCaptureCounters(int SchemaVersion, CaptureConnectionCounters Connections,
     CapturePacketCounters Packets, CaptureQueueCounters Queues, CaptureReassemblyCounters Reassembly, CaptureFrameCounters Frames,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CapturePrearmCounters? Prearm = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CapturePrearmCounters? Prearm = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CaptureDeviceCounters>? Devices = null)
 {
+    /// <summary>按设备分项的上限（打开的设备与因上限跳过的设备合计）。</summary>
+    public const int MaximumDevices = 64;
+    /// <summary>设备类别的固定码。</summary>
+    public static IReadOnlySet<string> DeviceKinds { get; } = new HashSet<string>(StringComparer.Ordinal)
+        { "physical", "wintun", "tap", "hyperv", "virtual", "loopback" };
     public const string EnvironmentVariable = "MABITOOL_OBSERVATION_DIAGNOSTICS";
     public const int MaximumFrameTypes = 24;
     /// <summary>重组重置原因的固定码，与 Provider 的流重置原因一一对应。</summary>
@@ -56,6 +62,22 @@ public sealed record CaptureFrameCounters(UInt64String Total, UInt64String Dispa
 /// <param name="Expired">超过保留时长仍未确认而丢弃的包。</param>
 /// <param name="Foreign">连接表确认属于其他进程而丢弃的包。</param>
 /// <param name="Budget">超出字节或包数预算而丢弃的最旧未确认包。</param>
+/// <summary>
+/// 一张抓包设备的分项计数；可省略（旧 Worker）。只含设备 ID（设备名的哈希）、类别与计数，不含设备名与地址。
+/// </summary>
+/// <param name="ChannelId">设备 ID，与网卡列表的 ID 相同。</param>
+/// <param name="Kind">physical、wintun、tap、hyperv、virtual 或 loopback，由 Npcap 描述推断。</param>
+/// <param name="LinkType">Npcap 链路类型值；没有打开时为 -1。</param>
+/// <param name="Issue">没有打开或中途关闭的原因码：open、link:值、filter、read、limit。</param>
+/// <param name="Primary">是否为当前主来源（最近交付游戏流数据的设备）。</param>
+/// <param name="PortPackets">目的端口属于游戏进程的包。</param>
+/// <param name="GameStreams">在该设备上按游戏帧头确认的流。</param>
+/// <param name="Frames">由该设备交付的数据分出的游戏帧。</param>
+/// <param name="CandidateDropped">流确认前超出候选缓冲上限而丢弃的负载字节；确认后解析从缓冲中最早保留的数据开始，由分帧对齐跳过半截帧。</param>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record CaptureDeviceCounters(string ChannelId, string Kind, int LinkType, bool Opened, string? Issue, bool Primary,
+    UInt64String Packets, UInt64String PortPackets, UInt64String GameStreams, UInt64String Frames,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UInt64String? CandidateDropped = null);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CapturePrearmCounters(UInt64String Buffered, UInt64String Delivered, UInt64String Expired,
     UInt64String Foreign, UInt64String Budget);

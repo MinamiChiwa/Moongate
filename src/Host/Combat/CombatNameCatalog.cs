@@ -89,8 +89,10 @@ public sealed class CombatNameCatalog(GameControlContext controls, TimeProvider 
         {
             if (process.HasExited || process.StartTime.ToUniversalTime() != binding.ProcessStartTime.UtcDateTime)
                 throw new InvalidOperationException("绑定进程已变化");
-            image = process.MainModule?.FileName ?? throw new InvalidOperationException("无法读取进程映像路径");
+            // 只用有限查询权限读映像路径（游戏以管理员身份运行时 MainModule 会被拒绝），并解析联接与符号链接后再定位客户端目录。
+            image = MabiTool.Platform.Windows.WindowsProcessAccess.ImagePath(binding.ProcessId) ?? throw new InvalidOperationException("无法读取进程映像路径");
         }
+        image = MabiTool.Providers.TwObservation.Combat.TwClientFingerprint.ResolveFinalPath(image) ?? image;
         var directory = ClientItemCatalogLocation.Resolve(image);
         LocalDiscoverySecurity.RejectLinks(directory);
         return ClientCombatNameCatalog.Extract(directory, ct);

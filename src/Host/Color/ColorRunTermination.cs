@@ -48,7 +48,7 @@ public static class ColorRunTermination
     private static string FailureCode(string? detail) => detail switch
     {
         "process_access" or "permission.missing" => "permission.missing",
-        "game_build" or "module_resolution" or "gameBuild.incompatible" => "gameBuild.incompatible",
+        "game_build" or "module_resolution" or "gameBuild.incompatible" or "unity_engine" => "gameBuild.incompatible",
         "gameBinding.invalid" or "input.bindingChanged" => "input.bindingChanged",
         _ => "operation.executionFailed"
     };

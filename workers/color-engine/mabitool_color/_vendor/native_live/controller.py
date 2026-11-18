@@ -1588,6 +1588,8 @@ def run_goal_loop(io,session,settings,rules,*,engineering_deadline,clock=time.mo
             raise
     try:
         guard();visual_end=min(end,clock()+EARLY_TIMER_GRACE_SECONDS)
+        # 色卡核验未通过的原因随等待进度发布；遮挡或识别超时持续出现时提前结束，不等到期限。
+        repeated_reason=None;repeated=0
         for attempt in range(120):
             if clock()>=visual_end:raise GoalStop('initial_visual_timeout')
             try:
@@ -1597,13 +1599,24 @@ def run_goal_loop(io,session,settings,rules,*,engineering_deadline,clock=time.mo
                 break
             except (VisualNotReady,TimeoutError) as exc:
                 guard()
+                reason=getattr(exc,'verification_reason',None)
+                if reason is None and type(exc).__name__=='FrameReadTimeout':reason='ocr_timeout'
+                if reason is not None:
+                    result['stop_detail']=reason
+                    if getattr(exc,'verification',None) is not None:result['verification_failure']=copy.deepcopy(exc.verification)
+                kind=reason.split('.')[0] if reason else None
+                repeated=repeated+1 if kind is not None and kind==repeated_reason else 1
+                repeated_reason=kind
                 if clock()>=visual_end:raise GoalStop('initial_visual_timeout')
                 result['initial_visual_retries']+=1
                 result['initial_layout_diagnostic']=getattr(exc,'layout_diagnostic',None)
                 emit('initial_visual_wait',attempt=attempt+1,error=str(exc),waiting_deadline=visual_end,
-                    layout_diagnostic=result['initial_layout_diagnostic'])
+                    layout_diagnostic=result['initial_layout_diagnostic'],wait_reason=reason)
+                if kind=='occluded' and repeated>=3 or kind=='ocr_timeout' and repeated>=4:
+                    raise GoalStop('initial_visual_timeout')
                 pause(min(.25,max(0.,visual_end-clock())))
         else:raise GoalStop('initial_visual_timeout')
+        result.pop('stop_detail',None);result.pop('verification_failure',None)
         geometry=InputGeometry(cp['board'],cp['local_size'],'windows_legacy_mouse_pixels',cp.get('pixel_mapping'))
         context=bind_planning_context(session,cp,geometry,settings,wheel_delta_per_step=1.,calibration_evidence=dict(
             source='native_live_repeated_input_backend',viewport_origin=backend_binding['viewport_origin'],
@@ -1668,6 +1681,9 @@ def run_goal_loop(io,session,settings,rules,*,engineering_deadline,clock=time.mo
     except (ValueError,OSError,RuntimeError,KeyError) as exc:
         invalidate_current()
         result.update(stop_reason='observation_failed',error=type(exc).__name__+': '+str(exc))
+        detail=getattr(exc,'capability_reason',None) or getattr(exc,'verification_reason',None)
+        if detail is not None:result['stop_detail']=detail
+        if getattr(exc,'verification',None) is not None:result['verification_failure']=copy.deepcopy(exc.verification)
         if isinstance(exc,(VisualNotReady,OSError,RuntimeError)):recover_best_failure('recoverable_observation')
     except Exception as exc:
         invalidate_current()

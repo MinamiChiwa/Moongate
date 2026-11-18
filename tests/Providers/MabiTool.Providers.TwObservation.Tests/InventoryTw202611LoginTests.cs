@@ -253,7 +253,20 @@ public sealed class InventoryTw202611LoginTests
         return JsonSerializer.SerializeToElement(new { types });
     }
 
-    private static byte[] WalletLoginBody(bool duplicateWallet)
+    /// <summary>新角色的技能栏为空：钱包段只有一处读通时照常定位，不要求技能栏有内容。</summary>
+    [Fact]
+    public void NewCharacterWithEmptySkillSlotsStillGetsItsWallet()
+    {
+        var frames = new List<InventoryFrame>(); ulong generation = 0;
+        var observer = new InventoryProtocolObserver("game", new("fixture", "1", "TW", "offline"), Layout() with { Schema = WalletSchema() }, frames.Add, () => ++generation);
+        observer.Accept((int)Login, WalletLoginBody(false, emptySkills: true), 0, At);
+        observer.Accept((int)Profile, ProfileBody(Character, "本机角色"), 3000, At);
+        var full = frames.Single(f => f.Kind.KnownValue == InventoryFrameKind.Full);
+        Assert.Equal(988534UL, full.Gold!.Value.Value);
+        Assert.Equal(60UL, full.Resources!.Single(r => r.Key == "silverCoin").Value!.Value.Value);
+    }
+
+    private static byte[] WalletLoginBody(bool duplicateWallet, bool emptySkills = false)
     {
         var values = new Dictionary<string, long> { ["goldFree"] = 988534, ["silverCoin"] = 60, ["passDeep"] = 1, ["heartToken"] = 529, ["guildCoin"] = 1410, ["decaFree"] = 5548,
             // 最后一个字段的低 4 字节作为集合长度非法，错位一个 int64 的候选读不通（实采里由真实字段分布排除）。
@@ -270,7 +283,8 @@ public sealed class InventoryTw202611LoginTests
             foreach (var (key, _, _) in WalletProtocol.Fields) w.Write(values.GetValueOrDefault(key));
             w.Write(1); w.Write((byte)0); w.Write(20L);
             w.Write(0);
-            w.Write(2); w.Write(1); w.Write(101); w.Write(2); w.Write(102);
+            if (emptySkills) w.Write(0);
+            else { w.Write(2); w.Write(1); w.Write(101); w.Write(2); w.Write(102); }
             w.Write(0.5f);
         }
         w.Write(SilverRefilled); w.Write(PassDeepRefilled); w.Write(Character); w.Write(7);

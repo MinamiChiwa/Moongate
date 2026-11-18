@@ -14,6 +14,9 @@ public sealed class CaptureDiagnostics
     private long combatPeak, inventoryPeak, laneRejected, rejectedCombat, rejectedMusic, rejectedInventory;
     private long prearmBuffered, prearmDelivered, prearmExpired, prearmForeign, prearmBudget;
     public GameStreamCounters Stream { get; } = new();
+    private IReadOnlyList<CaptureDeviceCounters>? devices;
+    /// <summary>捕获线程每次读连接表后写入的按设备分项；随下一份计数快照上报。</summary>
+    internal void Devices(IReadOnlyList<CaptureDeviceCounters> value) => Volatile.Write(ref devices, value);
 
     internal void ConnectionOpened() => Interlocked.Increment(ref opened);
     internal void ConnectionClosed() => Interlocked.Increment(ref closed);
@@ -71,6 +74,6 @@ public sealed class CaptureDiagnostics
                 stream.Types.ToDictionary(pair => pair.Key.ToString(CultureInfo.InvariantCulture), pair => new UInt64String(pair.Value), StringComparer.Ordinal),
                 new(stream.OtherFrames)),
             new(U(Interlocked.Read(ref prearmBuffered)), U(Interlocked.Read(ref prearmDelivered)), U(Interlocked.Read(ref prearmExpired)),
-                U(Interlocked.Read(ref prearmForeign)), U(Interlocked.Read(ref prearmBudget))));
+                U(Interlocked.Read(ref prearmForeign)), U(Interlocked.Read(ref prearmBudget))), Volatile.Read(ref devices));
     }
 }

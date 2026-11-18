@@ -14,7 +14,8 @@ namespace MabiTool.Platform.Windows;
 /// 都不激活、不抢前台），覆盖窗登记为传统触控窗口，系统为每帧生成 WM_TOUCH 句柄；宿主核对整条手势的帧序列与计划一致后，
 /// 把这些 WM_TOUCH 消息逐帧转交（PostMessage）给游戏窗口。合成触点从不直达游戏，游戏窗口不被前置，用户的鼠标位置不变。
 /// 按键用 WM_KEYDOWN／WM_KEYUP（按目标线程键盘布局取扫描码）投递，按键前先向游戏投递一次激活提示（WM_ACTIVATE），触控前撤回。
-/// 前提：Windows 10 1809 及以上（合成指针设备）、游戏窗口存在且未最小化、手势在同一显示器内；不满足时返回原因码，不回退为前台输入。
+/// 前提：Windows 10 1809 及以上（合成指针设备）、游戏窗口存在且未最小化、未被系统按显示器缩放虚拟化、手势在同一显示器内；
+/// 不满足时返回原因码，不回退为前台输入。
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class WindowsBackgroundTouchInput : IGameBackgroundInputDevice
@@ -30,7 +31,13 @@ public sealed class WindowsBackgroundTouchInput : IGameBackgroundInputDevice
         if (!TouchNative.IsWindow(window)) return "input.bindingUnavailable";
         if (TouchNative.IsIconic(window) || binding.IsMinimized) return "input.windowMinimized";
         TouchNative.GetWindowThreadProcessId(window, out var pid);
-        return pid == (uint)binding.Session.ProcessId ? null : "input.bindingChanged";
+        if (pid != (uint)binding.Session.ProcessId) return "input.bindingChanged";
+        // 转交的 WM_TOUCH 句柄由系统按本进程辅助窗口生成，坐标是物理像素且不能改写；游戏窗口被系统按显示器缩放虚拟化时，
+        // 游戏按自己的逻辑坐标解读会落在别处，因此停用并给出原因，不发送错位的触点。
+        return WindowsClientGeometry.IsVirtualized(window) switch
+        {
+            true => "input.backgroundDpiVirtualized", null => "input.bindingUnavailable", false => null
+        };
     }
 
     public void Gesture(UInt64String window, IReadOnlyList<PhysicalScreenPoint[]> frames, int holdMilliseconds, int releaseDelayMilliseconds, Action checkpoint)

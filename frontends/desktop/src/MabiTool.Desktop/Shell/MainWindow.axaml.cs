@@ -42,6 +42,9 @@ public sealed partial class MainWindow : Window
             if (DataContext is ShellViewModel shell) { WatchPicker(shell.GamePicker); WatchNpcapGuide(shell.NpcapGuide); }
         };
         AddHandler(KeyDownEvent, OnPickerKeyDown, RoutingStrategies.Tunnel);
+        // 小屏或高缩放时按工作区收缩初始与最小尺寸：显示前按主屏先收缩一次，显示后按实际所在屏幕再核对并把标题栏拉回屏幕内。
+        if (Screens.Primary is { } primary) FitTo(primary, reposition: false);
+        Opened += (_, _) => { if (Screens.ScreenFromWindow(this) is { } screen) FitTo(screen, reposition: true); };
         PropertyChanged += (_, e) =>
         {
             // 最大化时占满工作区，不保留圆角。
@@ -49,6 +52,26 @@ public sealed partial class MainWindow : Window
             Frame.CornerRadius = new Avalonia.CornerRadius(WindowState == WindowState.Maximized ? 0 : 30);
             UpdateMaximizeButton();
         };
+    }
+
+    private static readonly Size DesignSize = new(1280, 860), DesignMinimum = new(760, 600);
+
+    private void FitTo(Avalonia.Platform.Screen screen, bool reposition)
+    {
+        if (WindowState != WindowState.Normal || screen.Scaling <= 0) return;
+        var work = screen.WorkingArea;
+        var (size, minimum) = WindowFit.Fit(DesignSize, DesignMinimum, new Size(work.Width / screen.Scaling, work.Height / screen.Scaling));
+        MinWidth = minimum.Width; MinHeight = minimum.Height;
+        var resized = Width > size.Width || Height > size.Height;
+        if (resized) { Width = Math.Min(Width, size.Width); Height = Math.Min(Height, size.Height); }
+        if (!reposition) return;
+        var pixels = new PixelSize((int)Math.Ceiling(Width * screen.Scaling), (int)Math.Ceiling(Height * screen.Scaling));
+        // 收缩后重新居中；没有收缩时只在标题栏越出工作区时拉回。
+        var target = resized
+            ? new PixelPoint(work.X + (work.Width - pixels.Width) / 2, work.Y + (work.Height - pixels.Height) / 2)
+            : Position;
+        var clamped = WindowFit.Clamp(target, pixels, work);
+        if (clamped != Position) Position = clamped;
     }
 
     /// <summary>在顶部空白处按下、即将开始拖动窗口时触发；无界面测试用它确认按下位置是否算作拖动区。</summary>

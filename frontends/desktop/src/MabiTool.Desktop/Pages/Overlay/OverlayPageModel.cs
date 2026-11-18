@@ -318,6 +318,12 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     /// <summary>当前版面的元件都已上锁；“全部上锁”开关的选中状态。</summary>
     public bool AllLocked => Store.AllLocked;
     public bool HideFromCapture => Store.HideFromCapture;
+
+    /// <summary>“录屏时隐藏”需要 Windows 10 2004 或更新；更早的系统上停用并在提示里写明原因。</summary>
+    public bool CaptureSupported => OverlayWindow.CaptureExclusionSupported;
+
+    public string? CaptureHint => CaptureSupported ? null
+        : UiText.Pick("需要 Windows 10 2004 或更新，当前系统不能让浮窗不进入录屏", "需要 Windows 10 2004 或更新，目前系統不能讓浮窗不進入錄影");
     /// <summary>“游戏最小化时隐藏”开关；缺省关闭，浮窗始终显示。</summary>
     public bool HideWithGame => Store.HideWhenGameMinimized;
 

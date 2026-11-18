@@ -58,7 +58,8 @@ class ProxyNativeRuntime:
             check()
             return backend, record
         except BuildUnsupported as exc:
-            raise NativeSourceUnavailable('gameBuild.incompatible', str(exc)) from exc
+            # 引擎布局无法定位（unity_engine）与客户端构建不符分开给出原因。
+            raise NativeSourceUnavailable(getattr(exc, 'capability_reason', None) or 'gameBuild.incompatible', str(exc)) from exc
         except ProcessBindingChanged as exc:
             raise NativeSourceUnavailable('input.bindingChanged', str(exc)) from exc
         except BaseException:

@@ -1,6 +1,6 @@
 # Moongate · 瑪奇 Mobile 台服工具
 
-[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [使用說明](docs/user-guide.zh-TW.md) · [更新說明](docs/release-notes-0.1.2.zh-TW.md) · [下載](https://github.com/MinamiChiwa/Moongate/releases) · [開發文件](docs/development.md)
+[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [使用說明](docs/user-guide.zh-TW.md) · [更新說明](docs/release-notes-0.1.3.zh-TW.md) · [下載](https://github.com/MinamiChiwa/Moongate/releases) · [開發文件](docs/development.md)
 
 > **☕ 支持作者**
 >
@@ -8,7 +8,7 @@
 >
 > 作者：**南千和** · [愛發電](https://afdian.com/a/minamichiwa) · [Patreon](https://patreon.com/chiwaminami)
 
-**Moongate 0.1.2（測試版）**是為《瑪奇 Mobile》台服打造的 Windows 桌面工具，把戰鬥統計、背包與保管箱、多人合奏、染色和遊戲浮窗整合在同一個程式裡。它讀取本機的遊戲網路資料來辨識角色、傷害、背包與演奏狀態，並在你開啟相應功能時代替你對遊戲視窗送出按鍵或點擊（合奏開奏、染色尋色）。0.1.0 是第一個公開版本，目前仍屬於測試版：各項功能已經可以使用，但可能還有問題，歡迎到 [Issues](https://github.com/MinamiChiwa/Moongate/issues) 回報。遊戲內自動演奏樂譜暫不支援。完整清單與已知問題見[更新說明](docs/release-notes-0.1.2.zh-TW.md)。
+**Moongate 0.1.3（測試版）**是為《瑪奇 Mobile》台服打造的 Windows 桌面工具，把戰鬥統計、背包與保管箱、多人合奏、染色和遊戲浮窗整合在同一個程式裡。它讀取本機的遊戲網路資料來辨識角色、傷害、背包與演奏狀態，並在你開啟相應功能時代替你對遊戲視窗送出按鍵或點擊（合奏開奏、染色尋色）。0.1.0 是第一個公開版本，目前仍屬於測試版：各項功能已經可以使用，但可能還有問題，歡迎到 [Issues](https://github.com/MinamiChiwa/Moongate/issues) 回報。遊戲內自動演奏樂譜暫不支援。完整清單與已知問題見[更新說明](docs/release-notes-0.1.3.zh-TW.md)。
 
 > **使用風險**
 >
@@ -16,7 +16,7 @@
 
 ## 1. 下載與安裝
 
-1. 在 [GitHub Releases](https://github.com/MinamiChiwa/Moongate/releases) 的最新版本下方 Assets 裡下載排在最上面的 **`Moongate-v0.1.2-Windows-x64.zip`**（約 170 MB）。同一發行裡的 `.sha256` 是校驗值，一般使用者不用下載。
+1. 在 [GitHub Releases](https://github.com/MinamiChiwa/Moongate/releases) 的最新版本下方 Assets 裡下載排在最上面的 **`Moongate-v0.1.3-Windows-x64.zip`**（約 170 MB）。同一發行裡的 `.sha256` 是校驗值，一般使用者不用下載。
 2. 把壓縮檔**完整解壓縮**到一個你有寫入權限的資料夾，例如 `D:\Moongate`。不要放在 `C:\Program Files`、OneDrive 同步資料夾或網路磁碟裡。
 3. 按兩下資料夾裡的 **`Moongate.exe`**。第一次啟動會自動完成初始化。在壓縮檔檢視器裡直接按兩下無法執行，工具會提示先完整解壓縮。
 
@@ -81,7 +81,7 @@
 ## 4. 常見問題
 
 - **左上角寫「未抓包：未安裝 Npcap」**：依跳出的指引安裝 Npcap，裝好後不需重新啟動工具。
-- **用了 VPN 或加速器後抓不到資料**：到設定頁的抓包部分重新偵測或手動選擇網路卡。
+- **用了 VPN 或加速器後抓不到資料**：確認安裝 Npcap 時勾選了迴環支援；仍不行時到設定頁的抓包部分偵測或指定網路卡。
 - **按兩下後沒有出現視窗，或提示背景服務啟動失敗**：在工具資料夾開啟終端機執行 `components\core\launch-backend.cmd -Wait`，視窗會顯示背景服務的啟動輸出與失敗原因，回報問題時一併附上。
 - **底部顯示「未連接後端」**：看底部狀態寫的原因。寫著「本機連接埠 19998 已被佔用」時，是另一個資料夾裡的 Moongate 仍在執行（例如解壓縮了兩份），關閉那一份的 Moongate 視窗，或在工作管理員「詳細資料」裡結束命令列含 MabiTool.Host 的 dotnet.exe，再重新開啟。19998 被其他軟體佔用或被系統保留時會自動改用空閒連接埠，不需要處理。
 - **怎樣完全結束**：關閉 Moongate 視窗即可，背景服務隨之結束，不留背景程序；進行中的合奏、染色與定時測量會停止並釋放遊戲操作。

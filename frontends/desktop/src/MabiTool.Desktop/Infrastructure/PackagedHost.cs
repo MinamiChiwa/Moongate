@@ -31,7 +31,16 @@ internal static class PackagedHost
     /// <summary>宿主停止或未能启动的说明；宿主正常运行时为空。连接状态在未连接时显示它。</summary>
     internal static string? Problem { get => Volatile.Read(ref problem); private set => Volatile.Write(ref problem, value); }
 
+    /// <summary>宿主启动失败的短句（状态行）与做法（操作提示）；按宿主写到标准错误的启动失败记录给出，宿主正常运行时为空。</summary>
+    internal static StartupFailureText? Failure { get => Volatile.Read(ref failure); private set => Volatile.Write(ref failure, value); }
+
     private static string? problem;
+    private static StartupFailureText? failure;
+    private static readonly object launchGate = new();
+    private static readonly List<HostLaunchRecord> launches = [];
+
+    /// <summary>本次运行里宿主每次启动的记录（至多 8 条）：启动时刻、退出码、运行时长、启动失败记录与标准错误尾部；供“导出启动记录”。</summary>
+    internal static IReadOnlyList<HostLaunchRecord> Launches { get { lock (launchGate) return launches.ToArray(); } }
 
     /// <summary>另一次打开 Moongate 请求把已有窗口提到前台。在后台线程触发。</summary>
     internal static event Action? ActivationRequested;
@@ -97,9 +106,11 @@ internal static class PackagedHost
 
     internal static ProcessStartInfo StartInfo(Launch launch)
     {
+        // 标准错误由前端读取：宿主启动失败时在那里写原因与启动失败记录（HostStartupReport），工具根不可写时也能送达。
         var start = new ProcessStartInfo(launch.Runtime)
         {
-            UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = launch.PackageRoot
+            UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = launch.PackageRoot,
+            RedirectStandardError = true, StandardErrorEncoding = Encoding.UTF8
         };
         start.ArgumentList.Add(launch.HostAssembly);
         if (launch.InitializeData) start.ArgumentList.Add("--initialize-data");
@@ -176,23 +187,35 @@ internal static class PackagedHost
                     continue;
                 }
                 Process process;
-                try { process = Process.Start(StartInfo(launch)) ?? throw new IOException("宿主进程未能创建"); }
+                var record = new HostLaunchRecord(DateTimeOffset.Now);
+                try
+                {
+                    process = new Process { StartInfo = StartInfo(launch) };
+                    process.ErrorDataReceived += (_, line) => record.Error(line.Data);
+                    if (!process.Start()) throw new IOException("宿主进程未能创建");
+                    process.BeginErrorReadLine();
+                }
                 catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
                 {
+                    record.Finish(null, TimeSpan.Zero, error.Message);
+                    Remember(record);
                     Problem = UiText.Pick("后端未能启动：", "後端未能啟動：") + Localization.CodeText.Error(error);
                     return;
                 }
+                Remember(record);
                 using (process)
                 {
                     var running = Stopwatch.StartNew();
                     var exited = process.WaitForExitAsync(token);
-                    if (await Task.WhenAny(exited, Task.Delay(StartupWatch, token)).ConfigureAwait(false) != exited) Problem = null;
+                    if (await Task.WhenAny(exited, Task.Delay(StartupWatch, token)).ConfigureAwait(false) != exited) { Problem = null; Failure = null; }
                     await exited.ConfigureAwait(false);
+                    record.Finish(process.ExitCode, running.Elapsed, null);
                     // 同时启动的另一宿主已在运行（本宿主因数据被占用退出）：连接那一个，它退出后再启动。
                     // 宿主为安装更新退出时由循环开头的检查让本前端退出。
                     if (IsHostRunning(launch.HostLock) || UpdateRestarting(DesktopFiles.Root)) continue;
-                    var (relaunch, problem) = AfterExit(process.ExitCode, running.Elapsed, relaunched);
+                    var (relaunch, problem) = AfterExit(process.ExitCode, running.Elapsed, relaunched, record.Report);
                     Problem = problem;
+                    Failure = process.ExitCode != 0 && running.Elapsed < StartupWatch ? StartupFailureText.For(process.ExitCode, record.Report) : null;
                     if (!relaunch) return;
                     relaunched = true;
                 }
@@ -211,9 +234,11 @@ internal static class PackagedHost
     /// 本前端运行期间宿主退出后的处理。启动阶段以非零码退出是启动失败，写明原因、不重试，以免反复崩溃；
     /// 运行中停止（崩溃或被结束）自动重新启动一次，再次停止时写明后端已停止并请用户重新打开 Moongate。
     /// </summary>
-    internal static (bool Relaunch, string Problem) AfterExit(int exitCode, TimeSpan ranFor, bool relaunched)
+    /// <param name="report">宿主写到标准错误的启动失败记录；有记录时按其原因给出针对性的说明。</param>
+    internal static (bool Relaunch, string Problem) AfterExit(int exitCode, TimeSpan ranFor, bool relaunched, HostStartupReport? report = null)
     {
-        if (exitCode != 0 && ranFor < StartupWatch) return (false, FailureMessage(exitCode));
+        if (exitCode != 0 && ranFor < StartupWatch)
+            return (false, report is not null && exitCode == 3 ? StartupFailureText.For(exitCode, report).Line : FailureMessage(exitCode));
         return relaunched
             ? (false, UiText.Pick("后端再次停止，请重新打开 Moongate。", "後端再次停止，請重新開啟 Moongate。") + Diagnose)
             : (true, UiText.Pick("后端已停止，正在自动重启。", "後端已停止，正在自動重新啟動。"));
@@ -232,8 +257,16 @@ internal static class PackagedHost
         _ => UiText.Pick("后端未能启动。", "後端未能啟動。") + Diagnose
     };
 
-    private static string Diagnose => UiText.Pick(@"在程序文件夹运行 components\core\launch-backend.cmd -Wait 可查看具体原因。",
-        @"在程式資料夾執行 components\core\launch-backend.cmd -Wait 可查看具體原因。");
+    private static string Diagnose => UiText.Pick("可在诊断页导出启动记录。", "可在診斷頁匯出啟動記錄。");
+
+    private static void Remember(HostLaunchRecord record)
+    {
+        lock (launchGate)
+        {
+            launches.Add(record);
+            if (launches.Count > 8) launches.RemoveAt(0);
+        }
+    }
 
     /// <summary>
     /// 端口冲突说明里的端口：与宿主相同，取 MABITOOL_API_PORT，未设置时为宿主的默认端口 19998。

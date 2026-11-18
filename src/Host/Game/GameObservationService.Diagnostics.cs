@@ -104,7 +104,10 @@ public sealed partial class GameObservationService
             value.Reassembly.Resets.Count <= ObservationCaptureCounters.ResetCauses.Count &&
             value.Reassembly.Resets.Keys.All(ObservationCaptureCounters.ResetCauses.Contains) &&
             value.Frames.Rejected.Keys.All(ObservationCaptureCounters.RejectionBranches.Contains) &&
-            value.Frames.Types.Count <= ObservationCaptureCounters.MaximumFrameTypes && value.Frames.Types.Keys.All(Code);
+            value.Frames.Types.Count <= ObservationCaptureCounters.MaximumFrameTypes && value.Frames.Types.Keys.All(Code) &&
+            (value.Devices is null || value.Devices.Count <= ObservationCaptureCounters.MaximumDevices && value.Devices.All(device => device is not null &&
+                WorkerProtocol.IsId(device.ChannelId) && ObservationCaptureCounters.DeviceKinds.Contains(device.Kind) && device.LinkType >= -1 &&
+                (device.Issue is null || DiagnosticSanitizer.IsProbeValue(device.Issue))) && value.Devices.Count(device => device.Primary) <= 1);
     }
     private void AppendCaptureCounters(DiagnosticProbeReading reading)
     {

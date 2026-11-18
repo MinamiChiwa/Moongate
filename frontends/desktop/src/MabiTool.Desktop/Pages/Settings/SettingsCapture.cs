@@ -89,7 +89,14 @@ public sealed partial class SettingsPageModel
     public bool HasCapture => Capture is not null;
     public bool CaptureUnavailable => Capture is null;
     public bool CanEditCapture => HasCapture && !captureSaving;
-    public string CaptureStatus => CaptureText.Status(Capture?.Status ?? Backend.GetCaptureStatus());
+    public string CaptureStatus
+    {
+        get
+        {
+            var status = Capture?.Status ?? Backend.GetCaptureStatus();
+            return CaptureText.Status(status) + (CaptureText.Advice(status) is { } advice ? "\n" + advice : string.Empty);
+        }
+    }
     public bool CaptureRunning => Capture?.Status.Running == true;
     public bool CaptureOn => CaptureSettings?.AutomaticCapture == true;
     public bool CaptureOff => CaptureSettings is { AutomaticCapture: false };

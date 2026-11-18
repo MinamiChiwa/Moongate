@@ -229,6 +229,15 @@ public sealed class ContractTests
     public void SdkRejectsNonLocalOrCredentialBearingEndpoints(string endpoint) =>
         Assert.Throws<ArgumentException>(() => new MabiToolClient(new Uri(endpoint), _ => ValueTask.FromResult(Token)));
 
+    /// <summary>本机接口的默认处理器不走系统代理与 HTTP_PROXY，系统设置了代理时本机请求仍直达 127.0.0.1。</summary>
+    [Fact]
+    public void SdkDefaultHandlerBypassesProxies()
+    {
+        using var handler = MabiToolClient.CreateLoopbackHandler();
+        Assert.False(handler.UseProxy);
+        Assert.False(handler.AllowAutoRedirect);
+    }
+
     [Theory]
     [InlineData("../core")]
     [InlineData("core\n")]

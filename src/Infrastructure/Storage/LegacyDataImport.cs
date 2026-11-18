@@ -61,12 +61,27 @@ public sealed partial class DataRootLease
         if (marker.State != "active" || marker.AuthorityBootstrap is not null && !SamePath(marker.AuthorityBootstrap, legacyBootstrap))
             throw new StorageException("storage.legacyImportBlocked", "旧数据根不是该引导目录的活动数据根，不能自动迁入");
 
+        // 此前在这里的首次初始化在发布身份标记前中断，只留下初始化自身的内容：清掉后照常迁入。
+        if (Directory.Exists(target) && !File.Exists(Path.Combine(target, MarkerName)) && Directory.EnumerateFileSystemEntries(target).Any() &&
+            ForeignEntry(target) is null)
+        {
+            using (Lock(Path.Combine(target, "writer.lock"), "storage.writerBusy"))
+                foreach (var temporary in Directory.EnumerateFiles(target, "*.tmp")) File.Delete(temporary);
+            foreach (var entry in Directory.EnumerateFileSystemEntries(target))
+                if (Directory.Exists(entry)) Directory.Delete(entry, false); else File.Delete(entry);
+        }
         if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any())
         {
-            // 上次迁入在发布数据目录之后、写引导配置之前中断：核对身份后补写引导配置。
-            var resumed = File.Exists(Path.Combine(target, MarkerName)) ? Read<DataRootIdentity>(Path.Combine(target, MarkerName)) : null;
-            if (resumed is null || resumed.RootId != marker.RootId || resumed.State != "active" || !SamePath(resumed.AuthorityBootstrap, bootstrap))
-                throw new StorageException("storage.rootNotEmpty", "工具根的 data 目录已有其他内容，不能迁入旧数据");
+            // 上次迁入在发布数据目录之后、写引导配置之前中断：核对身份后补写引导配置（其间程序文件夹被搬走时改记当前位置）。
+            var markerPath = Path.Combine(target, MarkerName);
+            var resumed = File.Exists(markerPath) ? Read<DataRootIdentity>(markerPath) : null;
+            var moved = resumed is not null && UnfinishedDefaultLayout(resumed, target, bootstrap, requireNoDatabase: false);
+            if (resumed is null || resumed.RootId != marker.RootId || resumed.State != "active" || !moved && !SamePath(resumed.AuthorityBootstrap, bootstrap))
+                throw new StorageException("storage.rootNotEmpty",
+                    $"工具根的 data 目录已有其他内容（{(resumed is null ? ForeignEntry(target) ?? MarkerName : MarkerName)}），不能迁入旧数据；请把它移出后重新打开 Moongate");
+            if (moved)
+                using (Lock(Path.Combine(target, "writer.lock"), "storage.writerBusy"))
+                    Publish(markerPath, resumed! with { Version = 2, AuthorityBootstrap = bootstrap }, overwrite: true);
             var existing = UpdatePaths.EnumerateFiles(target, CancellationToken.None);
             return Complete(bootstrap, legacyBootstrap, source, target, marker.RootId, existing.Count, existing.Sum(file => new FileInfo(file.Full).Length));
         }

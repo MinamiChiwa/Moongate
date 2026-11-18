@@ -106,6 +106,7 @@ public sealed class ColorRunOperationsTests
     [InlineData("unavailable", "process_access", false, OperationState.Failed, "permission.missing")]
     [InlineData("unavailable", "gameBuild.incompatible", false, OperationState.Failed, "gameBuild.incompatible")]
     [InlineData("unavailable", "coordinate_mapping", false, OperationState.Failed, "operation.executionFailed")]
+    [InlineData("unavailable", "unity_engine", false, OperationState.Failed, "gameBuild.incompatible")]
     [InlineData("not_started", null, false, OperationState.Failed, "operation.executionFailed")]
     [InlineData("no_active_palette_timeout", null, false, OperationState.Failed, "operation.executionFailed")]
     [InlineData("insufficient_time", null, true, OperationState.Succeeded, null)]
@@ -126,6 +127,11 @@ public sealed class ColorRunOperationsTests
         const string waiting = "寻色已就绪，请进入染色界面；工具正在等待活动色板。F9 可停止。";
         run = ColorRunOperations.ProjectProgress(run, "native_progress", Data(new { stage = "waiting", message = waiting }), 50, 400_000, 1000, at);
         Assert.Equal(("waiting", waiting), (run.Progress!.Stage, run.Progress.Message));
+        Assert.Null(run.Progress.Reason);
+        // 等待色卡核验时引擎给出未通过的原因码，下一条阶段事件没有原因时清空。
+        var checking = ColorRunOperations.ProjectProgress(run, "native_progress", Data(new { stage = "native_validate", wait_reason = "ocr_timeout.2" }), 50, 400_000, 1200, at);
+        Assert.Equal("ocr_timeout.2", checking.Progress!.Reason);
+        Assert.Null(ColorRunOperations.ProjectProgress(checking, "native_progress", Data(new { stage = "native_validate" }), 50, 400_000, 1300, at).Progress!.Reason);
         run = ColorRunOperations.ProjectProgress(run, "native_colors", Data(new { colors = new[] { "#112233", null } }), 50, 400_000, 1500, at);
         Assert.Equal(waiting, run.Progress!.Message);
         Assert.Equal(new Dictionary<string, string?> { ["region-0"] = "#112233", ["region-1"] = null }, run.Progress.Reading!.HexByRegion);

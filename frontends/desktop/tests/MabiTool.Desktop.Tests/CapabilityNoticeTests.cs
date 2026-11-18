@@ -147,6 +147,11 @@ public sealed class CapabilityNoticeTests
         var body = service[service.IndexOf("def unavailable_reason", StringComparison.Ordinal)..];
         body = body[..body.IndexOf("\ndef ", 1, StringComparison.Ordinal)];
         var unavailable = System.Text.RegularExpressions.Regex.Matches(body, @"return '([a-z_]+)'").Select(match => match.Groups[1].Value).ToList();
+        // 异常类自带的原因码（引擎更新、渲染尺寸、输入辅助、显示缩放等）同样作为细分原因到达界面。
+        foreach (var file in Directory.EnumerateFiles(engine, "*.py", SearchOption.AllDirectories))
+            foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(file),
+                         @"\bcapability_reason\s*=\s*'([A-Za-z_.]+)'"))
+                unavailable.Add(match.Groups[1].Value);
         return (stages.ToList(), unavailable);
     }
 

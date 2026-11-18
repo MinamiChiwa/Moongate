@@ -142,7 +142,7 @@ public sealed class DyeingTests
     }
 
     [AvaloniaFact]
-    public void RejectedDraftKeepsTheInputAndShowsTheCode()
+    public void RejectedDraftKeepsTheInputAndShowsTheReason()
     {
         var backend = new SampleBackend { ColorDraftReject = "request.invalid" };
         var (window, model) = Open(backend);
@@ -150,7 +150,9 @@ public sealed class DyeingTests
         {
             model.Cards[1].TargetText = "#00FF00";
             Pump(window, ColorPageModel.SaveDelay.Milliseconds + 200);
-            Assert.Contains("request.invalid", model.StatusText);
+            // 状态行写中文原因，不显示原码。
+            Assert.Equal("请求未完成：请求内容无效", model.StatusText);
+            Assert.DoesNotContain("request.invalid", model.StatusText);
             // 后端状态刷新不覆盖被拒绝后保留的输入。
             backend.RaiseChanged();
             LayoutProbe.Settle();
@@ -422,6 +424,10 @@ public sealed class DyeingTests
     {
         var backend = new SampleBackend();
         var (window, model) = Open(backend);
+        // 窗口高度足以把整个浮层（约 500）放在色块下方；860 高时下方放不下，浮层按定位规则夹在容器内，不是本用例要验的情形。
+        // 主窗口打开时按设计尺寸收缩（WindowFit），所以在显示之后再加高。
+        window.Height = 960;
+        LayoutProbe.Settle();
         try
         {
             var panel = Named<Border>(window, "PickerPanel");
@@ -435,7 +441,9 @@ public sealed class DyeingTests
             // 同一锚点连续打开三次位置相同；三张卡并排时浮层都贴在各自色块下方、同一高度。
             var first = OpenAt(0);
             var swatch = window.GetVisualDescendants().OfType<Button>().First(button => button.Name == "TargetSwatch" && button.DataContext == model.Cards[0]);
-            var anchor = swatch.TranslatePoint(default, Named<Panel>(window, "Root"))!.Value;
+            // 窗口里还有别的控件名为 Root（如 DPS 检测页的层），按染色页自己的名称范围查找。
+            var root = Page<ColorPage>(window).FindControl<Panel>("Root") ?? throw new InvalidOperationException("染色页缺少 Root");
+            var anchor = swatch.TranslatePoint(default, root)!.Value;
             Assert.Equal(anchor.Y + swatch.Bounds.Height + AnchoredLayer.Gap, first.Y);
             model.ClosePickerCommand.Execute(null);
             var third = OpenAt(2);
@@ -767,6 +775,17 @@ public sealed class DyeingTests
     }
 
     /// <summary>运行栏状态：引擎发出的阶段码都有中文名，等待与重试给出指引，各种结束情形给出结论、原因与下一步。</summary>
+    /// <summary>寻色期间只排除与游戏客户区相交的窗口：跨显示器、负坐标、部分相交算相交，相邻或分离不算。</summary>
+    [Fact]
+    public void OnlyWindowsCoveringTheGameClientAreExcludedFromCapture()
+    {
+        var game = new Avalonia.PixelRect(-1920, 200, 1600, 900); // 主屏左侧副屏上的游戏
+        Assert.True(CaptureExclusion.Overlaps(new(-400, 1000, 800, 600), game));   // 跨两块显示器、部分相交
+        Assert.True(CaptureExclusion.Overlaps(new(-2000, 100, 300, 200), game));   // 负坐标、盖住左上角
+        Assert.False(CaptureExclusion.Overlaps(new(-320, 200, 800, 600), game));   // 紧挨右边缘
+        Assert.False(CaptureExclusion.Overlaps(new(0, 0, 1920, 1080), game));      // 主屏上的主窗口
+    }
+
     [Fact]
     public void RunStatusNamesEveryStageAndExplainsEachEnding()
     {
@@ -812,6 +831,26 @@ public sealed class DyeingTests
         Assert.Equal("以相同权限运行 Moongate", denied.Detail);
         Assert.Contains("以管理员身份运行", denied.Tip);
         Assert.EndsWith("停在：核对游戏版本", denied.Tip);
+
+        // 精准寻色的跨机原因：结论、做法与涉及的区域，不出现原因码。
+        ColorRunStatus Ended(string phase, string stop, string detail) => ColorRunText.Describe(Run(phase) with
+        {
+            StopReason = stop, Result = new ColorRunResult("run", 0, "stopped", stop, null, null, null) { StopDetail = detail }
+        });
+        var mismatch = Ended("failed", "initial_visual_timeout", "hex_mismatch.2");
+        Assert.Equal(("色码核对不一致", "关闭画面滤镜后重试"), (mismatch.Title, mismatch.Detail));
+        Assert.Contains("区域 2", mismatch.Tip);
+        Assert.Equal("显示缩放导致画面尺寸不一致", Ended("failed", "observation_failed", "display_scale").Title);
+        var engineUpdated = Ended("failed", "unavailable", "unity_engine");
+        Assert.Equal(("游戏引擎已更新", "可改用截图寻色"), (engineUpdated.Title, engineUpdated.Detail));
+        Assert.Contains("请改为窗口化或把分辨率设为与显示器一致", Ended("failed", "unavailable", "render_scale").Tip);
+        Assert.Equal("文字识别读不到路径", Ended("failed", "unavailable", "ocr.pathUnreadable").Title);
+        Assert.Equal("缺少 Windows 媒体功能包", ColorRunText.Describe(Run("failed") with { StopReason = "color.mediaFeaturesMissing" }).Title);
+        var covered = ColorRunText.Describe(Run("native_validate") with { Progress = Stage("native_validate") with { Reason = "occluded" } });
+        Assert.Equal("移开遮挡窗口后重试", covered.Detail);
+        Assert.Contains("色卡被其他窗口遮挡", covered.Tip);
+        foreach (var status in new[] { mismatch, engineUpdated, covered })
+            Assert.DoesNotMatch("[A-Za-z]{3,}_[a-z]", status.Title + status.Detail + status.Tip);
 
         var palette = ColorRunText.Describe(Run("failed") with
         {
@@ -962,7 +1001,9 @@ public sealed class DyeingTests
         Assert.Equal(("已取消", (bool?)null), (cancelled.Result, cancelled.Accepted));
         Assert.All(cancelled.Regions, region => Assert.Null(region.MeasuredHex));
         Assert.Equal("未开始", cancelled.Regions[0].Mark.Text);
-        Assert.Equal("未知状态（expired）", ColorHistoryMapper.State(new OpenEnum<OperationState>("expired")));
+        // 未登记的状态只显示中文概括，原码进诊断页的待补清单。
+        Assert.Equal("未知状态", ColorHistoryMapper.State(new OpenEnum<OperationState>("expired")));
+        Assert.Contains("state:expired", CodeText.Unmapped);
     }
 
     [AvaloniaFact]

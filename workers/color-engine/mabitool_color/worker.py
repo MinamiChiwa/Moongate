@@ -10,6 +10,21 @@ import time
 from . import protocol as wire
 
 
+def opencv_unavailable():
+    """启动时导入 OpenCV；失败时返回原因码，Windows N/KN 缺媒体组件单独区分。"""
+    try:
+        import cv2  # noqa: F401
+        return None
+    except (ImportError, OSError):
+        if os.name == 'nt':
+            import ctypes
+            try:
+                ctypes.WinDLL('mfplat.dll')
+            except OSError:
+                return 'color.mediaFeaturesMissing'
+        return 'component.missing'
+
+
 class Worker:
     def __init__(self, stream, token, asset_root, *, heartbeat_timeout=5.):
         self.stream, self.token, self.asset_root = stream, token, asset_root
@@ -25,6 +40,9 @@ class Worker:
         self.port_pending = None
         self.current_context = None
         self.command_sequence = 0
+        self.startup_failure = None
+        self.dependencies_checked = threading.Event()
+        self.dependencies_started = False
 
     def command(self, frame):
         with self.lock:
@@ -117,6 +135,12 @@ class Worker:
             method = args['method']
             if method not in ('color.evaluate', 'color.screenshot', 'color.native', 'color.palette'):
                 raise wire.ProtocolError('worker.methodUnavailable')
+            self.probe_dependencies()
+            while not self.dependencies_checked.wait(.05):
+                if cancel.is_set() or self.stopped.is_set(): raise InterruptedError()
+            if self.startup_failure is not None:
+                # 握手时已确定计算依赖不可用：每个请求都以同一原因结束，不在运行中途崩溃。
+                raise wire.ProtocolError(self.startup_failure)
             if method == 'color.palette':
                 # 目标色集合只做纯计算，不创建运行上下文，也不请求游戏端口。
                 from .palette_render import render
@@ -194,6 +218,20 @@ class Worker:
             with self.lock:
                 if self.current_context is context: self.current_context = None
 
+    def probe_dependencies(self, *, background=False):
+        """导入一次计算依赖；后台启动或在首个请求里同步执行，只执行一次。"""
+        with self.lock:
+            if self.dependencies_started: return
+            self.dependencies_started = True
+        if background:
+            threading.Thread(target=self._probe_dependencies, daemon=True).start()
+        else:
+            self._probe_dependencies()
+
+    def _probe_dependencies(self):
+        try: self.startup_failure = opencv_unavailable()
+        finally: self.dependencies_checked.set()
+
     def run(self):
         threading.Thread(target=self.write_loop, daemon=True).start()
         threading.Thread(target=self.watch_loop, daemon=True).start()
@@ -212,6 +250,8 @@ class Worker:
                         raise wire.ProtocolError('worker.handshakeInvalid')
                     ready = True
                     self.last_contact = time.monotonic()
+                    # 握手后立即在后台导入计算依赖，不拖慢握手；请求等它结束再判定。
+                    self.probe_dependencies(background=True)
                     continue
                 if kind == 'ping':
                     if frame['payload']: raise wire.ProtocolError('worker.frameInvalid')

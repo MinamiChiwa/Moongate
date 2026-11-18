@@ -20,8 +20,28 @@ class UnityLayout:
     mouse_getter_rva:int=0x185310
     screen_global_rva:int=0x1b23390
     viewport_offset:int=0x120
+    # 只读诊断用的鼠标缓存；静态定位的布局没有这一项。
+    mouse_cache_rva:int|None=0x1ae5628
+    located:bool=False
 
 UNITY_LAYOUT=UnityLayout('unity-2021.3.51p3-x64',UNITY_BUILD)
+# 本进程按文件静态特征定位、与登记布局同一引擎版本的 UnityPlayer；只在内存里，不从文件或缓存加载。
+_LOCATED_UNITY={}
+
+
+def register_located_unity(layout):
+    if not layout.located:raise ValueError('Only located Unity layouts are registered at run time')
+    _LOCATED_UNITY[layout.sha256]=layout
+    return layout
+
+
+def unity_layout_for(sha256):
+    """登记或本进程已定位的 UnityPlayer 布局；未知文件返回 None。"""
+    return UNITY_LAYOUT if sha256==UNITY_LAYOUT.sha256 else _LOCATED_UNITY.get(sha256)
+
+
+def supported_unityplayer(sha256):
+    return unity_layout_for(sha256) is not None
 
 @dataclass(frozen=True)
 class BuildAdapter:

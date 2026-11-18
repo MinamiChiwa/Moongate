@@ -58,6 +58,16 @@ public sealed partial class GameObservationService(GameControlContext controls, 
     private Observation<GameObservationValue>? latest;
     public event Action? Changed;
 
+    /// <summary>
+    /// 捕获从启动到就绪的期限：含 Worker 启动握手（至多 60 秒）、客户端文件核对与布局读取（整读约 370 MiB，
+    /// 机械硬盘或杀毒软件扫描下可达数十秒）；超过才报 <c>observation.readyTimeout</c>。
+    /// </summary>
+    internal static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(120);
+    /// <summary>手动列出网卡的期限：另起短时 Worker（启动至多 60 秒）加枚举。</summary>
+    internal static readonly TimeSpan ChannelListTimeout = TimeSpan.FromSeconds(90);
+    /// <summary>未登记构建的核对期限（读取并解析客户端文件）。</summary>
+    internal static readonly TimeSpan BuildVerificationTimeout = TimeSpan.FromSeconds(120);
+
     public static Func<WorkerProcessOptions?> FromEnvironment(PathService paths)
     {
         if (!OperatingSystem.IsWindows()) return () => null;
@@ -101,10 +111,10 @@ public sealed partial class GameObservationService(GameControlContext controls, 
         await lifecycle.WaitAsync(ct);
         try
         {
-            // 捕获运行期间也可枚举：另起短时 Worker，至多 30 秒，不影响常驻捕获。
+            // 捕获运行期间也可枚举：另起短时 Worker，至多 ChannelListTimeout，不影响常驻捕获。
             var configuration = Configuration();
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct, shutdown.Token);
-            deadline.CancelAfter(TimeSpan.FromSeconds(30));
+            deadline.CancelAfter(ChannelListTimeout);
             await using var session = await WorkerSession.StartAsync(configuration, _ => { }, deadline.Token);
             var channels = await QueryChannelsAsync(session, controls.Bindings.Recent?.Session, deadline.Token);
             Authorize(owner);
@@ -131,7 +141,8 @@ public sealed partial class GameObservationService(GameControlContext controls, 
         if (channels.Length > 128 || channels.Any(value => value is null || !WorkerProtocol.IsId(value.Id) ||
             value.Description is null or { Length: > 512 } || value.Addresses is null || value.Addresses.Count > 32 ||
             value.GameConnections is < 0 or > 32 ||
-            value.Addresses.Any(address => !IPAddress.TryParse(address, out var parsed) || parsed.AddressFamily != AddressFamily.InterNetwork)) ||
+            value.Addresses.Any(address => !IPAddress.TryParse(address, out var parsed) ||
+                parsed.AddressFamily is not (AddressFamily.InterNetwork or AddressFamily.InterNetworkV6))) ||
             channels.Select(value => value.Id).Distinct(StringComparer.Ordinal).Count() != channels.Length)
             throw new OperationException("observation.captureFailed", "观察组件通道格式无效");
         return channels;
@@ -176,7 +187,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
             {
                 if (!recognized) throw new OperationException("gameBuild.incompatible", "当前观察需要可识别的台服客户端");
                 using var verifying = CancellationTokenSource.CreateLinkedTokenSource(ct, shutdown.Token);
-                verifying.CancelAfter(TimeSpan.FromSeconds(60));
+                verifying.CancelAfter(BuildVerificationTimeout);
                 if (await Builds.EnsureAsync(binding, verifying.Token) is not { CaptureUsable: true })
                     throw new OperationException("gameBuild.incompatible", "无法读取或核对当前游戏版本");
             }
@@ -352,6 +363,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
             lock (gate)
             {
                 worker = null; workerPid = null; call = null; captureId = null; game = null; channelId = null; profile = null; resident = false; autoChoice = null;
+                CaptureCleared();
                 state = stoppedReason is null || !fault ? "stopped" : "faulted"; reason = stoppedReason; revision++;
                 if (stoppedReason is not null && fault) RecordFault(stoppedReason, stop: true);
                 if (old is not null && OperatingSystem.IsWindows()) RecordWorkerEnd(priorFault ?? stoppedReason, old.ExitCode, old.TerminatedByHost);
@@ -392,13 +404,14 @@ public sealed partial class GameObservationService(GameControlContext controls, 
                     { latest = latest with { Quality = ObservationQuality.Stale }; changed = true; }
                     failure = worker is null ? null : state == "faulted" ? reason ?? "observation.captureFailed" :
                         !SameGameSession(controls.Bindings.Current?.Session, game) ? "input.bindingChanged" :
-                        state == "starting" && clock.GetElapsedTime(startingAt) >= TimeSpan.FromSeconds(30) ? "observation.readyTimeout" : null;
+                        state == "starting" && clock.GetElapsedTime(startingAt) >= ReadyTimeout ? "observation.readyTimeout" : null;
                 }
                 await ReleaseUnauthorizedCombatAsync();
                 await ReleaseUnauthorizedInventoryAsync();
                 if (worker is not null && (failure is not null || TotalDemands == 0 && !resident)) await StopCoreAsync(failure);
                 else if (changed) { await ConfigureInterestsAsync(stoppingToken); ReleaseIdleActivity(); Notify(); }
                 await AutomateAsync(stoppingToken);
+                await SuperviseCaptureAsync();
             }
             finally { lifecycle.Release(); }
         }

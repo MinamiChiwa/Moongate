@@ -66,7 +66,8 @@ public sealed record ColorRunStartRequest(string GameSessionId, UInt64String Exp
 public sealed record ColorInteractionReceipt(bool Accepted, ColorInteractionState Interaction);
 /// <summary>
 /// 引擎的一局结果。<see cref="StopReason"/> 是引擎原停止原因（如 unavailable、interrupted、palette_ended、target_observed）；
-/// <see cref="StopDetail"/> 是它的细分原因（精准准备失败的 unavailable_reason 或中断的 interruption_reason）；
+/// <see cref="StopDetail"/> 是它的细分原因（精准准备失败的 unavailable_reason、中断的 interruption_reason，
+/// 或截图核验与观察失败的 stop_detail，如 occluded、ocr_timeout、hex_mismatch.2、display_scale）；
 /// <see cref="FailedStage"/> 是精准准备停在的步骤（ocr_assets、game_build、window_context、screenshot_layout、input_backend、process_access）；
 /// <see cref="BestCurrent"/> 为假表示当前颜色没有回到此前保留的较好结果。
 /// </summary>
@@ -86,7 +87,7 @@ public sealed record ColorRunReading(IReadOnlyDictionary<string, string?> HexByR
 /// 原引擎当前阶段；单调时间均为 hostClockEpoch 标识的宿主时钟毫秒。
 /// <see cref="Message"/> 是引擎给出的本阶段说明原文；<see cref="Status"/> 是阶段内的状态：
 /// 细化的 trial、restoring、recovering、retained，或重试的 retry-waiting、retry-zooming、retry-searching、retry-rejected；
-/// <see cref="Reason"/> 是重试被拒绝或不可用的原因码；<see cref="Reading"/> 是引擎对当前画面最新一次读到的游戏色码（不带读数的阶段事件保留它，重试与选用候选后清空），<see cref="Retained"/> 是细化时保留的配色。
+/// <see cref="Reason"/> 是重试被拒绝或不可用的原因码，或精准寻色等待色卡核验时未通过的原因码；<see cref="Reading"/> 是引擎对当前画面最新一次读到的游戏色码（不带读数的阶段事件保留它，重试与选用候选后清空），<see cref="Retained"/> 是细化时保留的配色。
 /// </summary>
 public sealed record ColorRunProgress(string? Stage, int? Current, int? Total, double StageStartedMonotonicMs,
     DateTimeOffset StageStartedAt, double? DeadlineMonotonicMs, double UpdatedMonotonicMs, DateTimeOffset UpdatedAt)

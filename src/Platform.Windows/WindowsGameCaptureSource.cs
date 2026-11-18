@@ -7,7 +7,7 @@ namespace MabiTool.Platform.Windows;
 
 /// <summary>
 /// 截取绑定游戏窗口的客户区（与原工具 Color Studio <c>Game.capture</c> 相同：按屏幕区域截取，所见即所得）。
-/// 截屏在每显示器 DPI 感知 v2 上下文按物理像素进行，绑定的客户区同样是物理像素（<see cref="WindowsDpiAwareness"/>），
+/// 截屏在每显示器 DPI 感知 v2 上下文按物理像素进行，绑定的客户区同样是物理像素（<see cref="WindowsClientGeometry"/>），
 /// 画面逐像素对应游戏实际画面与手势坐标；客户区尺寸与绑定不一致时窗口已改变，按绑定变化结束本次截图。
 /// </summary>
 [SupportedOSPlatform("windows")]
@@ -59,13 +59,9 @@ public sealed class WindowsGameCaptureSource : IGameCaptureSource
         }
     }
 
-    private static PhysicalWindowRect ClientArea(nint window)
-    {
-        if (!GetClientRect(window, out var rect)) throw new GameInputException("input.bindingChanged");
-        var origin = new Point();
-        if (!ClientToScreen(window, ref origin)) throw new GameInputException("input.bindingChanged");
-        return new(origin.X, origin.Y, rect.Right - rect.Left, rect.Bottom - rect.Top);
-    }
+    // 与绑定同一口径：物理像素，游戏窗口被系统 DPI 虚拟化时同样成立（见 WindowsClientGeometry）。
+    private static PhysicalWindowRect ClientArea(nint window) =>
+        WindowsClientGeometry.Read(window)?.Bounds ?? throw new GameInputException("input.bindingChanged");
 
     private static byte[] ToRgb(byte[] bgra, int width, int height)
     {
@@ -75,8 +71,6 @@ public sealed class WindowsGameCaptureSource : IGameCaptureSource
         return rgb;
     }
 
-    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
-    [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)]
     private struct BitmapInfo
     {
@@ -87,8 +81,6 @@ public sealed class WindowsGameCaptureSource : IGameCaptureSource
     [DllImport("user32.dll")] private static extern nint SetThreadDpiAwarenessContext(nint context);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindow(nint window);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsIconic(nint window);
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetClientRect(nint window, out Rect rect);
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool ClientToScreen(nint window, ref Point point);
     [DllImport("user32.dll")] private static extern nint GetDC(nint window);
     [DllImport("user32.dll")] private static extern int ReleaseDC(nint window, nint dc);
     [DllImport("gdi32.dll")] private static extern nint CreateCompatibleDC(nint dc);

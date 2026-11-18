@@ -140,9 +140,20 @@ public sealed class OverlayWindow : Window
         if (handle == IntPtr.Zero) return;
         var style = GetWindowLongPtr(handle, ExtendedStyle).ToInt64() | Layered | NoActivate | ToolWindow;
         SetWindowLongPtr(handle, ExtendedStyle, new IntPtr(style));
-        SetWindowDisplayAffinity(handle, store.HideFromCapture ? 0x11u : 0u);
+        RestoreCaptureSetting();
         UpdateRegions();
     }
+
+    /// <summary>按版面的“录屏时隐藏”恢复本窗口的截图设置（寻色结束撤销临时排除时调用）。</summary>
+    internal void RestoreCaptureSetting()
+    {
+        // WDA_EXCLUDEFROMCAPTURE 从 Windows 10 2004（19041）起才有；更早的系统上“录屏时隐藏”停用，不调用。
+        var handle = NativeHandle;
+        if (handle != IntPtr.Zero && CaptureExclusionSupported) SetWindowDisplayAffinity(handle, store.HideFromCapture ? 0x11u : 0u);
+    }
+
+    /// <summary>系统是否支持把窗口排除出屏幕截图（录屏时隐藏、寻色期间排除自身窗口共用这一门槛）。</summary>
+    public static bool CaptureExclusionSupported => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041);
 
     private const int ExtendedStyle = -20, Layered = 0x80000, Transparent = 0x20, NoActivate = 0x08000000, ToolWindow = 0x80;
     // 输入优先级：拖动时连续的指针消息与重绘不会把轮询挤到后面。

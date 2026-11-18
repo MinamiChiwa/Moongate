@@ -105,10 +105,13 @@ public sealed partial class LiveBackend
 
     private async Task RenewColorPresenceAsync(string runId, CancellationToken token)
     {
+        // 续约循环与运行同生命周期：期间盖在游戏客户区上的前端窗口不进入截图，退出时恢复原设置。
+        using var exclusion = CaptureExclusion.Begin(GetGameWindowBounds);
         while (!token.IsCancellationRequested)
         {
             lock (gate)
                 if (colorRunId != runId || colorRun is { } run && run.Id == runId && !ColorRunText.IsActive(run)) return;
+            exclusion.Refresh();
             if (client is { } api)
                 try
                 {

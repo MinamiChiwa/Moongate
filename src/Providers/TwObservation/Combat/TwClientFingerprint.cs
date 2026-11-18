@@ -125,6 +125,37 @@ public static class TwClientFingerprint
         { return null; }
     }
 
+    /// <summary>
+    /// 主程序路径经联接、符号链接或挂载点解析后的最终路径（迁移到其他盘、再用联接挂回原处的安装）。解析结果不含重解析点，
+    /// 之后的文件戳与哈希仍按 <see cref="ReadFileStamps"/> 拒绝链接，解析与核对之间路径被换成链接时核对失败。
+    /// 卷没有盘符时返回 <c>\\?\Volume{…}\</c> 形式。文件不存在或无法打开时为空。
+    /// </summary>
+    public static string? ResolveFinalPath(string imagePath)
+    {
+        if (!OperatingSystem.IsWindows() || !Path.IsPathFullyQualified(imagePath)) return null;
+        try
+        {
+            using var handle = File.OpenHandle(imagePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            foreach (var kind in new[] { 0u, 1u })
+            {
+                var buffer = new char[32768];
+                var length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Length, kind);
+                if (length == 0 || length >= buffer.Length) continue;
+                var path = new string(buffer, 0, (int)length);
+                // 盘符形式去掉 \\?\ 前缀（UNC 为 \\?\UNC\服务器\共享）；卷 GUID 形式保留前缀才是可用路径。
+                if (kind == 0 && path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) return @"\\" + path[8..];
+                if (kind == 0 && path.StartsWith(@"\\?\", StringComparison.Ordinal)) return path[4..];
+                return path;
+            }
+            return null;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or System.Security.SecurityException)
+        { return null; }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "GetFinalPathNameByHandleW", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern uint GetFinalPathNameByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle file, [System.Runtime.InteropServices.Out] char[] path, uint length, uint flags);
+
     private static void RejectLinks(string path)
     {
         for (FileSystemInfo? current = new FileInfo(path); current is not null; current = current is FileInfo file ? file.Directory : ((DirectoryInfo)current).Parent)

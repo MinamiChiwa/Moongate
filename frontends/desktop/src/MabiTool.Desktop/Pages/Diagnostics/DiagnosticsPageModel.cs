@@ -62,6 +62,7 @@ public sealed class DiagnosticsPageModel : ObservableObject, IDisposable, IPageL
         Capture = new(backend, clock);
         Export = new(backend, Capture);
         Interface = new();
+        Startup = new();
         RefreshCommand = new RelayCommand(_ => _ = RefreshAllAsync());
         backend.Changed += OnBackendChanged;
         UiText.LanguageChanged += OnLanguageChanged;
@@ -73,6 +74,7 @@ public sealed class DiagnosticsPageModel : ObservableObject, IDisposable, IPageL
     public DiagnosticsCaptureSection Capture { get; }
     public DiagnosticsExportSection Export { get; }
     public DiagnosticsInterfaceSection Interface { get; }
+    public DiagnosticsStartupSection Startup { get; }
     public ICommand RefreshCommand { get; }
     public string InterfaceTitle => UiText.Pick("界面诊断", "介面診斷");
     public string UnmappedTitle => UiText.Pick("界面上还没有中文文案的标识（类别:原文）", "介面上還沒有中文文案的標識（類別:原文）");

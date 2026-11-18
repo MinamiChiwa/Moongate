@@ -21,14 +21,15 @@ public sealed partial class LiveBackend
     private CombatAutoObservationState? autoObservation;
 
     /// <summary>常驻自动观测的状态说明；观测进行中为空。</summary>
-    internal static MabiTool.Desktop.Pages.Combat.AutoObservationView? AutoView(CombatAutoObservationState? value, CombatWorkspace? workspace)
+    /// <param name="waiting">抓包运行中没有数据时的统一提示（<see cref="CaptureText.Waiting"/>）；为空时用默认的等待识别角色说明。</param>
+    internal static MabiTool.Desktop.Pages.Combat.AutoObservationView? AutoView(CombatAutoObservationState? value, CombatWorkspace? workspace, string? waiting = null)
     {
         if (value is null) return null;
         if (workspace?.Observation.State == "observing" && value.State is "observing" or "waiting" && value.ObservationId == workspace.Observation.Id)
             return new(value.Enabled, string.Empty, false);
         var (text, problem) = value.State switch
         {
-            "waiting" => (Pick("等待识别角色，请切换一次地图", "等待識別角色，請切換一次地圖"), false),
+            "waiting" => (waiting ?? Pick("等待识别角色，请切换一次地图", "等待識別角色，請切換一次地圖"), false),
             "observing" => (string.Empty, false),
             "failed" => (Pick("自动观测未开始：", "自動觀測未開始：") + Localization.CodeText.Reason(value.Reason), true),
             _ => value.Reason switch
@@ -43,7 +44,7 @@ public sealed partial class LiveBackend
     }
 
     /// <summary>开始观测的结果：等待中（未结束、观测尚未进行）或失败（Operation 以失败、中断结束）；观测已开始时为空。</summary>
-    internal static MabiTool.Desktop.Pages.Combat.ObservationStartView? StartView(OperationSnapshot? operation, CombatWorkspace? workspace)
+    internal static MabiTool.Desktop.Pages.Combat.ObservationStartView? StartView(OperationSnapshot? operation, CombatWorkspace? workspace, string? waiting = null)
     {
         if (operation is null) return null;
         if (workspace?.Observation is { State: "observing" } live && live.Id == operation.Id) return null;
@@ -51,7 +52,7 @@ public sealed partial class LiveBackend
         if (state is OperationState.Failed or OperationState.Interrupted)
             return new(false, StartFailure(operation.Problem?.Code));
         if (state is OperationState.Succeeded or OperationState.Cancelled or OperationState.CancelRequested) return null;
-        return new(true, Pick("等待识别角色，请切换一次地图", "等待識別角色，請切換一次地圖"));
+        return new(true, waiting ?? Pick("等待识别角色，请切换一次地图", "等待識別角色，請切換一次地圖"));
     }
 
     /// <summary>开始观测失败的原因：常见错误码给出短句，其余原样显示。</summary>

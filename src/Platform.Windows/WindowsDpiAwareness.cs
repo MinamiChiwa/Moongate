@@ -18,13 +18,15 @@ public static class WindowsDpiAwareness
     /// <summary>声明进程为每显示器 DPI 感知 v2；进程已经处于该感知时同样返回真。</summary>
     public static bool EnablePerMonitorV2()
     {
+        // 低于 Windows 10 1703 的系统没有这组函数；包根启动器已拦截，直接启动宿主时不在这里崩溃。
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 15063)) return false;
         if (SetProcessDpiAwarenessContext(PerMonitorAwareV2)) return true;
         var current = GetThreadDpiAwarenessContext();
         return current != 0 && AreDpiAwarenessContextsEqual(current, PerMonitorAwareV2);
     }
 
     /// <summary>在当前线程进入物理像素上下文，释放时恢复原上下文；无法进入时 <see cref="Physical"/> 为假。</summary>
-    public static Scope Enter() => new(SetThreadDpiAwarenessContext(PerMonitorAwareV2));
+    public static Scope Enter() => new(OperatingSystem.IsWindowsVersionAtLeast(10, 0, 15063) ? SetThreadDpiAwarenessContext(PerMonitorAwareV2) : 0);
 
     public readonly struct Scope(nint previous) : IDisposable
     {

@@ -4,8 +4,8 @@ using MabiTool.Providers.TwObservation;
 namespace MabiTool.Observation.Worker;
 
 /// <summary>
-/// 接收连接的保留规则：连接不在进程连接表中、且宽限期内没有收到下行包时才移除。连接真正结束时下行 FIN/RST
-/// 先使解析重置，随后静默满宽限期即释放；同时打开的接收连接至多 <see cref="MaximumChannels"/> 条。
+/// 接收流的保留规则：本地端口不在进程连接表中、且宽限期内没有收到下行包时才移除。连接真正结束时下行 FIN/RST
+/// 先使解析重置，随后静默满宽限期即释放；同时保留的接收流至多 <see cref="MaximumChannels"/> 条。
 /// </summary>
 internal static class ConnectionRetention
 {
@@ -18,7 +18,7 @@ internal static class ConnectionRetention
 internal sealed record PrearmedPacket(uint Sequence, byte Flags, byte[] Payload, double CapturedMono, DateTimeOffset CapturedUtc);
 
 /// <summary>
-/// 新连接预缓冲（方案 A）。端点过滤器只收“已确认属于绑定进程的游戏服务端点”的下行包；四元组尚未被连接表确认属于绑定进程时，
+/// 新连接预缓冲（方案 A，每张设备一份）。过滤器另放行已确认游戏流远端端口发来的包；本地端口尚未被连接表确认属于绑定进程时，
 /// 包只放在这里：按四元组分队、保持到达顺序，至多 <see cref="WindowMs"/> 毫秒、合计 <see cref="MaximumBytes"/> 字节、
 /// <see cref="MaximumPackets"/> 包、<see cref="MaximumConnections"/> 个四元组；超出时丢最旧的包，不阻塞读取。
 /// 不落盘、不交给任何解析器；连接表确认属于绑定进程时 <see cref="Take"/> 按原顺序取出，确认属于其他进程或超时即丢弃。
@@ -126,7 +126,7 @@ internal sealed class PrearmBuffer(CaptureDiagnostics? diagnostics = null)
 }
 
 /// <summary>
-/// 一条接收连接的包处理：SYN 重置、TCP 入口、结束复位，与解析器之间的唯一入口。缓冲交付与逐连接句柄都经这里，
+/// 一条接收流的包处理：SYN 重置、TCP 入口、结束复位，与解析器之间的唯一入口。缓冲交付与实时接收都经这里，
 /// 时点按调用方给出的抓包时刻传入解析器。缓冲交付后记下已交付的序号终点，逐连接句柄随后收到的、完全落在其之前的
 /// 无标志数据段视为同一批数据的重复副本而跳过；部分重叠的段照常交给重组器按序号裁剪。
 /// </summary>
@@ -164,22 +164,32 @@ internal static class NativeCaptureBoundary
 {
     internal const int SnapshotBytes = 262144;
     internal const int BufferBytes = 16 * 1024 * 1024;
+    /// <summary>常驻捕获每张设备一个句柄的内核缓冲；只放行游戏端口，游戏下行峰值（单帧约 360 KB）在 10 ms 读取周期内远小于此值。</summary>
+    internal const int DeviceBufferBytes = 4 * 1024 * 1024;
     internal static bool CompletePacket(int captured, int wire) => captured is >= 0 and <= SnapshotBytes && captured == wire;
-    internal static bool MatchesDevice(CaptureDevice device, CaptureConnection connection) =>
-        device.Addresses.Contains(connection.LocalAddress) || device.IsLoopback &&
-        IPAddress.TryParse(connection.LocalAddress, out var local) && IPAddress.IsLoopback(local) &&
-        IPAddress.TryParse(connection.RemoteAddress, out var remote) && IPAddress.IsLoopback(remote);
     /// <summary>
-    /// 按网卡地址选择游戏连接；<paramref name="anyAddress"/> 为真（用户指定或检测确认的网卡）且地址无一匹配时，
-    /// 改用进程全部数据连接，过滤器仍是逐连接的下行五元组。
+    /// 远端是本机地址（回环地址，或与本机地址相同、或是本机任一网卡地址）的连接，即本机代理型加速器的形态
+    /// （实采 192.168.0.105:55331 → 192.168.0.105:50128），其包只出现在 Npcap 回环适配器上。只用于列出网卡时的诊断统计。
     /// </summary>
-    internal static HashSet<CaptureConnection> SelectConnections(IEnumerable<CaptureConnection> owned, CaptureDevice device, bool currentCombat, bool anyAddress = false)
+    internal static bool LocalProxy(CaptureConnection connection, IReadOnlySet<string>? localAddresses = null) =>
+        IPAddress.TryParse(connection.RemoteAddress, out var remote) &&
+        (IPAddress.IsLoopback(remote) || connection.RemoteAddress == connection.LocalAddress || localAddresses?.Contains(connection.RemoteAddress) == true);
+    /// <summary>诊断：连接的本机地址在哪张网卡上（远端是本机地址时记在回环适配器上）。</summary>
+    internal static bool MatchesDevice(CaptureDevice device, CaptureConnection connection, IReadOnlySet<string>? localAddresses = null) =>
+        LocalProxy(connection, localAddresses) ? device.IsLoopback : device.Addresses.Contains(connection.LocalAddress);
+    /// <summary>进程连向自己另一个套接字的自连（实采 127.0.0.1:7740 ↔ 127.0.0.1:7739）；只用于诊断统计。</summary>
+    internal static bool SelfConnection(CaptureConnection connection, IReadOnlyCollection<CaptureConnection> owned) =>
+        owned.Any(other => other.LocalPort == connection.RemotePort && other.LocalAddress == connection.RemoteAddress);
+    /// <summary>
+    /// 每张设备的 BPF：目的端口属于游戏进程本地端口集合，或源端口属于已确认游戏流的远端端口（接住连接表列出之前的新连接开头）。
+    /// 端口原语同时匹配 IPv4 与 IPv6；集合为空时不放行任何包。
+    /// </summary>
+    internal static string Filter(IEnumerable<ushort> localPorts, IEnumerable<ushort> remotePorts)
     {
-        var candidates = owned.Where(value => !currentCombat || value.RemotePort == 1111).ToArray();
-        var matched = candidates.Where(value => MatchesDevice(device, value)).Take(32).ToHashSet();
-        return matched.Count > 0 || !anyAddress ? matched : candidates.Take(32).ToHashSet();
+        var terms = localPorts.Order().Select(port => "dst port " + port).Concat(remotePorts.Order().Select(port => "src port " + port)).ToArray();
+        return terms.Length == 0 ? "tcp and dst port 0 and src port 0" : "tcp and (" + string.Join(" or ", terms) + ")";
     }
-    internal static GameTcpPacket? Read(int link, ReadOnlySpan<byte> bytes) => GamePacket.Read(link == 228 ? 101 : link, bytes);
+    internal static GameTcpPacket? Read(int link, ReadOnlySpan<byte> bytes) => GamePacket.Read(link, bytes);
     internal static void DisposeAll(IEnumerable<IDisposable> resources)
     {
         Exception? failure = null;

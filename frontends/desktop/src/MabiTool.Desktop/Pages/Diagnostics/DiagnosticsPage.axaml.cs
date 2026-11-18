@@ -23,6 +23,7 @@ public sealed partial class DiagnosticsPage : UserControl
             if (watched is null) return;
             watched.Runtime.ClipboardWriter = WriteClipboardAsync;
             watched.Export.FileSaver = SaveFileAsync;
+            watched.Startup.FileSaver = SaveFileAsync;
             watched.Capture.LiveRows.CollectionChanged += OnLiveChanged;
             watched.Export.PropertyChanged += OnExportChanged;
             if (((Avalonia.Visual)this).IsAttachedToVisualTree()) watched.StartPolling();

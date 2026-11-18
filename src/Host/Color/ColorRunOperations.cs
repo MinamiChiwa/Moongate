@@ -374,6 +374,8 @@ public sealed class ColorRunOperations(OperationStore operations, ModuleRuntime 
                 progress?.DeadlineMonotonicMs, now, at)
             {
                 Message = Text(data, "message", 512), Status = status,
+                // 等待色卡核验时引擎给出的未通过原因码（遮挡、识别超时、色码不一致等），界面据此给出做法。
+                Reason = kind == "native_progress" ? Text(data, "wait_reason", 64) : null,
                 // 不带读数的阶段事件保留上一次读数：移动与复核开始时画面还没有新的读取结果。
                 Reading = verified ? Reading(run, data, "current_colors", "current_deltas", "current_region_states") ?? progress?.Reading : progress?.Reading,
                 Retained = status is "trial" or "restoring" or "recovering" ? Reading(run, data, "retained_colors", "retained_deltas", null) : null

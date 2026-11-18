@@ -67,9 +67,36 @@ internal sealed class PortableUpdateService(PortableInstallation? installation, 
     Func<string, long>? freeSpace = null) : IUpdateCheckService, IUpdateDownloadService, IUpdateInstallService
 {
     internal static readonly TimeSpan PlanLifetime = TimeSpan.FromDays(7);
-    private static readonly TimeSpan ReplacerStartup = TimeSpan.FromSeconds(15);
-    private readonly Func<string, long> availableBytes = freeSpace ??
-        (path => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(path))!).AvailableFreeSpace);
+    /// <summary>
+    /// 等待替换器就绪的时限。新版 Moongate.exe 没有代码签名，杀毒软件首次运行前会扫描，慢机器上可达数十秒；
+    /// 超时或替换器提前退出时结束它并重启一次（扫描结果已缓存，第二次通常很快）。
+    /// </summary>
+    internal static readonly TimeSpan ReplacerStartup = TimeSpan.FromSeconds(60);
+    private const int ReplacerAttempts = 2;
+    private readonly Func<string, long> availableBytes = freeSpace ?? AvailableBytes;
+
+    /// <summary>
+    /// 工具根所在卷的可用字节：按目录查询（网络共享、挂载到文件夹的卷都按实际所在卷计算）。
+    /// 查询不到时报 <c>update.storageUnavailable</c> 并写明原因，不抛出未处理异常。
+    /// </summary>
+    internal static long AvailableBytes(string path)
+    {
+        var directory = Path.GetFullPath(path);
+        if (OperatingSystem.IsWindows())
+        {
+            if (!Directory.Exists(directory)) directory = Path.GetDirectoryName(directory) ?? directory;
+            if (GetDiskFreeSpaceEx(directory.EndsWith('\\') ? directory : directory + "\\", out var available, out _, out _)) return (long)Math.Min(available, long.MaxValue);
+            throw new UpdatePackageException("update.storageUnavailable",
+                $"无法读取“{directory}”所在磁盘的剩余空间（系统错误 {System.Runtime.InteropServices.Marshal.GetLastPInvokeError()}）");
+        }
+        try { return new DriveInfo(Path.GetPathRoot(directory)!).AvailableFreeSpace; }
+        catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException)
+        { throw new UpdatePackageException("update.storageUnavailable", "无法读取工具根所在磁盘的剩余空间：" + error.Message); }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "GetDiskFreeSpaceExW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetDiskFreeSpaceEx(string directory, out ulong available, out ulong total, out ulong free);
 
     public bool IsConfigured => installation is not null;
 
@@ -230,13 +257,10 @@ internal sealed class PortableUpdateService(PortableInstallation? installation, 
             start.ArgumentList.Add("--apply-update");
             start.ArgumentList.Add(plan.PlanId);
             start.ArgumentList.Add(current.PackageRoot);
-            replacer = Process.Start(start) ?? throw new UpdatePackageException("update.updaterUnavailable");
-            var started = Stopwatch.StartNew();
-            while (!UpdateLayout.ReplacerActive(root))
-            {
-                if (replacer.HasExited || started.Elapsed > ReplacerStartup) throw new UpdatePackageException("update.updaterUnavailable");
-                await Task.Delay(50, token).ConfigureAwait(false);
-            }
+            await StartReplacerAsync(() => replacer = Process.Start(start) ?? throw new UpdatePackageException("update.updaterUnavailable"),
+                () => UpdateLayout.ReplacerActive(root), () => replacer!.HasExited,
+                async () => { if (!replacer!.HasExited) { replacer.Kill(); await replacer.WaitForExitAsync(token).ConfigureAwait(false); } replacer.Dispose(); replacer = null; },
+                ReplacerStartup, token).ConfigureAwait(false);
         }
         catch (Exception error) when (error is UpdatePackageException or System.ComponentModel.Win32Exception or IOException or OperationCanceledException)
         {
@@ -250,6 +274,25 @@ internal sealed class PortableUpdateService(PortableInstallation? installation, 
             new { transactionId = plan.PlanId, releaseId = plan.DisplayVersion, recoverySnapshotId = backup.BackupId }, ContractJson.Options), token).ConfigureAwait(false);
         shutdown.Publish(maintenance);
         return true;
+    }
+
+    /// <summary>
+    /// 启动替换器并等它持锁就绪：每次至多 <paramref name="timeout"/>；未就绪（超时或提前退出）时结束这一次并重启一次，
+    /// 第二次仍不行才以 <c>update.updaterUnavailable</c> 放弃（事务尚未改动任何文件）。
+    /// </summary>
+    internal static async Task StartReplacerAsync(Action start, Func<bool> active, Func<bool> exited, Func<Task> abandon,
+        TimeSpan timeout, CancellationToken token, TimeSpan? poll = null)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            start();
+            var started = Stopwatch.StartNew();
+            while (!active() && !exited() && started.Elapsed <= timeout)
+                await Task.Delay(poll ?? TimeSpan.FromMilliseconds(50), token).ConfigureAwait(false);
+            if (active()) return;
+            await abandon().ConfigureAwait(false);
+            if (attempt >= ReplacerAttempts) throw new UpdatePackageException("update.updaterUnavailable");
+        }
     }
 
     public void RequestShutdown() => host.StopApplication();

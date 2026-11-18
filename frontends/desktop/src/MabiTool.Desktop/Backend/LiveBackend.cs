@@ -75,9 +75,13 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
     {
         var (current, message) = Read();
         if (!current.Connected)
-            return new(null, Pick("未连接后端", "未連接後端"), Pick("正在等待后端启动", "正在等待後端啟動"),
-                current.Problem ?? Pick("连接后显示游戏输入的占用状态。", "連接後顯示遊戲輸入的佔用狀態。"),
+        {
+            // 宿主启动失败时状态行写原因短句、说明写做法（按宿主的启动失败记录），详细原因在诊断页的启动记录里。
+            var failure = Infrastructure.DesktopFiles.Problem is null ? Infrastructure.PackagedHost.Failure : null;
+            return new(null, Pick("未连接后端", "未連接後端"), failure?.Status ?? Pick("正在等待后端启动", "正在等待後端啟動"),
+                failure?.Hint ?? current.Problem ?? Pick("连接后显示游戏输入的占用状态。", "連接後顯示遊戲輸入的佔用狀態。"),
                 EffectStage.Pending, EffectStage.Pending, EffectStage.Pending, false);
+        }
         if (current.Ownership is not { Owners.Count: > 0 } ownership)
         {
             // 没有模块持有输入时，活动胶囊可以显示扩展设置的一句状态：标明扩展名称，不填写持有者，
@@ -227,10 +231,11 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
             pending ? null : current.Range, pending ? null : current.RangeProblem, current.Measurement, current.MeasurementAt, current.EffectsAt))
             with { SelectedScope = scope, SelectedTarget = range, Pending = pending };
         // 开始观测已受理、正在等待识别角色时可取消；失败时写明原因。
-        var starting = current.Connected ? StartView(current.Starting, current.Workspace) : null;
+        var waiting = current.Connected ? CaptureText.Waiting(GetCaptureStatus()) : null;
+        var starting = current.Connected ? StartView(current.Starting, current.Workspace, waiting) : null;
         CombatAutoObservationState? auto;
         lock (gate) auto = autoObservation;
-        var autoView = current.Connected ? AutoView(auto, current.Workspace) : null;
+        var autoView = current.Connected ? AutoView(auto, current.Workspace, waiting) : null;
         data = data with { Starting = starting, Auto = autoView };
         // 自动观测开启时由后端保持观测：不需要开始，也不提供停止（停止后会自动重新开始，要暂停请关闭自动观测）。
         // 抓包未运行等原因使自动观测处于 off 时保留手动开始（模拟宿主用回放来源即是这样）。

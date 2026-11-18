@@ -29,7 +29,7 @@ public sealed class SettingsCaptureTests
         var window = LayoutProbe.Open(backend, 1280, 860, "shell.settings");
         try
         {
-            Assert.StartsWith("抓包中 · 网卡：Intel(R) Ethernet Connection (17) I219-V（自动）", Named<TextBlock>(window, "CaptureStatusText").Text);
+            Assert.StartsWith("抓包中 · 来源：物理网卡", Named<TextBlock>(window, "CaptureStatusText").Text);
             Click(window, Named<Button>(window, "CaptureOffButton"));
             LayoutProbe.Settle();
             Assert.False(Assert.Single(backend.SavedCaptureSettings).AutomaticCapture);

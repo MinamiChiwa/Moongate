@@ -210,6 +210,20 @@ public sealed partial class RoomClient : IAsyncDisposable
         }
         finally { Interlocked.CompareExchange(ref _roomRequest, null, pending); }
     }
+    /// <summary>
+    /// 房间地址是否直连而不经系统代理：<c>localhost</c>、回环、IPv4 私有网段（10/8、172.16/12、192.168/16）、链路本地，
+    /// 以及 IPv6 本地链路与唯一本地地址（fe80::/10、fc00::/7）。公网主机名与地址沿用系统代理。
+    /// </summary>
+    public static bool BypassesProxy(Uri endpoint)
+    {
+        if (endpoint.IsLoopback || string.Equals(endpoint.Host, "localhost", StringComparison.OrdinalIgnoreCase)) return true;
+        if (!System.Net.IPAddress.TryParse(endpoint.Host.Trim('[', ']'), out var address)) return false;
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+            return address.IsIPv6LinkLocal || (address.GetAddressBytes()[0] & 0xFE) == 0xFC;
+        var b = address.GetAddressBytes();
+        return b[0] == 10 || b[0] == 127 || (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254);
+    }
     public async Task ConnectAsync(string endpoint, CancellationToken cancellationToken = default)
     {
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || uri.Scheme is not ("ws" or "wss") || !string.IsNullOrEmpty(uri.UserInfo)) throw new ArgumentException("服务地址需以 ws:// 或 wss:// 开头，请复制房主提供的完整地址。", nameof(endpoint));
@@ -228,6 +242,8 @@ public sealed partial class RoomClient : IAsyncDisposable
             _restoringRoom=_session is not null;
             _hello = new(TaskCreationOptions.RunContinuationsAsynchronously);
             _connection = new(); _socket = new();
+            // 本机与局域网房间直连，不让系统代理或 HTTP_PROXY 截走；公网地址沿用系统代理。
+            if (BypassesProxy(uri)) _socket.Options.Proxy = null;
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _connection.Token);
             try
             {

@@ -102,6 +102,30 @@ public sealed class GameBindingPreparationTests
         Assert.Equal("input.bindingChanged", error.Code); Assert.Null(area.Bindings.Current);
     }
 
+    /// <summary>游戏以管理员身份运行：绑定以专门原因拒绝，不准备客户端、不报“窗口已变化”，自动绑定也不绑定它。</summary>
+    [Fact]
+    public async Task ElevatedGameIsRejectedWithItsOwnReasonBeforePreparation()
+    {
+        var area = new Area(); area.Source.Problem = "game.elevated";
+        var error = await Assert.ThrowsAsync<OperationException>(() => area.Select());
+        Assert.Equal("game.elevated", error.Code);
+        Assert.Contains("管理员", error.Message);
+        Assert.Equal(0, area.Source.PreparationCalls); Assert.Null(area.Bindings.Current);
+        Assert.False(await area.Service.AutoBindAsync(CancellationToken.None));
+        Assert.Equal(0, area.Source.PreparationCalls); Assert.Null(area.Bindings.Current);
+    }
+
+    /// <summary>Moongate 已是管理员却读不到游戏令牌：只记诊断，照常准备并绑定。</summary>
+    [Fact]
+    public async Task UnreadableIntegrityWhileElevatedDoesNotBlockBinding()
+    {
+        var area = new Area(); area.Source.Problem = "game.integrityUnreadable";
+        var pending = area.Select();
+        await area.Source.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        area.Source.Complete(area.Source.Current);
+        Assert.Equal("bound", (await pending).State);
+    }
+
     private static GameWindowObservation Change(GameWindowObservation value, string part) => part switch
     {
         "process" => value with { ProcessId = value.ProcessId + 1 },
@@ -139,6 +163,8 @@ public sealed class GameBindingPreparationTests
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource<GameWindowObservation?> prepared = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int PreparationCalls { get; private set; }
+        public string? Problem { get; set; }
+        public string? AccessProblem(GameWindowObservation selected) => Problem;
         public IReadOnlyList<SelectableGameWindow> Enumerate() => [new("测试游戏", "MabinogiMobile", Current)];
         public GameWindowObservation? Refresh(GameWindowObservation selected) => Current;
         public bool TryActivate(GameWindowObservation selected) => true;

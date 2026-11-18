@@ -14,7 +14,8 @@ public static class LocalBootstrapClient
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("本机发现握手当前支持 Windows");
         LocalDiscoverySecurity.ValidateFile(discoveryPath);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(5));
+        // 宿主刚启动、机器繁忙或杀毒软件扫描时管道握手可能较慢；只限定一次握手，不影响前端的重连节奏。
+        deadline.CancelAfter(TimeSpan.FromSeconds(15));
         await using var file = new FileStream(discoveryPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
             LocalIpcProtocol.MaximumFrameBytes, FileOptions.Asynchronous);
         if (file.Length is <= 0 or > LocalIpcProtocol.MaximumFrameBytes) throw new InvalidDataException("本机发现文件大小无效");

@@ -66,6 +66,8 @@ sealed class FixtureSource(string root, string mode) : IObservationCaptureSource
     {
         var run = Interlocked.Increment(ref runs);
         File.WriteAllText(Path.Combine(root, "capture-start-" + run), request.GameSessionId);
+        // 捕获请求指定的网卡（自动模式为 all），供宿主测试核对设置变化后的新请求。
+        File.AppendAllText(Path.Combine(root, "capture-channels"), (request.ChannelId ?? "all") + "\n");
         File.WriteAllText(Path.Combine(root, "handles"), "1");
         Process? child = null;
         try
