@@ -56,7 +56,8 @@ public static class BackendApplication
         Func<HttpMessageHandler>? updateHttpHandler = null,
         QuickTunnelFactory? roomTunnels = null, IRoomServerListenerFactory? roomListeners = null,
         Func<PathService?, WorkerProcessOptions?>? observationOptions = null, bool gameAutomation = false,
-        PortableInstallation? portableUpdate = null, System.Diagnostics.Process? ownerProcess = null, IGameCaptureSource? gameCapture = null)
+        PortableInstallation? portableUpdate = null, System.Diagnostics.Process? ownerProcess = null, IGameCaptureSource? gameCapture = null,
+        Func<IServiceProvider, GameBuildAdaptation>? buildAdaptation = null)
     {
         options.Validate();
         if (portableUpdate is not null && (storage is null || mock))
@@ -90,6 +91,10 @@ public static class BackendApplication
             server.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);
         });
         builder.Services.AddSingleton(info);
+        var windowSource = gameWindowSource ?? (!mock && OperatingSystem.IsWindows() ? new WindowsGameWindowSource() : null);
+        // 未登记构建的核对结果缓存在数据根 cache/game-access/client-builds；没有数据根时只保存在内存。
+        builder.Services.AddSingleton(sp => buildAdaptation?.Invoke(sp) ?? new GameBuildAdaptation(windowSource,
+            sp.GetService<PathService>()?.Resolve("cache", "game-access", "client-builds"), sp.GetRequiredService<DiagnosticTrace>()));
         builder.Services.AddSingleton(clock ?? TimeProvider.System);
         builder.Services.AddSingleton(sp => new DiagnosticTrace(sp.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton(sp => new OwnedInstrumentProvider(sp.GetService<IInventoryReadModel>(), info.InstanceId, mock));
@@ -106,14 +111,15 @@ public static class BackendApplication
                 ? new(color.Bindings, color.Leases, color.Input, mock)
                 : GameControlContext.Create(sp.GetRequiredService<ResourceLeaseCoordinator>(), clock ?? TimeProvider.System, mock)));
         builder.Services.AddSingleton(sp => new GameBindingService(sp.GetRequiredService<GameControlContext>(),
-            gameWindowSource ?? (!mock && OperatingSystem.IsWindows() ? new WindowsGameWindowSource() : null), info, clock ?? TimeProvider.System,
+            windowSource, info, clock ?? TimeProvider.System,
             sp.GetRequiredService<LocalAuthService>()));
         builder.Services.AddSingleton(sp =>
         {
             var configured = observationOptions?.Invoke(sp.GetService<PathService>());
             return new GameObservationService(sp.GetRequiredService<GameControlContext>(), sp.GetRequiredService<LocalAuthService>(),
                 sp.GetRequiredService<ActivityBarrier>(), info, sp.GetRequiredService<TimeProvider>(), () => configured, sp.GetRequiredService<ModuleRuntime>(),
-                sp.GetRequiredService<DiagnosticTrace>(), sp.GetRequiredService<GameCaptureSettingsStore>(), gameAutomation);
+                sp.GetRequiredService<DiagnosticTrace>(), sp.GetRequiredService<GameCaptureSettingsStore>(), gameAutomation,
+                sp.GetRequiredService<GameBuildAdaptation>());
         });
         builder.Services.AddSingleton(sp => new GameCaptureSettingsStore(sp.GetService<SqliteStore>(), sp.GetRequiredService<TimeProvider>()));
         if (gameAutomation) AddBackground(sp => new GameWindowAutoBinder(sp.GetRequiredService<GameBindingService>(),
@@ -319,7 +325,7 @@ public static class BackendApplication
         // 运行状态探针按展示顺序登记；依赖持久化宿主的组件仅在其服务存在时登记。
         builder.Services.AddSingleton<IDiagnosticProbe>(sp => new HostDiagnosticProbe(info, sp.GetRequiredService<StateEventHub>()));
         builder.Services.AddSingleton<IDiagnosticProbe>(sp => new GameBindingDiagnosticProbe(sp.GetRequiredService<GameControlContext>(),
-            sp.GetRequiredService<ProviderCapabilityRegistry>()));
+            sp.GetRequiredService<ProviderCapabilityRegistry>(), sp.GetRequiredService<GameBuildAdaptation>()));
         builder.Services.AddSingleton<IDiagnosticProbe>(sp => new GameInputDiagnosticProbe(sp.GetRequiredService<GameControlContext>()));
         builder.Services.AddSingleton<IDiagnosticProbe>(sp => new ObservationCaptureDiagnosticProbe(sp.GetRequiredService<GameObservationService>()));
         builder.Services.AddSingleton<IDiagnosticProbe>(sp => new MusicDiagnosticProbe(sp.GetRequiredService<GameObservationService>()));
@@ -338,7 +344,7 @@ public static class BackendApplication
             builder.Services.AddSingleton<IDiagnosticProbe>(sp => new DiagnosticsDiagnosticProbe(sp.GetRequiredService<DiagnosticRecorder>(),
                 sp.GetRequiredService<DiagnosticStore>()));
         AddBackground(sp => new DiagnosticLifecycleObserver(sp.GetRequiredService<DiagnosticTrace>(), sp.GetRequiredService<GameControlContext>(),
-            sp.GetRequiredService<RoomSessionManager>()));
+            sp.GetRequiredService<RoomSessionManager>(), sp.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton(sp => new DiagnosticRuntimeService(sp.GetServices<IDiagnosticProbe>(), info, sp.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton(new LocalAuthService(options, info.InstanceId, clock));
         builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);

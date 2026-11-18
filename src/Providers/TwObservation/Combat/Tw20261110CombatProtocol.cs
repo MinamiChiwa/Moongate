@@ -36,11 +36,6 @@ public static class Tw20261110CombatProtocol
         ProfileV1 => CombatProfileV1,
         _ => null
     };
-    public static async Task VerifyClientAsync(string imagePath, CancellationToken ct)
-    {
-        if (!await TwClientFingerprint.MatchesAsync(imagePath, ct).ConfigureAwait(false))
-            throw new InvalidDataException("Current TW client fingerprint does not match");
-    }
     // 线上协议号（tw-20261110 GCProtocol 枚举）。
     public const int PersonalData = 20590, AppearingCharacter = 20054, AppearingAutomaton = 20051;
     public const int HitPresentation = 20526, DamageFloater = 21196;

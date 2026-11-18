@@ -35,7 +35,7 @@ public sealed partial class GameObservationService
                         throw new OperationException("observation.channelUnavailable", "请先选择网卡并启动共享游戏观察");
                     if (game?.Id != request.GameSessionId || !SameGameSession(controls.Bindings.Current?.Session, game))
                         throw new OperationException("input.bindingChanged", "共享观察的游戏绑定已变化");
-                    if (!controls.Simulation && game.GameBuild != configured.Source.GameBuild)
+                    if (!controls.Simulation && !CombatAccepts(game, configured.Source))
                         throw new OperationException("combat.buildUnsupported", "战斗来源与当前构建不匹配");
                     if (!configured.Simulation && profile != MabiTool.Providers.TwObservation.Combat.Tw20261110CombatProtocol.CaptureProfile)
                         throw new OperationException("combat.buildUnsupported", "当前战斗兴趣需要匹配的捕获 profile");

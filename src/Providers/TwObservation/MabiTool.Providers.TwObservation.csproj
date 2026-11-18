@@ -7,6 +7,7 @@
     <EmbeddedResource Include="Resources/tw-20261110-character-prefix-schema.json" LogicalName="MabiTool.Tw20261110CharacterSchema" />
     <EmbeddedResource Include="Resources/tw-20261110-character-music-schema.json" LogicalName="MabiTool.Tw20261110CharacterMusicSchema" />
     <EmbeddedResource Include="Resources/tw-20261110-channel-music-schema.json" LogicalName="MabiTool.Tw20261110ChannelMusicSchema" />
+    <EmbeddedResource Include="Resources/tw-20261110-build-facts.json" LogicalName="MabiTool.Tw20261110BuildFacts" />
     <ProjectReference Include="../../Contracts/MabiTool.Contracts.csproj" />
   </ItemGroup>
 </Project>

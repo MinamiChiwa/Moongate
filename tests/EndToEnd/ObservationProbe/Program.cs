@@ -26,15 +26,18 @@ sealed class FixtureSource(string root, string mode) : IObservationCaptureSource
         if (mode == "missing-npcap") throw new DllNotFoundException();
         return [new(new string('1', 32), "合成捕获通道", ["127.0.0.1"])];
     }
-    /// <summary>auto 系列模式按游戏进程报告各网卡承载的连接数：auto 唯一、auto-none 无、auto-many 两张。</summary>
+    /// <summary>auto 系列模式按游戏进程报告各网卡承载的连接数：auto 唯一、auto-none 与 auto-detect 无、auto-many 两张。</summary>
     public IReadOnlyList<CaptureChannelOption> Channels(CaptureChannelQuery? query)
     {
         if (query is null || !mode.StartsWith("auto", StringComparison.Ordinal)) return Channels();
         File.WriteAllText(Path.Combine(root, "channel-query-" + Environment.ProcessId), query.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        return [new(new string('1', 32), "合成游戏网卡", ["10.0.0.2"], false, mode == "auto-none" ? 0 : 1),
+        return [new(new string('1', 32), "合成游戏网卡", ["10.0.0.2"], false, mode is "auto-none" or "auto-detect" ? 0 : 1),
             new(new string('2', 32), "合成回环", [], true, mode == "auto-many" ? 1 : 0)];
     }
-    /// <summary>detect：第一张网卡收到持续的游戏下行负载，第二张只有零星包；detect-hold：保持到取消。句柄状态写入 detect-handles。</summary>
+    /// <summary>
+    /// detect 与 auto-detect：第一张网卡收到持续的游戏下行负载，第二张只有零星包；detect-hold：保持到取消；
+    /// auto-none、auto-many：两张网卡都没有游戏下行数据，判定不出。句柄状态写入 detect-handles。
+    /// </summary>
     public async Task<ChannelDetectionProgress> DetectChannelsAsync(ChannelDetectionRequest request, Func<ChannelDetectionProgress, Task> progress, CancellationToken ct)
     {
         var detector = new ChannelTrafficDetector([(new string('1', 32), "合成游戏网卡"), (new string('2', 32), "合成回环")]);
@@ -47,8 +50,11 @@ sealed class FixtureSource(string root, string mode) : IObservationCaptureSource
             {
                 ct.ThrowIfCancellationRequested();
                 if (mode != "detect-hold" && tick >= 10) break;
-                for (var i = 0; i < 30; i++) detector.Record(0, 1200);
-                if (tick % 5 == 0) detector.Record(1, 60);
+                if (mode is not ("auto-none" or "auto-many"))
+                {
+                    for (var i = 0; i < 30; i++) detector.Record(0, 1200);
+                    if (tick % 5 == 0) detector.Record(1, 60);
+                }
                 await progress(detector.Progress(timer.Elapsed.TotalSeconds, false));
                 await Task.Delay(100, ct);
             }

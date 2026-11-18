@@ -36,7 +36,19 @@ public sealed partial class GameObservationService
         if (!automation || captureSettings is null) return null;
         var enabled = captureSettings.Read().AutomaticCapture;
         var choice = autoChoice;
-        return new(enabled, autoState, autoReason, choice?.ChannelId ?? channelId, choice?.Description, choice?.Source, nextAttemptUtc);
+        return new(enabled, autoState, autoReason, choice?.ChannelId ?? channelId, choice?.Description, choice?.Source, nextAttemptUtc,
+            BuildCheck(controls.Bindings.LastKnown?.Session));
+    }
+    /// <summary>快照里的构建核对摘要；按最近一次已刷新的绑定读取，不查询窗口或客户端文件。</summary>
+    private GameBuildCheck? BuildCheck(GameSession? binding)
+    {
+        if (controls.Simulation || !GameBuildAdaptation.Recognized(binding)) return null;
+        var verdict = Builds.Verdict(binding);
+        if (verdict is null) return new(Builds.Verifying(binding) ? "verifying" : "failed", []);
+        if (verdict.Registered) return new("registered", []);
+        var disabled = new[] { ("identity", verdict.Identity), ("music", verdict.Music), ("combat", verdict.Combat) }
+            .Where(value => !value.Item2.Enabled).Select(value => new GameBuildCapabilityCheck(value.Item1, value.Item2.Reason ?? TwBuildVerification.VerifyFailed)).ToArray();
+        return new(verdict.CaptureUsable ? "adapted" : "failed", disabled);
     }
     private void SetAutomation(string next, string? code)
     {
@@ -47,7 +59,11 @@ public sealed partial class GameObservationService
             if (changed) { autoState = next; autoReason = code; revision++; }
             if (next is "running" or "starting" or "off" or "waiting") nextAttemptUtc = null;
         }
-        if (changed) Notify();
+        if (changed)
+        {
+            trace?.Emit(DiagnosticEvents.AutomationChanged, new DiagnosticFields().Value("state", next).Value("reason", code));
+            Notify();
+        }
     }
     private int BlockingDemands => demands.Count + inventoryDemands.Values.Count(value => !value.Resident) + combatDemands.Values.Count(value => !value.Resident);
     /// <summary>手动模块需求占用更新活动屏障；只剩常驻捕获与自动 DPS 时释放。</summary>
@@ -58,9 +74,57 @@ public sealed partial class GameObservationService
         activity.Dispose(); activity = null;
     }
 
-    private static async Task<CaptureChannelChoice> ResolveChannelAsync(WorkerSession session, GameSession binding, GameCaptureSettings settings, CancellationToken ct)
-        => OperatingSystem.IsWindows() ? CaptureChannelSelection.Select(await QueryChannelsAsync(session, binding, ct), settings)
-            : throw new OperationException("observation.workerUnavailable", "观察组件需要 Windows");
+    /// <summary>自动探测承载网卡的流量检测时长；游戏连接持续有下行数据时提前结束。</summary>
+    internal static int AutomaticDetectionMs { get; set; } = 10_000;
+
+    /// <summary>
+    /// 按设置确定网卡。自动模式下游戏连接的本机地址不在任何网卡上（VPN、加速器的虚拟网卡）或同时在多张网卡上时，
+    /// 在同一 Worker 内对候选网卡做一次短时流量检测，按收到游戏下行数据的网卡选定（来源 detected）；仍定位不到时报告原错误码。
+    /// 结果写入诊断事件 observation.channel.selected。
+    /// </summary>
+    private async Task<CaptureChannelChoice> ResolveChannelAsync(WorkerSession session, GameSession binding, GameCaptureSettings settings, CancellationToken ct)
+    {
+        if (!OperatingSystem.IsWindows()) throw new OperationException("observation.workerUnavailable", "观察组件需要 Windows");
+        var channels = await QueryChannelsAsync(session, binding, ct);
+        var matched = channels.Count(value => value.GameConnections > 0);
+        void Trace(string? source, string? code) => trace?.Emit(DiagnosticEvents.ChannelSelected, new DiagnosticFields()
+            .Value("source", source).Value("reason", code).Count("candidates", channels.Length).Count("matched", matched));
+        try
+        {
+            var choice = CaptureChannelSelection.Select(channels, settings);
+            Trace(choice.Source, null); return choice;
+        }
+        catch (OperationException error) when (error.Code is "observation.channelNotFound" or "observation.channelAmbiguous" &&
+            settings.ChannelMode == GameCaptureSettings.AutomaticChannel)
+        {
+            var winner = await DetectChannelAsync(session, binding, ct);
+            if (winner is not null && channels.FirstOrDefault(value => value.Id == winner) is { } detected)
+            {
+                Trace("detected", null); return new(detected.Id, detected.Description, "detected");
+            }
+            Trace(null, error.Code); throw;
+        }
+        catch (OperationException error) { Trace(null, error.Code); throw; }
+    }
+
+    /// <summary>在给定 Worker 上做一次短时网卡流量检测，返回判定的网卡；没有游戏连接、流量不足或检测失败时为空。</summary>
+    [SupportedOSPlatform("windows")]
+    private static async Task<string?> DetectChannelAsync(WorkerSession session, GameSession binding, CancellationToken ct)
+    {
+        try
+        {
+            var request = await session.BeginAsync(new("observation.channels.detect", JsonSerializer.SerializeToElement(new
+            {
+                processId = binding.ProcessId, processStartTime = binding.ProcessStartTime, durationMs = AutomaticDetectionMs
+            }, ContractJson.Options), Guid.NewGuid().ToString("N"), binding.BindingRevision.ToString(), "0"), ct);
+            var events = DrainAsync(request, ct);
+            var terminal = await request.Completion.WaitAsync(ct);
+            await events;
+            return terminal.Kind == "result" && terminal.Payload.TryGetProperty("detection", out var result)
+                ? Validate(result.Deserialize<ChannelProgress>(ContractJson.Options)).WinnerChannelId : null;
+        }
+        catch (Exception error) when (error is WorkerException or JsonException or IOException) { return null; }
+    }
 
     /// <summary>启动捕获 Worker，在同一进程内先确定网卡再开始捕获；调用方持有 lifecycle，失败由调用方停止。</summary>
     [SupportedOSPlatform("windows")]
@@ -126,7 +190,12 @@ public sealed partial class GameObservationService
         if (DetectionRunning) { SetAutomation("waiting", "observation.channelDetecting"); return; }
         var binding = controls.Bindings.Recent?.Session;
         if (binding is null) { SetAutomation("waiting", "input.bindingUnavailable"); return; }
-        if (binding.Region != "TW" || binding.GameBuild != TwClientFingerprint.GameBuild) { SetAutomation("waiting", "gameBuild.incompatible"); return; }
+        // 记录本会话的构建指纹摘要；未登记构建先在后台核对客户端，核对中等待，读不到客户端或分帧所需的协议表时不启动。
+        var checkedBuild = Builds.Ensure(binding);
+        if (!GameBuildAdaptation.Recognized(binding)) { SetAutomation("waiting", "gameBuild.incompatible"); return; }
+        if (checkedBuild is not { } verdict)
+        { SetAutomation("waiting", Builds.Verifying(binding) ? "gameBuild.verifying" : TwBuildVerification.VerifyFailed); return; }
+        if (!verdict.CaptureUsable) { SetAutomation("waiting", verdict.Identity.Reason ?? "gameBuild.incompatible"); return; }
         if (options() is null) { SetAutomation("waiting", "observation.workerUnavailable"); return; }
         var key = (binding.Id, settings.Revision.Value);
         if (attemptKey != key) { attemptKey = key; attemptFailures = 0; nextAttemptAt = null; }

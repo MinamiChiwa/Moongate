@@ -27,6 +27,9 @@ public sealed record ClientCaptureLayout(string AssemblyHash, string MetadataHas
             (method.Name == verb + category || verb == "Update" && method.Name == verb + category + "Stack"))));
 }
 public sealed record InventoryProtocolMethod(string Name, string Category, IReadOnlyList<string> Parameters);
+/// <summary>客户端构建事实：协议枚举（名称 → 编号）、字段闭包（types 字典）与接口方法签名。</summary>
+public sealed record ClientBuildFacts(string AssemblyHash, string MetadataHash, IReadOnlyDictionary<string, int> Protocols, JsonElement Schema,
+    IReadOnlyDictionary<string, IReadOnlyList<InventoryProtocolMethod>> Interfaces);
 
 /// <summary>Reads IL2CPP v31 metadata and x64 PE data. Never loads client code or reads process memory.</summary>
 public sealed class ClientLayoutReader
@@ -167,7 +170,7 @@ public sealed class ClientLayoutReader
             if (name[i] == ',' && depth == 0) { yield return name[start..i]; start = i + 1; }
         }
     }
-    private JsonElement Schema(IEnumerable<string>? additional = null)
+    private JsonElement Schema(IEnumerable<string>? additional = null, bool inventoryRoot = true)
     {
         var result = new Dictionary<string, object>();
         void Collect(string? name, int depth = 0)
@@ -189,38 +192,86 @@ public sealed class ClientLayoutReader
             }
             result.Add(name, new { parent, fields = list }); Collect(parent,depth+1); foreach (var child in children) Collect(child,depth+1);
         }
-        Collect(ClientInventoryDecoder.RootType);
+        if (inventoryRoot) Collect(ClientInventoryDecoder.RootType);
         foreach (var name in additional ?? []) Collect(name);
-        if (!result.ContainsKey(ClientInventoryDecoder.RootType)) throw new InvalidDataException("客户端缺少库存根类型");
+        if (inventoryRoot && !result.ContainsKey(ClientInventoryDecoder.RootType)) throw new InvalidDataException("客户端缺少库存根类型");
         return JsonSerializer.SerializeToElement(new { types = result });
     }
-    private uint Opcode(string field)
+    private Dictionary<int, int>? defaultValues;
+    private int ProtocolDefinition()
     {
         var matches = indices.Where(p => p.Key.EndsWith(".GCProtocol", StringComparison.Ordinal) && p.Value >= 0).ToArray();
         if (matches.Length != 1) throw new InvalidDataException("客户端协议枚举无法唯一定位");
-        var range = FieldRange(matches[0].Value); var found = -1;
+        return matches[0].Value;
+    }
+    /// <summary>字段默认值（枚举成员值）按字段序号建索引，只建一次。</summary>
+    private int? FieldDefault(int field)
+    {
+        if (defaultValues is null)
+        {
+            var defaults = Pair(64, 12); var map = new Dictionary<int, int>();
+            for (var at = defaults.Offset; at < defaults.Offset + defaults.Size; at += 12)
+                if (!map.TryAdd(I32(metadata, at), I32(metadata, at + 8))) throw new InvalidDataException("客户端协议值无效");
+            defaultValues = map;
+        }
+        if (!defaultValues.TryGetValue(field, out var index)) return null;
+        var values = Pair(72);
+        if (index < 0 || index >= values.Size) throw new InvalidDataException("客户端协议值无效");
+        var start = values.Offset + index; var b = metadata[start]; uint encoded;
+        if (b < 0x80) encoded = b;
+        else if (b < 0xc0) { _ = Slice(metadata, start, 2); encoded = (uint)((b & 0x3f) << 8 | metadata[start + 1]); }
+        else if (b < 0xe0) { _ = Slice(metadata, start, 4); encoded = (uint)((b & 0x1f) << 24 | metadata[start + 1] << 16 | metadata[start + 2] << 8 | metadata[start + 3]); }
+        else if (b == 0xf0) encoded = U32(metadata, start + 1);
+        else throw new InvalidDataException("客户端协议值压缩格式不支持");
+        return (encoded & 1) != 0 ? -checked((int)(encoded >> 1)) - 1 : checked((int)(encoded >> 1));
+    }
+    private uint Opcode(string field)
+    {
+        var range = FieldRange(ProtocolDefinition()); var found = -1;
         for (var i = 0; i < range.Count; i++) if (Text(I32(metadata, fields + (range.Start + i) * 12)) == field) { if (found >= 0) throw new InvalidDataException("客户端协议字段重复"); found = range.Start + i; }
         if (found < 0) throw new InvalidDataException("客户端缺少协议：" + field);
-        var defaults = Pair(64, 12); var values = Pair(72); int? value = null;
-        for (var at = defaults.Offset; at < defaults.Offset + defaults.Size; at += 12)
-        {
-            if (I32(metadata, at) != found) continue;
-            var index = I32(metadata, at + 8); if (index < 0 || index >= values.Size || value.HasValue) throw new InvalidDataException("客户端协议值无效");
-            var start = values.Offset + index; var b = metadata[start]; uint encoded;
-            if (b < 0x80) encoded = b;
-            else if (b < 0xc0) { _ = Slice(metadata, start, 2); encoded = (uint)((b & 0x3f) << 8 | metadata[start + 1]); }
-            else if (b < 0xe0) { _ = Slice(metadata, start, 4); encoded = (uint)((b & 0x1f) << 24 | metadata[start + 1] << 16 | metadata[start + 2] << 8 | metadata[start + 3]); }
-            else if (b == 0xf0) encoded = U32(metadata, start + 1);
-            else throw new InvalidDataException("客户端协议值压缩格式不支持");
-            value = (encoded & 1) != 0 ? -checked((int)(encoded >> 1)) - 1 : checked((int)(encoded >> 1));
-        }
+        var value = FieldDefault(found);
         if (value is null or <= 0) throw new InvalidDataException("客户端协议号无效");
         return (uint)value.Value;
     }
+    /// <summary>GCProtocol 全部常量成员（名称 → 线上编号）；名称重复或缺值时整表无效。</summary>
+    private IReadOnlyDictionary<string, int> ProtocolTable()
+    {
+        var range = FieldRange(ProtocolDefinition());
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i < range.Count; i++)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            var at = fields + (range.Start + i) * 12;
+            if ((U32(assembly, Offset(TypePointer(I32(metadata, at + 4)), 12) + 8) & 0x10) == 0) continue;
+            var name = Text(I32(metadata, at));
+            if (FieldDefault(range.Start + i) is not { } value || !result.TryAdd(name, value)) throw new InvalidDataException("客户端协议枚举无效");
+        }
+        return result;
+    }
+    /// <summary>接口方法的名称与参数类型（按声明顺序）；接口不存在时为空。</summary>
+    private IReadOnlyList<InventoryProtocolMethod> InterfaceMethods(string interfaceName)
+    {
+        if (!indices.TryGetValue(interfaceName, out var index) || index < 0) return [];
+        var methods = Pair(48, 36); var parameters = Pair(88, 12);
+        var definition = definitions + index * 88;
+        var start = I32(metadata, definition + 36);
+        var count = BinaryPrimitives.ReadUInt16LittleEndian(Slice(metadata, definition + 64, 2));
+        if (start < 0 || (long)start + count > methods.Size / 36) throw new InvalidDataException("客户端方法范围无效");
+        var result = new List<InventoryProtocolMethod>();
+        for (var i = 0; i < count; i++)
+        {
+            var at = methods.Offset + (start + i) * 36; var name = Text(I32(metadata, at));
+            var paramStart = I32(metadata, at + 16); var paramCount = BinaryPrimitives.ReadUInt16LittleEndian(Slice(metadata, at + 34, 2));
+            if (paramCount > 32 || paramCount > 0 && (paramStart < 0 || (long)paramStart + paramCount > parameters.Size / 12)) throw new InvalidDataException("客户端参数范围无效");
+            result.Add(new(name, interfaceName, Enumerable.Range(0, paramCount).Select(n => TypeName(I32(metadata, parameters.Offset + (paramStart + n) * 12 + 8))
+                ?? throw new InvalidDataException("客户端参数类型无效")).ToArray()));
+        }
+        return result;
+    }
     private IReadOnlyDictionary<string, uint> InventoryOpcodes()
     {
-        var definition = indices.Single(p => p.Key.EndsWith(".GCProtocol", StringComparison.Ordinal) && p.Value >= 0).Value;
-        var range = FieldRange(definition);
+        var range = FieldRange(ProtocolDefinition());
         var result = new Dictionary<string, uint>(StringComparer.Ordinal);
         for (var i = 0; i < range.Count; i++)
         {
@@ -262,6 +313,25 @@ public sealed class ClientLayoutReader
     }
     public static ClientCaptureLayout Read(string directory, CancellationToken cancellation = default, ClientCaptureLayout? cached = null)
     {
+        var (dll, meta, assemblyHash, metadataHash) = ReadClientFiles(directory, cancellation);
+        if(cached is not null && cached.AssemblyHash == assemblyHash && cached.MetadataHash == metadataHash) return cached;
+        var reader = new ClientLayoutReader(meta, dll, cancellation);
+        var protocol = new CaptureProtocol(reader.Opcode("CHANNEL_MyCharacterPersonalData_NTF"), reader.Opcode("REPLICATION_GuildMembers_UpdateGuildMemberInfo_REPL"), reader.Opcode("REPLICATION_ConsumableInventory_UpdateConsumableStack_REPL"));
+        if (new[] { protocol.Login, protocol.Profile, protocol.Inventory }.Distinct().Count() != 3) throw new InvalidDataException("客户端协议号冲突");
+        var opcodes = reader.InventoryOpcodes(); var methods = reader.InventoryMethods(opcodes);
+        return new(assemblyHash, metadataHash, protocol, reader.Schema(methods.Values.SelectMany(m => m.Parameters))) { Opcodes = opcodes, Methods = methods };
+    }
+    /// <summary>读取构建核对所需的客户端事实：完整协议枚举、给定根类型的字段闭包与接口方法签名。</summary>
+    public static ClientBuildFacts ReadBuildFacts(string directory, IReadOnlyCollection<string> schemaRoots, IReadOnlyCollection<string> interfaces,
+        CancellationToken cancellation = default)
+    {
+        var (dll, meta, assemblyHash, metadataHash) = ReadClientFiles(directory, cancellation);
+        var reader = new ClientLayoutReader(meta, dll, cancellation);
+        return new(assemblyHash, metadataHash, reader.ProtocolTable(), reader.Schema(schemaRoots, inventoryRoot: false),
+            interfaces.ToDictionary(name => name, reader.InterfaceMethods, StringComparer.Ordinal));
+    }
+    private static (byte[] Assembly, byte[] Metadata, string AssemblyHash, string MetadataHash) ReadClientFiles(string directory, CancellationToken cancellation)
+    {
         directory = Path.GetFullPath(directory);
         var assemblyPath = Path.Combine(directory, "GameAssembly.dll");
         var metadataFiles = Directory.EnumerateDirectories(directory, "*_Data", SearchOption.TopDirectoryOnly)
@@ -272,14 +342,7 @@ public sealed class ClientLayoutReader
         using var metadataLock = new FileStream(metadataFiles[0],FileMode.Open,FileAccess.Read,FileShare.Read);
         var dll = ReadFile(assemblyPath, 768 * 1024 * 1024, cancellation);
         var meta = ReadFile(metadataFiles[0], 256 * 1024 * 1024, cancellation);
-        var assemblyHash = Convert.ToHexStringLower(SHA256.HashData(dll));
-        var metadataHash = Convert.ToHexStringLower(SHA256.HashData(meta));
-        if(cached is not null && cached.AssemblyHash == assemblyHash && cached.MetadataHash == metadataHash) return cached;
-        var reader = new ClientLayoutReader(meta, dll, cancellation);
-        var protocol = new CaptureProtocol(reader.Opcode("CHANNEL_MyCharacterPersonalData_NTF"), reader.Opcode("REPLICATION_GuildMembers_UpdateGuildMemberInfo_REPL"), reader.Opcode("REPLICATION_ConsumableInventory_UpdateConsumableStack_REPL"));
-        if (new[] { protocol.Login, protocol.Profile, protocol.Inventory }.Distinct().Count() != 3) throw new InvalidDataException("客户端协议号冲突");
-        var opcodes = reader.InventoryOpcodes(); var methods = reader.InventoryMethods(opcodes);
-        return new(assemblyHash, metadataHash, protocol, reader.Schema(methods.Values.SelectMany(m => m.Parameters))) { Opcodes = opcodes, Methods = methods };
+        return (dll, meta, Convert.ToHexStringLower(SHA256.HashData(dll)), Convert.ToHexStringLower(SHA256.HashData(meta)));
     }
     private static byte[] ReadFile(string path, int limit, CancellationToken cancellation)
     {

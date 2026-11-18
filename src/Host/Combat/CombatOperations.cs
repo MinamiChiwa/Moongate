@@ -205,7 +205,9 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
             throw new OperationException("combat.buildUnsupported", "观察来源时钟比例无效");
         if (job.Subscription.Source.Region != "TW" || !Version.TryParse(job.Subscription.Source.ProviderVersion, out var version) || version < new Version(1, 0) || version >= new Version(2, 0))
             throw new OperationException("combat.buildUnsupported", "观察来源地区或版本不兼容");
-        if (!controls.Simulation && controls.Bindings.Current?.Session.GameBuild != job.Subscription.Source.GameBuild)
+        if (!controls.Simulation && (source is SharedCaptureCombatSource accepting
+                ? !accepting.Accepts(controls.Bindings.Current?.Session, job.Subscription.Source)
+                : controls.Bindings.Current?.Session.GameBuild != job.Subscription.Source.GameBuild))
             throw new OperationException("combat.buildUnsupported", "观察来源构建与当前游戏绑定不同");
         job.Session = new(job.Owner, job.Id, job.Subscription.Source, job.Subscription.LocalEntity, job.Request, clock.GetUtcNow(),
             healing: job.Subscription.HealingSupported);

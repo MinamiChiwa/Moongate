@@ -1,0 +1,345 @@
+{
+  "protocols": {
+    "CHANNEL_AppearingAutomaton_NTF": 20051,
+    "CHANNEL_AppearingCharacter_NTF": 20054,
+    "CHANNEL_DisappearingChannelObject_NTF": 20272,
+    "CHANNEL_EnteringChannel_NTF": 20344,
+    "CHANNEL_HitPresentation_NTF": 20526,
+    "CHANNEL_MyCharacterPersonalData_NTF": 20590,
+    "CHANNEL_NotifyConcertJoin_NTF": 20608,
+    "CHANNEL_NotifyHealCasted_NTF": 20644,
+    "CHANNEL_NotifyHealReceived_NTF": 20645,
+    "CHANNEL_ShowDamageFloater_NTF": 21196,
+    "REPLICATION_ActorBuff_Add_REPL": 170069,
+    "REPLICATION_ActorBuff_Expire_REPL": 170070,
+    "REPLICATION_ActorBuff_Refresh_REPL": 170071,
+    "REPLICATION_ActorParameter_UpdateBreakPointMax_REPL": 170117,
+    "REPLICATION_ActorStates_SetCombatState_REPL": 170196,
+    "REPLICATION_ActorStatus_SetBreakPoint_REPL": 170204,
+    "REPLICATION_ActorStatus_SetHealth_REPL": 170205,
+    "REPLICATION_Concerts_Add_REPL": 170415,
+    "REPLICATION_Concerts_Remove_REPL": 170416,
+    "REPLICATION_InstrumentPlayer_PlayInstrument_REPL": 170703,
+    "REPLICATION_InstrumentPlayer_Stop_REPL": 170704
+  },
+  "handlers": {
+    "CHANNEL_AppearingAutomaton_NTF": [
+      "Shared.Protocols.Replications.GroupReplicatedDatas.AutomatonPublicReplicatedData"
+    ],
+    "CHANNEL_AppearingCharacter_NTF": [
+      "Shared.Protocols.Replications.GroupReplicatedDatas.CharacterPublicReplicatedData"
+    ],
+    "CHANNEL_DisappearingChannelObject_NTF": [
+      "Shared.ChannelObjects.ChannelObjectId"
+    ],
+    "CHANNEL_EnteringChannel_NTF": [
+      "Shared.Protocols.Replications.GroupReplicatedDatas.ChannelGlobalReplicatedData"
+    ],
+    "CHANNEL_HitPresentation_NTF": [
+      "Shared.GameLogic.Hits.HitPresentationData"
+    ],
+    "CHANNEL_MyCharacterPersonalData_NTF": [
+      "Shared.Protocols.Replications.GroupReplicatedDatas.CharacterPersonalReplicatedData"
+    ],
+    "CHANNEL_NotifyConcertJoin_NTF": [
+      "System.Collections.Generic.List`1<Shared.ChannelObjects.ChannelObjectId>"
+    ],
+    "CHANNEL_NotifyHealCasted_NTF": [
+      "Shared.ChannelObjects.ChannelObjectId",
+      "Shared.GameLogic.Hits.HitFlags",
+      "int64"
+    ],
+    "CHANNEL_NotifyHealReceived_NTF": [
+      "Shared.GameLogic.Hits.HitFlags",
+      "int64"
+    ],
+    "CHANNEL_ShowDamageFloater_NTF": [
+      "Shared.GameLogic.Hits.DamageFloaterData"
+    ]
+  },
+  "replicated": {
+    "IActorBuffReplicated.Add": [
+      "Shared.GameLogic.ChannelObjects.Actors.Buffs.BuffInstanceId",
+      "Shared.Protocols.ProtocolDatas.ReplicatedDatas.BuffReplicatedData"
+    ],
+    "IActorBuffReplicated.Expire": [
+      "Shared.GameLogic.ChannelObjects.Actors.Buffs.BuffInstanceId"
+    ],
+    "IActorBuffReplicated.Refresh": [
+      "Shared.GameLogic.ChannelObjects.Actors.Buffs.BuffInstanceId",
+      "Shared.Protocols.ProtocolDatas.ReplicatedDatas.BuffReplicatedData"
+    ],
+    "IActorParameterReplicated.UpdateBreakPointMax": [
+      "int64"
+    ],
+    "IActorStatesReplicated.SetCombatState": [
+      "Shared.GameLogic.ChannelObjects.Actors.CombatState"
+    ],
+    "IActorStatusReplicated.SetBreakPoint": [
+      "float32",
+      "bool"
+    ],
+    "IActorStatusReplicated.SetHealth": [
+      "uint8[]",
+      "bool"
+    ],
+    "IConcertsReplicated.Add": [
+      "Shared.GameLogic.Concerts.ConcertId",
+      "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ConcertReplicatedData"
+    ],
+    "IConcertsReplicated.Remove": [
+      "Shared.GameLogic.Concerts.ConcertId"
+    ],
+    "IInstrumentPlayerReplicated.PlayInstrument": [
+      "Shared.GameLogic.Concerts.ConcertId",
+      "Silvervine.ManualMemory.MMList`1<int32>",
+      "Shared.Symbols.InstrumentSheetId",
+      "bool"
+    ],
+    "IInstrumentPlayerReplicated.Stop": [
+      "Shared.GameLogic.Concerts.ConcertId"
+    ]
+  },
+  "types": {
+    "Shared.ChannelObjects.ChannelObjectId": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "int64Value",
+          "type": "int64"
+        }
+      ]
+    },
+    "Shared.Channels.ChannelTime": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "rawValue",
+          "type": "int64"
+        }
+      ]
+    },
+    "Shared.Characters.CharacterId": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "int64Value",
+          "type": "int64"
+        }
+      ]
+    },
+    "Shared.GameLogic.ChannelObjects.Actors.ActorStates.BreakStateType": {
+      "parent": "System.Enum",
+      "fields": [
+        {
+          "name": "value__",
+          "type": "int32"
+        }
+      ]
+    },
+    "Shared.GameLogic.ChannelObjects.Actors.Buffs.BuffInstanceId": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "uint64Value",
+          "type": "int64"
+        }
+      ]
+    },
+    "Shared.GameLogic.Hits.DamageFloaterData": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "AttackerId",
+          "type": "Shared.ChannelObjects.ChannelObjectId"
+        },
+        {
+          "name": "HittedActorId",
+          "type": "Shared.ChannelObjects.ChannelObjectId"
+        },
+        {
+          "name": "Damage",
+          "type": "int64"
+        },
+        {
+          "name": "ShieldDamage",
+          "type": "int64"
+        },
+        {
+          "name": "HitFlags",
+          "type": "Shared.GameLogic.Hits.HitFlags"
+        },
+        {
+          "name": "DamageFloaterHighlightFlags",
+          "type": "Shared.GameLogic.Hits.DamageFloaterHighlightFlags"
+        },
+        {
+          "name": "BreakState",
+          "type": "Shared.GameLogic.ChannelObjects.Actors.ActorStates.BreakStateType"
+        },
+        {
+          "name": "HideDamageFloater",
+          "type": "bool"
+        }
+      ]
+    },
+    "Shared.GameLogic.Hits.DamageFloaterHighlightFlags": {
+      "parent": "System.Enum",
+      "fields": [
+        {
+          "name": "value__",
+          "type": "int64"
+        }
+      ]
+    },
+    "Shared.GameLogic.Hits.HitFlags": {
+      "parent": "System.Enum",
+      "fields": [
+        {
+          "name": "value__",
+          "type": "int64"
+        }
+      ]
+    },
+    "Shared.GameLogic.Hits.HitPresentationData": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "AttackerId",
+          "type": "Shared.ChannelObjects.ChannelObjectId"
+        },
+        {
+          "name": "HittedActorId",
+          "type": "Shared.ChannelObjects.ChannelObjectId"
+        },
+        {
+          "name": "SkillId",
+          "type": "Shared.Symbols.SkillSheetId"
+        },
+        {
+          "name": "ProjectileId",
+          "type": "Shared.Symbols.ProjectileSheetId"
+        },
+        {
+          "name": "HitFlags",
+          "type": "Shared.GameLogic.Hits.HitFlags"
+        },
+        {
+          "name": "IsInActionBounds",
+          "type": "bool"
+        },
+        {
+          "name": "IsHitStrongHitReactionImmune",
+          "type": "bool"
+        },
+        {
+          "name": "ShowExplodePresentation",
+          "type": "bool"
+        }
+      ]
+    },
+    "Shared.MML.CompressedMML": {
+      "parent": "object",
+      "fields": [
+        {
+          "name": "RawValue",
+          "type": "uint8[]"
+        }
+      ]
+    },
+    "Shared.Protocols.ProtocolDatas.ReplicatedDatas.BuffReplicatedData": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "SheetId",
+          "type": "Shared.Symbols.BuffSheetId"
+        },
+        {
+          "name": "EndAt",
+          "type": "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime"
+        },
+        {
+          "name": "StackCount",
+          "type": "int32"
+        },
+        {
+          "name": "CasterId",
+          "type": "Shared.ChannelObjects.ChannelObjectId"
+        }
+      ]
+    },
+    "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ConcertReplicatedData": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "HostCharacterId",
+          "type": "Shared.Characters.CharacterId"
+        },
+        {
+          "name": "Title",
+          "type": "string"
+        },
+        {
+          "name": "Composer",
+          "type": "string"
+        },
+        {
+          "name": "CompressedMML",
+          "type": "Shared.MML.CompressedMML"
+        },
+        {
+          "name": "IsCopyingAllowed",
+          "type": "bool"
+        },
+        {
+          "name": "IsLoop",
+          "type": "bool"
+        },
+        {
+          "name": "StartAt",
+          "type": "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime"
+        }
+      ]
+    },
+    "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "channelTime",
+          "type": "Shared.Channels.ChannelTime"
+        },
+        {
+          "name": "offsetInSeconds",
+          "type": "float32"
+        }
+      ]
+    },
+    "Shared.Symbols.BuffSheetId": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "Id",
+          "type": "int32"
+        }
+      ]
+    },
+    "Shared.Symbols.ProjectileSheetId": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "Id",
+          "type": "int32"
+        }
+      ]
+    },
+    "Shared.Symbols.SkillSheetId": {
+      "parent": "System.ValueType",
+      "fields": [
+        {
+          "name": "Id",
+          "type": "int32"
+        }
+      ]
+    }
+  }
+}

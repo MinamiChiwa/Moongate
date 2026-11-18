@@ -112,7 +112,7 @@ public sealed partial class LiveBackend
             lock (gate) settingsChannels = channels;
             Notify();
             return channels.Count == 0 ? Pick("没有找到可用网卡，请确认已安装 Npcap。", "沒有找到可用網卡，請確認已安裝 Npcap。")
-                : Pick($"已列出 {channels.Count} 个网卡", $"已列出 {channels.Count} 個網卡");
+                : Pick($"已列出 {channels.Count} 个网卡", $"已列出 {channels.Count} 個網卡") + CaptureText.Located(channels);
         }, cancellationToken, remember: false);
         return new(reply.Ok, reply.Message, channels, reply.Code);
     }

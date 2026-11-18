@@ -3,11 +3,14 @@ using MabiTool.Contracts;
 
 namespace MabiTool.Host.Game;
 
-/// <summary>选定的抓包网卡；Source 为 automatic（按游戏连接本机地址）或 saved（用户指定或检测确认后保存）。</summary>
+/// <summary>
+/// 选定的抓包网卡；Source 为 automatic（按游戏连接本机地址）、detected（地址定位不到时由自动流量检测选定）、
+/// saved（用户指定或检测确认后保存）或 request（调用方指定）。
+/// </summary>
 public sealed record CaptureChannelChoice(string ChannelId, string Description, string Source)
 {
-    /// <summary>保存的网卡由用户确认，地址对不上时捕获仍按游戏连接五元组过滤。</summary>
-    public bool AnyAddress => Source == "saved";
+    /// <summary>保存或检测确认的网卡收到过游戏下行数据，地址对不上时捕获仍按游戏连接五元组过滤。</summary>
+    public bool AnyAddress => Source is "saved" or "detected";
 }
 
 public static class CaptureChannelSelection

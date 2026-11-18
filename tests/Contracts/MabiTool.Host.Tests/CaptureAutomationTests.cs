@@ -226,6 +226,44 @@ public sealed class CaptureAutomationTests
     }
 
     [Fact]
+    public async Task UnlocatedChannelIsChosenByTrafficDetectionBeforeFailing()
+    {
+        using var area = Current(); await using var app = area.Build("auto-detect", automation: true); await app.StartAsync();
+        using var client = GameObservationApiTests.Area.Owner(app);
+        var running = await Wait(client, value => value.State == "running");
+        Assert.Equal(First, running.ChannelId); Assert.Equal("detected", running.Automation!.ChannelSource);
+        await app.StopAsync();
+    }
+
+    [Fact]
+    public async Task UnregisteredBuildIsVerifiedThenCapturedWithOnlyTheFailedCapabilityDisabled()
+    {
+        using var area = new GameObservationApiTests.Area();
+        var old = area.Bindings.Current!;
+        area.Bindings.Update(new("TW", old.Session.ProcessId, old.Session.ProcessStartTime, old.Session.WindowIdentity,
+            TwClientFingerprint.AdaptiveBuild(new string('a', 64), new string('b', 64)), old.Bounds, old.DpiX, old.DpiY, false));
+        var release = new TaskCompletionSource();
+        var verdict = new TwBuildVerdict(area.Bindings.Current!.Session.GameBuild!, false, null, TwCapabilityCheck.Ok, TwCapabilityCheck.Ok,
+            new(false, TwBuildVerification.LayoutChanged), Tw20261110CombatProtocol.StreamProfile.KnownProtocols);
+        await using var app = area.Build("auto", automation: true,
+            builds: _ => new GameBuildAdaptation(async _ => { await release.Task; return verdict; }));
+        await app.StartAsync();
+        using var client = GameObservationApiTests.Area.Owner(app);
+        var verifying = await Wait(client, value => value.Automation?.State == "waiting");
+        Assert.Equal("gameBuild.verifying", verifying.Automation!.Reason); Assert.Equal("verifying", verifying.Automation.Build!.State);
+        Assert.Empty(Directory.GetFiles(area.Root, "process-start-*"));
+        release.SetResult();
+        var running = await Wait(client, value => value.State == "running" && value.Automation?.Build?.State == "adapted");
+        Assert.Equal(Tw20261110CombatProtocol.CaptureProfile, running.Profile);
+        var disabled = Assert.Single(running.Automation!.Build!.Disabled);
+        Assert.Equal(("combat", TwBuildVerification.LayoutChanged), (disabled.Capability, disabled.Reason));
+        var combat = app.Services.GetRequiredService<MabiTool.Modules.CombatObservation.Application.ICombatObservationSource>().Capabilities(null);
+        Assert.All(combat.Capabilities, value =>
+            Assert.Equal((CapabilityStatus.Unavailable, TwBuildVerification.LayoutChanged), (value.Status.KnownValue, value.Reason)));
+        await app.StopAsync();
+    }
+
+    [Fact]
     public async Task UnverifiedBuildsAndMissingBindingsWaitWithoutStartingTheWorker()
     {
         using var area = new GameObservationApiTests.Area(); await using var app = area.Build("auto", automation: true); await app.StartAsync();

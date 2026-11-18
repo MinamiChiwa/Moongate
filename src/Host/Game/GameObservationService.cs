@@ -16,8 +16,16 @@ namespace MabiTool.Host.Game;
 
 public sealed partial class GameObservationService(GameControlContext controls, LocalAuthService auth, ActivityBarrier barrier,
     SystemInfo system, TimeProvider clock, Func<WorkerProcessOptions?> options, ModuleRuntime modules, DiagnosticTrace? trace = null,
-    GameCaptureSettingsStore? captureSettings = null, bool automation = false) : BackgroundService
+    GameCaptureSettingsStore? captureSettings = null, bool automation = false, GameBuildAdaptation? builds = null) : BackgroundService
 {
+    /// <summary>绑定客户端的构建核对；未提供时只认已登记构建。</summary>
+    internal GameBuildAdaptation Builds { get; } = builds ?? GameBuildAdaptation.RegisteredOnly;
+    /// <summary>
+    /// 战斗来源可用于该绑定：构建相同，或绑定为未登记构建、来源为 tw-20261110 布局且运行时核对启用了战斗。
+    /// </summary>
+    internal bool CombatAccepts(GameSession? binding, ObservationSource source) => binding is not null &&
+        (binding.GameBuild == source.GameBuild || source.GameBuild == TwClientFingerprint.GameBuild &&
+            Builds.Verdict(binding) is { Registered: false, Combat.Enabled: true });
     private sealed record Demand(string Owner, string Id);
     private sealed record Receipt(string Hash, GameObservationSubscription Value, long Created);
     private readonly SemaphoreSlim lifecycle = new(1);
@@ -157,14 +165,21 @@ public sealed partial class GameObservationService(GameControlContext controls, 
             }
             var binding = controls.Bindings.Current?.Session ?? throw new OperationException("input.bindingUnavailable", "请先选择游戏窗口");
             if (binding.BindingRevision != request.BindingRevision) throw new OperationException("input.bindingChanged", "游戏绑定修订已变化");
-            // 未指定 profile 时按绑定构建选择：当前已核验台服构建使用战斗 profile，音乐、战斗与库存共用同一捕获；
+            // 未指定 profile 时按绑定构建选择：已登记构建与未登记的台服客户端使用当前 profile，音乐、战斗与库存共用同一捕获；
             // 其他构建沿用旧默认音乐配置，由 Worker 的文件指纹核对决定能否启动。
-            var requestedProfile = request.Profile ?? (binding.GameBuild == TwClientFingerprint.GameBuild
+            var recognized = GameBuildAdaptation.Recognized(binding);
+            var requestedProfile = request.Profile ?? (recognized
                 ? Tw20261110CombatProtocol.CaptureProfile : MabiTool.Providers.TwObservation.TwGameProtocol.CaptureProfile);
             if (binding.Region != "TW" || requestedProfile is not (MabiTool.Providers.TwObservation.TwGameProtocol.CaptureProfile or Tw20261110CombatProtocol.CaptureProfile))
                 throw new OperationException("observation.profileUnavailable", "当前地区或观察协议尚未验证");
-            if (requestedProfile == Tw20261110CombatProtocol.CaptureProfile && binding.GameBuild != Tw20261110CombatProtocol.GameBuild)
-                throw new OperationException("gameBuild.incompatible", "当前战斗观察需要已核验的台服构建");
+            if (requestedProfile == Tw20261110CombatProtocol.CaptureProfile)
+            {
+                if (!recognized) throw new OperationException("gameBuild.incompatible", "当前观察需要可识别的台服客户端");
+                using var verifying = CancellationTokenSource.CreateLinkedTokenSource(ct, shutdown.Token);
+                verifying.CancelAfter(TimeSpan.FromSeconds(60));
+                if (await Builds.EnsureAsync(binding, verifying.Token) is not { CaptureUsable: true })
+                    throw new OperationException("gameBuild.incompatible", "无法读取或核对当前游戏版本");
+            }
             lock (gate)
                 if (worker is not null && (!SameGameSession(binding, game) ||
                     request.ChannelId is not null && channelId != request.ChannelId || request.Profile is not null && profile != request.Profile ||
@@ -359,6 +374,8 @@ public sealed partial class GameObservationService(GameControlContext controls, 
     }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // 构建核对完成后快照里的构建摘要随之变化。
+        if (builds is not null) builds.Changed += () => { lock (gate) revision++; Notify(); };
         while (!stoppingToken.IsCancellationRequested)
         {
             await Task.Delay(TimeSpan.FromMilliseconds(200), clock, stoppingToken);

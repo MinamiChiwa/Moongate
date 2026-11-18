@@ -240,6 +240,12 @@ public static class CodeText
         ("gameBuild.incompatible", "游戏版本未核验", "遊戲版本未核驗"),
         ("gameBuild.unknown", "游戏版本未知", "遊戲版本未知"),
         ("gameBuild.unverified", "游戏版本未核验", "遊戲版本未核驗"),
+        ("gameBuild.verifying", "正在核对游戏版本", "正在核對遊戲版本"),
+        ("gameBuild.verifyFailed", "无法核对游戏版本", "無法核對遊戲版本"),
+        ("gameBuild.runtimeVerified", "已适配新版游戏", "已適配新版遊戲"),
+        ("gameBuild.protocolChanged", "新版游戏协议有变，暂停用", "新版遊戲協定有變，暫停用"),
+        ("gameBuild.layoutChanged", "新版游戏数据有变，暂停用", "新版遊戲資料有變，暫停用"),
+        ("gameBuild.identityUnavailable", "新版游戏无法识别角色", "新版遊戲無法辨識角色"),
         ("gameBinding.invalid", "窗口绑定已变化", "視窗綁定已變化"),
         // 资源与操作
         ("resource.notFound", "找不到所选内容", "找不到所選內容"),

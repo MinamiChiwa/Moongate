@@ -68,10 +68,14 @@ internal static partial class CaptureChannels
         GameIdentity? knownIdentity = null)
     {
         if (!SelectedGameProcess.IsRunning(game)) throw new IOException("所选游戏进程已变化，请重新选择。");
+        // 当前布局：已登记构建直接启用；未登记构建在本进程内独立读取客户端事实核对，分帧改用读到的协议号，
+        // 核对不过的身份、音乐或战斗解析单独停用。读不全客户端时不启动。
+        TwBuildVerdict? build = null;
         if (layout == CombatProtocolLayout.Tw20261110)
         {
-            try { await Tw20261110CombatProtocol.VerifyClientAsync(game.ImagePath, token).ConfigureAwait(false); }
-            catch (InvalidDataException) { throw new WorkerObservationException("gameBuild.incompatible"); }
+            build = await TwBuildVerification.EvaluateAsync(game.ImagePath, null, token).ConfigureAwait(false);
+            if (build is { Registered: false }) NpcapObservationSource.ReleaseLayoutBuffers();
+            if (build is not { CaptureUsable: true }) throw new WorkerObservationException("gameBuild.incompatible");
         }
         else await VerifyClientAsync(game.ImagePath, token).ConfigureAwait(false);
         var channels = new Dictionary<CaptureConnection, ReceiveChannel>();
@@ -164,7 +168,7 @@ internal static partial class CaptureChannels
                             try
                             {
                                 channels[connection] = OpenReceive(device, connection, now, gameSessionId, context,
-                                    () => checked((ulong)Interlocked.Increment(ref generation)), Primary, layout, InventoryPrimary, localIdentities);
+                                    () => checked((ulong)Interlocked.Increment(ref generation)), Primary, layout, InventoryPrimary, localIdentities, build);
                                 opened.Add(channels[connection]); lastError = null;
                             }
                             catch (IOException error) { lastError = error.Message; }
@@ -260,7 +264,7 @@ internal static partial class CaptureChannels
     }
     private static ReceiveChannel OpenReceive(CaptureDevice device, CaptureConnection connection, double now,
         string gameSessionId, ObservationCaptureContext context, Func<ulong> generations, Func<SharedGameStream, bool> primary, CombatProtocolLayout layout,
-        Func<SharedGameStream, bool> inventoryPrimary, LocalIdentityMemory localIdentities)
+        Func<SharedGameStream, bool> inventoryPrimary, LocalIdentityMemory localIdentities, TwBuildVerdict? build)
     {
         var error = new StringBuilder(256); var handle = OpenConfigured(device.Name, error);
         if (handle == 0) throw new IOException("无法打开所选网卡：" + error);
@@ -274,7 +278,7 @@ internal static partial class CaptureChannels
             if (pcap_setnonblock(handle, 1, error) != 0) throw new IOException("Npcap 无法启动抓包，请检查安装或尝试其他网卡。");
             var link = pcap_datalink(handle);
             if (link is not (0 or 1 or 12 or 101 or 228)) throw new IOException("暂不支持此网卡，请选择其他网卡重试。");
-            return new ReceiveChannel(handle, link, connection, now, new(gameSessionId, context, generations, primary, layout, inventoryPrimary, localIdentities));
+            return new ReceiveChannel(handle, link, connection, now, new(gameSessionId, context, generations, primary, layout, inventoryPrimary, localIdentities, build));
         }
         catch { pcap_close(handle); throw; }
     }

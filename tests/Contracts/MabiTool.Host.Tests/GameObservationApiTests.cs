@@ -285,8 +285,9 @@ public sealed class GameObservationApiTests
         }
         public WebApplication Build(string mode = "normal", bool installed = true, ObservationCombatProfile? combatProfile = null,
             StorageOptions? storage = null, Func<WorkerProcessOptions, WorkerProcessOptions>? tune = null, bool automation = false,
-            IGameWindowSource? windows = null) => BackendApplication.Build(new(0, Token, new HashSet<string>()), storage: storage, gameAutomation: automation,
-            gameWindowSource: windows ?? new NoWindows(),
+            IGameWindowSource? windows = null, Func<IServiceProvider, GameBuildAdaptation>? builds = null) =>
+            BackendApplication.Build(new(0, Token, new HashSet<string>()), storage: storage, gameAutomation: automation,
+            gameWindowSource: windows ?? new NoWindows(), buildAdaptation: builds,
             gameControls: sp =>
             {
                 var leases = sp.GetRequiredService<ResourceLeaseCoordinator>(); return new(Bindings, leases, new(leases, Bindings, Device), false);

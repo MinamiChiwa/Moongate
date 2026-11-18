@@ -35,19 +35,24 @@ public sealed class SharedGameStream : IDisposable
     public CombatEntityObservation? LocalEntity => combat?.LocalEntity;
     public ulong? LocalCharacterId => combat?.LocalCharacterId;
     private readonly LocalIdentityMemory identities;
+    private readonly bool identityEnabled, musicEnabled, combatEnabled;
     /// <param name="localIdentities">同一游戏进程的捕获内各连接共用的本机身份记录；为空时只在本连接内保留。</param>
+    /// <param name="build">当前布局下客户端构建的核对结果；为空按已登记构建处理。未登记构建的分帧使用读到的协议号，
+    /// 核对不过的身份（含地图频道）、音乐与战斗解析分别停用：身份帧不解码，音乐兴趣不生效，战斗兴趣以 combat.buildUnsupported 拒绝。</param>
     public SharedGameStream(string gameSessionId, ObservationCaptureContext capture, Func<ulong> nextGeneration,
         Func<SharedGameStream, bool>? primary = null, CombatProtocolLayout layout = CombatProtocolLayout.MusicOnly,
-        Func<SharedGameStream, bool>? inventoryPrimary = null, LocalIdentityMemory? localIdentities = null)
+        Func<SharedGameStream, bool>? inventoryPrimary = null, LocalIdentityMemory? localIdentities = null, TwBuildVerdict? build = null)
     {
         context = capture; gameSession = gameSessionId; generations = nextGeneration; selected = primary ?? (_ => true);
         identities = localIdentities ?? new();
         this.layout = layout;
+        identityEnabled = build?.Identity.Enabled ?? true; musicEnabled = build?.Music.Enabled ?? true; combatEnabled = build?.Combat.Enabled ?? true;
         Music = new(layout == CombatProtocolLayout.MusicOnly ? TwMusicProtocolMap.Reference : TwMusicProtocolMap.Tw20261110);
         inventorySelected = inventoryPrimary ?? (_ => true);
         // 共用流按当前兴趣分发：战斗 profile 只列出战斗协议号，库存协议号来自运行时客户端布局，
         // 因此候选集取全部已知协议号，由下方兴趣判定决定是否展开和分发。
-        var known = layout == CombatProtocolLayout.MusicOnly ? MusicOnlyProtocols : Tw20261110CombatProtocol.StreamProfile.KnownProtocols;
+        var known = layout == CombatProtocolLayout.MusicOnly ? MusicOnlyProtocols
+            : build?.KnownProtocols ?? Tw20261110CombatProtocol.StreamProfile.KnownProtocols;
         Stream = new(Dispatch, ResetParsers, new GameStreamProfile(known, known),
             code => ObserveMusic(code) || ObserveCombat(code) || inventory?.Observes(code) == true,
             (code, reason) =>
@@ -115,11 +120,11 @@ public sealed class SharedGameStream : IDisposable
     { context.Execute(() => { now = monotonicMs; utc = observedAt; Stream.Restart(reason, cause); }); }
     private void Configure(ObservationCaptureInterests old, ObservationCaptureInterests next)
     {
-        if (next.Combat is { } check && (layout == CombatProtocolLayout.MusicOnly || !Tw20261110CombatProtocol.IsCaptureProfile(check.Profile)))
+        if (next.Combat is { } check && (layout == CombatProtocolLayout.MusicOnly || !combatEnabled || !Tw20261110CombatProtocol.IsCaptureProfile(check.Profile)))
             throw new WorkerObservationException("combat.buildUnsupported");
         if (old != next && combat is not null && utc != default) combat.Finish(now, utc);
         // 身份不随兴趣变化清空；音乐兴趣关闭时只清空合奏与演奏状态。
-        Music.MusicEnabled = next.MusicEnabled;
+        Music.MusicEnabled = next.MusicEnabled && musicEnabled;
         if (old.Combat?.Id != next.Combat?.Id || old.Combat?.Profile != next.Combat?.Profile)
         {
             combat = null; interestId = null; CombatInitializerAt = double.NegativeInfinity; delivered = 0;
@@ -218,7 +223,7 @@ public sealed class SharedGameStream : IDisposable
     }
     /// <summary>异常筛选中记录战斗解析拒绝；返回 false，异常照常传给重组器。</summary>
     private bool RejectedCombat() { context.Diagnostics.Rejected("combat"); return false; }
-    private bool ObserveMusic(int code) => Music.Observes(code);
+    private bool ObserveMusic(int code) => identityEnabled && Music.Observes(code);
     /// <summary>
     /// 战斗解析尚无本机实体而共享身份已确认时，以该身份补足战斗起点：兴趣晚于登录或切图建立时不必等待下一次切图。
     /// 主连接判定沿用身份初始化时点。

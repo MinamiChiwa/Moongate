@@ -11,7 +11,18 @@ public static class DiagnosticEvents
 {
     private const string Observation = "game-access", Combat = "combat-observation";
     public static readonly DiagnosticEventDefinition BindingChanged = new("game.binding.changed", Observation, "game.binding", DiagnosticLevel.Info,
-        ["state", "revision", "sessionChanged", "minimized"]);
+        ["state", "revision", "sessionChanged", "minimized", "changed", "merged"]);
+    /// <summary>绑定客户端的构建指纹摘要（每个游戏会话一次）：build 为 registered/adaptive/unrecognized，三文件哈希前 12 位，
+    /// 能否抓包及身份、音乐、战斗各项的核对结果（enabled 或停用原因码）；不含路径。</summary>
+    public static readonly DiagnosticEventDefinition GameBuildChecked = new("game.build.checked", Observation, "game.build", DiagnosticLevel.Info,
+        ["build", "registeredName", "assembly", "metadata", "unity", "captureUsable", "identity", "music", "combat"]);
+    /// <summary>自动抓包状态变化：state 为 off/waiting/starting/running/failed，reason 为等待或失败原因码。</summary>
+    public static readonly DiagnosticEventDefinition AutomationChanged = new("observation.automation.changed", Observation, "observation.capture", DiagnosticLevel.Info,
+        ["state", "reason"]);
+    /// <summary>抓包网卡的选择结果：source 为 automatic/saved/detected/request，失败时 reason 为原因码；
+    /// candidates 为网卡数，matched 为承载游戏连接本机地址的网卡数。</summary>
+    public static readonly DiagnosticEventDefinition ChannelSelected = new("observation.channel.selected", Observation, "observation.capture", DiagnosticLevel.Info,
+        ["source", "reason", "candidates", "matched"]);
     public static readonly DiagnosticEventDefinition WorkerStarted = new("observation.worker.started", Observation, "observation.worker", DiagnosticLevel.Info, ["pid"]);
     public static readonly DiagnosticEventDefinition WorkerStopped = new("observation.worker.stopped", Observation, "observation.worker", DiagnosticLevel.Info,
         ["end", "exitCode", "terminatedByHost"]);
@@ -64,7 +75,7 @@ public static class DiagnosticEvents
     public static readonly DiagnosticEventDefinition ChannelClosed = new("worker.channel.closed", null, "worker.channel", DiagnosticLevel.Debug,
         ["exitCode", "terminatedByHost"]);
 
-    public static IReadOnlyList<DiagnosticEventDefinition> All { get; } = [BindingChanged, WorkerStarted, WorkerStopped, WorkerFaulted, CaptureStarted,
+    public static IReadOnlyList<DiagnosticEventDefinition> All { get; } = [BindingChanged, GameBuildChecked, AutomationChanged, ChannelSelected, WorkerStarted, WorkerStopped, WorkerFaulted, CaptureStarted,
         CaptureEnded, InventorySynced, InventoryFrameState, InventoryFrameRejected, SegmentStarted, SegmentEnded, CombatFrameRejected, HostLog, ColorRunStarted, ColorRunEnded, RoomConnection, DebugCaptureStarted, DebugCaptureEnded, LegacyDataImported, HostPortFallback,
         FrameRejected, CaptureGap, InterestsChanged, SubscriptionChanged, ConnectionChanged, InventoryFrame,
         ChannelConnected, ChannelRequest, ChannelFault, ChannelClosed];

@@ -5,7 +5,8 @@ using MabiTool.Providers.TwObservation.Combat;
 namespace MabiTool.Host.Game;
 
 /// <summary>游戏绑定、构建识别和 Provider 能力门槛；使用最近一次已刷新的绑定，不查询窗口或客户端文件。</summary>
-internal sealed class GameBindingDiagnosticProbe(GameControlContext controls, ProviderCapabilityRegistry capabilities) : IDiagnosticProbe
+internal sealed class GameBindingDiagnosticProbe(GameControlContext controls, ProviderCapabilityRegistry capabilities,
+    GameBuildAdaptation? builds = null) : IDiagnosticProbe
 {
     public string Id => "game.binding";
     public string Module => "game-access";
@@ -13,13 +14,26 @@ internal sealed class GameBindingDiagnosticProbe(GameControlContext controls, Pr
     {
         var binding = controls.Bindings.LastKnown;
         var session = binding?.Session;
-        var recognized = session?.GameBuild == TwClientFingerprint.GameBuild;
+        var registered = session?.GameBuild == TwClientFingerprint.GameBuild;
+        var adaptive = TwClientFingerprint.IsAdaptive(session?.GameBuild);
         var reading = new DiagnosticProbeReading(binding is null ? "unbound" : binding.IsMinimized ? "minimized" : "bound")
             .Flag("simulation", controls.Simulation).Count("bindingRevision", session?.BindingRevision.Value ?? 0);
         if (session is not null)
-            reading.Value("region", session.Region).Flag("buildRecognized", recognized)
-                .Value("build", recognized ? "tw-20261110" : controls.Simulation ? "simulation" : session.GameBuild is null ? "none" : "unrecognized")
-                .Value("combatProfile", recognized ? Tw20261110CombatProtocol.CaptureProfile : null);
+        {
+            reading.Value("region", session.Region).Flag("buildRecognized", registered || adaptive)
+                .Value("build", registered ? "tw-20261110" : adaptive ? "adaptive" : controls.Simulation ? "simulation" : session.GameBuild is null ? "none" : "unrecognized")
+                .Value("combatProfile", registered || adaptive ? Tw20261110CombatProtocol.CaptureProfile : null);
+            // 未登记构建的运行时核对：verifying 表示正在读取客户端，其余为各项启用或停用原因码。
+            if (adaptive && builds is not null)
+            {
+                var verdict = builds.Verdict(session);
+                static string State(TwCapabilityCheck check) => check.Enabled ? "enabled" : check.Reason ?? "disabled";
+                reading.Value("buildCheck", verdict is null ? builds.Verifying(session) ? "verifying" : "unavailable" : "completed");
+                if (verdict is not null)
+                    reading.Value("buildCheck.identity", State(verdict.Identity)).Value("buildCheck.music", State(verdict.Music))
+                        .Value("buildCheck.combat", State(verdict.Combat));
+            }
+        }
         foreach (var capability in capabilities.Snapshot())
             reading.Value("capabilities." + capability.Id + ".status", capability.Status.RawValue)
                 .Value("capabilities." + capability.Id + ".reason", capability.ReasonCode);

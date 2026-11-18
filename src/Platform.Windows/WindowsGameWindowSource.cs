@@ -12,9 +12,11 @@ namespace MabiTool.Platform.Windows;
 public sealed class WindowsGameWindowSource : IGameWindowSource
 {
     private readonly HashSet<string> processes = new(["MabinogiMobile"], StringComparer.OrdinalIgnoreCase);
-    private sealed record PreparedClient(int ProcessId, DateTimeOffset StartedAt, string ImagePath, IReadOnlyList<TwClientFileStamp> Files);
+    /// <summary>显式准备时核对过的客户端：文件戳不变时沿用构建标识（已登记构建为布局标识，其余为未登记构建的哈希标识）。</summary>
+    private sealed record PreparedFiles(int ProcessId, DateTimeOffset StartedAt, string ImagePath, IReadOnlyList<TwClientFileStamp> Files,
+        TwClientHashes Hashes, string Build);
     private readonly object preparedGate = new();
-    private readonly Dictionary<(int Pid, DateTimeOffset StartedAt), PreparedClient> prepared = [];
+    private readonly Dictionary<(int Pid, DateTimeOffset StartedAt), PreparedFiles> prepared = [];
     public IReadOnlyList<SelectableGameWindow> Enumerate()
     {
         var result = new List<SelectableGameWindow>();
@@ -32,12 +34,22 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
         return result;
     }
     public GameWindowObservation? Refresh(GameWindowObservation selected) => Read(unchecked((nint)selected.WindowIdentity.Value), selected);
+    public GameClientFiles? PreparedClient(GameWindowObservation selected)
+    {
+        lock (preparedGate)
+            return prepared.TryGetValue((selected.ProcessId, selected.ProcessStartTime), out var client) && client.Build == selected.GameBuild
+                ? new(client.ImagePath, new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [TwClientFingerprint.AssemblyFile] = client.Hashes.AssemblySha256, [TwClientFingerprint.MetadataFile] = client.Hashes.MetadataSha256,
+                    [TwClientFingerprint.UnityFile] = client.Hashes.UnitySha256
+                }) : null;
+    }
     public async ValueTask<GameWindowObservation?> PrepareAsync(GameWindowObservation selected, CancellationToken ct)
     {
         var fresh = Refresh(selected);
         if (fresh is null) return null;
         ct.ThrowIfCancellationRequested();
-        if (fresh.GameBuild == TwClientFingerprint.GameBuild) return fresh;
+        if (fresh.GameBuild is not null) return fresh;
         var key = (selected.ProcessId, selected.ProcessStartTime);
         lock (preparedGate) prepared.Remove(key);
         string? image;
@@ -50,14 +62,15 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception) { return null; }
         if (image is null) return fresh with { GameBuild = null };
         var before = TwClientFingerprint.ReadFileStamps(image);
-        if (before is null || !await TwClientFingerprint.MatchesAsync(image, ct).ConfigureAwait(false)) return Refresh(selected);
+        var hashes = before is null ? null : await TwClientFingerprint.HashAsync(image, ct).ConfigureAwait(false);
+        if (before is null || hashes is null) return Refresh(selected);
         var after = TwClientFingerprint.ReadFileStamps(image);
         fresh = Refresh(selected);
         if (fresh is null || after is null || !before.SequenceEqual(after)) return fresh;
         lock (preparedGate)
         {
             if (prepared.Count >= 32) prepared.Remove(prepared.Keys.First());
-            prepared[key] = new(selected.ProcessId, selected.ProcessStartTime, image, after);
+            prepared[key] = new(selected.ProcessId, selected.ProcessStartTime, image, after, hashes, TwClientFingerprint.BuildId(hashes));
         }
         return Refresh(selected);
     }
@@ -121,7 +134,7 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
                     var image = ImagePath(process);
                     var stamps = image is not null && image.Equals(client.ImagePath, StringComparison.OrdinalIgnoreCase)
                         ? TwClientFingerprint.ReadFileStamps(image) : null;
-                    if (stamps is not null && client.Files.SequenceEqual(stamps)) build = TwClientFingerprint.GameBuild;
+                    if (stamps is not null && client.Files.SequenceEqual(stamps)) build = client.Build;
                     else prepared.Remove(((int)pid, start));
                 }
             return new("TW", (int)pid, start, new(unchecked((ulong)window)), build, new(point.X, point.Y, width, height), dpi, dpi, minimized);

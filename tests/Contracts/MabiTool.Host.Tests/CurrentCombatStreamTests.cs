@@ -71,6 +71,42 @@ public sealed class CurrentCombatStreamTests
     }
 
     [Fact]
+    public void UnregisteredBuildVerdictDisablesOnlyTheParsersThatFailedVerification()
+    {
+        var profile = new ObservationCombatProfile(Tw20261110CombatProtocol.Profile,
+            new("tw-combat-test", "1", "TW", "synthetic-current-layout"), Simulation: true);
+        var build = TwClientFingerprint.AdaptiveBuild(new string('a', 64), new string('b', 64));
+        var combatOff = new TwBuildVerdict(build, false, null, TwCapabilityCheck.Ok, TwCapabilityCheck.Ok,
+            new(false, TwBuildVerification.LayoutChanged), Tw20261110CombatProtocol.StreamProfile.KnownProtocols);
+        using var fixture = JsonDocument.Parse(typeof(CurrentCombatStreamTests).Assembly.GetManifestResourceStream("MabiTool.CurrentCombatIdentity")!);
+        var initial = Frame(20590, Convert.FromBase64String(fixture.RootElement.GetProperty("personalBodyBase64").GetString()!), true)
+            .Concat(Frame(20054, Convert.FromBase64String(fixture.RootElement.GetProperty("characterBodyBase64").GetString()!), true)).ToArray();
+        var at = new DateTimeOffset(2026, 11, 18, 0, 0, 0, TimeSpan.Zero);
+        ulong generation = 0;
+
+        // 战斗核对不过：战斗兴趣被拒绝，身份照常识别。
+        var withCombat = new ObservationCaptureContext([profile], _ => { }, _ => { });
+        withCombat.Configure(new(false, new(new string('a', 32), profile.Id, true, true, true)));
+        var rejected = Assert.Throws<WorkerObservationException>(() => new SharedGameStream("fixture-current", withCombat, () => ++generation,
+            layout: CombatProtocolLayout.Tw20261110, build: combatOff));
+        Assert.Equal("combat.buildUnsupported", rejected.Code);
+        using (var identityOnly = new SharedGameStream("fixture-current", new([profile], _ => { }, _ => { }), () => ++generation,
+            layout: CombatProtocolLayout.Tw20261110, build: combatOff))
+        {
+            identityOnly.Feed(0, initial, 0, 0, at);
+            Assert.NotNull(identityOnly.Music.PersonalId);
+        }
+
+        // 身份核对不过：身份帧不解码，不输出可能错位的角色。
+        var identityOff = combatOff with { Identity = new(false, TwBuildVerification.LayoutChanged),
+            Music = new(false, TwBuildVerification.IdentityUnavailable), Combat = new(false, TwBuildVerification.IdentityUnavailable) };
+        using var silent = new SharedGameStream("fixture-current", new([profile], _ => { }, _ => { }), () => ++generation,
+            layout: CombatProtocolLayout.Tw20261110, build: identityOff);
+        silent.Feed(0, initial, 0, 0, at);
+        Assert.Null(silent.Music.PersonalId); Assert.Null(silent.Music.Current.Identity);
+    }
+
+    [Fact]
     public void IdentityDecodedWithoutInterestSeedsALaterCombatInterest()
     {
         List<CombatCaptureReport> reports = [];
