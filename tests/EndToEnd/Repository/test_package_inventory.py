@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+import zlib
 import runpy
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -163,6 +164,62 @@ class PackageInventoryTests(unittest.TestCase):
         self.assertIn("launch-backend.cmd", result.stderr)
         self.assertEqual([], list(self.root.glob("rejected.zip*")))
 
+
+class UpdateAssetsTests(unittest.TestCase):
+    """更新清单：schema 2 为每个文件记录完整包里的数据区，按数据区切出的内容与文件一致；给 --base 时仍写 schema 1 与旧式增量包。"""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(dir=ROOT / "artifacts/tmp")
+        self.root = Path(self.directory.name)
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def package(self, version, files):
+        archive = self.root / f"Moongate-v{version}-Windows-x64.zip"
+        with zipfile.ZipFile(archive, "w") as content:
+            content.writestr("Moongate/components/", b"")
+            content.writestr("Moongate/components/release.json", json.dumps({"displayVersion": version}), zipfile.ZIP_DEFLATED)
+            for name, (data, method) in files.items():
+                content.writestr("Moongate/" + name, data, method)
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        (self.root / (archive.name + ".sha256")).write_text(f"{digest}  {archive.name}\n", encoding="ascii")
+        return archive
+
+    def assets(self, archive, *bases):
+        arguments = [sys.executable, "-B", "-X", "utf8", str(ROOT / "scripts/build/package-update-assets.py"), "--archive", str(archive)]
+        for base in bases:
+            arguments += ["--base", str(base)]
+        return subprocess.run(arguments, capture_output=True, text=True, encoding="utf-8")
+
+    def test_manifest_locates_every_file_inside_the_archive(self):
+        files = {"Moongate.exe": (b"launcher" * 50, zipfile.ZIP_STORED),
+                 "components/core/a.dll": (bytes(range(256)) * 400, zipfile.ZIP_DEFLATED),
+                 "components/core/empty.txt": (b"", zipfile.ZIP_DEFLATED),
+                 "licenses/NOTICE.txt": (b"notice", zipfile.ZIP_STORED)}
+        archive = self.package("0.1.5", files)
+        result = self.assets(archive)
+        self.assertEqual(0, result.returncode, result.stderr)
+        manifest = json.loads((self.root / (archive.name + ".manifest.json")).read_text(encoding="utf-8"))
+        self.assertEqual((2, []), (manifest["schemaVersion"], manifest["deltas"]))
+        raw = archive.read_bytes()
+        for entry in manifest["files"]:
+            chunk = raw[entry["dataOffset"]:entry["dataOffset"] + entry["compressedSize"]]
+            if entry["compression"] == "deflate":
+                inflater = zlib.decompressobj(-15)
+                chunk = inflater.decompress(chunk) + inflater.flush()
+            self.assertEqual((entry["size"], entry["sha256"], entry["crc32"]),
+                             (len(chunk), hashlib.sha256(chunk).hexdigest(), zlib.crc32(chunk)), entry["path"])
+        self.assertEqual({"stored", "deflate"}, {entry["compression"] for entry in manifest["files"]})
+
+        # 附旧式增量包时清单保持 schema 1，不带数据区，0.1.2／0.1.3 可以读取。
+        newer = self.package("0.1.6", files | {"components/core/a.dll": (b"changed" * 900, zipfile.ZIP_DEFLATED)})
+        result = self.assets(newer, archive.with_name(archive.name + ".manifest.json"))
+        self.assertEqual(0, result.returncode, result.stderr)
+        legacy = json.loads((self.root / (newer.name + ".manifest.json")).read_text(encoding="utf-8"))
+        self.assertEqual(1, legacy["schemaVersion"])
+        self.assertEqual(["0.1.5"], [delta["fromVersion"] for delta in legacy["deltas"]])
+        self.assertTrue(all(set(entry) == {"path", "size", "sha256"} for entry in legacy["files"]))
 
 
 if __name__ == "__main__":

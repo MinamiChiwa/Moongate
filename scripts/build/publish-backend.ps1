@@ -200,7 +200,7 @@ try {
     [IO.Directory]::Move($workRoot, $outputRoot)
     $archive = & (Join-Path $repositoryRoot 'scripts/build/package-archive.ps1') -PackageDirectory $outputRoot -ArchivePath $archivePath
     $buildRecord.archive = [ordered]@{ name = $archive.name; sha256 = $archive.sha256; bytes = $archive.bytes; files = $archive.files }
-    # 应用内更新的文件清单与增量包，与完整包同目录，发布时作为附加资产上传。
+    # 应用内更新的文件清单（不给 -UpdateBase 时带数据区，供按需分段下载；给出时为旧格式并附 0.1.2／0.1.3 使用的增量包），与完整包同目录，发布时作为附加资产上传。
     $updateArguments = @('-I', '-S', '-B', '-X', 'utf8', (Join-Path $repositoryRoot 'scripts/build/package-update-assets.py'), '--archive', $archivePath)
     foreach ($base in $UpdateBase) { $updateArguments += @('--base', [IO.Path]::GetFullPath($base)) }
     $updateAssets = & $PythonExecutable @updateArguments | ConvertFrom-Json

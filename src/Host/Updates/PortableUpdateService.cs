@@ -21,6 +21,8 @@ public interface IUpdateCheckService
 {
     bool IsConfigured { get; }
     Task<UpdateCheckResult> CheckAsync(CancellationToken token);
+    /// <summary>检查之后补上保留计划的下载方式与大小（本机比对）；与检查、下载队列分开运行。</summary>
+    Task EstimateAsync(CancellationToken token) => Task.CompletedTask;
 }
 
 public interface IUpdateDownloadService
@@ -107,7 +109,10 @@ internal sealed class PortableUpdateService(PortableInstallation? installation, 
         var candidate = await source.FindLatestAsync(current.Identity.Repository, current.Identity.Channel == "preview", token).ConfigureAwait(false);
         // 只提供比当前版本新的发行；仓库里的最新发行更旧（例如撤回了某个版本）时视为已是最新，不提供降级。
         if (candidate is null || candidate.Version.CompareTo(installed) <= 0)
+        {
+            await RetainAsync(current, null, token).ConfigureAwait(false);
             return new(false, installed.ToString(), "", null, null, candidate?.Source ?? UpdateSourceKind.GithubDirect);
+        }
         var sha256 = await source.FetchChecksumAsync(candidate, token).ConfigureAwait(false);
         var version = candidate.Version;
         // 清单可选：缺失、无效，或与 .sha256、API 报告的长度不一致时按完整包处理。
@@ -120,26 +125,81 @@ internal sealed class PortableUpdateService(PortableInstallation? installation, 
             if (manifest is not null && candidate.AssetLength is { } listed && listed != manifest.Package.Size) manifest = null;
         }
         var length = manifest?.Package.Size ?? candidate.AssetLength ?? await source.FetchLengthAsync(candidate, token).ConfigureAwait(false);
-        var choice = manifest is null ? null : await DeltaUpdate.ChooseAsync(manifest, current.PackageRoot, current.Identity.DisplayVersion,
-            new UpdateIoBudget(null, barrier), token).ConfigureAwait(false);
-        UpdatePlanDelta? delta = null;
-        if (choice is not null)
+        // 检查只做版本发现：清单记有数据区时只保存清单，本机比对与下载大小由 EstimateAsync 在后台补上（活动期间暂停也不影响检查结论）。
+        UpdatePlanRanges? ranges = null;
+        if (manifest is { Locates: true })
         {
             var manifestSha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(manifestBytes!)).ToLowerInvariant();
             await UpdatePlanStore.SaveManifestAsync(current.ToolRoot, manifestSha, manifestBytes!, token).ConfigureAwait(false);
-            delta = new(choice.Delta.Name, choice.Delta.Size, choice.Delta.Sha256,
-                candidate.Endpoints(choice.Delta.Name).Select(item => new UpdatePlanSource(item.Source.ToString(), item.Uri)).ToArray(),
-                manifestSha, choice.ReusedFiles, choice.DownloadedFiles, choice.DeletedFiles);
+            ranges = new(manifestSha);
         }
         var now = clock.GetUtcNow();
         var plan = new UpdatePlan(1, Guid.NewGuid().ToString("N"), $"{version.Major}.{version.Minor}.{version.Patch}", version.ToString(),
             version.IsPrerelease ? "preview" : "stable", candidate.Tag, candidate.AssetName, length, sha256,
             candidate.Package.Select(item => new UpdatePlanSource(item.Source.ToString(), item.Uri)).ToArray(),
-            candidate.Source.ToString(), now, now + PlanLifetime, delta);
-        await UpdatePlanStore.SaveAsync(current.ToolRoot, plan, token).ConfigureAwait(false);
-        await UpdatePlanStore.PruneManifestsAsync(current.ToolRoot, now, token).ConfigureAwait(false);
+            candidate.Source.ToString(), now, now + PlanLifetime, ranges);
+        // 同一发行再次检查时沿用未过期的原计划：已暂存的“可以安装”与下载缓存里的续传进度保持有效。
+        if (await SamePlanAsync(current, plan, now, token).ConfigureAwait(false) is { } saved) plan = saved;
+        else await UpdatePlanStore.SaveAsync(current.ToolRoot, plan, token).ConfigureAwait(false);
+        await RetainAsync(current, plan.PlanId, token).ConfigureAwait(false);
+        // 不能分段时下载方式已知（完整包）；能分段时大小待后台比对后给出，此前不写大小。
         return new(true, plan.DisplayVersion, plan.Sha256, plan.PlanId, plan.ExpiresAt, candidate.Source, plan.AssetLength,
-            delta is null ? "full" : "incremental", delta?.AssetLength ?? plan.AssetLength);
+            plan.Ranges is null ? "full" : null, plan.Ranges is null ? plan.AssetLength : null);
+    }
+
+    /// <summary>
+    /// 为保留的计划补上下载方式：比对本机文件得出按需分段的区间字节合计，缺的超过 80% 时为完整包。本机哈希在游戏资源与房间准备活动期间暂停，
+    /// 只推迟这一步；已有估算或计划不能分段时不做。
+    /// </summary>
+    public async Task EstimateAsync(CancellationToken token)
+    {
+        if (installation is not { } current) return;
+        var directory = UpdateLayout.Plans(current.ToolRoot);
+        if (!Directory.Exists(directory)) return;
+        foreach (var file in Directory.EnumerateFiles(directory, "*.json"))
+        {
+            var id = Path.GetFileNameWithoutExtension(file);
+            if (!UpdateLayout.IsTransactionId(id) || UpdatePlanStore.ReadEstimate(current.ToolRoot, id) is not null) continue;
+            UpdatePlan plan;
+            try { plan = await UpdatePlanStore.ReadAsync(current.ToolRoot, id, token).ConfigureAwait(false); }
+            catch (Exception error) when (error is UpdatePackageException or OperationException or IOException) { continue; }
+            if (plan.Ranges is not { } ranges || plan.ExpiresAt <= clock.GetUtcNow()) continue;
+            var bytes = await UpdatePlanStore.ReadManifestAsync(current.ToolRoot, ranges.ManifestSha256, token).ConfigureAwait(false);
+            if (bytes is null) continue;
+            var manifest = UpdateManifest.Parse(bytes, plan.DisplayVersion, plan.AssetName, plan.Sha256);
+            var choice = await DeltaUpdate.ChooseAsync(manifest, current.PackageRoot, new UpdateIoBudget(null, barrier), token).ConfigureAwait(false);
+            // 估算期间计划可能已被新检查回收：计划还在才写。
+            if (!File.Exists(file)) continue;
+            await UpdatePlanStore.SaveEstimateAsync(current.ToolRoot, plan.PlanId, choice is null
+                ? new("full", plan.AssetLength, 0, 0, 1, 0)
+                : new("incremental", choice.DownloadBytes, choice.Segments.Count, choice.ReusedFiles, choice.DownloadedFiles, choice.DeletedFiles), token).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<UpdatePlan?> SamePlanAsync(PortableInstallation current, UpdatePlan fresh, DateTimeOffset now, CancellationToken token)
+    {
+        var directory = UpdateLayout.Plans(current.ToolRoot);
+        if (!Directory.Exists(directory)) return null;
+        string Key(UpdatePlan plan) => JsonSerializer.Serialize(plan with { PlanId = "", CreatedAt = default, ExpiresAt = default }, ContractJson.Options);
+        var wanted = Key(fresh);
+        foreach (var file in Directory.EnumerateFiles(directory, "*.json"))
+        {
+            var id = Path.GetFileNameWithoutExtension(file);
+            if (!UpdateLayout.IsTransactionId(id)) continue;
+            try
+            {
+                var saved = await UpdatePlanStore.ReadAsync(current.ToolRoot, id, token).ConfigureAwait(false);
+                if (saved.ExpiresAt > now && Key(saved) == wanted) return saved;
+            }
+            catch (Exception error) when (error is UpdatePackageException or OperationException or IOException) { }
+        }
+        return null;
+    }
+
+    private async Task RetainAsync(PortableInstallation current, string? planId, CancellationToken token)
+    {
+        try { await UpdateRetention.RetainAsync(current.ToolRoot, current.Identity.DisplayVersion, clock.GetUtcNow(), afterCheck: true, planId, token).ConfigureAwait(false); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or UpdatePackageException) { }
     }
 
     public Task<UpdatePlan> ReadPlanAsync(string planId, CancellationToken token = default) =>
@@ -154,10 +214,13 @@ internal sealed class PortableUpdateService(PortableInstallation? installation, 
         var staged = UpdateLayout.StagedPackage(current.ToolRoot, plan.PlanId);
         if (StagedMatches(staged, plan))
             return Status(plan, plan.AssetLength, reusedStage: true) with { TotalBytes = new((ulong)plan.AssetLength) };
-        if (plan.Delta is { } delta)
+        if (plan.Ranges is { } ranges)
         {
-            try { return await DownloadDeltaAsync(current, plan, delta, report, token).ConfigureAwait(false); }
-            catch (Exception error) when (!token.IsCancellationRequested && DeltaFallback(error)) { }
+            try { return await DownloadRangesAsync(current, plan, ranges, report, token).ConfigureAwait(false); }
+            catch (Exception error) when (!token.IsCancellationRequested && DeltaFallback(error))
+            {
+                DeleteSegments(current, plan);
+            }
         }
         await report("preparing", Status(plan, 0), token).ConfigureAwait(false);
         // zip、解压出的包与暂存期间的旧版本同在工具根所在的卷上，按 zip 的三倍预留。
@@ -172,30 +235,75 @@ internal sealed class PortableUpdateService(PortableInstallation? installation, 
         return verified with { TotalBytes = new((ulong)plan.AssetLength), DownloadedFiles = 1 };
     }
 
-    /// <summary>增量下载：取得增量包并核对，用本机文件与增量内容构建新包根，按清单逐文件核对并核对发行身份。</summary>
-    private async Task<UpdateDownloadStatus> DownloadDeltaAsync(PortableInstallation current, UpdatePlan plan, UpdatePlanDelta delta,
+    /// <summary>
+    /// 增量下载（按需分段）：按本机文件重新比对出缺的文件，对完整包逐个区间发 Range 请求写入 <c>downloads/&lt;zip 哈希&gt;.blob.seg-&lt;起点&gt;-&lt;长度&gt;</c>
+    /// （每段独立续传），再用本机文件与区间里解压出的内容构建新包根，按清单逐文件核对并核对发行身份。
+    /// 服务器不支持 Range、区间或校验值不符、解压后哈希不符时由调用方改用完整包。
+    /// </summary>
+    private async Task<UpdateDownloadStatus> DownloadRangesAsync(PortableInstallation current, UpdatePlan plan, UpdatePlanRanges ranges,
         Func<string, UpdateDownloadStatus, CancellationToken, Task> report, CancellationToken token)
     {
-        var bytes = await UpdatePlanStore.ReadManifestAsync(current.ToolRoot, delta.ManifestSha256, token).ConfigureAwait(false)
+        var bytes = await UpdatePlanStore.ReadManifestAsync(current.ToolRoot, ranges.ManifestSha256, token).ConfigureAwait(false)
             ?? throw new UpdatePackageException("update.manifestInvalid");
         var manifest = UpdateManifest.Parse(bytes, plan.DisplayVersion, plan.AssetName, plan.Sha256);
-        await report("preparing", Status(plan, 0, total: delta.AssetLength), token).ConfigureAwait(false);
-        // 增量包与构建出的新包根同在工具根所在的卷上。
-        if (availableBytes(current.ToolRoot) < delta.AssetLength + manifest.TotalBytes) throw new UpdatePackageException("update.diskSpaceInsufficient");
-        var archive = ResumableAssetDownloader.CachePath(UpdateLayout.Downloads(current.ToolRoot), delta.Sha256);
-        try
+        var choice = await DeltaUpdate.ChooseAsync(manifest, current.PackageRoot, new UpdateIoBudget(null, barrier), token).ConfigureAwait(false)
+            ?? throw new UpdatePackageException("update.deltaIncomplete");
+        var total = choice.DownloadBytes;
+        await report("preparing", Status(plan, 0, total: total), token).ConfigureAwait(false);
+        // 区间文件与构建出的新包根同在工具根所在的卷上。
+        if (availableBytes(current.ToolRoot) < total + manifest.TotalBytes) throw new UpdatePackageException("update.diskSpaceInsufficient");
+        var downloads = UpdateLayout.Downloads(current.ToolRoot);
+        var files = choice.Segments.Select(segment => (segment, SegmentPath(downloads, plan.Sha256, segment))).ToArray();
+        var budget = new UpdateIoBudget(readPolicy().MaximumBytesPerSecond, barrier);
+        var resumed = files.Sum(item => File.Exists(item.Item2) ? Math.Min(new FileInfo(item.Item2).Length, item.segment.Length) : 0);
+        var sources = plan.Sources.Select(item => new AssetDownloadSource(item.Id, item.Uri)).ToArray();
+        var validatorPath = ResumableAssetDownloader.CachePath(downloads, plan.Sha256) + ".validator";
+        var validator = File.Exists(validatorPath) ? File.ReadAllText(validatorPath).Trim() : null;
+        // 区间按策略的下载并发同时请求，共用同一个限速桶。
+        var concurrency = Math.Clamp(readPolicy().DownloadConcurrency, 1, 4);
+        using (var downloader = new ResumableAssetDownloader(createHandler?.Invoke() ?? new HttpClientHandler { AllowAutoRedirect = false },
+            new() { Concurrency = concurrency }, availableBytes, budget: budget))
+        using (var progressStop = CancellationTokenSource.CreateLinkedTokenSource(token))
         {
-            var downloaded = await DownloadAssetAsync(plan, delta.Sources, archive, delta.AssetLength, delta.Sha256, report, token).ConfigureAwait(false);
-            var verified = Status(plan, delta.AssetLength, source: downloaded.SourceId, total: delta.AssetLength);
-            await report("verifying", verified, token).ConfigureAwait(false);
-            await DeltaUpdate.StageAsync(manifest, archive, current.PackageRoot, current.ToolRoot, plan.PlanId,
-                new UpdateIoBudget(null, barrier), token).ConfigureAwait(false);
-            return verified with { TotalBytes = new((ulong)delta.AssetLength), ReusedFiles = delta.ReusedFiles, DownloadedFiles = delta.DownloadedFiles };
+            var progress = ReportProgressAsync(plan, total, () => Math.Min(total, resumed + budget.DownloadedBytes), report, progressStop.Token);
+            try
+            {
+                var received = new System.Collections.Concurrent.ConcurrentBag<string?>();
+                await Parallel.ForEachAsync(files, new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = token }, async (item, ct) =>
+                    received.Add(await downloader.DownloadRangeAsync(sources, item.Item2, item.segment.Start, item.segment.Length, plan.AssetLength,
+                        validator, ct).ConfigureAwait(false))).ConfigureAwait(false);
+                // 没有保存的校验值时各段同时请求，事后要求所有段来自同一份资产。
+                var validators = received.OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+                if (validators.Length > 1) throw new AssetDownloadException("update.rangeUnsupported");
+                if (validator is null && validators.Length == 1) await File.WriteAllTextAsync(validatorPath, validators[0], token).ConfigureAwait(false);
+            }
+            finally
+            {
+                progressStop.Cancel();
+                try { await progress.ConfigureAwait(false); } catch (OperationCanceledException) { }
+            }
         }
-        finally { if (File.Exists(archive)) File.Delete(archive); }
+        var verified = Status(plan, total, source: plan.Sources[0].Id, total: total);
+        await report("verifying", verified, token).ConfigureAwait(false);
+        await DeltaUpdate.StageAsync(manifest, file => DeltaUpdate.OpenFromSegments(file, files), current.PackageRoot, current.ToolRoot,
+            plan.PlanId, new UpdateIoBudget(null, barrier), token).ConfigureAwait(false);
+        DeleteSegments(current, plan);
+        return verified with { TotalBytes = new((ulong)total), ReusedFiles = choice.ReusedFiles, DownloadedFiles = choice.DownloadedFiles };
     }
 
-    // 磁盘不足与计划失效时改用完整包也无济于事；其余增量失败（增量包 404、下载失败、缺内容、校验不过）改用完整包。
+    internal static string SegmentPath(string downloads, string packageSha256, UpdateRangeSegment segment) =>
+        ResumableAssetDownloader.CachePath(downloads, packageSha256) + ".seg-" + segment.Start + "-" + segment.Length;
+
+    private static void DeleteSegments(PortableInstallation current, UpdatePlan plan)
+    {
+        var downloads = UpdateLayout.Downloads(current.ToolRoot);
+        if (!Directory.Exists(downloads)) return;
+        var prefix = Path.GetFileName(ResumableAssetDownloader.CachePath(downloads, plan.Sha256));
+        foreach (var file in Directory.EnumerateFiles(downloads, prefix + ".seg-*").Append(Path.Combine(downloads, prefix + ".validator")))
+            if (File.Exists(file)) File.Delete(file);
+    }
+
+    // 磁盘不足与计划失效时改用完整包也无济于事；其余增量失败（不支持 Range、区间不符、下载失败、缺内容、校验不过）改用完整包。
     private static bool DeltaFallback(Exception error) => error switch
     {
         AssetDownloadException download => download.Code != "update.diskSpaceInsufficient",

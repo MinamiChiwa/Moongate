@@ -374,4 +374,18 @@ public sealed class SettingsUpdatePolicyTests
         }
         finally { window.Close(); }
     }
+
+    [Fact]
+    public void UpdateCardSaysNotCheckedUntilTheBackendReportsACheckForThisVersion()
+    {
+        var policy = new UpdatePolicySnapshot(new UpdatePolicy(), new UInt64String(0));
+        string State(UpdateStateSnapshot update) => LiveBackend.UpdateRows(update).Single(row => row.Label == UiText.Pick("状态", "狀態")).Value;
+        var never = new UpdateStateSnapshot(true, "idle", "0.1.3", policy, null, null);
+        Assert.Equal(UiText.Pick("尚未检查", "尚未檢查"), State(never));
+        Assert.Equal(UiText.Pick("尚未检查", "尚未檢查"), LiveBackend.UpdateRows(never).Single(row => row.Label == UiText.Pick("上次检查", "上次檢查")).Value);
+        var current = never with { LastCheck = new(DateTimeOffset.UtcNow, "current") };
+        Assert.Equal(UiText.Pick("已是最新版本", "已是最新版本"), State(current));
+        var failed = never with { LastCheck = new(DateTimeOffset.UtcNow, "failed", "update.githubUnreachable") };
+        Assert.Equal(UiText.Pick("检查失败：连不上 GitHub", "檢查失敗：連不上 GitHub"), State(failed));
+    }
 }

@@ -94,6 +94,69 @@ public sealed class ResumableAssetDownloader : IDisposable
         finally { cacheGate.Release(); }
     }
 
+    /// <summary>
+    /// 把资产 <c>[start, start+length)</c> 一段写入 <paramref name="path"/>：单区间 Range 请求，已有部分时从断点续请；
+    /// 响应须为 206 且 <c>Content-Range</c> 与请求一致、总长等于 <paramref name="total"/>，强校验值须与 <paramref name="validator"/> 相同（为空时记下本次的）。
+    /// 服务器返回 200（不支持 Range）、范围或校验值不符时以 <c>update.rangeUnsupported</c> 结束，由调用方改用完整包。返回资产的强校验值。
+    /// </summary>
+    public async Task<string?> DownloadRangeAsync(IReadOnlyList<AssetDownloadSource> sources, string path, long start, long length, long total,
+        string? validator, CancellationToken cancellationToken = default)
+    {
+        if (start < 0 || length < 1 || start + length > total) throw new AssetDownloadException("update.assetMetadataInvalid");
+        Validate(new AssetDownloadRequest(sources, path, total, new string('0', 64)));
+        UpdatePaths.RejectLinks(path);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        using var activity = budget.EnterActivity("update.download");
+        await slots.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            foreach (var source in sources)
+            {
+                for (var retry = 0; retry <= options.RetriesPerSource; retry++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (retry > 0) await delay(TimeSpan.FromMilliseconds(500 * Math.Pow(2, retry - 1)), cancellationToken).ConfigureAwait(false);
+                    var have = File.Exists(path) ? new FileInfo(path).Length : 0;
+                    if (have > length) { File.Delete(path); have = 0; }
+                    if (have == length) return validator;
+                    using var message = new HttpRequestMessage(HttpMethod.Get, source.Uri);
+                    message.Headers.Range = new RangeHeaderValue(start + have, start + length - 1);
+                    if (validator is not null) message.Headers.TryAddWithoutValidation("If-Range", validator);
+                    HttpResponseMessage response;
+                    try { response = await SendSafeAsync(message, sources, cancellationToken).ConfigureAwait(false); }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                    catch (HttpRequestException) { continue; }
+                    catch (OperationCanceledException) { continue; }
+                    using (response)
+                    {
+                        if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound or HttpStatusCode.Gone) break;
+                        if (response.StatusCode == HttpStatusCode.TooManyRequests || (int)response.StatusCode >= 500) continue;
+                        if (response.StatusCode == HttpStatusCode.OK) throw new AssetDownloadException("update.rangeUnsupported");
+                        if (response.StatusCode != HttpStatusCode.PartialContent) throw new AssetDownloadException("update.assetDownloadFailed");
+                        var range = response.Content.Headers.ContentRange;
+                        var responseValidator = GetStrongValidator(response);
+                        if (range is not { Unit: "bytes", From: { } from, To: { } to, Length: { } size } || from != start + have ||
+                            to != start + length - 1 || size != total ||
+                            response.Content.Headers.ContentLength is { } contentLength && contentLength != to - from + 1 ||
+                            validator is not null && !string.Equals(responseValidator, validator, StringComparison.Ordinal))
+                            throw new AssetDownloadException("update.rangeUnsupported");
+                        validator ??= responseValidator;
+                        EnsureSpace(path, length - have);
+                        try { await CopyBoundedAsync(response.Content, path, append: have > 0, length, cancellationToken).ConfigureAwait(false); }
+                        catch (IOException error) when (IsDiskFull(error)) { throw new AssetDownloadException("update.diskSpaceInsufficient"); }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                        catch (OperationCanceledException) { continue; }
+                        catch (HttpRequestException) { continue; }
+                        catch (IOException) { continue; }
+                        if (new FileInfo(path).Length == length) return validator;
+                    }
+                }
+            }
+            throw new AssetDownloadException("update.allSourcesUnavailable");
+        }
+        finally { slots.Release(); }
+    }
+
     private async Task<AssetDownloadResult> DownloadCoreAsync(AssetDownloadRequest request, CancellationToken cancellationToken)
     {
         Validate(request);

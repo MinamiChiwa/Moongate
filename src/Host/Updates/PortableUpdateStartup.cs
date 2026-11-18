@@ -28,21 +28,30 @@ internal static class PortableUpdateStartup
     /// <summary>宿主完成数据迁移并开始监听后调用。</summary>
     internal static void ReportReady(PortableInstallation? installation)
     {
-        if (installation is null || UpdateJournal.Read(installation.ToolRoot) is not { } journal) return;
+        if (installation is null) return;
         var root = installation.ToolRoot;
-        if (!journal.IsFinal)
+        if (UpdateJournal.Read(root) is { } journal)
         {
-            var launched = journal.Entries.LastOrDefault(entry => entry[0] == UpdateJournal.Launch);
-            if (launched is { Length: 2 } && launched[1] == installation.Identity.DisplayVersion)
+            if (!journal.IsFinal)
             {
-                Directory.CreateDirectory(UpdateLayout.Transaction(root, journal.TransactionId));
-                File.WriteAllText(UpdateLayout.Healthy(root, journal.TransactionId, launched[1]), DateTimeOffset.UtcNow.ToString("O"));
+                var launched = journal.Entries.LastOrDefault(entry => entry[0] == UpdateJournal.Launch);
+                if (launched is { Length: 2 } && launched[1] == installation.Identity.DisplayVersion)
+                {
+                    Directory.CreateDirectory(UpdateLayout.Transaction(root, journal.TransactionId));
+                    File.WriteAllText(UpdateLayout.Healthy(root, journal.TransactionId, launched[1]), DateTimeOffset.UtcNow.ToString("O"));
+                }
             }
-            return;
+            else
+            {
+                // 事务结束后的下一次成功启动：上一版文件、暂存与下载缓存不再需要，结果文件保留给设置页显示；
+                // 计划按版本回收：提交后不高于新版本而删除，回退或中止后仍高于旧版本而保留。
+                foreach (var directory in new[] { "previous", "staging", "transactions", "downloads" })
+                    UpdatePaths.DeleteOwnedTree(Path.Combine(UpdateLayout.Root(root), directory));
+                File.Delete(UpdateLayout.Journal(root));
+            }
         }
-        // 事务结束后的下一次成功启动：上一版文件、暂存与下载缓存不再需要，结果文件保留给设置页显示。
-        foreach (var directory in new[] { "previous", "staging", "transactions", "downloads", "plans" })
-            UpdatePaths.DeleteOwnedTree(Path.Combine(UpdateLayout.Root(root), directory));
-        File.Delete(UpdateLayout.Journal(root));
+        // 已保存的计划、清单、暂存与下载不高于当前运行版本（更新成功、手动覆盖升级）或已过期时作废。
+        try { UpdateRetention.RetainAsync(root, installation.Identity.DisplayVersion, DateTimeOffset.UtcNow).GetAwaiter().GetResult(); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or UpdatePackageException) { }
     }
 }

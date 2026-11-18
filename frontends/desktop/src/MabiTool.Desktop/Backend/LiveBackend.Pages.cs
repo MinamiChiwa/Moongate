@@ -246,13 +246,13 @@ public sealed partial class LiveBackend
             current.Connected ? page.Update?.Available?.ReleaseId : null, current.Connected);
     }
 
-    // 更新卡片固定五行，状态变化只改文字：当前版本、状态、可用更新、下载进度、上次安装。
-    private static List<KeyValue> UpdateRows(UpdateStateSnapshot? update)
+    // 更新卡片固定六行，状态变化只改文字：当前版本、状态、可用更新、下载进度、上次检查、上次安装。
+    internal static List<KeyValue> UpdateRows(UpdateStateSnapshot? update)
     {
         var unknown = Pick("未知", "未知");
         if (update is null)
             return [new(Pick("当前版本", "目前版本"), unknown), new(Pick("状态", "狀態"), unknown), new(Pick("可用更新", "可用更新"), unknown),
-                new(Pick("下载进度", "下載進度"), unknown), new(Pick("上次安装", "上次安裝"), unknown)];
+                new(Pick("下载进度", "下載進度"), unknown), new(Pick("上次检查", "上次檢查"), unknown), new(Pick("上次安装", "上次安裝"), unknown)];
         var notApplicable = Pick("不适用", "不適用");
         var state = !update.Configured
             ? Pick("不可用：仅发行压缩包版本支持", "不可用：僅發行壓縮檔版本支援")
@@ -267,13 +267,18 @@ public sealed partial class LiveBackend
                 "waitingForIdle" => Pick("等待当前活动结束", "等待目前活動結束"),
                 "applying" => Pick("正在安装", "正在安裝"),
                 "handedOff" => Pick("正在重启到新版本", "正在重新啟動到新版本"),
+                // 空闲时按后端的最近检查：没有即尚未检查，只有结论为 current 才是已是最新版本。
                 _ => update.Operation switch
                 {
-                    { State.KnownValue: OperationState.Failed, Problem: { } problem } =>
+                    { Kind: not "update.check", State.KnownValue: OperationState.Failed, Problem: { } problem } =>
                         Pick("上次操作失败：", "上次操作失敗：") + Localization.CodeText.Reason(problem.Code),
-                    { Kind: "update.check", State.KnownValue: OperationState.Succeeded } when update.Available is null =>
-                        Pick("已是最新版本", "已是最新版本"),
-                    _ => Pick("待命", "待命")
+                    _ => update.LastCheck switch
+                    {
+                        null => Pick("尚未检查", "尚未檢查"),
+                        { Outcome: "failed" } failed => Pick("检查失败：", "檢查失敗：") + Localization.CodeText.Reason(failed.FailureCode),
+                        { Outcome: "current" } => Pick("已是最新版本", "已是最新版本"),
+                        _ => Pick("待命", "待命")
+                    }
                 }
             };
         var available = update.Available is { } offer
@@ -281,7 +286,7 @@ public sealed partial class LiveBackend
             {
                 { DownloadKind: "incremental", DownloadBytes: { } bytes } => Pick($"（增量更新 {Megabytes(bytes.Value)}）", $"（增量更新 {Megabytes(bytes.Value)}）"),
                 { DownloadKind: "full", DownloadBytes: { } bytes } => Pick($"（完整下载 {Megabytes(bytes.Value)}）", $"（完整下載 {Megabytes(bytes.Value)}）"),
-                { SizeBytes: { } size } => $"（{Megabytes(size.Value)}）",
+                // 后端还没比对完本机文件时下载方式未知，只写版本、不写大小。
                 _ => ""
             })
             : update.Configured ? Pick("没有", "沒有") : notApplicable;
@@ -290,17 +295,23 @@ public sealed partial class LiveBackend
             result.TryGetProperty("verifiedBytes", out var verified) && ulong.TryParse(verified.GetString(), out var done) &&
             result.TryGetProperty("totalBytes", out var total) && ulong.TryParse(total.GetString(), out var all) && all > 0)
             progress = $"{Megabytes(done)} / {Megabytes(all)}（{done * 100 / all}%）";
+        else if (update.State == "available" && update.Available?.ResumableBytes is { Value: > 0 } resumable)
+            progress = Pick($"已下载 {Megabytes(resumable.Value)}，可续传", $"已下載 {Megabytes(resumable.Value)}，可續傳");
+        var checkedText = update.LastCheck is { } check
+            ? check.CheckedAt.ToLocalTime().ToString("MM-dd HH:mm", CultureInfo.InvariantCulture) + (check.Outcome == "failed" ? Pick("，失败", "，失敗") : "")
+            : update.Configured ? Pick("尚未检查", "尚未檢查") : notApplicable;
         var last = update.LastInstall switch
         {
             null => update.Configured ? Pick("没有", "沒有") : notApplicable,
             { Outcome: "committed" } install => Pick("已更新到 ", "已更新到 ") + install.ReleaseId,
-            { Outcome: "rolledBack" } install => Pick($"安装 {install.ReleaseId} 失败，已回到 {install.PreviousReleaseId}", $"安裝 {install.ReleaseId} 失敗，已回到 {install.PreviousReleaseId}"),
+            { Outcome: "rolledBack" } install => Pick($"安装 {install.ReleaseId} 失败，已回到 {install.PreviousReleaseId}", $"安裝 {install.ReleaseId} 失敗，已回到 {install.PreviousReleaseId}")
+                + (install.FailureCode is { } reason ? "：" + Localization.CodeText.Reason(reason) : ""),
             { Outcome: "aborted" } install => Pick($"{install.ReleaseId} 未安装：", $"{install.ReleaseId} 未安裝：") + Localization.CodeText.Reason(install.FailureCode),
             var install => Pick($"安装 {install.ReleaseId} 失败，请手动升级", $"安裝 {install.ReleaseId} 失敗，請手動升級")
         };
         return [new(Pick("当前版本", "目前版本"), update.InstalledReleaseId ?? (update.Configured ? unknown : notApplicable)),
             new(Pick("状态", "狀態"), state), new(Pick("可用更新", "可用更新"), available),
-            new(Pick("下载进度", "下載進度"), progress), new(Pick("上次安装", "上次安裝"), last)];
+            new(Pick("下载进度", "下載進度"), progress), new(Pick("上次检查", "上次檢查"), checkedText), new(Pick("上次安装", "上次安裝"), last)];
     }
 
     private static bool UpdateBusy(UpdateStateSnapshot update) =>

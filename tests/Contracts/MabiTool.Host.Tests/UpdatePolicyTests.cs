@@ -83,9 +83,10 @@ public sealed class UpdatePolicyTests
             clock.Now = clock.Now.AddSeconds(60);
             Assert.True(await store.TryClaimCheckAsync(0.999));
             var later = store.Schedule().NextAttemptAt;
-            await store.ScheduleStartupAsync();
-            Assert.Equal(later, store.Schedule().NextAttemptAt);
             Assert.InRange(later!.Value, clock.Now.AddHours(3), clock.Now.AddHours(3).AddMinutes(15));
+            // 下一次启动不沿用较晚的排定时间：启动后 60 秒再检查一次。
+            await store.ScheduleStartupAsync();
+            Assert.Equal(clock.Now.AddSeconds(60), store.Schedule().NextAttemptAt);
         }
     }
 

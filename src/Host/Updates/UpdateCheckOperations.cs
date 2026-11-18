@@ -15,6 +15,7 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
 {
     private readonly SemaphoreSlim admission = new(1, 1);
     private readonly SemaphoreSlim scheduleChanged = new(0, 1);
+    private readonly SemaphoreSlim estimateRequested = new(1, 1);
     private readonly Channel<string> queue = Channel.CreateBounded<string>(new BoundedChannelOptions(1) { SingleReader = true });
     private bool accepting;
     private string? activeId;
@@ -85,10 +86,11 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
         {
             var execution = RunQueueAsync(lifetime.Token);
             var schedule = RunScheduleAsync(lifetime.Token);
+            var estimates = RunEstimatesAsync(lifetime.Token);
             await Task.WhenAny(execution, schedule);
             await CloseAdmissionAsync();
             lifetime.Cancel();
-            await Task.WhenAll(execution, schedule);
+            await Task.WhenAll(execution, schedule, estimates);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
         catch (Exception)
@@ -111,9 +113,11 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
                 JsonElement? result = null;
                 ApiProblem? problem = null;
                 var transferred = false;
+                var checking = false;
                 try
                 {
                     var work = operations.ReadUpdateWork(id);
+                    checking = work.Action == UpdateAction.Check;
                     if (work.Action == UpdateAction.Check)
                         result = JsonSerializer.SerializeToElement(await checker.CheckAsync(cancellation.Token), ContractJson.Options);
                     else if (work.Action == UpdateAction.Download && downloader is not null && work.Plan is not null)
@@ -170,6 +174,11 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
                     handedOffId = id; installer!.RequestShutdown(); return;
                 }
                 await operations.FinishUpdateAsync(id, result, problem);
+                if (problem is null && checking) SignalEstimate();
+                // 检查失败（含连不上 GitHub）后 30 分钟内重试一次，不等满整个间隔。
+                if (problem is not null && checking)
+                    try { await policy.ScheduleRetryAsync(stoppingToken); }
+                    catch (ActivityBarrierException) { }
             }
             catch
             {
@@ -234,6 +243,29 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
             try { await Task.WhenAll(timer, changed); }
             catch (OperationCanceledException) when (wake.IsCancellationRequested) { }
         }
+    }
+
+    /// <summary>
+    /// 本机比对与下载大小在检查之外单独运行：启动时与每次检查成功后各做一次，在游戏资源或房间准备活动期间暂停也不阻塞检查与下载队列。
+    /// </summary>
+    private async Task RunEstimatesAsync(CancellationToken token)
+    {
+        try
+        {
+            while (true)
+            {
+                await estimateRequested.WaitAsync(token);
+                try { await checker.EstimateAsync(token); }
+                catch (Exception error) when (error is not OperationCanceledException) { }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    private void SignalEstimate()
+    {
+        try { estimateRequested.Release(); }
+        catch (SemaphoreFullException) { }
     }
 
     private void SignalSchedule()

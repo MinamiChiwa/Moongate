@@ -182,8 +182,8 @@ pwsh -NoProfile -File .\scripts\build\publish-backend.ps1 -Version 0.1.0 -Channe
 - 先在 `artifacts/packages/<ReleaseId>/` 生成目录包，再由 `scripts/build/package-archive.ps1` 打成 `artifacts/packages/Moongate-v<版本>-Windows-x64.zip` 与同名 `.sha256`（preview 渠道为 `Moongate-v<版本>-preview-Windows-x64.zip`）。
 - ZIP 解压后是单个 `Moongate` 文件夹：`Moongate.exe`（入口，源码在 `src/PortableLauncher`）、`components\`（各组件与随包运行时）、`licenses\`（第三方声明与 SPDX 清单）；首次运行生成 `userdata\`，保存全部数据、设置与版面。`components\core\launch-backend.cmd -Wait` 只启动后端并显示输出，用于排查启动失败。
 - `components\release.json` 是发行身份：版本、渠道、检查更新的仓库、入口与各组件的树哈希；宿主据此得知自己的版本，应用内更新用它核对下载包。
-- 每个版本在 GitHub Releases 发布 ZIP 与同名 `.sha256`，标签为 `v<版本>`，标题为 `Moongate <版本>`（预览版带 `-preview` 并标为预发布）；应用内更新先直连 github.com 取最新版本（不通时改用 GitHub API），有对应本机版本的增量包时只下载变化的文件，否则下载整包；核对 SHA-256、文件清单、压缩包结构与发行身份后由 `Moongate.exe` 替换程序文件，失败时回退并恢复数据库。
-- **增量资产（0.1.2 起）。** 打包时加 `-UpdateBase <上一版完整包 zip 或其清单>`（可给多个），在完整包旁生成文件清单 `<完整包名>.manifest.json` 与增量包 `<完整包名>.update-from-<旧版本>.zip`；增量包只含新版里内容变化或新增的文件，打成单个文件。已有完整包时也可单独运行 `python scripts/build/package-update-assets.py --archive <新完整包> --base <旧完整包或清单>`。清单与增量包都作为附加资产上传。
+- 每个版本在 GitHub Releases 发布 ZIP 与同名 `.sha256`，标签为 `v<版本>`，标题为 `Moongate <版本>`（预览版带 `-preview` 并标为预发布）；应用内更新先直连 github.com 取最新版本（不通时改用 GitHub API），按文件清单只从完整包里分段下载本机缺的文件（服务器不支持分段、清单没有数据区或缺的接近整包时下载整包）；核对 SHA-256、文件清单、压缩包结构与发行身份后由 `Moongate.exe` 替换程序文件，失败时回退并恢复数据库。
+- **更新资产。** 打包时在完整包旁生成文件清单 `<完整包名>.manifest.json`，记录每个程序文件在完整包里的位置，应用内更新据此只下载缺的文件。**从 0.1.5 起不再需要 `-UpdateBase`，发行固定为完整包、`.sha256`、`.manifest.json` 三个文件。** 0.1.4 发布时加 `-UpdateBase <0.1.2 与 0.1.3 的完整包 zip 或其清单>`：清单改为 0.1.2／0.1.3 能读的旧格式，并生成它们使用的增量包 `<完整包名>.update-from-<旧版本>.zip`，一并作为附加资产上传。已有完整包时也可单独运行 `python scripts/build/package-update-assets.py --archive <新完整包> [--base <旧完整包或清单>]`。
 - **资产命名与排序。** GitHub Release 按文件名排序列出资产，完整包必须排在第一个，用户不滚动就能看到该下载的文件：
 
   | 资产 | 文件名 | 示例 |

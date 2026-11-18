@@ -11,6 +11,7 @@ public sealed class UpdatePolicyStore(SqliteStore database, TimeProvider? timePr
 {
     public static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(60);
     public static readonly TimeSpan MaximumJitter = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan FailureRetry = TimeSpan.FromMinutes(30);
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     internal event Action? Changed;
     public static IReadOnlyList<DatabaseMigration> Migrations { get; } =
@@ -113,12 +114,20 @@ public sealed class UpdatePolicyStore(SqliteStore database, TimeProvider? timePr
             return next;
     }
 
+    /// <summary>宿主每次启动后 <see cref="StartupDelay"/> 检查一次，不沿用上次运行排定的较晚时间；之后按间隔。</summary>
     public Task ScheduleStartupAsync(CancellationToken token = default) => database.WriteAsync(tx =>
     {
         EnsureRow(tx);
-        var earliest = (clock.GetUtcNow() + StartupDelay).ToUnixTimeMilliseconds();
-        tx.Execute("UPDATE platform_update_policy SET next_attempt_at=max(coalesce(next_attempt_at,$earliest),$earliest) WHERE singleton=1",
-            ("$earliest", earliest));
+        SetNext(tx, clock.GetUtcNow() + StartupDelay);
+        return true;
+    }, token);
+
+    /// <summary>检查失败后在 <see cref="FailureRetry"/> 内重试一次，原定时间更早时不推迟。</summary>
+    public Task ScheduleRetryAsync(CancellationToken token = default) => database.WriteAsync(tx =>
+    {
+        EnsureRow(tx);
+        tx.Execute("UPDATE platform_update_policy SET next_attempt_at=min(coalesce(next_attempt_at,$retry),$retry) WHERE singleton=1",
+            ("$retry", (clock.GetUtcNow() + FailureRetry).ToUnixTimeMilliseconds()));
         return true;
     }, token);
 
