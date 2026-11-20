@@ -7,17 +7,21 @@
              xmlns:controls="using:MabiTool.Desktop.Controls"
              x:Class="MabiTool.Desktop.Overlay.OverlayWidgetView"
              x:DataType="overlay:OverlayWidgetModel"
-             Foreground="White" FontSize="13">
+             Foreground="White" FontSize="13" ClipToBounds="False">
   <!--
     元件内容随外框尺寸重新排版：名称在自己的宽度内截断，列表放不下时在元件内滚动，元件越大显示越多。
     外框的宽高由画布按版面里的尺寸给出，这里不写固定宽度。
+    本视图不裁切，由外框的内容层按圆角裁切：贴边的按钮悬停放大时落在外框内边距里，不被切掉。
   -->
   <UserControl.Resources>
-    <!-- 比率一格：名称与百分比同一行，百分比右对齐；DPS 与定时测量元件共用。 -->
+    <!-- 比率一格：名称与百分比同一行，百分比右对齐；DPS 与定时测量元件共用。
+         客户端图标可用时名称换成图标（带深色描边，亮色游戏画面上也清楚），名称进悬停提示（元件解锁或编辑时可见）。 -->
     <DataTemplate x:Key="RateCell" DataType="combat:CoverageTile">
       <DockPanel Margin="0,0,8,1">
         <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="4,0,0,0" Text="{Binding Percent}" />
-        <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+        <controls:ClientIconSlot Icon="{Binding Icon}" Label="{Binding Name}" Outline="True" VerticalAlignment="Center">
+          <TextBlock Classes="dim" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+        </controls:ClientIconSlot>
       </DockPanel>
     </DataTemplate>
     <!-- 效果条目：与 DPS 页同一自绘控件，素材包有该效果的图片时盖在色标位置。 -->
@@ -252,6 +256,11 @@
         <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{DynamicResource O.Dps}" />
       </DockPanel>
       <TextBlock DockPanel.Dock="Top" FontSize="34" FontWeight="Black" TextTrimming="CharacterEllipsis" Text="{Binding PrimaryDps}" />
+      <!-- 当前攻击目标的血量：停靠在底部、位于比率行之下，始终可见；没有当前目标或在版面页关闭时收起，外框尺寸不变。
+           收起过程中仍显示最后一次的内容。 -->
+      <controls:ExpandPanel x:Name="DpsHealthExpander" DockPanel.Dock="Bottom" IsExpanded="{Binding HealthExpanded, Mode=OneWay}">
+        <combat:TargetHealthPanel x:Name="DpsHealth" Classes="overlay" Margin="0,6,0,0" DataContext="{Binding HealthShown}" />
+      </controls:ExpandPanel>
       <ScrollViewer VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
           <ItemsControl controls:StableItems.Source="{Binding OtherKpis}">
@@ -376,7 +385,9 @@
             <StackPanel Margin="0,0,0,5" Spacing="2">
               <DockPanel>
                 <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding Percent}" />
-                <TextBlock TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                <controls:ClientIconSlot Icon="{Binding Icon}" Label="{Binding Name}" Outline="True" VerticalAlignment="Center">
+                  <TextBlock TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                </controls:ClientIconSlot>
               </DockPanel>
               <controls:MeterBar Value="{Binding Ratio}" Fill="#FF9C7F" Track="#40FFFFFF" />
             </StackPanel>

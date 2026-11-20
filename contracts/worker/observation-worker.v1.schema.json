@@ -305,11 +305,21 @@
                           "tw-music-v1",
                           "tw-combat-20261110-v1",
                           "tw-combat-20261110-v2",
-                          "tw-combat-20261110-v3"
+                          "tw-combat-20261110-v3",
+                          "tw-combat-20261110-v4"
                         ]
                       },
                       "anyAddress": {
                         "type": "boolean"
+                      },
+                      "localIdentity": {
+                        "type": "object"
+                      },
+                      "localIdentityConnection": {
+                        "$ref": "#/$defs/identityConnection"
+                      },
+                      "combatEntities": {
+                        "$ref": "#/$defs/entityCarry"
                       }
                     }
                   }
@@ -522,6 +532,11 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 128
+              },
+              "detail": {
+                "description": "observation.captureFailed 的细分原因（固定码，如 capture.processExited、capture.allDevicesClosed、writer.io）。",
+                "type": "string",
+                "pattern": "^[a-z]+\\.[A-Za-z]{1,48}$"
               }
             }
           }
@@ -591,6 +606,9 @@
                             "type": "null"
                           }
                         ]
+                      },
+                      "identityConnection": {
+                        "$ref": "#/$defs/identityConnection"
                       }
                     },
                     "additionalProperties": false
@@ -855,6 +873,17 @@
     }
   ],
   "$defs": {
+    "identityConnection": {
+      "description": "确认本机身份时所在的游戏连接（本机端口、远端地址与端口）；只在 Worker 与宿主之间传递，不进入公开快照与诊断。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["localPort", "remoteAddress", "remotePort"],
+      "properties": {
+        "localPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "remoteAddress": { "type": "string", "minLength": 2, "maxLength": 45 },
+        "remotePort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
     "channelDetection": {
       "type": "object",
       "additionalProperties": false,
@@ -988,6 +1017,8 @@
             "bytes": { "$ref": "#/$defs/uint64" },
             "outOfOrder": { "$ref": "#/$defs/uint64" },
             "retransmitted": { "$ref": "#/$defs/uint64" },
+            "gapSkippedBytes": { "$ref": "#/$defs/uint64" },
+            "gapSceneResets": { "$ref": "#/$defs/uint64" },
             "resets": {
               "type": "object",
               "maxProperties": 14,
@@ -1021,6 +1052,42 @@
               "additionalProperties": { "$ref": "#/$defs/uint64" }
             },
             "otherFrames": { "$ref": "#/$defs/uint64" }
+          }
+        },
+        "devices": {
+          "description": "可选：按设备分项（打开的设备与因上限跳过的设备合计至多 64 张，至多一张为主来源）。只含设备 ID（设备名的哈希，与网卡列表的 ID 相同）、类别、链路类型、打开结果与计数，不含设备名与地址。",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["channelId", "kind", "linkType", "opened", "issue", "primary", "packets", "portPackets", "gameStreams", "frames"],
+            "properties": {
+              "channelId": { "type": "string", "pattern": "^[0-9a-f]{32}(?![\\s\\S])" },
+              "kind": { "enum": ["physical", "wintun", "tap", "hyperv", "virtual", "loopback"] },
+              "linkType": { "type": "integer", "minimum": -1, "maximum": 2147483647 },
+              "opened": { "type": "boolean" },
+              "issue": { "type": ["string", "null"], "pattern": "^(?:open|filter|read|limit|link:-?[0-9]{1,10})(?![\\s\\S])" },
+              "primary": { "type": "boolean" },
+              "packets": { "$ref": "#/$defs/uint64" },
+              "portPackets": { "$ref": "#/$defs/uint64" },
+              "gameStreams": { "$ref": "#/$defs/uint64" },
+              "frames": { "$ref": "#/$defs/uint64" },
+              "candidateDropped": { "$ref": "#/$defs/uint64" }
+            }
+          }
+        },
+        "read": {
+          "description": "可选：本次捕获实际采用的读取方式（immediate 即时模式加读事件、poll 轮询、minToCopy 实验用），fallback 为因 Npcap 不支持读事件或即时模式而回退轮询。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "fallback", "coalesceMs", "pollMs", "bufferBytes"],
+          "properties": {
+            "mode": { "enum": ["immediate", "poll", "minToCopy"] },
+            "fallback": { "type": "boolean" },
+            "coalesceMs": { "type": "integer", "minimum": 0, "maximum": 1000 },
+            "pollMs": { "type": "integer", "minimum": 0, "maximum": 1000 },
+            "bufferBytes": { "type": "integer", "minimum": 0, "maximum": 67108864 }
           }
         },
         "prearm": {
@@ -1485,6 +1552,64 @@
         },
         "breakGauge": {
           "oneOf": [{ "$ref": "#/$defs/breakGauge" }, { "type": "null" }]
+        },
+        "health": { "$ref": "#/$defs/entityHealth" },
+        "isBoss": { "type": "boolean" },
+        "dead": { "type": "boolean" },
+        "actorType": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z-]+(?![\\s\\S])" },
+        "sheetId": { "$ref": "#/$defs/uint64" }
+      }
+    },
+    "entityHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "maximum", "observedAt", "state"],
+      "properties": {
+        "current": { "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }] },
+        "maximum": { "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }] },
+        "observedAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "state": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\u0000-\\u001f]*(?![\\s\\S])" },
+        "encrypted": { "type": "boolean" },
+        "updated": { "type": "boolean" },
+        "stale": { "type": "boolean" }
+      }
+    },
+    "mainTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "observedAt", "monotonicMs"],
+      "properties": {
+        "target": { "oneOf": [{ "$ref": "#/$defs/entityKey" }, { "type": "null" }] },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "monotonicMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "entityCarry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connection", "entities"],
+      "properties": {
+        "connection": { "$ref": "#/$defs/identityConnection" },
+        "entities": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "actorType", "sheetId", "healthMaximum", "boss"],
+            "properties": {
+              "id": { "$ref": "#/$defs/positiveUint64" },
+              "actorType": { "type": "integer", "minimum": 1, "maximum": 8 },
+              "sheetId": { "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }] },
+              "healthMaximum": { "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }] },
+              "boss": { "type": "boolean" },
+              "keyId": { "$ref": "#/$defs/uint64" },
+              "iv": { "type": "string", "minLength": 24, "maxLength": 24 },
+              "encrypted": { "type": "boolean" },
+              "updated": { "type": "boolean" }
+            }
+          }
         }
       }
     },
@@ -2022,6 +2147,9 @@
           "items": {
             "$ref": "#/$defs/combatState"
           }
+        },
+        "mainTarget": {
+          "$ref": "#/$defs/mainTarget"
         }
       }
     },
@@ -2053,6 +2181,9 @@
         },
         "frame": {
           "$ref": "#/$defs/combatFrame"
+        },
+        "carry": {
+          "$ref": "#/$defs/entityCarry"
         }
       }
     },

@@ -281,7 +281,7 @@ public sealed class SettingsShortcutTests
         }
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void EmergencyStopCancelsARunningMeasurementThroughTheCombatEntry()
     {
         // 定时测量等待首击或计时中：经战斗页已有的取消入口取消；空闲时不发。

@@ -50,6 +50,21 @@ public sealed class PrearmCaptureTests
     }
 
     [Fact]
+    public void DevicesShareThePrearmBudgetAndTheLargestBufferGivesWay()
+    {
+        // 两张设备的预缓冲共用合计预算：超出时从占用最多的设备丢最旧的包，计入预算丢弃。
+        var diagnostics = new CaptureDiagnostics();
+        var pool = new PrearmPool(100);
+        var (first, second) = (pool.Create(diagnostics), pool.Create(diagnostics));
+        first.Add(Game, Packet(0, 40, 1000), 1000); first.Add(Game, Packet(40, 40, 1001), 1001);
+        second.Add(Other, Packet(0, 40, 1002), 1002);
+        Assert.Equal((40L, 40L, 80L), (first.Bytes, second.Bytes, pool.Bytes));
+        Assert.Equal([40u], first.Take(Game, 1003).Select(p => p.Sequence));
+        Assert.Equal(1UL, diagnostics.Snapshot(0, 0).Prearm!.Budget.Value);
+        second.Clear(); Assert.Equal(0L, pool.Bytes);
+    }
+
+    [Fact]
     public void BufferedDamageKeepsCaptureTimeAndOverlapWithTheConnectionHandleCountsOnce()
     {
         // 同一组下行段：身份帧与一次伤害，随后一次实时到达的伤害。

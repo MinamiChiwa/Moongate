@@ -68,7 +68,7 @@ public sealed class MusicLibraryTests
     }
 
     private static string PlayNotice(UiLanguage language) =>
-        language == UiLanguage.TraditionalChinese ? "台服暫不支援在遊戲內選曲演奏" : "台服暂不支持在游戏内选曲演奏";
+        language == UiLanguage.TraditionalChinese ? "台服暫不支援遊戲內選曲演奏" : "台服暂不支持游戏内选曲演奏";
 
     private static string? Unavailable(string id) => id == CapabilityIds.PerformancePlay
         ? CapabilityNotice.Describe(new(id, "performance", CapabilityStatus.Unavailable, null, null, null, null,
@@ -108,7 +108,7 @@ public sealed class MusicLibraryTests
                 button => button.IsEffectivelyVisible && button.CommandParameter as string is "music.start" or "music.next" or "music.stop");
             Assert.False(Named<Panel>(page, "GameLayer").IsEffectivelyVisible);
             Assert.DoesNotContain(page.GetVisualDescendants().OfType<TextBlock>(), text => text.IsEffectivelyVisible
-                && ((text.Text ?? string.Empty).Contains("台服暂不支持在游戏内选曲演奏") || text.Name == "CapabilityNotice"));
+                && ((text.Text ?? string.Empty).Contains(PlayNotice(UiLanguage.SimplifiedChinese)) || text.Name == "CapabilityNotice"));
             // 本地曲库与队列的操作仍在主页面：搜索、加入、移除。
             Assert.True(Named<TextBox>(page, "SearchBox").IsEffectivelyVisible);
             Assert.Contains(page.GetVisualDescendants().OfType<Button>(), button => button.IsEffectivelyVisible && button.IsEffectivelyEnabled

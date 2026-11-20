@@ -98,6 +98,9 @@ public sealed partial class CombatOperations
         CombatMeasurementState result;
         try
         {
+            // 后台保存进行中时等它提交（可取消），开始回执写在已提交的检查点之后。
+            await job.SaveGate.WaitAsync(ct);
+            job.SaveGate.Release();
             await measurementLock.WaitAsync(ct);
             try
             {

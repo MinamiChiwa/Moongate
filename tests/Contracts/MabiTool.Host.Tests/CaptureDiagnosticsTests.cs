@@ -155,6 +155,104 @@ public sealed class CaptureDiagnosticsTests
         Assert.Equal("other", GameObservationService.WorkerEndKind("observation.captureFailed"));
     }
 
+    [Fact]
+    public void WorkerCountersWithDevicesAndReadModeMatchTheWorkerSchema()
+    {
+        // Worker 实际发出的形态（按设备分项与读取方式）与共享样例都符合 Worker Schema 的 captureDiagnostics；
+        // 设备名、未知类别、未知读取方式或多余字段不符合。
+        var root = GameObservationApiTests.Area.FindRoot();
+        using var schema = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "contracts", "worker", "observation-worker.v1.schema.json")));
+        var definition = schema.RootElement.GetProperty("$defs").GetProperty("captureDiagnostics");
+        bool Valid(string json) { using var value = JsonDocument.Parse(json); return Schema.Valid(definition, value.RootElement, schema.RootElement); }
+        var diagnostics = new CaptureDiagnostics();
+        diagnostics.Devices([new(new string('d', 32), "wintun", 12, true, null, true, new(40), new(38), new(1), new(20), new(512)),
+            new(new string('e', 32), "tap", 113, false, "link:113", false, new(0), new(0), new(0), new(0), new(0)),
+            new(new string('f', 32), "physical", -1, false, "limit", false, new(0), new(0), new(0), new(0))]);
+        diagnostics.ReadMode(new("poll", true, 0, 10, 1024 * 1024));
+        var worker = JsonSerializer.Serialize(diagnostics.Snapshot(0, 0), ContractJson.Options);
+        Assert.Contains("\"devices\"", worker); Assert.Contains("\"read\"", worker);
+        Assert.True(Valid(worker), worker);
+        var shared = File.ReadAllText(Path.Combine(root, "contracts", "fixtures", "observation-capture-diagnostics.v1.json"));
+        Assert.True(Valid(shared));
+        var fixture = JsonSerializer.Deserialize<ObservationCaptureCounters>(shared, ContractJson.Options)!;
+        Assert.Equal((3, "immediate"), (fixture.Devices!.Count, fixture.Read!.Mode));
+        Assert.True(GameObservationService.ValidCounters(fixture));
+        foreach (var invalid in new[]
+        {
+            worker.Replace("\"kind\":\"wintun\"", "\"kind\":\"wifi\""),
+            worker.Replace("\"channelId\":\"" + new string('d', 32) + "\"", "\"channelId\":\"" + new string('d', 32) + "\",\"name\":\"Realtek\""),
+            worker.Replace("\"issue\":\"limit\"", "\"issue\":\"Realtek PCIe\""),
+            worker.Replace("\"mode\":\"poll\"", "\"mode\":\"busy\""),
+            worker.Replace("\"pollMs\":10", "\"pollMs\":10,\"device\":\"x\"")
+        })
+        {
+            Assert.NotEqual(worker, invalid);
+            Assert.False(Valid(invalid), invalid);
+        }
+    }
+
+    /// <summary>Worker Schema 用到的 JSON Schema 关键字的最小校验（$ref、type、const、enum、required、properties、additionalProperties、
+    /// propertyNames、maxProperties、items、maxItems、minimum、maximum、minLength、maxLength、pattern、allOf、anyOf、oneOf、not）。</summary>
+    private static class Schema
+    {
+        public static bool Valid(JsonElement schema, JsonElement value, JsonElement root)
+        {
+            if (schema.ValueKind == JsonValueKind.True) return true;
+            if (schema.ValueKind == JsonValueKind.False) return false;
+            foreach (var keyword in schema.EnumerateObject())
+            {
+                var rule = keyword.Value;
+                var ok = keyword.Name switch
+                {
+                    "$ref" => Valid(Resolve(root, rule.GetString()!), value, root),
+                    "type" => rule.ValueKind == JsonValueKind.Array ? rule.EnumerateArray().Any(type => Type(type.GetString()!, value)) : Type(rule.GetString()!, value),
+                    "const" => JsonElement.DeepEquals(rule, value),
+                    "enum" => rule.EnumerateArray().Any(option => JsonElement.DeepEquals(option, value)),
+                    "required" => value.ValueKind != JsonValueKind.Object || rule.EnumerateArray().All(name => value.TryGetProperty(name.GetString()!, out _)),
+                    "properties" => value.ValueKind != JsonValueKind.Object || rule.EnumerateObject().All(property =>
+                        !value.TryGetProperty(property.Name, out var member) || Valid(property.Value, member, root)),
+                    "additionalProperties" => value.ValueKind != JsonValueKind.Object || value.EnumerateObject().All(member =>
+                        schema.TryGetProperty("properties", out var declared) && declared.TryGetProperty(member.Name, out _) || Valid(rule, member.Value, root)),
+                    "propertyNames" => value.ValueKind != JsonValueKind.Object || value.EnumerateObject().All(member =>
+                    { using var name = JsonDocument.Parse(JsonSerializer.Serialize(member.Name)); return Valid(rule, name.RootElement, root); }),
+                    "maxProperties" => value.ValueKind != JsonValueKind.Object || value.EnumerateObject().Count() <= rule.GetInt32(),
+                    "items" => value.ValueKind != JsonValueKind.Array || value.EnumerateArray().All(item => Valid(rule, item, root)),
+                    "maxItems" => value.ValueKind != JsonValueKind.Array || value.GetArrayLength() <= rule.GetInt32(),
+                    "minItems" => value.ValueKind != JsonValueKind.Array || value.GetArrayLength() >= rule.GetInt32(),
+                    "minimum" => value.ValueKind != JsonValueKind.Number || value.GetDouble() >= rule.GetDouble(),
+                    "maximum" => value.ValueKind != JsonValueKind.Number || value.GetDouble() <= rule.GetDouble(),
+                    "minLength" => value.ValueKind != JsonValueKind.String || value.GetString()!.Length >= rule.GetInt32(),
+                    "maxLength" => value.ValueKind != JsonValueKind.String || value.GetString()!.Length <= rule.GetInt32(),
+                    "pattern" => value.ValueKind != JsonValueKind.String || System.Text.RegularExpressions.Regex.IsMatch(value.GetString()!, rule.GetString()!),
+                    "allOf" => rule.EnumerateArray().All(part => Valid(part, value, root)),
+                    "anyOf" => rule.EnumerateArray().Any(part => Valid(part, value, root)),
+                    "oneOf" => rule.EnumerateArray().Count(part => Valid(part, value, root)) == 1,
+                    "not" => !Valid(rule, value, root),
+                    "description" or "title" or "$schema" or "$id" or "$defs" => true,
+                    _ => throw new NotSupportedException("Schema 关键字 " + keyword.Name)
+                };
+                if (!ok) return false;
+            }
+            return true;
+        }
+        private static JsonElement Resolve(JsonElement root, string reference)
+        {
+            if (!reference.StartsWith("#/", StringComparison.Ordinal)) throw new NotSupportedException(reference);
+            return reference[2..].Split('/').Aggregate(root, (node, segment) => node.GetProperty(segment));
+        }
+        private static bool Type(string type, JsonElement value) => type switch
+        {
+            "object" => value.ValueKind == JsonValueKind.Object,
+            "array" => value.ValueKind == JsonValueKind.Array,
+            "string" => value.ValueKind == JsonValueKind.String,
+            "boolean" => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
+            "null" => value.ValueKind == JsonValueKind.Null,
+            "number" => value.ValueKind == JsonValueKind.Number,
+            "integer" => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
+            _ => throw new NotSupportedException("Schema 类型 " + type)
+        };
+    }
+
     private static void AssertSchemaShape(ObservationCaptureCounters counters)
     {
         var text = JsonSerializer.Serialize(counters, ContractJson.Options);

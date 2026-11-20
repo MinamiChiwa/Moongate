@@ -140,11 +140,21 @@ public sealed class CombatApiTests
         Assert.Equal(operation.Id, (await second.StartCombatObservationAsync(request, "combat-shared-run")).Id);
         Assert.Equal("idempotency.conflict", (await Assert.ThrowsAsync<MabiToolApiException>(() => first.StartCombatObservationAsync(request with { IncludeOwnedEntities = false }, "combat-shared-run"))).Problem!.Code);
         var final = await Terminal(first, operation.Id); Assert.Equal(OperationState.Succeeded, final.State.KnownValue);
+        // 名称在读取时投影：名称表首次读取结束前后，同一修订的名称原因会从 loading 变为读取结果，先等首次读取结束再比较两个客户端。
+        var names = app.Services.GetRequiredService<MabiTool.Host.Combat.CombatNameCatalog>();
+        using (var settle = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+            while (names.Resolve(MabiTool.Modules.CombatObservation.Domain.CombatNames.Monster, 1).Reason == "combat.nameCatalogLoading")
+                await Task.Delay(20, settle.Token);
         var snapshot = await first.GetCombatSnapshotAsync(); var other = await second.GetCombatSnapshotAsync();
         Assert.Equal(Json(snapshot.Data), Json(other.Data)); Assert.Equal(snapshot.ResourceRevision, other.ResourceRevision);
         Assert.Equal(snapshot.Data!.Revision, snapshot.ResourceRevision); Assert.Equal(other.Data!.Revision, other.ResourceRevision);
         var encounter = snapshot.Data!.Encounter!; Assert.Equal("3600", encounter.Summary.AttributedDamage.ToString());
-        Assert.Equal(2000, encounter.Summary.DurationMs); Assert.Equal(1800, encounter.Summary.EncounterDps);
+        // 伤害在回放时点 0、1000、2000：DPS 分母截止最后一次伤害，确定为 2000。实际时长（durationMs）截止观察停止时点：
+        // 来源结束前若例行检查已按经过时间推进观察时点（回放 400 ms 一步即 2.5 倍速），停止时点会晚于最后一帧，因此按停止时点核对。
+        var stoppedAt = snapshot.Data.Observation.MonotonicMs;
+        Assert.Equal(((double?)2000, (double?)1800), (encounter.Summary.DpsDurationMs, encounter.Summary.EncounterDps));
+        Assert.Equal((0d, (double?)stoppedAt, stoppedAt), (encounter.StartedMonotonicMs, encounter.EndedMonotonicMs, encounter.Summary.DurationMs));
+        Assert.True(stoppedAt >= 2000, stoppedAt.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Assert.Equal(2, encounter.Targets.Count); Assert.Equal(0, source.ActiveSubscriptions);
         var monsters = snapshot.Data.Entities.Where(x => x.Role.KnownValue == CombatEntityRole.Monster).ToArray();
         Assert.Equal(2, monsters.Length); Assert.Equal(monsters[0].RawName, monsters[1].RawName); Assert.NotEqual(monsters[0].Key.RawInstanceId, monsters[1].Key.RawInstanceId);

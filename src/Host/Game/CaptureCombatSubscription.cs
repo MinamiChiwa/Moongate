@@ -39,7 +39,8 @@ internal sealed class CaptureCombatSubscription(GameObservationService service, 
     public CombatEntityObservation LocalEntity => ready.Task.IsCompletedSuccessfully ? ready.Task.Result : throw new InvalidOperationException("战斗身份尚未确认");
     public double ClockRate => 1;
     public bool HealingSupported => profile.Healing;
-    internal void Publish(CombatCaptureReport report)
+    /// <param name="encoded">该报告在 Worker 帧中的 UTF-8 编码；同一序号的重发按编码内容判定是否冲突。</param>
+    internal void Publish(CombatCaptureReport report, ReadOnlySpan<byte> encoded)
     {
         lock (gate)
         {
@@ -52,7 +53,7 @@ internal sealed class CaptureCombatSubscription(GameObservationService service, 
                 generation = frame.Generation.Value; sequence = 0;
                 fingerprints.Clear(); fingerprintOrder.Clear(); conflicts.Clear(); conflictOrder.Clear();
             }
-            var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(report, ContractJson.Options)));
+            var fingerprint = Convert.ToHexString(SHA256.HashData(encoded));
             if (frame.Sequence.Value <= sequence)
             {
                 if (fingerprints.TryGetValue(frame.Sequence.Value, out var previous) && previous != fingerprint &&

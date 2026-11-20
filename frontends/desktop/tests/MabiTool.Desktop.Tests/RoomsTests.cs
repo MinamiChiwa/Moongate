@@ -911,6 +911,39 @@ public sealed class RoomsTests
     }
 
     [AvaloniaFact]
+    public void SwitchingNicknameSourceKeepsTheProviderSwitchInPlace()
+    {
+        RoomsPreference.Restore(null);
+        var backend = new SampleBackend { InRoom = false, CaptureCharacter = null };
+        var window = LayoutProbe.Open(backend, 1280, 860, "rooms");
+        try
+        {
+            var model = (RoomsPageModel)Page<RoomsPage>(window).DataContext!;
+            var provider = Named<SelectionBorder>(window, "ProviderSwitch");
+            Rect Box(Control control) => new(control.TranslatePoint(new Point(), window)!.Value, control.Bounds.Size);
+            List<Rect> Measure()
+            {
+                LayoutProbe.Render(window);
+                return [Box(provider), .. provider.GetVisualDescendants().OfType<Button>().Select(Box)];
+            }
+
+            // 抓包昵称未识别时昵称下方多一行原因，联机方式开关仍按自身内容定高、顶部对齐，不随这一行被拉高。
+            Assert.True(Named<TextBlock>(window, "NicknameNote").IsEffectivelyVisible);
+            var capture = Measure();
+            model.NicknameSource = model.NicknameSources.Single(option => option.Value == RoomsPreference.CustomNickname);
+            LayoutProbe.Settle();
+            Assert.False(Named<TextBlock>(window, "NicknameNote").IsVisible);
+            Assert.Equal(capture, Measure());
+            Assert.Equal(provider.DesiredSize.Height, provider.Bounds.Height);
+        }
+        finally
+        {
+            RoomsPreference.Restore(null);
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
     public void GameWindowRowShowsTheBoundWindowRatherThanThePlayer()
     {
         Assert.Equal("Mabinogi Mobile（MabinogiMobile.exe · PID 12840）", LiveBackend.WindowLabel("Mabinogi Mobile", "MabinogiMobile", 12840));

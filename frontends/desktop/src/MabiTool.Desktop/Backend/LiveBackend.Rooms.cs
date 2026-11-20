@@ -8,7 +8,7 @@ using static MabiTool.Desktop.Localization.UiText;
 namespace MabiTool.Desktop.Backend;
 
 // 合奏：房间会话、本机房间服务与本机设置的读取，以及 rooms.* 意图。
-// 房间状态在每秒的例行刷新里读取（倒计时与就绪需要及时反映），在房间里时同时重读本轮的时间基准；本机设置每五秒或保存后读取。
+// 房间状态在房间内每秒读取（倒计时与就绪需要及时反映）并重读本轮的时间基准；不在房间时在房间事件后或每五秒读取。本机设置每五秒或保存后读取。
 // 每个意图只发送一次；结果同时显示在合奏页的反馈横幅与活动胶囊。
 public sealed partial class LiveBackend
 {
@@ -43,12 +43,21 @@ public sealed partial class LiveBackend
         Signal();
     }
 
+    // 调用方持有 gate。
+    private bool InRoom => roomExtras.Session is { State: not "disconnected" };
+
+    // 调用方持有 gate。房间内每秒读取；不在房间时有界面可见才按五秒兜底，否则只等房间事件或用户操作。
+    private bool RoomRoutineDue() => InRoom ? Elapsed(lastRoomRead, StatusInterval) : AnySurface && Elapsed(lastRoomRead, SlowInterval);
+
     private async Task RefreshRoomAsync(MabiToolClient api, CancellationToken token)
     {
         bool readPreferences;
         RoomExtras previous;
         lock (gate)
         {
+            if ((due & Due.Room) == 0 && !roomPreferencesDue && !RoomRoutineDue()) return;
+            due &= ~Due.Room;
+            lastRoomRead = Now;
             readPreferences = roomPreferencesDue || DateTimeOffset.UtcNow - roomPreferencesReadAt >= TimeSpan.FromSeconds(5);
             roomPreferencesDue = false;
             previous = roomExtras;
@@ -94,6 +103,15 @@ public sealed partial class LiveBackend
     }
 
     public RoomsPageData GetRooms()
+    {
+        var (current, page, _, _) = ReadPages();
+        object?[] key;
+        lock (gate) key = [current.Connected, current.Binding, current.Simulation, page, roomExtras, roomFeedback, fallbackInvitation, invitationCopied,
+            roomRoundBusy, captureRuntime, captureSnapshot, BoundWindowText(), Localization.UiText.Language];
+        return roomsMemo.Get(key, MapRooms);
+    }
+
+    private RoomsPageData MapRooms()
     {
         var (current, page, _, _) = ReadPages();
         RoomExtras extras;

@@ -92,8 +92,41 @@ public sealed class MultiDeviceCaptureTests
         Assert.Equal(2, router.ConfirmedCount); Assert.Equal(0, prearm.Packets);
         // 旧连接不在连接表中且静默满宽限期后释放。
         ports.Remove(1714);
-        router.Retain(ports, at + 800 + ConnectionRetention.GraceMs);
+        router.Retain(ports, at + 800 + ConnectionRetention.GraceMs, At(at + 800 + ConnectionRetention.GraceMs));
         Assert.Equal(1, router.Count);
+    }
+
+    [Fact]
+    public void UnlistedConnectionIsKeptWhileItsDataFlowsAndAnEndedOneIsReleasedAfterTheGrace()
+    {
+        // 包时点与连接表读取用同一单调时钟（从开机一天后的读数起）：连接表漏列仍在传输的连接时保留，已结束的连接静默满宽限期后释放。
+        List<CombatCaptureReport> reports = [];
+        var context = new ObservationCaptureContext([Profile], _ => { }, reports.Add);
+        context.Configure(new(true, new(new string('a', 32), Profile.Id, true, true, true)));
+        var clock = 86_400_000d;
+        using var pipeline = new CapturePipeline(1, Tw20261110CombatProtocol.StreamProfile.KnownProtocols, "fixture-game", context,
+            CombatProtocolLayout.Tw20261110, null, new LocalIdentityMemory(), null, () => clock, () => At(clock));
+        var prearm = new PrearmBuffer(context.Diagnostics);
+        static (CaptureConnection, int, int) Row(ushort port) => (new("172.19.84.237", port, "43.212.230.170", 16000), 4242, 5);
+        var active = Flow("43.212.230.170", 16000, "172.19.84.237", 1714); var ended = Flow("43.212.230.170", 16000, "172.19.84.237", 1800);
+        pipeline.Refresh([Row(1714), Row(1800)], 4242, [prearm]);
+        foreach (var flow in new[] { active, ended })
+        {
+            Assert.True(Dispatch(pipeline.Router, pipeline.GamePorts, prearm, flow.Syn(), clock += 10));
+            foreach (var frame in SyntheticCombat.Identity()) Assert.True(Dispatch(pipeline.Router, pipeline.GamePorts, prearm, flow.Data(frame), clock += 10));
+        }
+        Assert.Equal(2, pipeline.Router.ConfirmedCount);
+        Assert.True(Dispatch(pipeline.Router, pipeline.GamePorts, prearm, ended.Fin(), clock += 10));
+        // 连接表此后两条都不列出；仍在传输的连接每 500 ms 有包。
+        for (var step = 0; step < 14; step++)
+        {
+            clock += 500;
+            Assert.True(Dispatch(pipeline.Router, pipeline.GamePorts, prearm, active.Data(SyntheticCombat.Damage(100)), clock));
+            pipeline.Refresh([], 4242, [prearm]);
+            Assert.Equal(step < 9 ? 2 : 1, pipeline.Router.Count);
+        }
+        Assert.True(pipeline.Router.Contains(new("172.19.84.237", 1714, "43.212.230.170", 16000)));
+        Assert.False(pipeline.Router.Contains(new("172.19.84.237", 1800, "43.212.230.170", 16000)));
     }
 
     [Fact]
@@ -119,24 +152,65 @@ public sealed class MultiDeviceCaptureTests
     }
 
     [Fact]
-    public void FlowConfirmedAfterTheCandidateBufferOverflowedAlignsToTheNextFrames()
+    public void FlowJoinedInsideALargeFrameIsConfirmedWithinTheCandidateLimit()
     {
-        // 确认前先来了超过候选缓冲上限的不可确认数据：最早的段被裁掉，确认后从最早保留的段开始重组，分帧对齐到之后的游戏帧。
+        // 中途接入一帧约 400 KB 大帧的正文（已知最大单帧约 356 KB）：正文段不能确认，之后的游戏帧到达时确认，从最早的段开始重组并对齐到游戏帧。
         var (router, reports, context) = Router(1);
         var game = Flow("43.212.230.170", 16000, "172.19.84.237", 1714);
         double at = 1000;
-        Send(router, 0, Raw, game.Syn(), at);
-        var filler = new byte[60000];
-        for (var i = 0; i < 20; i++) Send(router, 0, Raw, game.Data(filler), at += 5);
-        Assert.Equal(0, router.ConfirmedCount);
+        var body = new byte[57000];
+        for (var i = 0; i < 7; i++) Send(router, 0, Raw, game.Data(body), at += 5);
+        Assert.Equal((0, 0L), (router.ConfirmedCount, router.RejectedStreams));
         foreach (var frame in SyntheticCombat.Identity().Append(SyntheticCombat.Damage(100))) Send(router, 0, Raw, game.Data(frame), at += 5);
         router.Tick(at + 300, At(at + 300));
 
         Assert.Equal(100UL, Assert.Single(reports.SelectMany(report => report.Frame.Damage)).Amount.Value);
-        Assert.True(router.Devices[0].CandidateDropped >= 20 * 60000 - CaptureStreamRouter.CandidateBytes);
+        Assert.Equal((0L, 0L), (router.Devices[0].CandidateDropped, router.CandidateBufferedBytes));
         var stream = context.Diagnostics.Stream.Snapshot();
         Assert.Equal(4UL, stream.Frames); Assert.Equal(0UL, stream.DecompressFailures);
-        Assert.Empty(stream.Resets);
+    }
+
+    [Fact]
+    public void NonGameFlowIsDroppedAfterTheCandidateLimitUntilThePortIsReused()
+    {
+        // 游戏进程的 TLS 连接：512 KiB 内不能按帧头确认即判为非游戏流，释放候选缓冲，之后的包不再匹配（返回假，计为过滤）；
+        // 同一四元组的 SYN（端口复用）后重新匹配。
+        var (router, reports, _) = Router(1);
+        var ports = new HashSet<ushort> { 14408 };
+        var prearm = new PrearmBuffer();
+        var tls = Flow("18.166.193.141", 443, "172.19.84.237", 14408);
+        var record = new byte[1400]; record[0] = 0x17; record[1] = 3; record[2] = 3; record.AsSpan(5).Fill(0xab);
+        double at = 1000;
+        var sent = 0;
+        while (router.RejectedStreams == 0 && sent < 1000) { Assert.True(Dispatch(router, ports, prearm, tls.Data(record), at += 1)); sent++; }
+        Assert.Equal((1L, 0L), (router.RejectedStreams, router.CandidateBufferedBytes));
+        Assert.Equal((CaptureStreamRouter.CandidateBytes + record.Length - 1) / record.Length, sent);
+        foreach (var frame in SyntheticCombat.Identity().Append(SyntheticCombat.Damage(100))) Assert.False(Dispatch(router, ports, prearm, tls.Data(frame), at += 1));
+        Assert.True(Dispatch(router, ports, prearm, tls.Syn(), at += 1));
+        foreach (var frame in SyntheticCombat.Identity().Append(SyntheticCombat.Damage(250))) Assert.True(Dispatch(router, ports, prearm, tls.Data(frame), at += 1));
+        router.Tick(at + 300, At(at + 300));
+
+        Assert.Equal(250UL, Assert.Single(reports.SelectMany(report => report.Frame.Damage)).Amount.Value);
+        Assert.Equal(1, router.ConfirmedCount);
+    }
+
+    [Fact]
+    public void CandidateBudgetAcrossFlowsDropsTheOldestSegmentsOfTheLargestFlow()
+    {
+        // 9 条未确认流各约 480–510 KB（低于单流门槛），合计超出 4 MiB：从占用最多的流（第一条）丢最早的段；该流确认后丢弃的字节计入 candidateDropped。
+        var (router, reports, _) = Router(1);
+        var flows = Enumerable.Range(0, 9).Select(i => Flow("43.212.230.170", 16000, "172.19.84.237", (ushort)(1714 + i))).ToArray();
+        var filler = new byte[60000];
+        double at = 1000;
+        Send(router, 0, Raw, flows[0].Data(new byte[30000]), at += 1);
+        for (var round = 0; round < 8; round++) foreach (var flow in flows) Send(router, 0, Raw, flow.Data(filler), at += 1);
+        Assert.True(router.CandidateBufferedBytes <= CaptureStreamRouter.CandidateBudgetBytes);
+        Assert.Equal(0L, router.RejectedStreams);
+        foreach (var frame in SyntheticCombat.Identity().Append(SyntheticCombat.Damage(100))) Send(router, 0, Raw, flows[0].Data(frame), at += 1);
+        router.Tick(at + 300, At(at + 300));
+
+        Assert.Equal(100UL, Assert.Single(reports.SelectMany(report => report.Frame.Damage)).Amount.Value);
+        Assert.True(router.Devices[0].CandidateDropped > 0);
     }
 
     /// <summary>一帧未压缩的已知、但不被当前兴趣解码的协议帧（正文全零）。</summary>
@@ -178,6 +252,7 @@ public sealed class MultiDeviceCaptureTests
         private uint next = 7000;
         public Segment Syn() { var value = new Segment(source, sourcePort, destination, destinationPort, next, 0x12, []); next++; return value; }
         public Segment Data(byte[] payload) { var value = new Segment(source, sourcePort, destination, destinationPort, next, 0x18, payload); next += (uint)payload.Length; return value; }
+        public Segment Fin() { var value = new Segment(source, sourcePort, destination, destinationPort, next, 0x11, []); next++; return value; }
     }
     private static FlowState Flow(string source, ushort sourcePort, string destination, ushort destinationPort) => new(source, sourcePort, destination, destinationPort);
 

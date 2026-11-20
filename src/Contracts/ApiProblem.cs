@@ -115,7 +115,7 @@ public static class ApiErrors
         new("storage.moduleEnabled", 409, false), new("storage.assetInUse", 409, false),
         new("storage.writeQueueFull", 503, true), new("storage.readCapacityExceeded", 503, true),
         new("storage.transactionBudgetExceeded", 503, true),
-        .. UpdateDefinitions()
+        .. UpdateDefinitions(), .. ClientIconReasons.Definitions
     ]);
 
     private static IEnumerable<ErrorDefinition> UpdateDefinitions()

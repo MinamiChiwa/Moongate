@@ -25,6 +25,10 @@ public sealed class GameStreamCounters
     private ulong segments, bytes, outOfOrder, retransmitted, frames, dispatched, decompressFailures, otherFrames;
     /// <summary>已分帧的累计帧数；捕获按设备统计分帧时读取前后差值。</summary>
     public ulong Frames { get { lock (gate) return frames; } }
+    private ulong gapSkipped;
+    /// <summary>缺口超时跳过的字节数（期望序号到下一个已收到段之间）。</summary>
+    public ulong GapSkippedBytes { get { lock (gate) return gapSkipped; } }
+    internal void GapSkipped(uint bytes) { lock (gate) gapSkipped += bytes; }
     internal void Segment(int length) { lock (gate) { segments++; bytes += (ulong)length; } }
     internal void OutOfOrder() { lock (gate) outOfOrder++; }
     internal void Retransmitted() { lock (gate) retransmitted++; }
@@ -68,7 +72,11 @@ public sealed class GameTcpStream(Action<int, byte[]> onFrame, Action<string> in
     private readonly GameStreamProfile protocols = profile is null
         ? new(TwGameProtocol.KnownProtocols, MusicProtocols)
         : new(profile.KnownProtocols.ToHashSet(), profile.ObservedProtocols.ToHashSet());
-    private readonly List<byte> _buffer = [], _history = [];
+    private const int HistoryBytes = 65536;
+    private readonly List<byte> _buffer = [];
+    /// <summary>重传比对历史：最近 64 KiB 已交付字节的环形缓冲，_historyStart 为最旧字节的位置。</summary>
+    private readonly byte[] _history = new byte[HistoryBytes];
+    private int _historyStart, _historyCount;
     private readonly List<(uint Seq, byte[] Bytes, double Time)> _pending = [];
     private readonly List<(int Count, double Time)> _times = [];
     public double? FrameReceivedLocalMs { get; private set; }
@@ -81,18 +89,26 @@ public sealed class GameTcpStream(Action<int, byte[]> onFrame, Action<string> in
     private int _needed;
     private double? _gapSince;
     public GameStreamResetCause LastResetCause { get; private set; }
+    /// <summary>当前占用：未成帧缓冲、乱序暂存与重传比对历史的字节数。</summary>
+    public (int Buffer, int Pending, int History) BufferedBytes => (_buffer.Count, _pending.Sum(row => row.Bytes.Length), _historyCount);
     private void Invalidate(string reason, GameStreamResetCause cause)
     { LastResetCause = cause; counters?.Reset(cause); invalidate(reason); }
     public void Restart(string reason, GameStreamResetCause cause = GameStreamResetCause.Unknown)
     {
-        _buffer.Clear(); _history.Clear(); _pending.Clear(); _times.Clear(); FrameReceivedLocalMs = null;
-        FrameStreamOffset = _bufferOffset = 0; FrameWireLength = 0; FrameEncoding = 0;
+        // 流内偏移在重置后继续递增：同一连接内的缺口不换战斗代次，记录 ID（代次与偏移）与关联窗口不能与缺口前重复。
+        FrameStreamOffset = _bufferOffset = checked(_bufferOffset + (ulong)_buffer.Count + 1);
+        _buffer.Clear(); _historyStart = _historyCount = 0; _pending.Clear(); _times.Clear(); FrameReceivedLocalMs = null;
+        FrameWireLength = 0; FrameEncoding = 0;
         _started = _framed = false; _gapSince = null; _needed = 0; Invalidate(reason, cause);
     }
     public void Feed(uint sequence, ReadOnlySpan<byte> payload, double nowMs, double? receivedLocalMs = null)
     {
         if (payload.IsEmpty) return;
         counters?.Segment(payload.Length);
+        Accept(sequence, payload, nowMs, receivedLocalMs, true);
+    }
+    private void Accept(uint sequence, ReadOnlySpan<byte> payload, double nowMs, double? receivedLocalMs, bool live)
+    {
         if (payload.Length > 65536) { Restart("截获的数据段过长，等待重新识别。", GameStreamResetCause.PayloadTooLarge); return; }
         if (!_started) { _started = true; _next = sequence; }
         var delta = unchecked((int)(sequence - _next));
@@ -102,7 +118,7 @@ public sealed class GameTcpStream(Action<int, byte[]> onFrame, Action<string> in
             { Restart("已清理积压的游戏数据，等待重新识别。", GameStreamResetCause.PendingCapacity); return; }
             var duplicate = false;
             foreach (var row in _pending) if (row.Seq == sequence && payload.SequenceEqual(row.Bytes)) { duplicate = true; break; }
-            if (!duplicate) { counters?.OutOfOrder(); _pending.Add((sequence, payload.ToArray(), receivedLocalMs ?? nowMs)); }
+            if (!duplicate) { if (live) counters?.OutOfOrder(); _pending.Add((sequence, payload.ToArray(), receivedLocalMs ?? nowMs)); }
             else counters?.Retransmitted();
             _gapSince ??= nowMs; CheckGap(nowMs); return;
         }
@@ -117,12 +133,18 @@ public sealed class GameTcpStream(Action<int, byte[]> onFrame, Action<string> in
         }
         if (_pending.Count == 0) _gapSince = null;
     }
+    /// <summary>
+    /// 缺口等满 1.5 秒仍未补齐时跳过缺口：解析状态重置，已收到的后续数据段全部按序号重新交给重组，分帧在缺口之后重新对齐。
+    /// 只保留最早一段会把其余已收到的数据也变成新的缺口，此后每 1.5 秒重复一次，直到下一条连接。
+    /// </summary>
     public void CheckGap(double nowMs)
     {
         if (_gapSince is not { } since || nowMs - since < 1500 || _pending.Count == 0) return;
-        var first = _pending.MinBy(p => unchecked((int)(p.Seq - _next)));
+        var origin = _next;
+        var received = _pending.OrderBy(p => unchecked((int)(p.Seq - origin))).ToArray();
+        counters?.GapSkipped(unchecked(received[0].Seq - origin));
         Restart("部分游戏数据未能抓到，需要重新识别昵称和加入顺序。", GameStreamResetCause.GapTimeout);
-        Feed(first.Seq, first.Bytes, nowMs, first.Time);
+        foreach (var row in received) Accept(row.Seq, row.Bytes, nowMs, row.Time, false);
     }
     private void Append(uint sequence, ReadOnlySpan<byte> payload, double time)
     {
@@ -132,19 +154,30 @@ public sealed class GameTcpStream(Action<int, byte[]> onFrame, Action<string> in
         // Compare overlapping bytes still in our bounded history, including full retransmits.
         for (var i = 0; i < skip; i++)
         {
-            var offset = (long)_history.Count + delta + i;
-            if (offset >= 0 && offset < _history.Count && _history[(int)offset] != payload[i])
+            var offset = (long)_historyCount + delta + i;
+            if (offset >= 0 && offset < _historyCount && _history[(_historyStart + (int)offset) & (HistoryBytes - 1)] != payload[i])
             { Restart("重复收到的游戏数据不一致，需要重新识别。", GameStreamResetCause.ConflictingRetransmission); return; }
         }
-        var bytes = payload[skip..].ToArray();
+        var bytes = payload[skip..];
         _next = unchecked(_next + (uint)bytes.Length);
-        _history.AddRange(bytes); if (_history.Count > 65536) _history.RemoveRange(0, _history.Count - 65536);
+        Remember(bytes);
         _buffer.AddRange(bytes);
         if (bytes.Length > 0) _times.Add((bytes.Length, time));
         if (_buffer.Count > TwGameProtocol.MaximumBody + 65545) { Restart("游戏帧过长，等待重新识别。", GameStreamResetCause.BufferCapacity); return; }
         // 已知下一帧长度时，数据未到齐前不重新复制和扫描缓冲；大帧逐段到达不再按段数平方复制。
         if (_buffer.Count < _needed) return;
         Drain();
+    }
+    /// <summary>把新交付的字节记入重传比对历史，只保留最近 64 KiB。</summary>
+    private void Remember(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length >= HistoryBytes) { bytes[^HistoryBytes..].CopyTo(_history); _historyStart = 0; _historyCount = HistoryBytes; return; }
+        var end = (_historyStart + _historyCount) & (HistoryBytes - 1);
+        var first = Math.Min(bytes.Length, HistoryBytes - end);
+        bytes[..first].CopyTo(_history.AsSpan(end)); bytes[first..].CopyTo(_history);
+        var total = _historyCount + bytes.Length;
+        if (total > HistoryBytes) { _historyStart = (_historyStart + total - HistoryBytes) & (HistoryBytes - 1); _historyCount = HistoryBytes; }
+        else _historyCount = total;
     }
     /// <summary>异常筛选中记录展开失败；始终返回 true，处理沿用原分支。</summary>
     private bool Decompress() { counters?.DecompressFailure(); return true; }

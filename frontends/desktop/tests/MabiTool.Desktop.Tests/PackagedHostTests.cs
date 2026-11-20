@@ -1,3 +1,4 @@
+using Avalonia.Headless.XUnit;
 using MabiTool.Desktop.Infrastructure;
 using MabiTool.ModuleSdk;
 using Xunit;
@@ -58,7 +59,7 @@ public sealed class PackagedHostTests
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void PortConflictExitCodeIsExplainedWithoutTheDataDirectoryReason()
     {
         // 宿主绑定端口失败以退出码 5 结束（HostStartupFailure.PortInUseExitCode）；连接状态说明端口与另一份 Moongate，不提数据目录。
@@ -70,7 +71,7 @@ public sealed class PackagedHostTests
         Assert.DoesNotContain("資料目錄", message);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void HostStoppingWhileTheFrontendIsOpenIsRestartedOnceAndStartupFailuresAreNotRetried()
     {
         // 启动阶段失败：写明原因，不自动重试，避免反复崩溃。
@@ -88,7 +89,7 @@ public sealed class PackagedHostTests
         Assert.Contains("Moongate", second.Problem);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void HostStartupReportOnStandardErrorBecomesASpecificReasonWithoutCodes()
     {
         // 宿主写到标准错误的启动失败记录是纯 ASCII 的一行；前端解析后按原因分类写短句与做法，不出现英文原因码，也不要求运行命令行。

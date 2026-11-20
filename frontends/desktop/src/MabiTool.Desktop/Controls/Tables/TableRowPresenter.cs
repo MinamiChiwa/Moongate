@@ -155,7 +155,7 @@ internal sealed class TableRowPresenter : Panel
                 }
                 var control = new ContentControl
                 {
-                    ContentTemplate = template, VerticalAlignment = VerticalAlignment.Center,
+                    ContentTemplate = template, VerticalAlignment = VerticalAlignment.Center, ClipToBounds = false,
                     HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center
                 };
                 cells.Add(new Cell(slot.Column, control));
@@ -167,7 +167,8 @@ internal sealed class TableRowPresenter : Panel
                 if (detail is null || !ReferenceEquals(detail.ContentTemplate, detailTemplate))
                 {
                     if (detail is not null) Children.Remove(detail);
-                    detail = new ContentControl { ContentTemplate = detailTemplate, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+                    // 明细按自身高度排在行下方，不需要裁切；贴边的按钮悬停放大后不被切掉。
+                    detail = new ContentControl { ContentTemplate = detailTemplate, HorizontalContentAlignment = HorizontalAlignment.Stretch, ClipToBounds = false };
                     Children.Add(detail);
                 }
             }
@@ -330,7 +331,12 @@ internal sealed class TableRowPresenter : Panel
     {
         var slots = table.Slots;
         for (var i = 0; i < cells.Count && i < slots.Count; i++)
-            cells[i].Control?.Arrange(new Rect(slots[i].X, 0, slots[i].Width, rowHeight));
+        {
+            if (cells[i].Control is not { } cell) continue;
+            cell.Arrange(new Rect(slots[i].X, 0, slots[i].Width, rowHeight));
+            // 横向按列宽裁切（内容不越进相邻列），纵向为格里按钮的悬停放大留出余量。
+            HoverRoom.Clip(cell, new Rect(0, -HoverRoom.Size, slots[i].Width, rowHeight + HoverRoom.Size * 2));
+        }
         if (editor is not null && editing is not null && slots.FirstOrDefault(slot => slot.Column == editing) is { Column: not null } edit)
             editor.Arrange(new Rect(edit.X, 0, edit.Width, rowHeight));
         detail?.Arrange(new Rect(0, rowHeight, Math.Max(finalSize.Width, table.TotalWidth), detail.DesiredSize.Height));

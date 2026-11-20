@@ -32,6 +32,18 @@ public sealed class ScoreDurationCache(int perPass = 8, TimeSpan? interval = nul
     /// <summary>待查询的上限：够两个窗口各一页。</summary>
     public const int Capacity = 64;
 
+    /// <summary>已查到（含查不到）的乐谱数；页面数据的缓存据此判断时长是否有新结果。</summary>
+    public int KnownCount
+    {
+        get { lock (gate) return known.Count; }
+    }
+
+    /// <summary>有待查询的乐谱且已过两轮之间的间隔。</summary>
+    public bool HasWanted
+    {
+        get { lock (gate) return clock() - lastPass >= interval && wanted.Any(id => !known.ContainsKey(id) && !inFlight.Contains(id)); }
+    }
+
     /// <summary>已查过时返回真；<paramref name="milliseconds"/> 为空表示后端也不知道时长。</summary>
     public bool TryGet(string scoreId, out double? milliseconds)
     {

@@ -57,14 +57,27 @@
         </ScrollViewer>
       </StackPanel>
     </Flyout>
-    <!-- 比率一格：名称在左、百分比右对齐；分子与分母在悬停提示里。攻击特性、覆盖率与伤害分类共用。 -->
+    <!-- 比率一格：名称在左、百分比右对齐；分子与分母在悬停提示里。攻击特性、覆盖率与伤害分类共用。
+         有客户端图标的项在图标可用时只显示图标，名称进图标的悬停提示；不可用时显示原来的名称。 -->
     <DataTemplate x:Key="RateTemplate" DataType="combat:CoverageTile">
       <Border Classes="inset" Padding="10,4" CornerRadius="10" ToolTip.Tip="{Binding Note}">
         <DockPanel>
           <TextBlock DockPanel.Dock="Right" Classes="strong" FontWeight="Black" Margin="8,0,0,0" Text="{Binding Percent}" />
-          <TextBlock Classes="name muted" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+          <controls:ClientIconSlot Icon="{Binding Icon}" Label="{Binding Name}" FontSize="13" VerticalAlignment="Center">
+            <TextBlock Classes="name muted" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+          </controls:ClientIconSlot>
         </DockPanel>
       </Border>
+    </DataTemplate>
+    <!-- 元素图例的一项：色点、元素名（图标可用时换成图标）与占比。 -->
+    <DataTemplate x:Key="ElementLegendTemplate" DataType="combat:ElementPart">
+      <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+        <Border Width="10" Height="10" CornerRadius="5" Margin="0,0,6,0" VerticalAlignment="Center" Background="{Binding Segment.Fill}" />
+        <controls:ClientIconSlot Icon="{Binding Icon}" Label="{Binding Name}" FontSize="13" VerticalAlignment="Center">
+          <TextBlock FontSize="13" VerticalAlignment="Center" Text="{Binding Name}" />
+        </controls:ClientIconSlot>
+        <TextBlock FontSize="13" Margin="4,0,0,0" VerticalAlignment="Center" Text="{Binding Share}" />
+      </StackPanel>
     </DataTemplate>
   </UserControl.Resources>
   <UserControl.Styles>
@@ -149,7 +162,7 @@
       <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
       <DockPanel Margin="{DynamicResource TitleReserve}">
         <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource C.Title}" />
-        <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" ClipToBounds="True" />
+        <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" />
       </DockPanel>
       <DockPanel Margin="0,4,0,0">
         <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0">
@@ -370,6 +383,17 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
 
+          <!-- 当前攻击目标的血量（与 DPS 浮窗同一控件与数据）：观测中显示，没有目标时写“当前没有攻击目标”。 -->
+          <Border x:Name="HealthCard" Classes="inset" Padding="16,12" IsVisible="{Binding HasHealthRow}">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="name muted" FontSize="12" Text="{Binding HealthTitle}" />
+              <Panel IsVisible="{Binding HasHealth}">
+                <combat:TargetHealthPanel x:Name="PageHealth" DataContext="{Binding Health}" />
+              </Panel>
+              <TextBlock x:Name="NoHealthTargetText" Classes="name muted" FontSize="13" Text="{Binding NoHealthTarget}" IsVisible="{Binding HealthIdle}" />
+            </StackPanel>
+          </Border>
+
           <!-- 选中单个目标：目标名与我的贡献。 -->
           <Border x:Name="TargetDetailCard" Classes="inset" Padding="16,12" IsVisible="{Binding HasTargetDetail}">
             <StackPanel Spacing="6">
@@ -430,19 +454,11 @@
               <controls:HelpTip Text="{DynamicResource C.ElementsNote}" />
             </StackPanel>
             <controls:SegmentBar x:Name="ElementBar" Segments="{Binding ElementSegments}" IsVisible="{Binding HasElementParts}" />
-            <ItemsControl x:Name="ElementLegend" ItemsSource="{Binding ElementParts}" IsVisible="{Binding HasElementParts}">
+            <ItemsControl x:Name="ElementLegend" ItemsSource="{Binding ElementParts}" IsVisible="{Binding HasElementParts}"
+                          ItemTemplate="{StaticResource ElementLegendTemplate}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="combat:ElementPart">
-                  <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
-                    <Border Width="10" Height="10" CornerRadius="5" Margin="0,0,6,0" VerticalAlignment="Center"
-                            Background="{Binding Segment.Fill}" />
-                    <TextBlock FontSize="13" Text="{Binding Label}" />
-                  </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
             </ItemsControl>
             <TextBlock x:Name="NoElementsText" FontSize="13" Text="{DynamicResource C.NoElements}" IsVisible="{Binding NoElements}" />
           </StackPanel>
@@ -710,6 +726,7 @@
         <controls:DeferredContent PlaceholderHeight="170"><DataTemplate x:DataType="combat:CombatPageModel">
         <StackPanel Spacing="6">
           <TextBlock Classes="note" Text="{DynamicResource C.Empty}" IsVisible="{Binding NoHistory}" />
+          <TextBlock x:Name="RecordWindowNoteText" Classes="note" Text="{Binding RecordWindowNote}" IsVisible="{Binding HasRecordWindowNote}" />
           <ItemsControl ItemsSource="{Binding History}">
             <ItemsControl.ItemTemplate>
               <DataTemplate DataType="combat:EncounterRow">
@@ -718,6 +735,9 @@
                     <Button DockPanel.Dock="Right" Classes="chip" Margin="12,0,0,0" VerticalAlignment="Center"
                             Content="{Binding FavoriteLabel}" Classes.active="{Binding Favorite}"
                             Command="{Binding $parent[UserControl].((combat:CombatPageModel)DataContext).FavoriteCommand}" CommandParameter="{Binding}" />
+                    <!-- 打开这条记录的明细窗口（与实时明细同一套视图）。 -->
+                    <Button DockPanel.Dock="Right" Classes="chip" Margin="12,0,0,0" VerticalAlignment="Center"
+                            Content="{DynamicResource C.OpenRecordDetail}" ToolTip.Tip="{DynamicResource C.OpenRecordDetailTip}" Click="OnOpenRecordClick" />
                     <controls:ReflowPanel MinItemWidth="150" Spacing="12" VerticalAlignment="Center">
                       <TextBlock Classes="name strong" Text="{Binding When}" />
                       <TextBlock Classes="name strong" Text="{Binding Record}" ToolTip.Tip="{Binding Record}" IsVisible="{Binding HasRecord}" />
@@ -728,6 +748,8 @@
                         <TextBlock Classes="name" Text="{Binding Dps}" />
                       </DockPanel>
                       <TextBlock Classes="body strong" Text="{Binding Quality}" />
+                      <TextBlock Classes="name strong" Foreground="{DynamicResource UnknownBrush}" Text="{DynamicResource C.DataIncomplete}"
+                                 IsVisible="{Binding DataIncomplete}" />
                     </controls:ReflowPanel>
                   </DockPanel>
                 </Border>

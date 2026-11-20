@@ -347,6 +347,7 @@ public static class CodeText
         ("observation.npcapLoopbackMissing", "Npcap 未启用回环抓包", "Npcap 未啟用迴環擷取"),
         ("observation.noGameFrames", "收不到游戏数据", "收不到遊戲資料"),
         ("observation.identityPending", "等待角色信息", "等待角色資訊"),
+        ("observation.identityUnconfirmed", "角色待确认", "角色待確認"),
         ("observation.channelUnavailable", "所选网卡不可用", "所選網卡不可用"),
         ("observation.channelChanged", "网卡设置已更改", "網卡設定已變更"),
         ("observation.captureFailed", "抓包失败", "抓包失敗"),
@@ -404,6 +405,12 @@ public static class CodeText
         ("combat.nameLayoutUnsupported", "名称表格式不支持", "名稱表格式不支援"),
         ("combat.nameNotFound", "名称表里没有", "名稱表裡沒有"),
         ("combat.nameTableMissing", "缺少名称表", "缺少名稱表"),
+        ("combat.nameEmpty", "客户端名称为空", "用戶端名稱為空"),
+        ("combat.nameGeneric", "没有名称表，显示通用名称", "沒有名稱表，顯示通用名稱"),
+        ("combat.healthUnread", "未读取到血量", "未讀取到血量"),
+        ("combat.healthUndecryptable", "血量数据无法解开", "血量資料無法解開"),
+        ("combat.healthMaximumUnknown", "最大血量未知", "最大血量未知"),
+        ("combat.healthShared", "血量由同场首领体现", "血量由同場首領體現"),
         ("diagnostics.captureActive", "调试采集进行中", "調試採集進行中"),
         // 背包
         ("inventory.sourceUnavailable", "背包来源不可用", "背包來源不可用"),
@@ -691,7 +698,15 @@ public static class CodeText
         ("storage.migrationIncompatible", "数据版本不兼容", "資料版本不相容"),
         ("storage.migrationInvalid", "数据迁移无效", "資料遷移無效"),
         ("storage.operationRevisionConflict", "数据已变化，请重试", "資料已變化，請重試"),
-        ("storage.walUnavailable", "数据库日志不可用", "資料庫日誌不可用"));
+        ("storage.walUnavailable", "数据库日志不可用", "資料庫日誌不可用"),
+        // 客户端属性图标
+        ("clientIcon.bindingRequired", "绑定游戏后读取图标", "綁定遊戲後讀取圖示"),
+        ("clientIcon.loading", "正在读取图标", "正在讀取圖示"),
+        ("clientIcon.catalogUnavailable", "图标读取失败", "圖示讀取失敗"),
+        ("clientIcon.resourceMissing", "客户端里没有该图标", "用戶端裡沒有該圖示"),
+        ("clientIcon.formatUnsupported", "图标格式不支持", "圖示格式不支援"),
+        ("clientIcon.resourceInvalid", "图标文件损坏", "圖示檔案損壞"),
+        ("clientIcon.parameterTableUnavailable", "属性表不可读，改用固定图标", "屬性表不可讀，改用固定圖示"));
 
     private static readonly Dictionary<string, (string Hans, string Hant)> Modules = Table(
         ("core", "核心", "核心"),
@@ -719,6 +734,9 @@ public static class CodeText
         ("game.observation", "游戏观测", "遊戲觀測"),
         ("game.binding", "游戏窗口绑定", "遊戲視窗綁定"));
 
+    private static readonly Dictionary<string, (string Hans, string Hant)> Capabilities = Table(
+        ("combat.health.monster", "怪物血量", "怪物血量"));
+
     private static readonly ConcurrentDictionary<string, byte> unmapped = new(StringComparer.Ordinal);
 
     /// <summary>界面上出现过、还没有文案的标识（“类别:原文”），按序排列；诊断页列出。</summary>
@@ -733,6 +751,7 @@ public static class CodeText
     public static IReadOnlyCollection<string> KnownReasons => Reasons.Keys;
     public static IReadOnlyCollection<string> KnownModules => Modules.Keys;
     public static IReadOnlyCollection<string> KnownResources => Resources.Keys;
+    public static IReadOnlyCollection<string> KnownCapabilities => Capabilities.Keys;
 
     /// <summary>操作类型，例如 color.search →“染色寻色”。</summary>
     public static string Operation(string? kind) =>
@@ -776,6 +795,10 @@ public static class CodeText
     /// <summary>被占用的资源标识，例如 game.input →“游戏输入”。</summary>
     public static string Resource(string? id) =>
         Lookup(Resources, id) ?? Unknown("resource", id, "未知资源", "未知資源");
+
+    /// <summary>后端能力编号，例如 combat.health.monster →“怪物血量”。</summary>
+    public static string Capability(string? id) =>
+        Lookup(Capabilities, id) ?? Unknown("capability", id, "未知能力", "未知能力");
 
     /// <summary>
     /// 请求失败的界面说明：后端错误码经 <see cref="Reason"/>；连接失败、超时与其他异常给出中文概括，不显示英文异常消息与类型名。

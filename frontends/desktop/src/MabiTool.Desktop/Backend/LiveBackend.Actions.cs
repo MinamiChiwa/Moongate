@@ -130,8 +130,12 @@ public sealed partial class LiveBackend
     private async Task RefreshColorRunAsync(MabiToolClient api, CancellationToken token)
     {
         string? runId;
-        lock (gate) runId = colorRunId;
-        if (runId is null) return;
+        lock (gate)
+        {
+            runId = colorRunId;
+            if (runId is null || !Elapsed(lastColorRunRead, StatusInterval)) return;
+            lastColorRunRead = Now;
+        }
         try
         {
             var run = await api.GetColorRunAsync(runId, token);

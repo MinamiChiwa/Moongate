@@ -15,7 +15,7 @@ public sealed class CombatHealingProtocolTests
     [Fact]
     public void CurrentProfileAddsHealingOpcodesWithoutChangingV1()
     {
-        Assert.Equal("tw-combat-20261110-v3", Tw20261110CombatProtocol.CaptureProfile);
+        Assert.Equal("tw-combat-20261110-v4", Tw20261110CombatProtocol.CaptureProfile);
         Assert.True(Tw20261110CombatProtocol.CombatProfile.Healing);
         Assert.False(Tw20261110CombatProtocol.CombatProfileV1.Healing);
         Assert.Equal(10, Tw20261110CombatProtocol.ProtocolsV1.Count);

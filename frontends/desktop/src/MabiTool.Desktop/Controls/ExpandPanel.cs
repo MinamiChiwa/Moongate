@@ -29,11 +29,6 @@ public sealed class ExpandPanel : Decorator
     private bool fill;
     private double full;
 
-    static ExpandPanel()
-    {
-        ClipToBoundsProperty.OverrideDefaultValue<ExpandPanel>(true);
-    }
-
     public bool IsExpanded { get => GetValue(IsExpandedProperty); set => SetValue(IsExpandedProperty, value); }
 
     /// <summary>
@@ -162,6 +157,9 @@ public sealed class ExpandPanel : Decorator
     protected override Size ArrangeOverride(Size finalSize)
     {
         if (Child is { IsVisible: true } child) child.Arrange(new Rect(0, 0, finalSize.Width, full));
+        // 裁掉过渡中露不出来的部分：纵向按当前高度裁切，横向与展开完毕后的纵向留出悬停放大的余量。
+        var settled = progress >= 1 && !animating;
+        HoverRoom.Clip(this, new Rect(finalSize).Inflate(new Thickness(HoverRoom.Size, settled ? HoverRoom.Size : 0)));
         return finalSize;
     }
 }

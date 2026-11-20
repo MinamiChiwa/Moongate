@@ -143,13 +143,29 @@ public sealed class InventoryWorkerTests
     public void QueueCapacityInvalidatesLostGenerationAndAcceptsNextFullGeneration()
     {
         var queue = new InventoryCaptureQueue();
-        for (ulong i = 1; i <= 64; i++) Assert.True(queue.TryWrite(Report(1, i)));
-        Assert.False(queue.TryWrite(Report(1, 65))); Assert.False(queue.TryWrite(Report(1, 66)));
+        for (ulong i = 1; i <= InventoryCaptureQueue.MaximumFrames; i++) Assert.True(queue.TryWrite(Report(1, i)));
+        Assert.False(queue.TryWrite(Report(1, InventoryCaptureQueue.MaximumFrames + 1))); Assert.False(queue.TryWrite(Report(1, InventoryCaptureQueue.MaximumFrames + 2)));
         Assert.True(queue.TryWrite(Report(2, 1)));
         var messages = queue.Take(); Assert.Equal(2, messages.Count);
         Assert.Equal(InventoryFrameKind.Invalidated, messages[0].Frame.Kind.KnownValue);
         Assert.Equal("inventory.transportCapacity", messages[0].Frame.Reason);
         Assert.Equal(2UL, messages[1].Frame.Generation.Value); Assert.Equal(InventoryFrameKind.Full, messages[1].Frame.Kind.KnownValue);
+    }
+    [Fact]
+    public async Task QueuedInventoryEncodingIsWrittenAsTheSameEventBody()
+    {
+        // 入队时的编码直接组成 {"inventory":…} 事件正文，与此前按报告对象经 Worker 协议选项编码写出的字节相同。
+        using var area = new GameObservationApiTests.Area();
+        using var store = new InventoryAssetStore(area.Root);
+        var report = Report(1, 1);
+        var queue = new InventoryCaptureQueue();
+        Assert.True(queue.TryWrite(report));
+        var (queued, encoded) = Assert.Single(queue.TakeEncoded());
+        var payload = Assert.IsType<EncodedEvent>(await store.PrepareInventoryAsync(queued, encoded, CancellationToken.None));
+        using var document = JsonDocument.Parse(payload.Json);
+        Assert.Equal(JsonSerializer.SerializeToUtf8Bytes(JsonSerializer.SerializeToElement(new { inventory = report }, WorkerProtocol.Json), WorkerProtocol.Json),
+            JsonSerializer.SerializeToUtf8Bytes(document.RootElement, WorkerProtocol.Json));
+        Assert.Equal(0, queue.Bytes);
     }
     [Fact]
     public async Task AssetsRejectBadDigestLengthJsonAndPathAndCleanCancellationAndOwnedFiles()

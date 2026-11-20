@@ -98,6 +98,15 @@ public sealed class PageFrame : Grid
         stale = true;
     }
 
+    /// <summary>主窗口最小化或隐藏：已建立的页面停止接收通知（与切走保留时相同），界面与数据保留。</summary>
+    internal void Suspend() => Lifecycle?.Deactivate();
+
+    /// <summary>主窗口还原：页面重新接收通知并读取一次最近结果。</summary>
+    internal void Resume()
+    {
+        if (!stale) Lifecycle?.Activate();
+    }
+
     /// <summary>立即建立页面（已建立时直接返回）；需要马上操作页面内容时（例如滚到设置页的某一区）使用。</summary>
     public Control EnsureBuilt()
     {

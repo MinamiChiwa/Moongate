@@ -6,6 +6,7 @@ using MabiTool.Client;
 using MabiTool.Contracts;
 using MabiTool.Host.Game;
 using MabiTool.Infrastructure;
+using MabiTool.Infrastructure.Workers;
 using MabiTool.Modules.CombatObservation.Application;
 using MabiTool.Observation.Worker;
 using MabiTool.ModuleSdk;
@@ -79,6 +80,8 @@ public sealed class SharedCombatCaptureTests
         using var client = GameObservationApiTests.Area.Owner(app);
         var capture = await GameObservationApiTests.BeginCapture(client, area, "combat-ready-callback");
         var service = app.Services.GetRequiredService<GameObservationService>();
+        // 合成捕获先登记兴趣闸门再发出第一份报告；捕获启动后、闸门登记前送达的兴趣变化不经过闸门，因此等到第一份报告再登记战斗兴趣。
+        await Wait(() => service.Snapshot().Latest is not null);
         var auth = app.Services.GetRequiredService<LocalAuthService>();
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -109,6 +112,8 @@ public sealed class SharedCombatCaptureTests
         using var client = GameObservationApiTests.Area.Owner(app);
         var capture = await GameObservationApiTests.BeginCapture(client, area, "combat-ready-cancelled");
         var service = app.Services.GetRequiredService<GameObservationService>();
+        // 同上：等到第一份报告，兴趣变化才经过合成捕获的闸门。
+        await Wait(() => service.Snapshot().Latest is not null);
         var owner = app.Services.GetRequiredService<LocalAuthService>().OwnerGrant().Session.ClientId;
         using var cancellation = new CancellationTokenSource();
         var callbacks = 0;
@@ -461,6 +466,33 @@ public sealed class SharedCombatCaptureTests
         Assert.Equal(3UL, loss.Frame.Sequence.Value); Assert.Equal(0, queue.Bytes); Assert.Equal(0, queue.PendingCount);
         Assert.True(queue.TryWrite(Report(2, 1, 400)));
         Assert.Single(queue.Drain());
+    }
+
+    [Fact]
+    public void QueueWritesMergedBatchesWithTheSameJsonAsEncodingTheMergedReport()
+    {
+        // 治疗与战斗状态在各份报告中有无不一：批次的拼接编码、字节计数与事件正文，同直接编码合并后的报告一致；越出 100 ms 合并窗口另起一批。
+        var first = Report(1, 1, 100);
+        var heal = new CombatHealEvent("heal-2", CombatHealDirection.Received, first.LocalEntity!.Key, new(0), new(30), null, null, false,
+            At(120), 120, new(2), ObservationQuality.Confirmed, "hp-unpaired");
+        var second = Report(1, 2, 120); second = second with { Frame = second.Frame with { Healing = [heal] } };
+        var third = Report(1, 3, 150); third = third with { Frame = third.Frame with { CombatStates = [new(CombatLocalState.InCombat, At(150), 150, new(3))] } };
+        var queue = new CombatCaptureQueue();
+        foreach (var report in new[] { first, second, third, Report(1, 4, 400) }) Assert.True(queue.TryWrite(report));
+        var queued = queue.Bytes;
+        var batches = queue.DrainBatches();
+        Assert.Equal(2, batches.Count);
+        Assert.Equal([3, 1], batches.Select(batch => batch.Report.Frame.Damage.Count));
+        Assert.Equal(["heal-2"], batches[0].Report.Frame.Healing!.Select(value => value.EventId));
+        Assert.Single(batches[0].Report.Frame.CombatStates!);
+        Assert.Null(batches[1].Report.Frame.Healing); Assert.Null(batches[1].Report.Frame.CombatStates);
+        var encoded = batches.Select(batch => batch.WriteEnvelope([], [])).ToArray();
+        for (var i = 0; i < batches.Count; i++) Assert.Equal(JsonSerializer.SerializeToUtf8Bytes(batches[i].Report, ContractJson.Options), encoded[i]);
+        Assert.Equal(encoded.Sum(value => value.Length), queued); Assert.Equal(0, queue.Bytes);
+        // 事件正文：此前由报告对象经 Worker 协议选项编码；现由入队编码拼成后解析交给连接，写出的字节相同。
+        using var document = JsonDocument.Parse(batches[0].WriteEnvelope(EncodedEvent.CombatPrefix, EncodedEvent.Suffix));
+        Assert.Equal(JsonSerializer.SerializeToUtf8Bytes(JsonSerializer.SerializeToElement(new { combat = batches[0].Report }, WorkerProtocol.Json), WorkerProtocol.Json),
+            JsonSerializer.SerializeToUtf8Bytes(document.RootElement, WorkerProtocol.Json));
     }
 
     [Theory]

@@ -37,6 +37,18 @@ public sealed partial class SampleBackend
     /// <summary>测试用：范围内另有这么多个目标（“小怪 1”…，伤害依次递减），用来检查目标标签折叠成一行。</summary>
     internal int ExtraRangeTargets { get; set; }
 
+    /// <summary>
+    /// 后端选定的当前攻击目标（契约形状，经与真实后端相同的映射显示）；样本默认是一只示例首领，数值一看即知是示例。
+    /// 测试改成各种状态或设为空（没有当前目标）。
+    /// </summary>
+    internal MabiTool.Contracts.CombatCurrentTarget? SampleCurrentTarget { get; set; } = SampleTarget("sample-boss", 1_234_567, 12_345_678);
+
+    /// <summary>示例目标：首领标志为真、血量已读，名称为“示例首领”。</summary>
+    internal static MabiTool.Contracts.CombatCurrentTarget SampleTarget(string id, ulong current, ulong? maximum, string? name = null) => new(id,
+        new("sample", new(1), new(4_242), new(1)), id, "main-target", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch,
+        new(new(current), maximum is { } max ? new(max) : null, DateTimeOffset.UnixEpoch, "read"), IsBoss: true,
+        ResolvedName: new("monster", new(1), name ?? Pick("示例首领", "示例首領"), CombatNames.Resolved), ActorType: "monster");
+
     // 明细窗口自己的范围与目标；窗口打开时取主页面当时的选择。
     private CombatScopeKind detailScope = CombatScopeKind.Whole;
     private string? detailTarget;
@@ -70,6 +82,14 @@ public sealed partial class SampleBackend
             case "combat.detail.target": detailTarget = string.IsNullOrEmpty(argument) ? null : argument; break;
         }
     }
+
+    /// <summary>样本的记录明细：沿用明细窗口的样本数据，标题为样本记录。</summary>
+    public CombatPageData GetCombatRecord(string id) => GetCombatDetail() with
+    {
+        RecordInfo = new(Pick("样本记录", "樣本紀錄"), Pick("保存于 11/14 21:30", "儲存於 11/14 21:30"), false, false, string.Empty)
+    };
+
+    public CombatTimelineView? GetCombatRecordTimeline(string id) => GetCombatTimeline();
 
     /// <summary>样本的 DPS 曲线（明细窗口的范围）：整场按本机时钟、其余按相对时间，各 60 个点。</summary>
     public CombatTimelineView? GetCombatTimeline() =>
@@ -141,6 +161,8 @@ public sealed partial class SampleBackend
             Scope = scope,
             RangeTargets = targets,
             TargetDetail = detail,
+            Health = CombatMapper.Health(SampleCurrentTarget, GetCapabilityNotice(CapabilityIds.MonsterHealth)),
+            HealthIdle = SampleCurrentTarget is null && GetCapabilityNotice(CapabilityIds.MonsterHealth) is null,
             Break = new("612,880", "87", "7,044", "24,190", "0:25", "3", "17%",
                 Pick("破防区间：本人造成破防的一击起，到目标破防值归零止，按目标分别计；平均 DPS = 无防备伤害 ÷ 区间总时长，占比按范围时长",
                     "破防區間：本人造成破防的一擊起，到目標破防值歸零止，按目標分別計；平均 DPS = 無防備傷害 ÷ 區間總時長，佔比按範圍時長")),

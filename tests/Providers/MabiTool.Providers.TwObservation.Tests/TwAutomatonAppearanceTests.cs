@@ -93,24 +93,25 @@ public sealed class TwAutomatonAppearanceTests
 
     internal static byte[] Prefix(int type = 3, ulong entity = 1, uint sheet = 0x11223344,
         string text = "", byte boss = 0, float offset = 0, int? countOverride = null, int? stringBytesOverride = null,
-        float breakPoint = 0, long breakPointMax = 0)
+        float breakPoint = 0, long breakPointMax = 0, long healthMax = 0, bool encrypted = false, byte[]? payload = null, byte[]? iv = null)
     {
         using var schema = JsonDocument.Parse(typeof(TwAutomatonAppearance).Assembly.GetManifestResourceStream("MabiTool.Tw20261110AutomatonSchema")!);
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream, Encoding.Unicode, true);
         void Write(string name, string field = "")
         {
             if (name is "object" or "System.Object" or "System.ValueType" or "System.Enum") return;
-            if (name == "Shared.ChannelObjects.ChannelObjectId") { writer.Write(field == "Id" ? entity : 0UL); return; }
+            if (name == "Shared.ChannelObjects.ChannelObjectId") { writer.Write(field is "Id" or "ChannelObjectId" ? entity : 0UL); return; }
+            if (name == "uint8[]" && field is "Payload" or "IV" && (field == "Payload" ? payload : iv) is { } raw) { writer.Write(raw.Length); writer.Write(raw); return; }
             if (name == "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime") { writer.Write(0f); return; }
             if (name == "Silvervine.ManualMemory.UniqueString") { Write("string"); return; }
             if (name is "Shared.Symbols.ActorModelId" or "Shared.Symbols.ModelPartId" or "Shared.Symbols.MountPartId") { writer.Write(0); return; }
             switch (name)
             {
-                case "bool": writer.Write(field == "IsBossMonster" ? boss : (byte)0); return;
+                case "bool": writer.Write(field == "IsBossMonster" ? boss : field == "IsSetHealthEncrypted" && encrypted ? (byte)1 : (byte)0); return;
                 case "uint8": case "int8": writer.Write((byte)0); return;
                 case "int16": case "uint16": writer.Write((short)0); return;
                 case "int32": case "uint32": writer.Write(0); return;
-                case "int64": case "uint64": writer.Write(field == "BreakPointMax" ? breakPointMax : 0L); return;
+                case "int64": case "uint64": writer.Write(field == "BreakPointMax" ? breakPointMax : field == "HealthMax" ? healthMax : 0L); return;
                 case "float32": writer.Write(field == "OffsetY" ? offset : field == "BreakPoint" ? breakPoint : 0f); return;
                 case "float64": writer.Write(0d); return;
                 case "string": var bytes = Encoding.Unicode.GetBytes(text); writer.Write(stringBytesOverride ?? bytes.Length); writer.Write(bytes); return;
@@ -119,8 +120,11 @@ public sealed class TwAutomatonAppearanceTests
             if (name.Contains('<', StringComparison.Ordinal))
             { if (name.Contains("Nullable`1", StringComparison.Ordinal)) writer.Write((byte)1); else writer.Write(countOverride ?? 0); return; }
             if (name == "Shared.GameLogic.ChannelObjects.ActorType") { writer.Write(type); return; }
-            if (name is "Shared.Symbols.MonsterSheetId" or "Shared.Symbols.PetSheetId")
-            { writer.Write(name.Contains(type == 4 ? ".PetSheetId" : ".MonsterSheetId", StringComparison.Ordinal) ? sheet : 0); return; }
+            if (name is "Shared.Symbols.MonsterSheetId" or "Shared.Symbols.PetSheetId" or "Shared.Symbols.NPCSheetId" or "Shared.Symbols.GimmickActorSheetId")
+            {
+                var wanted = type switch { 4 => ".PetSheetId", 1 => ".NPCSheetId", 6 => ".GimmickActorSheetId", _ => ".MonsterSheetId" };
+                writer.Write(name.EndsWith(wanted, StringComparison.Ordinal) ? sheet : 0); return;
+            }
             var record = schema.RootElement.GetProperty(name);
             if (record.GetProperty("parent").GetString() == "System.Enum") { Write(record.GetProperty("fields")[0].GetProperty("type").GetString()!); return; }
             Write(record.GetProperty("parent").GetString()!);

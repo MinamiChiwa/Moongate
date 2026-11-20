@@ -10,6 +10,8 @@ public static class CapabilityIds
     public const string RoomsCoordinate = "rooms.coordinate";
     public const string ColorSearch = "color.search";
     public const string InventoryFull = "inventory.full";
+    /// <summary>怪物血量与当前攻击目标；来自战斗能力表（GET /combat/capabilities）。</summary>
+    public const string MonsterHealth = "combat.health.monster";
 }
 
 /// <summary>能力表里一项的状态，供界面显示状态行；与 <see cref="CapabilityNotice.Describe"/> 同源，不可用才有说明。</summary>

@@ -83,7 +83,13 @@ public sealed partial class CombatHistoryStore(SqliteStore database, OperationSt
         live.AddOrUpdate(id, new LiveObservation(workspace.Observation.Owner, workspace, effects),
             (_, previous) => previous.Workspace.Revision.Value > workspace.Revision.Value ? previous : new(workspace.Observation.Owner, workspace, effects));
     }
-    public void EndLive(string observationId) => live.TryRemove(observationId, out _);
+    public void EndLive(string observationId) { live.TryRemove(observationId, out _); summaries.TryRemove(observationId, out _); }
+    /// <summary>
+    /// 每个活动观察最近一次追加的摘要内容（不含修订与随时间推进的时长）；内容未变的检查点不再追加 combat.summary.changed，
+    /// 时长等随时间推进的读数由快照提供。宿主重启后第一次保存照常追加。
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> summaries = new(StringComparer.Ordinal);
+    private static string SummaryContent(CombatSummary value) => JsonSerializer.Serialize(value with { Revision = null, DurationMs = 0 }, ContractJson.Options);
 
     public CombatWorkspace? Workspace(string principal, bool owner, string? id = null)
     {
@@ -148,10 +154,10 @@ public sealed partial class CombatHistoryStore(SqliteStore database, OperationSt
         var documents = checkpoint.Encounters.Select(value => (Value: value, Json: JsonSerializer.Serialize(value, ContractJson.Options))).ToArray();
         var entityDocuments = checkpoint.Effects.Select(value => (Value: value, Json: JsonSerializer.Serialize(value, ContractJson.Options))).ToArray();
         var pages = EncodePages(checkpoint.Timeline);
-        var historyClosed = false;
+        var historyClosed = false; string? summaryContent = null, appendedSummary = null;
         var committed = await operations.CommitCombatAsync(checkpoint.Workspace.Observation.Id, checkpoint.Workspace.Observation, tx =>
         {
-            historyClosed = false;
+            historyClosed = false; appendedSummary = null;
             var observation = checkpoint.Workspace.Observation;
             if (boundary is not null) SaveBoundary(tx, boundary);
             var newObservation = tx.Scalar("SELECT id FROM combat_observations WHERE id=$id", ("$id", observation.Id)) is null;
@@ -196,8 +202,12 @@ public sealed partial class CombatHistoryStore(SqliteStore database, OperationSt
             foreach (var (value, json) in entityDocuments)
                 tx.Execute("INSERT INTO combat_entities VALUES($id,$observation,$owner,$json) ON CONFLICT(id,observation_id) DO UPDATE SET document=excluded.document",
                     ("$id", value.Id), ("$observation", value.ObservationId), ("$owner", value.Owner), ("$json", json));
-            if (existingFinal is null && checkpoint.Workspace.Encounter is { } currentEncounter)
+            if (existingFinal is null && checkpoint.Workspace.Encounter is { } currentEncounter &&
+                (summaries.GetValueOrDefault(observation.Id) is not { } previous || previous != (summaryContent ??= SummaryContent(currentEncounter.Summary))))
+            {
                 Append(tx, "combat-summary", observation.Id, checkpoint.Workspace.Revision, "combat.summary.changed", currentEncounter.Summary);
+                appendedSummary = summaryContent ?? SummaryContent(currentEncounter.Summary);
+            }
             if (checkpoint.Effects.Count > 0)
             {
                 var primary = checkpoint.Workspace.SelfEffects ?? checkpoint.Effects[0];
@@ -215,6 +225,7 @@ public sealed partial class CombatHistoryStore(SqliteStore database, OperationSt
                         checkpoint.Workspace.Revision, checkpoint.Gaps.Take(64).ToArray(), observation.DroppedEvents, SnapshotRequired: true));
             if (historyChanged) { AdvanceHistory(tx); historyClosed = true; }
         }, terminal, problem, ct);
+        if (committed && appendedSummary is not null) summaries[checkpoint.Workspace.Observation.Id] = appendedSummary;
         if (committed && terminal is not null) EndLive(checkpoint.Workspace.Observation.Id);
         // 预算清理放在检查点事务之后单独提交：检查点写事务只含本次观测数据，不随历史条数增长；清理失败时留到下一次关闭或手动清理。
         if (committed && historyClosed)
@@ -230,7 +241,8 @@ public sealed partial class CombatHistoryStore(SqliteStore database, OperationSt
             var entries = new List<(CombatTimelineItem Item, string Json, int Bytes)>(); var bytes = 2;
             foreach (var record in group.OrderBy(x => x.Item.Index.Value))
             {
-                var json = JsonSerializer.Serialize(record.Item, ContractJson.Options); var length = Encoding.UTF8.GetByteCount(json);
+                var json = record.Encoded is { } encoded ? Encoding.UTF8.GetString(encoded) : JsonSerializer.Serialize(record.Item, ContractJson.Options);
+                var length = record.Encoded?.Length ?? Encoding.UTF8.GetByteCount(json);
                 if (length > 64 * 1024 - 2) throw new OperationException("resource.capacityExceeded", "单项战斗时间线超过 64 KiB");
                 if (entries.Count >= 64 || bytes + length + 1 > 64 * 1024) Flush();
                 entries.Add((record.Item, json, length)); bytes += length + (entries.Count > 1 ? 1 : 0);

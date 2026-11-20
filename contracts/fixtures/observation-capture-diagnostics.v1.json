@@ -17,5 +17,14 @@
     "rejected": { "combat": "1" },
     "types": { "20054": "12", "20526": "300", "20590": "2", "21196": "320", "170069": "6" },
     "otherFrames": "0"
-  }
+  },
+  "devices": [
+    { "channelId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "kind": "loopback", "linkType": 0, "opened": true, "issue": null, "primary": true,
+      "packets": "1840", "portPackets": "1837", "gameStreams": "1", "frames": "912", "candidateDropped": "0" },
+    { "channelId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "kind": "physical", "linkType": 1, "opened": true, "issue": null, "primary": false,
+      "packets": "0", "portPackets": "0", "gameStreams": "0", "frames": "0", "candidateDropped": "0" },
+    { "channelId": "cccccccccccccccccccccccccccccccc", "kind": "virtual", "linkType": -1, "opened": false, "issue": "open", "primary": false,
+      "packets": "0", "portPackets": "0", "gameStreams": "0", "frames": "0" }
+  ],
+  "read": { "mode": "immediate", "fallback": false, "coalesceMs": 10, "pollMs": 0, "bufferBytes": 1048576 }
 }

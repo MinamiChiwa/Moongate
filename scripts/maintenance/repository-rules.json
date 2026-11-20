@@ -66,9 +66,12 @@
     "docs/release-notes-0.1.3.zh-TW.md",
     "docs/release-notes-0.1.4.md",
     "docs/release-notes-0.1.4.zh-TW.md",
+    "docs/release-notes-0.1.5.md",
+    "docs/release-notes-0.1.5.zh-TW.md",
     "docs/user-guide.md",
     "docs/user-guide.zh-TW.md"
   ],
+  "markdownPatterns": [],
   "generatedSegments": [
     "artifacts",
     "bin",

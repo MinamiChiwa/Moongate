@@ -21,6 +21,10 @@ if (args is ["--configuration-transactions", ..])
 
 if (args is ["--command-admission", ..]) { await RunCommandAdmissionAsync(args[1..]); return; }
 if (args is ["--live-replay", ..]) { await LiveReplayProbe.RunAsync(args[1..]); return; }
+if (args is ["--layout", ..]) { await LayoutPreparationProbe.RunAsync(args[1..]); return; }
+if (args is ["--consume", ..]) { await ConsumptionProbe.RunAsync(args[1..]); return; }
+if (args is ["--consume-stages", ..]) { ConsumptionProbe.RunStages(args[1..]); return; }
+if (args is ["--layout-phase", ..]) { await LayoutPreparationProbe.RunPhaseAsync(args[1..]); return; }
 if (args is ["--self-test"])
 {
     var distribution = Distribution.From(Enumerable.Range(1, 100).Select(x => (double)x));

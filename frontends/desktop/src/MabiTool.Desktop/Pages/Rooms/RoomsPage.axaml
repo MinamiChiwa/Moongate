@@ -71,7 +71,7 @@
         <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
         <DockPanel Margin="{DynamicResource TitleReserve}">
           <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource R.Title}" />
-          <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" ClipToBounds="True" />
+          <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" />
         </DockPanel>
         <controls:ReflowPanel MinItemWidth="260" Spacing="12" Margin="0,4,0,0">
           <TextBlock x:Name="RoleSummary" Classes="body" FontWeight="Bold" VerticalAlignment="Center" Text="{Binding Status.RoleSummary}" />
@@ -266,7 +266,8 @@
                     </DockPanel>
                     <TextBlock x:Name="NicknameNote" Classes="note" TextWrapping="Wrap" Text="{Binding NicknameNote}" IsVisible="{Binding HasNicknameNote}" />
                   </StackPanel>
-                  <DockPanel>
+                  <!-- 同一行的高度取较高的一项；顶部对齐，昵称下方出现原因行时联机方式开关不被拉高。 -->
+                  <DockPanel VerticalAlignment="Top">
                     <TextBlock DockPanel.Dock="Left" Classes="label" Text="{DynamicResource R.Provider}" />
                     <controls:SelectionBorder x:Name="ProviderSwitch" Classes="segmented" HorizontalAlignment="Left">
                       <ItemsControl controls:StableItems.Source="{Binding Providers}" ItemTemplate="{StaticResource ProviderOption}" ItemsPanel="{StaticResource Wrap}" />

@@ -168,6 +168,9 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
         if (InventoryPreference.Account is { } saved && saved != Data.AccountId) Send("inventory.account", saved);
     }
 
+    // 背包快照与透视表只在背包页显示时读取。
+    protected override string? Surface => "inventory";
+
     public ICommand ToggleGroupCommand { get; }
 
     // ---- 资源区：“账户资源”跟随账号下拉；“角色资源”按所选账户下的角色分开，默认当前登录角色。未读取的各组折叠。 ----

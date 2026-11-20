@@ -203,6 +203,30 @@ public sealed class CaptureAutomationTests
     }
 
     [Fact]
+    public async Task FaultAfterRunningRecordsItsKindAndRetriesWithinSeconds()
+    {
+        // 常驻捕获运行一段时间后 Worker 捕获循环抛出未归类异常：故障与结束事件带细分原因，首次重试约 2 秒后，不按 5 秒起的启动失败退避。
+        var quick = GameObservationService.QuickRetryAfterMs;
+        GameObservationService.QuickRetryAfterMs = 200;
+        try
+        {
+            using var area = Current(); await using var app = area.Build("fault-after-run", automation: true); await app.StartAsync();
+            var records = new System.Collections.Concurrent.ConcurrentQueue<DiagnosticRecord>();
+            app.Services.GetRequiredService<DiagnosticTrace>().AttachPersistence(record => { records.Enqueue(record); return true; });
+            using var client = GameObservationApiTests.Area.Owner(app);
+            var failed = await Wait(client, value => value.Automation?.State == "failed");
+            Assert.Equal("observation.captureFailed", failed.Automation!.Reason);
+            Assert.InRange((failed.Automation.NextAttemptAt!.Value - DateTimeOffset.UtcNow).TotalSeconds, -1, GameObservationService.QuickRetryDelay.TotalSeconds + 0.5);
+            await WaitUntil(() => records.Any(record => record.Event == "observation.capture.ended"));
+            Assert.Equal("capture.invalidOperation", records.First(record => record.Event == "observation.worker.faulted").Fields!["kind"]);
+            Assert.Equal("capture.invalidOperation", records.First(record => record.Event == "observation.capture.ended").Fields!["kind"]);
+            await WaitUntil(() => Directory.GetFiles(area.Root, "process-start-*").Length >= 2);
+            await app.StopAsync();
+        }
+        finally { GameObservationService.QuickRetryAfterMs = quick; }
+    }
+
+    [Fact]
     public void CaptureSummaryFieldsAllReachTheDiagnosticRecord()
     {
         // 诊断事件每条至多保留 12 个字段：登记表里不能有超过上限的事件，摘要拆成两条后全部字段都写进记录。
@@ -220,6 +244,60 @@ public sealed class CaptureAutomationTests
         var perDevice = records.Single(record => record.Event == "observation.capture.device").Fields!;
         Assert.Equal(DiagnosticEvents.CaptureDevice.Fields.Count, perDevice.Count);
         Assert.Equal(("wintun", "101", "link:113", "4096"), (perDevice["kind"], perDevice["linkType"], perDevice["issue"], perDevice["candidateDropped"]));
+    }
+
+    [Fact]
+    public void DeviceSummariesAreWrittenOnlyOnChangeAndTheReadModeReachesTheRecord()
+    {
+        var records = new List<DiagnosticRecord>();
+        var trace = new DiagnosticTrace(); trace.AttachPersistence(record => { records.Add(record); return true; });
+        static CaptureDeviceCounters Device(string id, bool opened, bool primary, ulong packets) =>
+            new(id, opened ? "physical" : "virtual", opened ? 1 : -1, opened, opened ? null : "open", primary, new(packets), new(packets / 2), new(primary ? 1UL : 0), new(packets / 4));
+        var empty = new CaptureDiagnostics().Snapshot(0, 0);
+        var written = new Dictionary<string, string>(StringComparer.Ordinal);
+        List<IReadOnlyDictionary<string, string>> Devices(ObservationCaptureCounters counters, double elapsedMs)
+        {
+            records.Clear();
+            foreach (var (definition, fields) in GameObservationService.SummaryEvents(elapsedMs, "automatic", counters, true, null, null, null, 0, written)) trace.Emit(definition, fields);
+            return records.Where(record => record.Event == "observation.capture.device").Select(record => record.Fields!).ToList();
+        }
+        // 三张设备：一张有游戏流，一张打开但始终为零，一张打不开。首次摘要三张都写；计数不变时一张不写。
+        var first = empty with { Devices = [Device(First, true, true, 100), Device(Second, true, false, 0), Device(new string('3', 32), false, false, 0)] };
+        Assert.Equal(3, Devices(first, 10_000).Count);
+        Assert.Empty(Devices(first, 30_000));
+        // 有流量的设备计数变化只写它；主来源换到另一张时两张都写。
+        var second = first with { Devices = [Device(First, true, true, 180), first.Devices![1], first.Devices[2]] };
+        Assert.Equal(["0"], Devices(second, 90_000).Select(fields => fields["index"]));
+        var third = second with { Devices = [Device(First, true, false, 180), Device(Second, true, true, 0), second.Devices![2]] };
+        Assert.Equal(["0", "1"], Devices(third, 150_000).Select(fields => fields["index"]));
+        // 停止时只为自上次写出后有变化的设备补写，导出中每张设备的最后一条即最终状态。
+        var final = third with { Devices = [third.Devices![0], Device(Second, true, true, 40), third.Devices[2]] };
+        var last = GameObservationService.DeviceEvents(160, final, written);
+        Assert.Equal(("1", "40"), (Assert.Single(last).Fields.Items["index"], last[0].Fields.Items["packets"]));
+        Assert.Empty(GameObservationService.DeviceEvents(161, final, written));
+
+        // 实际读取方式随设备打开结果写进 observation.channel.selected，四个字段全部落盘。
+        records.Clear();
+        var read = new CaptureReadCounters("poll", true, 0, 10, 1024 * 1024);
+        trace.Emit(DiagnosticEvents.ChannelSelected, GameObservationService.SelectionFields("automatic", final.Devices!, "physical", read));
+        var selected = records.Single(record => record.Event == "observation.channel.selected").Fields!;
+        Assert.Equal(("poll", "true", "0", "1024"), (selected["readMode"], selected["readFallback"], selected["coalesceMs"], selected["kernelBufferKiB"]));
+        Assert.Equal(("2", "1"), (selected["opened"], selected["failed"]));
+        Assert.True(GameObservationService.ValidCounters(final with { Read = read }));
+        Assert.False(GameObservationService.ValidCounters(final with { Read = read with { Mode = "busy" } }));
+    }
+
+    [Fact]
+    public async Task WorkerLaunchOptionsPassTheDataRootCacheDirectory()
+    {
+        // Worker 的库存布局与构建核对缓存写在数据根 cache 下（与宿主同一位置），由启动环境给出。
+        await using var workspace = new StorageTestWorkspace();
+        var options = GameObservationService.WorkerOptions(typeof(CaptureAutomationTests).Assembly.Location, workspace.Paths);
+        Assert.Equal(ObservationCache.Variable, GameObservationService.CacheRootVariable);
+        var cache = options.EnvironmentVariables[ObservationCache.Variable];
+        Assert.Equal(workspace.Paths.Cache, cache);
+        Assert.StartsWith(workspace.Paths.DataRoot + Path.DirectorySeparatorChar, cache, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(workspace.Paths.Temporary + Path.DirectorySeparatorChar, options.AssetRoot, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -242,9 +320,10 @@ public sealed class CaptureAutomationTests
     }
 
     [Fact]
-    public async Task MissingSavedChannelIsReportedAndRetriedWithBackoff()
+    public async Task MissingSavedChannelFallsBackToAllDevicesWithoutRewritingTheSetting()
     {
-        // 自动模式不枚举网卡即启动（合成网卡列表两张都有游戏连接也不报多网卡）；指定的网卡不在时 savedChannelMissing，改为存在的网卡后立即重试。
+        // 自动模式不枚举网卡即启动（合成网卡列表两张都有游戏连接也不报多网卡）；指定的网卡不在时改为全部网卡抓包（来源 fallback），
+        // 设置不改写；改为存在的网卡后按新设置重启。
         using var area = Current(); await using var app = area.Build("auto-many", automation: true); await app.StartAsync();
         using var client = GameObservationApiTests.Area.Owner(app);
         var automatic = await Wait(client, value => value.State == "running");
@@ -256,12 +335,15 @@ public sealed class CaptureAutomationTests
         settings = await Settings(client);
         await Save(client, settings.Value with { AutomaticCapture = true, ChannelMode = GameCaptureSettings.ManualChannel, ChannelId = new string('3', 32),
             ChannelDescription = "已拔出的网卡" }, settings.ETag, "missing-channel");
-        var failed = await Wait(client, value => value.Automation?.State == "failed");
-        Assert.Equal("observation.savedChannelMissing", failed.Automation!.Reason); Assert.NotNull(failed.Automation.NextAttemptAt);
+        var fallback = await Wait(client, value => value.State == "running" && value.Automation?.ChannelSource == "fallback");
+        Assert.Null(fallback.ChannelId);
         settings = await Settings(client);
+        Assert.Equal((GameCaptureSettings.ManualChannel, new string('3', 32)), (settings.Value.ChannelMode, settings.Value.ChannelId));
+        await Task.Delay(600);
+        Assert.Equal(fallback.CaptureId, (await Read(client)).Snapshot.CaptureId);
         await Save(client, settings.Value with { ChannelId = Second, ChannelDescription = "合成回环" }, settings.ETag, "manual-channel");
-        var running = await Wait(client, value => value.State == "running");
-        Assert.Equal((Second, "saved"), (running.ChannelId, running.Automation!.ChannelSource));
+        var running = await Wait(client, value => value.State == "running" && value.Automation?.ChannelSource == "saved");
+        Assert.Equal(Second, running.ChannelId);
         await app.StopAsync();
     }
 
@@ -374,17 +456,54 @@ public sealed class CaptureAutomationTests
         Assert.Equal(3, bindings.Current!.Session.ProcessId); Assert.Equal(2, source.Prepared);
     }
 
+    [Fact]
+    public async Task GameWindowRecreatedByTheSameProcessIsReboundOnTheSameSession()
+    {
+        var time = TimeProvider.System;
+        var source = new Windows();
+        var bindings = new GameSessionBindingTracker(time);
+        var leases = new ResourceLeaseCoordinator(time, new ActivityBarrier());
+        var controls = new GameControlContext(bindings, leases, new(leases, bindings, new RoomInputApiTests.Device(), time), false);
+        var service = new GameBindingService(controls, source, new SystemInfo("Moongate", "0.1.0", "1.0", new string('a', 32), DateTimeOffset.UtcNow, "runtime", "os"), time);
+        source.Add(1);
+        Assert.True(await service.AutoBindAsync(CancellationToken.None));
+        var first = bindings.Current!;
+        // 游戏在加载中销毁原窗口：新窗口出现前保留绑定并停止输入，出现后在同一会话上换绑。
+        source.Remove(1); source.Running.Add(1);
+        Assert.Equal((first.Session.Id, false), (bindings.Current!.Session.Id, bindings.Current.CanAcceptInput));
+        source.Add(1, 900);
+        var rebound = bindings.Current!;
+        Assert.Equal((first.Session.Id, true, 900UL), (rebound.Session.Id, rebound.CanAcceptInput, rebound.Session.WindowIdentity.Value));
+        Assert.False(await service.AutoBindAsync(CancellationToken.None));
+        // 进程退出才清除。
+        source.Remove(1); source.Running.Remove(1);
+        Assert.Null(bindings.Current);
+        // 清除后同一窗口（进程号、启动时间、句柄与上次自动绑定相同，例如退出被误判）仍可再次自动绑定；没绑上的窗口不反复准备。
+        source.Add(1);
+        Assert.True(await service.AutoBindAsync(CancellationToken.None));
+        Assert.Equal(first.Session.WindowIdentity, bindings.Current!.Session.WindowIdentity);
+        source.Remove(1); source.Running.Remove(1); Assert.Null(bindings.Current);
+        source.Add(2); source.Refusing = true;
+        Assert.False(await service.AutoBindAsync(CancellationToken.None)); Assert.False(await service.AutoBindAsync(CancellationToken.None));
+        Assert.Equal(3, source.Prepared);
+    }
+
     private sealed class Windows : IGameWindowSource
     {
         private readonly Dictionary<int, GameWindowObservation> windows = [];
         public int Prepared { get; private set; }
-        public void Add(int pid) => windows[pid] = new("TW", pid, DateTimeOffset.UnixEpoch.AddSeconds(pid), new((ulong)(100 + pid)), null, new(0, 0, 800, 600), 96, 96, false);
+        /// <summary>窗口不可见时仍在运行的进程。</summary>
+        public HashSet<int> Running { get; } = [];
+        public void Add(int pid, ulong? window = null) => windows[pid] = new("TW", pid, DateTimeOffset.UnixEpoch.AddSeconds(pid), new(window ?? (ulong)(100 + pid)), null, new(0, 0, 800, 600), 96, 96, false);
         public void Remove(int pid) => windows.Remove(pid);
         public IReadOnlyList<SelectableGameWindow> Enumerate() => windows.Values.Select(value => new SelectableGameWindow("台服", "MabinogiMobile", value)).ToArray();
         public GameWindowObservation? Refresh(GameWindowObservation selected) => windows.GetValueOrDefault(selected.ProcessId) is { } value &&
-            value.ProcessStartTime == selected.ProcessStartTime ? value : null;
+            value.ProcessStartTime == selected.ProcessStartTime && value.WindowIdentity == selected.WindowIdentity ? value : null;
+        public bool ProcessExited(GameWindowObservation selected) => !windows.ContainsKey(selected.ProcessId) && !Running.Contains(selected.ProcessId);
+        /// <summary>准备时读不到客户端（返回空），自动绑定失败。</summary>
+        public bool Refusing { get; set; }
         public ValueTask<GameWindowObservation?> PrepareAsync(GameWindowObservation selected, CancellationToken ct)
-        { Prepared++; return ValueTask.FromResult(Refresh(selected)); }
+        { Prepared++; return ValueTask.FromResult(Refusing ? null : Refresh(selected)); }
         public bool TryActivate(GameWindowObservation selected) => false;
     }
 

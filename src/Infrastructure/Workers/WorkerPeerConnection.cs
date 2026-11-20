@@ -80,6 +80,20 @@ public sealed class WorkerPeerConnection : IAsyncDisposable
         }
         finally { writes.Release(); }
     }
+    /// <summary>发送正文为已编码 UTF-8 JSON 对象的一条消息（原样拼入帧，不再解析与重新编码）。</summary>
+    public async Task SendEncodedAsync(string kind, ReadOnlyMemory<byte> payload, WorkerFrame? scope, CancellationToken ct = default)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(3));
+        await writes.WaitAsync(deadline.Token).ConfigureAwait(false);
+        try
+        {
+            var envelope = new WorkerFrame(1, checked(++outgoing).ToString(CultureInfo.InvariantCulture), scope?.RequestId,
+                kind, scope?.RunId, scope?.BindingRevision, scope?.FencingToken, default);
+            await WorkerProtocol.WriteAsync(pipe, envelope, payload, deadline.Token).ConfigureAwait(false);
+        }
+        finally { writes.Release(); }
+    }
     public ValueTask DisposeAsync() { pipe.Dispose(); host.Dispose(); writes.Dispose(); return ValueTask.CompletedTask; }
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

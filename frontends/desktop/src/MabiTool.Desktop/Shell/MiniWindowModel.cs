@@ -138,6 +138,10 @@ public sealed class MiniWindowModel : BackendPageModel<MusicPageData>
         base.Dispose();
     }
 
+    protected override string? Surface => "music";
+
+    protected override bool OtherStateChanged() => !Equals(Backend.GetActivity(), Activity) || !Equals(Backend.GetGameBinding(), Binding);
+
     protected override void OnDataChanged()
     {
         Activity = Backend.GetActivity();

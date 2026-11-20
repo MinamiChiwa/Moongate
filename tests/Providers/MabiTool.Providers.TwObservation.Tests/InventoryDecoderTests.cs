@@ -147,10 +147,12 @@ public sealed class InventoryDecoderTests
     {
         if (name is null or "object" or "System.Object" or "System.ValueType" or "System.Enum") return;
         if (name == "Shared.Characters.CharacterId") { writer.Write(9007199254740993L); return; }
+        // 线上 ReplicatedTime 只有 float32 剩余秒数，元数据里的 channelTime 不上线；UniqueString 与 string 同为字节数 + UTF-16，hashCode 不上线。
+        if (name == "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime") { writer.Write(0f); return; }
         var size = name switch { "int8" or "uint8" or "bool" => 1, "int16" or "uint16" or "char" => 2,
             "int32" or "uint32" or "float32" => 4, "int64" or "uint64" or "float64" => 8, "System.Decimal" => 16, _ => 0 };
         if (size > 0) { writer.Write(new byte[size]); return; }
-        if (name == "string") { writer.Write(0); return; }
+        if (name is "string" or "Silvervine.ManualMemory.UniqueString") { writer.Write(0); return; }
         if (name.StartsWith("System.Nullable`1<", StringComparison.Ordinal) && name.EndsWith('>' )) { writer.Write(false); return; }
         if (name.Contains('<') || name.EndsWith("[]", StringComparison.Ordinal)) { writer.Write(0); return; }
         var record = types.GetProperty(name);

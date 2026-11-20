@@ -114,7 +114,6 @@ public sealed class PresentationApiTests
     }
 
     [Trait("Category", "Desktop")]
-    [Trait("Category", "Flaky")]
     [Fact]
     [SupportedOSPlatform("windows")]
     public async Task NativeWindowsBridgeReadsActualFlagsAndEnforcesPermissionsAndRevision()
@@ -148,7 +147,6 @@ public sealed class PresentationApiTests
     }
 
     [Trait("Category", "Desktop")]
-    [Trait("Category", "Flaky")]
     [Fact]
     [SupportedOSPlatform("windows")]
     public async Task NativeSurfaceRequiresOwningUiThreadAndRegistrationIsScopedToPairing()

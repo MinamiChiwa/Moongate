@@ -18,7 +18,9 @@ public static class OverlayWidgetSizes
         ["performance.nearby"] = (new(304, 48), new(168, 48)),
         ["rooms.readiness"] = (new(312, 344), new(248, 232)),
         ["color.current"] = (new(288, 232), new(200, 120)),
-        ["combat.dps"] = (new(240, 112), new(168, 104)),
+        // 默认与最小高度都含底部的怪物血量区块（三行约 48）：最小尺寸下标题、主 DPS 与区块正好放下，其余指标在元件内滚动；
+        // 区块收起时腾出的高度给上方指标。
+        ["combat.dps"] = (new(240, 160), new(168, 152)),
         ["combat.skills"] = (new(240, 136), new(160, 80)),
         ["combat.coverage"] = (new(256, 136), new(176, 88)),
         ["combat.self-effects"] = (new(352, 96), new(112, 96)),

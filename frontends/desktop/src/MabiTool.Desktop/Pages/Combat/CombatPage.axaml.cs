@@ -35,6 +35,14 @@ public sealed partial class CombatPage : UserControl
         if (Model is { } model) CombatDetailWindow.Open(model, TopLevel.GetTopLevel(this) as Window);
     }
 
+    // 战斗记录行的“明细”：这条记录的明细窗口；已开满时在战斗记录卡片写明上限。
+    private void OnOpenRecordClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (Model is not { } model || (sender as Control)?.DataContext is not EncounterRow row) return;
+        var opened = CombatDetailWindow.OpenRecord(model, row.Id, TopLevel.GetTopLevel(this) as Window);
+        model.SetRecordWindowLimit(!opened, CombatDetailWindow.MaximumRecordWindows);
+    }
+
     // 三个弹出层（定时测量设定、保存记录、重设确认）：点层外或按 Esc 关闭。
     private void CloseLayers()
     {

@@ -20,6 +20,9 @@ public sealed record LibraryItem(string WidgetId, string Title, string Group, IB
 
 public sealed record SkinOption(string Id, string Label, bool Selected);
 
+/// <summary>图标对照的一项：客户端属性图标的键与名称。</summary>
+public sealed record IconLegendItem(string Icon, string Name);
+
 /// <summary>显示器选项：标识（<see cref="ScreenInfo.Key"/>）、方位名与是否为当前所在的显示器；完整说明放在悬停提示里。</summary>
 public sealed record MonitorOption(string Key, string Label, string Tip, bool Selected);
 
@@ -89,8 +92,11 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
         });
         // 与浮窗上锁左侧的“－／＋”同一规则：步进 0.1，限制在 0.5–2。
         ScaleCommand = new RelayCommand(step => Edit(placement => placement.Scale = WidgetPlacement.Step(placement.Scale, step is "+")));
-        // 不透明度步进 0.1，限制在 0.2–1；游戏浮窗上元件的不透明度按钮改的是同一个值。
-        OpacityCommand = new RelayCommand(step => Edit(placement => placement.Opacity = WidgetPlacement.StepOpacity(placement.Opacity, step is "+")));
+        // 背景与内容不透明度各自步进 0.1（背景 0–1，内容 0.2–1）；游戏浮窗上元件的两个不透明度按钮改的是同一份值。
+        BackgroundOpacityCommand = new RelayCommand(step => Edit(placement => placement.BackgroundOpacity =
+            WidgetPlacement.StepOpacity(placement.BackgroundOpacity, step is "+", WidgetPlacement.MinimumBackgroundOpacity)));
+        ContentOpacityCommand = new RelayCommand(step => Edit(placement => placement.ContentOpacity =
+            WidgetPlacement.StepOpacity(placement.ContentOpacity, step is "+", WidgetPlacement.MinimumContentOpacity)));
         SkinCommand = new RelayCommand(skin => Edit(placement => placement.Skin = skin as string ?? "glass"));
         ShowOverlayCommand = new RelayCommand(_ => controller.Show());
         HideOverlayCommand = new RelayCommand(_ => controller.Hide());
@@ -121,6 +127,7 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
         {
             if (Selected is { } placement) Store.ResetPosition(placement);
         });
+        HealthCommand = new RelayCommand(choice => Edit(placement => placement.HideMonsterHealth = choice is "hide"));
         OpenGameDataCommand = new RelayCommand(_ => IsGameDataOpen = true);
         CloseGameDataCommand = new RelayCommand(_ => IsGameDataOpen = false);
         Store.Changed += OnChanged;
@@ -148,7 +155,8 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     public ICommand ToggleWidgetCommand { get; }
     public ICommand RemoveWidgetCommand { get; }
     public ICommand ScaleCommand { get; }
-    public ICommand OpacityCommand { get; }
+    public ICommand BackgroundOpacityCommand { get; }
+    public ICommand ContentOpacityCommand { get; }
     public ICommand SkinCommand { get; }
     public ICommand ShowOverlayCommand { get; }
     public ICommand HideOverlayCommand { get; }
@@ -274,6 +282,30 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
         }
     }
 
+    /// <summary>
+    /// 所选元件里以客户端图标显示的标签（DPS、定时测量与覆盖率元件的暴击、强击、连击、追击）：图标与名称的对照。
+    /// 浮窗上锁时鼠标穿透、看不到图标的悬浮提示，这里给出每个图标的含义。
+    /// </summary>
+    public IReadOnlyList<IconLegendItem> SelectedIcons => Selected is { WidgetId: "combat.dps" or "combat.measurement" or "combat.coverage" }
+        ? new[] { Backend.ClientIconNames.Critical, Backend.ClientIconNames.PowerfulHit, Backend.ClientIconNames.RapidHit, Backend.ClientIconNames.DoubleHit }
+            .Select(icon => new IconLegendItem(icon, Backend.ClientIconNames.Name(icon))).ToList()
+        : [];
+
+    public bool HasSelectedIcons => SelectedIcons.Count > 0;
+
+    /// <summary>所选元件是 DPS 元件：详情里有“怪物血量”开关。</summary>
+    public bool HasHealthSetting => Selected is { WidgetId: "combat.dps" };
+    /// <summary>DPS 元件显示怪物血量区块（默认显示）。</summary>
+    public bool HealthShown => Selected is { HideMonsterHealth: false };
+    public bool HealthHidden => !HealthShown;
+    public string HealthLabel => UiText.Pick("怪物血量", "怪物血量");
+    public string HealthHint => UiText.Pick("在 DPS 数值下方显示当前攻击目标的名称、剩余血量与百分比；目标由后端按攻击情况选定",
+        "在 DPS 數值下方顯示目前攻擊目標的名稱、剩餘血量與百分比；目標由後端按攻擊情況選定");
+    public string ShowLabel => UiText.Pick("显示", "顯示");
+    public string HideLabel => UiText.Pick("隐藏", "隱藏");
+    /// <summary>参数 show 或 hide：DPS 元件的怪物血量区块显示或隐藏，立即保存。</summary>
+    public ICommand HealthCommand { get; }
+
     // 元件实际使用的尺寸（缩放前）：保存的宽高或元件的默认尺寸，不小于最小尺寸。
     private Avalonia.Size? SizeOf(WidgetPlacement placement) =>
         catalog.Modules.SelectMany(module => module.Widgets).FirstOrDefault(widget => widget.Id == placement.WidgetId) is { } widget
@@ -287,7 +319,8 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     public string LockAction => SelectedLocked ? UiText.Pick("解锁", "解鎖") : UiText.Pick("上锁", "上鎖");
 
     public string ScaleText => Selected is { } placement ? $"{placement.Scale:P0}" : string.Empty;
-    public string OpacityText => Selected is { } placement ? $"{placement.Opacity:P0}" : string.Empty;
+    public string BackgroundOpacityText => Selected is { } placement ? $"{placement.BackgroundOpacity:P0}" : string.Empty;
+    public string ContentOpacityText => Selected is { } placement ? $"{placement.ContentOpacity:P0}" : string.Empty;
 
     public IReadOnlyList<SkinOption> Skins
     {

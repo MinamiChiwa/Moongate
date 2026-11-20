@@ -8,7 +8,14 @@ namespace MabiTool.Modules.CombatObservation.Domain;
 public static class CombatNames
 {
     public const string Monster = "monster", Skill = "skill", Effect = "effect";
+    /// <summary>怪物以外按客户端表取名的自动体种类，与实体 actorType 相同；AiCompanion 没有表。</summary>
+    public const string Npc = "npc", NpcCompanion = "npc-companion", Pet = "pet", SummonedAutomaton = "summoned-automaton", Gimmick = "gimmick",
+        MemorialSagaMinion = "memorial-saga-minion", AiCompanion = "ai-companion";
+    public static IReadOnlySet<string> ActorKinds { get; } = new HashSet<string>(StringComparer.Ordinal)
+        { Npc, NpcCompanion, Pet, SummonedAutomaton, Gimmick, MemorialSagaMinion };
     public const string Resolved = "resolved", Unknown = "unknown", Unavailable = "unavailable";
+    /// <summary>没有客户端表的实体（AI 同伴）：前端显示固定的本地化文案。</summary>
+    public const string Generic = "generic", GenericReason = "combat.nameGeneric";
     /// <summary>领域内的占位原因：分组已知是哪个表的哪一行，名称等待读取侧解析。</summary>
     public const string PendingReason = "combat.nameCatalogPending";
 
@@ -24,9 +31,21 @@ public static class CombatNames
         return id is 0 or uint.MaxValue ? null : id;
     }
     public static CombatResolvedName Pending(string kind, uint id) => new(kind, new(id), null, Unavailable, PendingReason);
-    /// <summary>怪物实体的名称占位；玩家、宠物与未知实体为空。</summary>
+    /// <summary>
+    /// 实体的名称占位：怪物取来源的怪物码，其他自动体按 actorType 与表 ID（NPC、同伴、宠物、召唤物、机关），AI 同伴为 generic；
+    /// 玩家与类型未知的实体为空。
+    /// </summary>
     public static CombatResolvedName? MonsterLabel(CombatEntity? entity) =>
-        entity is { Role.KnownValue: CombatEntityRole.Monster } && MonsterSheetId(entity.RawName) is { } id ? Pending(Monster, id) : null;
+        entity is null ? null : Label(entity.Role, entity.RawName, entity.ActorType, entity.SheetId);
     public static CombatResolvedName? MonsterLabel(CombatEntityObservation? entity) =>
-        entity is { Role.KnownValue: CombatEntityRole.Monster } && MonsterSheetId(entity.RawName) is { } id ? Pending(Monster, id) : null;
+        entity is null ? null : Label(entity.Role, entity.RawName, entity.ActorType, entity.SheetId);
+    private static CombatResolvedName? Label(OpenEnum<CombatEntityRole> role, string rawName, string? actorType, UInt64String? sheet)
+    {
+        if (role.KnownValue == CombatEntityRole.Monster && MonsterSheetId(rawName) is { } monster) return Pending(Monster, monster);
+        if (actorType == AiCompanion) return new(AiCompanion, new(0), null, Generic, GenericReason);
+        return actorType is { } kind && ActorKinds.Contains(kind) && sheet is { Value: > 0 and <= uint.MaxValue } id ? Pending(kind, (uint)id.Value) : null;
+    }
+    /// <summary>名称占位是否可按当前名称表解析（怪物、技能、效果与各自动体表）。</summary>
+    public static bool Resolvable(CombatResolvedName label) =>
+        label.Kind is Monster or Skill or Effect || ActorKinds.Contains(label.Kind);
 }

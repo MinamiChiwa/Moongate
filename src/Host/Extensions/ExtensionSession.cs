@@ -39,6 +39,8 @@ public sealed class ExtensionSession : IAsyncDisposable
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (string Method, CancellationTokenSource Cancel)> calls = new(StringComparer.Ordinal);
     private readonly TaskCompletionSource<bool> handshake = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    /// <summary>hello 已通过校验、成功响应即将发出：扩展收到响应后立即发来的消息按握手后处理，不受响应写出与握手完成之间先后的影响。</summary>
+    private volatile bool helloAccepted;
     private readonly TaskCompletionSource<ExtensionSessionEnd> ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private IReadOnlySet<string> grants;
     private ExtensionSessionEnd? end;
@@ -252,7 +254,7 @@ public sealed class ExtensionSession : IAsyncDisposable
 
     private void Dispatch(ExtensionMessage message)
     {
-        if (!handshake.Task.IsCompleted)
+        if (!helloAccepted && !handshake.Task.IsCompleted)
         {
             if (message is not { IsRequest: true, Method: "hello" }) throw new ExtensionProtocolException("extension.protocolViolation", "握手前只能发送 hello 请求");
             _ = HelloAsync(message);
@@ -342,6 +344,7 @@ public sealed class ExtensionSession : IAsyncDisposable
             await TerminateAsync(failure);
             return;
         }
+        helloAccepted = true;
         await SendAsync(ExtensionProtocol.Result(message.Id!, new JsonObject
         {
             ["protocolVersion"] = ExtensionProtocol.Version,

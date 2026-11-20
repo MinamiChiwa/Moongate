@@ -239,16 +239,18 @@ public sealed class ThemeAndMotionAssetTests
         {
             PackImage Effect(string id) => window.GetVisualDescendants().OfType<PackImage>()
                 .First(image => image.Kind == AssetKind.Effect && image.Key == id);
+            // 效果行的图标位没有字章：素材包没有图片时不画图，露出效果行自绘的极性标记。
+            Image Picture(string id) => Effect(id).Children.OfType<Image>().Single();
             Assert.False(Effect("40217").HasImage);
-            Assert.True(Effect("40217").GetVisualDescendants().OfType<TextBlock>().Single().IsVisible);
+            Assert.False(Picture("40217").IsVisible);
 
-            // 载入素材包后不重建页面也换成图片，字章隐藏；没有图片的效果保持字章。
+            // 载入素材包后不重建页面也换成图片，盖住极性标记；没有图片的效果仍显示极性标记。
             IconRegistry.LoadPack(pack.Directory);
             LayoutProbe.Settle();
             Assert.True(Effect("40217").HasImage);
-            Assert.False(Effect("40217").GetVisualDescendants().OfType<TextBlock>().Single().IsVisible);
+            Assert.True(Picture("40217").IsVisible);
             Assert.False(Effect("1201").HasImage);
-            Assert.True(Effect("1201").GetVisualDescendants().OfType<TextBlock>().Single().IsVisible);
+            Assert.False(Picture("1201").IsVisible);
             Assert.Empty(LayoutProbe.FindTextOverflow(window));
             LayoutProbe.SaveScreenshot(window, "combat-observation-asset-pack-1280x860");
 

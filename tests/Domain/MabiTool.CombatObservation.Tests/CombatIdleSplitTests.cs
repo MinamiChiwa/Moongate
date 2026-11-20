@@ -11,6 +11,13 @@ public sealed class CombatIdleSplitTests
     private ulong sequence;
     private bool Hit(CombatSession session, string id, double ms, ulong amount = 100) =>
         session.Apply(Frame(++sequence, ms, [Damage(id, ms, amount)]));
+    /// <summary>本机进入 in-combat 后整场不会到期，停手期间只有空闲阈值会结束分段。</summary>
+    private CombatSession InCombat()
+    {
+        var session = Session();
+        session.Apply(StateFrame(++sequence, 0, CombatLocalState.InCombat));
+        return session;
+    }
     private static IReadOnlyList<CombatEncounter> Segments(CombatSession session) =>
         session.Capture().Encounters.OrderBy(x => x.Segment!.Ordinal).ToArray();
 
@@ -41,7 +48,7 @@ public sealed class CombatIdleSplitTests
     [Fact]
     public void PauseOf299SecondsStaysInOneSegmentAndCountsTowardTheDenominator()
     {
-        var session = Session();
+        var session = InCombat();
         Assert.True(Hit(session, "a", 0));
         session.Tick(At.AddMilliseconds(299000), 299000);
         Assert.False(session.Capture().Workspace.Encounter!.Summary.Final);
@@ -60,7 +67,7 @@ public sealed class CombatIdleSplitTests
     [InlineData(false)]
     public void PauseOfThreeHundredSecondsEndsTheSegmentAtTheLastDamage(bool tick)
     {
-        var session = Session();
+        var session = InCombat();
         Assert.True(Hit(session, "a", 0)); Assert.True(Hit(session, "b", 1000));
         if (tick)
         {

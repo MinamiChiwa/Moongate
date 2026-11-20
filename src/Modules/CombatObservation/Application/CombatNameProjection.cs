@@ -18,12 +18,23 @@ public interface ICombatNameResolver
 /// </summary>
 public static partial class CombatNameProjection
 {
-    public static CombatWorkspace Project(CombatWorkspace value, ICombatNameResolver names) => value with
+    /// <summary>快照投影：目标分组尚无名称占位时按当前实体快照补齐（同一实体 ID），当前目标按其实体取名。</summary>
+    public static CombatWorkspace Project(CombatWorkspace value, ICombatNameResolver names)
     {
-        Encounter = value.Encounter is { } encounter ? Project(encounter, names) : null,
-        Entities = value.Entities.Select(entity => Project(entity, names)).ToArray(),
-        SelfEffects = value.SelfEffects is { } effects ? Project(effects, names) : null
-    };
+        var labels = value.Entities.Where(entity => CombatNames.MonsterLabel(entity) is not null)
+            .ToDictionary(entity => entity.Id, entity => CombatNames.MonsterLabel(entity)!, StringComparer.Ordinal);
+        var encounter = value.Encounter is { } current
+            ? current with { Targets = current.Targets.Select(group => group.ResolvedName is null && labels.TryGetValue(group.Key, out var label) ? group with { ResolvedName = label } : group).ToArray() }
+            : null;
+        return value with
+        {
+            Encounter = encounter is null ? null : Project(encounter, names),
+            Entities = value.Entities.Select(entity => Project(entity, names)).ToArray(),
+            SelfEffects = value.SelfEffects is { } effects ? Project(effects, names) : null,
+            CurrentTarget = value.CurrentTarget is { } target
+                ? target with { ResolvedName = labels.TryGetValue(target.EntityId, out var name) ? Resolve(name, names) : null } : null
+        };
+    }
     public static CombatEncounterPage Project(CombatEncounterPage value, ICombatNameResolver names) =>
         value with { Items = value.Items.Select(item => Project(item, names)).ToArray() };
     public static CombatEncounter Project(CombatEncounter value, ICombatNameResolver names) => value with
@@ -64,7 +75,7 @@ public static partial class CombatNameProjection
         group with { ResolvedName = ulong.TryParse(group.Key, out var id) ? Skill(new(id), names) : null };
     private static CombatDamageGroup TargetGroup(CombatDamageGroup group, ICombatNameResolver names)
     {
-        if (group.ResolvedName is { Kind: CombatNames.Monster } label && label.SheetId.Value <= uint.MaxValue)
+        if (group.ResolvedName is { } label && (CombatNames.Resolvable(label) || label.Kind == CombatNames.AiCompanion) && label.SheetId.Value <= uint.MaxValue)
             return group with { ResolvedName = Resolve(label, names) };
         // 旧历史没有名称占位：目标名为含字母 A–F 的 8 位十六进制码时才是怪物表码；全数字的名称无法与玩家实体 ID 区分，保持为空。
         return group with
@@ -74,7 +85,8 @@ public static partial class CombatNameProjection
         };
     }
     private static CombatResolvedName Resolve(CombatResolvedName label, ICombatNameResolver names) =>
-        names.Resolve(label.Kind, checked((uint)label.SheetId.Value));
+        label.Kind == CombatNames.AiCompanion ? new(CombatNames.AiCompanion, new(0), null, CombatNames.Generic, CombatNames.GenericReason)
+            : names.Resolve(label.Kind, checked((uint)label.SheetId.Value));
     private static CombatResolvedName Skill(UInt64String id, ICombatNameResolver names) =>
         id.Value == 0 ? new(CombatNames.Skill, id, null, CombatNames.Unknown, "combat.skillUnmatched") :
         id.Value > uint.MaxValue ? new(CombatNames.Skill, id, null, CombatNames.Unknown, "combat.nameNotFound") :

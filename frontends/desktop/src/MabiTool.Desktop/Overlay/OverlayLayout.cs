@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using MabiTool.Desktop.Localization;
 
 namespace MabiTool.Desktop.Overlay;
@@ -21,30 +22,49 @@ public sealed class WidgetPlacement
     public static double Step(double scale, bool up) =>
         Math.Clamp(Math.Round((scale + (up ? ScaleStep : -ScaleStep)) * 10) / 10, MinimumScale, MaximumScale);
 
-    /// <summary>不透明度的下限：元件再淡也看得见轮廓，不会在游戏画面上完全消失。</summary>
-    public const double MinimumOpacity = 0.2;
-    /// <summary>编辑页“－／＋”每次改变的不透明度。</summary>
+    /// <summary>背景不透明度的下限：底板可以完全不可见，内容照常显示。</summary>
+    public const double MinimumBackgroundOpacity = 0;
+    /// <summary>内容不透明度的下限：文字与图标再淡也认得出，不会在游戏画面上消失。</summary>
+    public const double MinimumContentOpacity = 0.2;
+    /// <summary>编辑页“－／＋”与浮窗上滚轮每次改变的不透明度。</summary>
     public const double OpacityStep = 0.1;
     /// <summary>游戏浮窗上不透明度按钮每点一次降低的量；降到下限以下时回到完全不透明。</summary>
     public const double OpacityCycleStep = 0.2;
 
-    /// <summary>编辑页按一次“－”或“＋”之后的不透明度：步进 0.1，取一位小数，限制在 0.2–1。</summary>
-    public static double StepOpacity(double opacity, bool up) =>
-        Math.Clamp(Math.Round((opacity + (up ? OpacityStep : -OpacityStep)) * 10) / 10, MinimumOpacity, 1);
+    /// <summary>按一次“－”或“＋”之后的不透明度：步进 0.1，取一位小数，限制在 <paramref name="minimum"/>–1。</summary>
+    public static double StepOpacity(double opacity, bool up, double minimum) =>
+        Math.Clamp(Math.Round((opacity + (up ? OpacityStep : -OpacityStep)) * 10) / 10, minimum, 1);
 
-    /// <summary>游戏浮窗上点一次不透明度按钮之后的值：100% → 80% → 60% → 40% → 20% → 100% 循环。</summary>
-    public static double CycleOpacity(double opacity)
+    /// <summary>
+    /// 游戏浮窗上点一次不透明度按钮之后的值：每次降 0.2，降到 <paramref name="minimum"/> 以下时回到 1。
+    /// 背景 1 → 0.8 → 0.6 → 0.4 → 0.2 → 0 → 1，内容 1 → 0.8 → 0.6 → 0.4 → 0.2 → 1。
+    /// </summary>
+    public static double CycleOpacity(double opacity, double minimum)
     {
         var next = Math.Round((opacity - OpacityCycleStep) * 10) / 10;
-        return next < MinimumOpacity - 0.001 ? 1 : next;
+        return next < minimum - 0.001 ? 1 : next;
     }
 
     public string WidgetId { get; set; } = string.Empty;
     public double X { get; set; }
     public double Y { get; set; }
     public double Scale { get; set; } = 1;
-    /// <summary>元件外框与内容的不透明度（0.2–1）；锁、“－／＋”等控件不随之变淡。旧版面文件没有这个字段，读取为 1（不透明）。</summary>
-    public double Opacity { get; set; } = 1;
+    private double? background, content;
+
+    /// <summary>底板（底色或自定图像、玻璃边缘与投影）的不透明度，0–1；锁、“－／＋”等控件不随之变淡。</summary>
+    public double BackgroundOpacity { get => background ?? Legacy(); set => background = value; }
+
+    /// <summary>内容（文字、数字、图标、条形、按钮）的不透明度，0.2–1。</summary>
+    public double ContentOpacity { get => content ?? Legacy(); set => content = value; }
+
+    /// <summary>
+    /// 旧版面文件的单一不透明度（作用于整个元件）：读入时同时作为背景与内容的初值，限制在旧的 0.2–1，视觉与升级前一致；
+    /// <see cref="Normalize"/> 之后清空，保存时只写两个新字段。两者都没有时按 1（不透明）读取。
+    /// </summary>
+    [JsonPropertyName("Opacity"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? LegacyOpacity { get; set; }
+
+    private double Legacy() => LegacyOpacity is { } value && double.IsFinite(value) ? Math.Clamp(value, MinimumContentOpacity, 1) : 1;
     /// <summary>
     /// 元件外框在缩放前的宽高（逻辑像素）。拖动右下角手柄改变它们，内容按新的尺寸重新排版；
     /// 旧版面文件没有这两个字段，读取为空，按元件的默认尺寸显示，不需要迁移。
@@ -67,13 +87,20 @@ public sealed class WidgetPlacement
     public string? Screen { get; set; }
     /// <summary>在浮窗上按了关闭：浮窗不再显示它，摆放数据保留；在版面页的元件库再点一次、或编辑状态下再按它的关闭按钮即重新显示。</summary>
     public bool Closed { get; set; }
+    /// <summary>
+    /// DPS 元件不显示怪物血量区块（版面页详情里的“怪物血量”开关）。默认显示：只在关闭时写出，旧版面文件没有这个字段即显示。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool HideMonsterHealth { get; set; }
 
     public void Normalize()
     {
         X = double.IsFinite(X) ? Math.Clamp(X, 0, 1) : 0;
         Y = double.IsFinite(Y) ? Math.Clamp(Y, 0, 1) : 0;
         Scale = double.IsFinite(Scale) ? Math.Clamp(Scale, MinimumScale, MaximumScale) : 1;
-        Opacity = double.IsFinite(Opacity) ? Math.Clamp(Opacity, MinimumOpacity, 1) : 1;
+        BackgroundOpacity = double.IsFinite(BackgroundOpacity) ? Math.Clamp(BackgroundOpacity, MinimumBackgroundOpacity, 1) : 1;
+        ContentOpacity = double.IsFinite(ContentOpacity) ? Math.Clamp(ContentOpacity, MinimumContentOpacity, 1) : 1;
+        LegacyOpacity = null;
         Width = Width is { } width && double.IsFinite(width) && width > 0 ? Math.Min(width, MaximumSide) : null;
         Height = Height is { } height && double.IsFinite(height) && height > 0 ? Math.Min(height, MaximumSide) : null;
         if (Skin is not ("glass" or "solid" or "image")) Skin = "glass";

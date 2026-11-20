@@ -130,6 +130,8 @@ internal static class StartupRecordExport
             foreach (var name in new[] { ToolRoot.BootstrapName, ToolRoot.DataName, ToolRoot.RuntimeName, ToolRoot.DesktopName })
                 Line($"{name} 所有者", Owner(Path.Combine(toolRoot, name)));
         Line("前端发现的问题", frontendProblem ?? "无");
+        Line("动效", Theme.UiMotion.Describe());
+        Line("渲染方式", Theme.UiRendering.Describe());
         text.AppendLine();
         text.AppendLine(launches.Count == 0 ? "本次运行没有由前端启动宿主（宿主已在运行，或不是解压版目录布局）。" : $"宿主启动 {launches.Count} 次：");
         foreach (var launch in launches)

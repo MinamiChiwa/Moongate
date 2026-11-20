@@ -5,7 +5,7 @@ using static MabiTool.Desktop.Localization.UiText;
 
 namespace MabiTool.Desktop.Backend;
 
-// 扩展模块：列表随页面状态一起读取（每五秒，发出意图后立即重读）；安装先上传本机 .zip 再请后端生成预览，确认后安装。
+// 扩展模块：列表随页面状态一起读取（每五秒，发出意图后立即重读，内容没变时沿用原对象）；安装先上传本机 .zip 再请后端生成预览，确认后安装。
 public sealed partial class LiveBackend
 {
     private ExtensionCatalog? extensions;
@@ -15,11 +15,20 @@ public sealed partial class LiveBackend
         lock (gate) return extensions;
     }
 
-    // 旧宿主没有扩展接口（404）或读取被拒绝时为空，页面据此停用安装入口。
-    private async Task RefreshExtensionsAsync(MabiToolClient api, CancellationToken token)
+    private byte[]? extensionsContent;
+
+    // 旧宿主没有扩展接口（404）或读取被拒绝时为空，页面据此停用安装入口。返回内容是否有变化。
+    private async Task<bool> RefreshExtensionsAsync(MabiToolClient api, CancellationToken token)
     {
         var value = await Try(() => api.GetExtensionsAsync(token));
-        lock (gate) extensions = value;
+        var content = value is null ? null : System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(value, ContractJson.Options);
+        lock (gate)
+        {
+            if (content is not null && extensionsContent is not null && content.AsSpan().SequenceEqual(extensionsContent)) return false;
+            if (value is null && extensions is null) return false;
+            (extensions, extensionsContent) = (value, content);
+            return true;
+        }
     }
 
     public async Task<ExtensionPreviewReply> PreviewExtensionAsync(string? filePath, string? inboxName, CancellationToken cancellationToken)
@@ -103,15 +112,19 @@ public sealed partial class LiveBackend
         lock (gate) return extensionSurfaces;
     }
 
-    // 扩展界面的状态由扩展推送（例如计时），随主循环每轮读取一次；只在有运行中的带代码扩展、或上一轮还有界面时读取，
-    // 修订不变时不通知界面。
+    // 调用方持有 gate。只在有运行中的带代码扩展、或上一次还有界面时读取扩展界面状态。
+    private bool SurfacesWanted() => extensions?.Installed.Any(item => item.Runtime?.State is "running" or "starting") == true ||
+        extensionSurfaces is { Surfaces.Count: > 0 } || extensionSurfaces is { Settings.Count: > 0 } ||
+        extensionSurfaces is { Activities.Count: > 0 } || extensionSurfaces?.FileRequests is { Count: > 0 };
+
+    // 扩展界面的状态由扩展推送（例如计时），需要时每秒读取一次，修订不变时不通知界面。
     private async Task RefreshExtensionSurfacesAsync(MabiToolClient api, CancellationToken token)
     {
-        bool wanted;
-        lock (gate) wanted = extensions?.Installed.Any(item => item.Runtime?.State is "running" or "starting") == true ||
-            extensionSurfaces is { Surfaces.Count: > 0 } || extensionSurfaces is { Settings.Count: > 0 } ||
-            extensionSurfaces is { Activities.Count: > 0 } || extensionSurfaces?.FileRequests is { Count: > 0 };
-        if (!wanted) return;
+        lock (gate)
+        {
+            if (!SurfacesWanted() || !Elapsed(lastSurfacesRead, StatusInterval)) return;
+            lastSurfacesRead = Now;
+        }
         var value = await Try(() => api.GetExtensionSurfacesAsync(token));
         bool changed;
         lock (gate)

@@ -24,8 +24,9 @@ internal sealed record PrearmedPacket(uint Sequence, byte Flags, byte[] Payload,
 /// 不落盘、不交给任何解析器；连接表确认属于绑定进程时 <see cref="Take"/> 按原顺序取出，确认属于其他进程或超时即丢弃。
 /// 依据：20590 约 345–361 KB，在 SYN-ACK 后约 0.5–0.9 s 发出；连接表首次列出新连接实测晚 0.03–2.5 s（ESTABLISHED 最晚 3.7 s），
 /// 再加 500 ms 读表周期，5 秒覆盖确认前的全部数据，4 MiB 容纳 20590 与其前后的其他帧。
+/// 同一次捕获各设备的预缓冲另共用 <see cref="PrearmPool"/> 的合计预算，超出时从占用最多的设备丢最旧的包（同样计入预算丢弃）。
 /// </summary>
-internal sealed class PrearmBuffer(CaptureDiagnostics? diagnostics = null)
+internal sealed class PrearmBuffer(CaptureDiagnostics? diagnostics = null, PrearmPool? pool = null)
 {
     internal const double WindowMs = 5000;
     internal const long MaximumBytes = 4L * 1024 * 1024;
@@ -43,25 +44,29 @@ internal sealed class PrearmBuffer(CaptureDiagnostics? diagnostics = null)
     internal void Add(CaptureConnection connection, PrearmedPacket packet, double nowMono)
     {
         Expire(nowMono);
-        if (packet.Payload.Length > MaximumBytes) { diagnostics?.PrearmBudget(1); return; }
+        if (packet.Payload.Length > MaximumBytes || pool is not null && packet.Payload.Length > pool.MaximumBytes) { diagnostics?.PrearmBudget(1); return; }
         if (!pending.TryGetValue(connection, out var queue))
         {
             while (pending.Count >= MaximumConnections) DropConnection(OldestConnection(), budget: true);
             pending[connection] = queue = new();
         }
         while (bytes + packet.Payload.Length > MaximumBytes || packets + 1 > MaximumPackets) DropOldest();
+        while (pool is not null && pool.Bytes + packet.Payload.Length > pool.MaximumBytes && pool.Largest() is { } largest) largest.DropOldest();
+        // 丢最旧的包可能清空了本四元组的队列：重新取得。
+        if (!pending.TryGetValue(connection, out queue)) pending[connection] = queue = new();
         queue.Enqueue(packet); order.Enqueue((connection, packet));
         if (order.Count > 2 * MaximumPackets) Compact();
-        bytes += packet.Payload.Length; packets++;
+        Adjust(packet.Payload.Length); packets++;
         diagnostics?.PrearmBuffered();
     }
+    private void Adjust(long delta) { bytes += delta; if (pool is not null) pool.Bytes += delta; }
 
     /// <summary>连接表确认 <paramref name="connection"/> 属于绑定进程：按到达顺序取出它的缓冲包（已过期的先丢弃）。</summary>
     internal IReadOnlyList<PrearmedPacket> Take(CaptureConnection connection, double nowMono)
     {
         Expire(nowMono);
         if (!pending.Remove(connection, out var queue)) return [];
-        foreach (var packet in queue) { bytes -= packet.Payload.Length; packets--; }
+        foreach (var packet in queue) { Adjust(-packet.Payload.Length); packets--; }
         diagnostics?.PrearmDelivered(queue.Count);
         return queue.ToArray();
     }
@@ -70,7 +75,7 @@ internal sealed class PrearmBuffer(CaptureDiagnostics? diagnostics = null)
     internal void DiscardForeign(CaptureConnection connection)
     {
         if (!pending.Remove(connection, out var queue)) return;
-        foreach (var packet in queue) { bytes -= packet.Payload.Length; packets--; }
+        foreach (var packet in queue) { Adjust(-packet.Payload.Length); packets--; }
         diagnostics?.PrearmForeign(queue.Count);
     }
 
@@ -80,7 +85,7 @@ internal sealed class PrearmBuffer(CaptureDiagnostics? diagnostics = null)
         {
             var dropped = 0;
             while (queue.TryPeek(out var head) && nowMono - head.CapturedMono > WindowMs)
-            { queue.Dequeue(); bytes -= head.Payload.Length; packets--; dropped++; }
+            { queue.Dequeue(); Adjust(-head.Payload.Length); packets--; dropped++; }
             if (dropped > 0) diagnostics?.PrearmExpired(dropped);
             if (queue.Count == 0) pending.Remove(connection);
         }
@@ -89,7 +94,7 @@ internal sealed class PrearmBuffer(CaptureDiagnostics? diagnostics = null)
     /// <summary>捕获结束（解绑、换进程、抓包关闭）：全部丢弃。</summary>
     internal void Clear()
     {
-        pending.Clear(); order.Clear(); bytes = 0; packets = 0;
+        pending.Clear(); order.Clear(); Adjust(-bytes); packets = 0;
     }
 
     private bool Live((CaptureConnection Connection, PrearmedPacket Packet) entry) =>
@@ -101,11 +106,12 @@ internal sealed class PrearmBuffer(CaptureDiagnostics? diagnostics = null)
         return order.TryPeek(out var oldest) ? oldest.Connection : pending.Keys.First();
     }
 
-    private void DropOldest()
+    /// <summary>丢本设备最旧的一个包（预算丢弃）；供共用预算从占用最多的设备回收。</summary>
+    internal void DropOldest()
     {
         var connection = OldestConnection();
         var queue = pending[connection];
-        var head = queue.Dequeue(); bytes -= head.Payload.Length; packets--;
+        var head = queue.Dequeue(); Adjust(-head.Payload.Length); packets--;
         if (order.TryPeek(out var entry) && ReferenceEquals(entry.Packet, head)) order.Dequeue();
         diagnostics?.PrearmBudget(1);
         if (queue.Count == 0) pending.Remove(connection);
@@ -120,9 +126,22 @@ internal sealed class PrearmBuffer(CaptureDiagnostics? diagnostics = null)
     private void DropConnection(CaptureConnection connection, bool budget)
     {
         if (!pending.Remove(connection, out var queue)) return;
-        foreach (var packet in queue) { bytes -= packet.Payload.Length; packets--; }
+        foreach (var packet in queue) { Adjust(-packet.Payload.Length); packets--; }
         if (budget) diagnostics?.PrearmBudget(queue.Count);
     }
+}
+
+/// <summary>同一次捕获各设备预缓冲共用的合计预算（单线程使用，与各设备预缓冲同在捕获线程上）。</summary>
+internal sealed class PrearmPool(long maximumBytes = PrearmPool.DefaultBytes)
+{
+    /// <summary>合计上限：实采 7 份共 16 次新连接的预缓冲至多约 235 KB，单设备上限 4 MiB 保持，多张设备同时缓冲时合计不超过 8 MiB。</summary>
+    internal const long DefaultBytes = 8L * 1024 * 1024;
+    private readonly List<PrearmBuffer> buffers = [];
+    public long MaximumBytes { get; } = maximumBytes;
+    public long Bytes { get; internal set; }
+    public PrearmBuffer Create(CaptureDiagnostics? diagnostics) { var buffer = new PrearmBuffer(diagnostics, this); buffers.Add(buffer); return buffer; }
+    /// <summary>占用最多且非空的设备预缓冲；都为空时为空。</summary>
+    public PrearmBuffer? Largest() => buffers.Where(buffer => buffer.Packets > 0).MaxBy(buffer => buffer.Bytes);
 }
 
 /// <summary>
@@ -164,8 +183,12 @@ internal static class NativeCaptureBoundary
 {
     internal const int SnapshotBytes = 262144;
     internal const int BufferBytes = 16 * 1024 * 1024;
-    /// <summary>常驻捕获每张设备一个句柄的内核缓冲；只放行游戏端口，游戏下行峰值（单帧约 360 KB）在 10 ms 读取周期内远小于此值。</summary>
-    internal const int DeviceBufferBytes = 4 * 1024 * 1024;
+    /// <summary>
+    /// 常驻捕获每张设备一个句柄的内核缓冲（过滤器交接期间新旧句柄各一份）。过滤器只放行游戏端口；12 份实采的游戏下行（含包头）
+    /// 任意 100 ms 至多约 165 KB、任意 1 秒至多约 251 KB，最大单帧约 360 KB。有包即读时缓冲只需容纳读取线程的停顿：1 MiB 约为
+    /// 1 秒峰值的 4 倍、最大单帧的 2.8 倍。
+    /// </summary>
+    internal const int DeviceBufferBytes = 1024 * 1024;
     internal static bool CompletePacket(int captured, int wire) => captured is >= 0 and <= SnapshotBytes && captured == wire;
     /// <summary>
     /// 远端是本机地址（回环地址，或与本机地址相同、或是本机任一网卡地址）的连接，即本机代理型加速器的形态
@@ -201,17 +224,23 @@ internal static class NativeCaptureBoundary
         if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
+    /// <param name="immediate">设置即时模式（有包即交付、读事件随之触发）；为空时不设置。返回非零或该导出不存在时照常打开、不启用即时模式。</param>
     internal static nint OpenConfigured(Func<nint> create, Func<nint, int, int> snap,
         Func<nint, int, int> buffer, Func<nint, int, int> promiscuous, Func<nint, int, int> timeout,
-        Func<nint, int> activate, Action<nint> close, int snapshotBytes = SnapshotBytes, int bufferBytes = BufferBytes, bool required = true)
+        Func<nint, int> activate, Action<nint> close, int snapshotBytes = SnapshotBytes, int bufferBytes = BufferBytes, bool required = true,
+        Func<nint, int>? immediate = null)
     {
         var handle = create();
         if (handle == 0) return required ? throw new IOException("无法创建 Npcap 捕获句柄。") : 0;
         try
         {
             if (snap(handle, snapshotBytes) != 0 || buffer(handle, bufferBytes) != 0 ||
-                promiscuous(handle, 0) != 0 || timeout(handle, 100) != 0 || activate(handle) < 0)
+                promiscuous(handle, 0) != 0 || timeout(handle, 100) != 0)
                 throw new IOException("Npcap 捕获参数设置失败。");
+            if (immediate is not null)
+                try { immediate(handle); }
+                catch (EntryPointNotFoundException) { }
+            if (activate(handle) < 0) throw new IOException("Npcap 捕获参数设置失败。");
             return handle;
         }
         catch (IOException) when (!required) { close(handle); return 0; }

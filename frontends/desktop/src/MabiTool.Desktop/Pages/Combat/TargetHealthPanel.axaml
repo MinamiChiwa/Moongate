@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:combat="using:MabiTool.Desktop.Pages.Combat"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Pages.Combat.TargetHealthPanel"
+             x:DataType="combat:TargetHealthView">
+  <!--
+    当前攻击目标的血量：名称（首领、同场首领、已过期标记紧跟名称，名称过长时先截断名称）与右侧百分比，血量槽，“当前值 / 最大值”。
+    DPS 浮窗元件（带 overlay 类，固定的浮窗配色）与 DPS检测页伤害面板（随主题）共用；能力停用时只有一行停用原因。
+  -->
+  <UserControl.Styles>
+    <Style Selector="controls|HealthBar">
+      <Setter Property="Fill" Value="{DynamicResource ConfirmedBrush}" />
+      <Setter Property="LowFill" Value="{DynamicResource StopBrush}" />
+      <Setter Property="Track" Value="{DynamicResource TrackBrush}" />
+    </Style>
+    <Style Selector="combat|TargetHealthPanel.overlay controls|HealthBar">
+      <Setter Property="Fill" Value="{DynamicResource OverlayAccentBrush}" />
+      <Setter Property="LowFill" Value="{DynamicResource OverlayWaitingBrush}" />
+      <Setter Property="Track" Value="#40FFFFFF" />
+    </Style>
+    <Style Selector="TextBlock.dim">
+      <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="combat|TargetHealthPanel.overlay TextBlock.dim">
+      <Setter Property="Foreground" Value="{DynamicResource OverlayMutedBrush}" />
+    </Style>
+    <Style Selector="TextBlock.mark">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Margin" Value="6,0,0,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource UnknownBrush}" />
+    </Style>
+    <Style Selector="combat|TargetHealthPanel.overlay TextBlock.mark">
+      <Setter Property="Foreground" Value="{DynamicResource OverlayAccentBrush}" />
+    </Style>
+    <Style Selector="TextBlock.mark.stale">
+      <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+    </Style>
+    <Style Selector="combat|TargetHealthPanel.overlay TextBlock.mark.stale">
+      <Setter Property="Foreground" Value="{DynamicResource OverlayWaitingBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+    <TextBlock x:Name="HealthDisabled" Classes="dim" TextWrapping="Wrap" Text="{Binding Disabled}" IsVisible="{Binding IsDisabled}" />
+    <StackPanel Spacing="3" IsVisible="{Binding IsTarget}">
+      <DockPanel>
+        <TextBlock x:Name="HealthPercent" DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding Percent}" />
+        <!-- 靠左排：标记紧跟名称；放不下时名称截断，标记保留。 -->
+        <DockPanel HorizontalAlignment="Left">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+            <TextBlock x:Name="HealthBossMark" Classes="mark" Text="{Binding BossMark}" IsVisible="{Binding Boss}" />
+            <TextBlock x:Name="HealthRedirectMark" Classes="mark" Text="{Binding RedirectMark}" IsVisible="{Binding Redirected}" />
+            <TextBlock x:Name="HealthStaleMark" Classes="mark stale" Text="{Binding StaleMark}" IsVisible="{Binding Stale}" />
+          </StackPanel>
+          <TextBlock x:Name="HealthName" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                     Text="{Binding Name}" ToolTip.Tip="{Binding NameTip}" />
+        </DockPanel>
+      </DockPanel>
+      <controls:HealthBar x:Name="HealthGauge" Health="{Binding}" />
+      <TextBlock x:Name="HealthValue" Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding Value}" ToolTip.Tip="{Binding ValueTip}" />
+    </StackPanel>
+  </Panel>
+</UserControl>

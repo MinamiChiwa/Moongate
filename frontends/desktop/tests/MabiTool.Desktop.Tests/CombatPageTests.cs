@@ -66,7 +66,9 @@ public sealed class CombatPageTests
         Click(window, Named("FavoritesOnlyButton"));
         var model = (CombatPageModel)page.DataContext!;
         Assert.Equal(["e1"], model.History.Select(row => row.Id));
-        var favorite = page.GetVisualDescendants().OfType<Button>().Single(b => b.DataContext is EncounterRow { Id: "e1" });
+        // 每条记录有“明细”与“收藏”两个按钮，按命令取收藏按钮。
+        var favorite = page.GetVisualDescendants().OfType<Button>()
+            .Single(b => b.DataContext is EncounterRow { Id: "e1" } && b.Command == model.FavoriteCommand);
         Click(window, favorite);
         Assert.Empty(model.History);
         Assert.Empty(LayoutProbe.FindTextOverflow(window));
@@ -184,10 +186,55 @@ public sealed class CombatPageTests
             Assert.True(Named<StackPanel>(window, "ElementsGroup").IsEffectivelyVisible);
             Assert.True(Named<MabiTool.Desktop.Controls.SegmentBar>(window, "ElementBar").IsEffectivelyVisible);
             Assert.False(Named<TextBlock>(window, "NoElementsText").IsVisible);
-            Assert.Contains("火焰 25%", VisibleTexts(Named<ItemsControl>(window, "ElementLegend")));
+            // 图例的一项：元素名（图标可用时换成图标）与占比各一段文字。
+            Assert.Equal(["火焰", "25%"], VisibleTexts(Named<ItemsControl>(window, "ElementLegend")).Take(2));
             Assert.Equal(model.ElementParts.Count, model.ElementSegments.Count);
             // 页面不显示“本机破防伤害”。
             Assert.DoesNotContain(VisibleTexts(window), text => text.Contains("破防伤害"));
+        }
+        finally { window.Close(); }
+    }
+
+    // 比率卡片与总表列组标题：图标可用时只显示图标，名称在悬浮提示与无障碍名称里；不可用的键与图标撤下后回到文字，占位不变。
+    [AvaloniaFact]
+    public void RateIconsReplaceNamesWithTheNameInTheTooltipAndFallBackWithoutReflow()
+    {
+        var backend = new SampleBackend();
+        var window = LayoutProbe.Open(backend, 1280, 860, "combat-observation");
+        try
+        {
+            var grid = Named<ItemsControl>(window, "RateGrid");
+            ClientIconSlot Slot(string key) => grid.GetVisualDescendants().OfType<ClientIconSlot>().Single(slot => slot.Icon == key);
+            var critical = Slot("critical");
+            var cards = grid.GetVisualDescendants().OfType<ClientIconSlot>().Select(slot => slot.TranslatePoint(default, grid)).ToList();
+            var bounds = critical.Bounds;
+            Assert.True(backend.ClientIconsInUse);
+            Assert.False(critical.ShowsIcon);
+            Assert.Equal(1, critical.Child!.Opacity);
+            Assert.Null(ToolTip.GetTip(critical));
+            Assert.Equal("暴击", AutomationProperties.GetName(critical));
+
+            backend.ClientIcons = new() { ["critical"] = TestIcons.Image("critical") };
+            backend.RaiseClientIconsChanged();
+            LayoutProbe.Render(window);
+            Assert.True(critical.ShowsIcon);
+            Assert.Equal(0, critical.Child!.Opacity);
+            Assert.Equal("暴击", ToolTip.GetTip(critical));
+            Assert.Equal("暴击", AutomationProperties.GetName(critical));
+            Assert.Equal(bounds, critical.Bounds);
+            Assert.Equal(cards, grid.GetVisualDescendants().OfType<ClientIconSlot>().Select(slot => slot.TranslatePoint(default, grid)).ToList());
+            Assert.False(Slot("powerfulHit").ShowsIcon);
+            Assert.Equal(1, Slot("powerfulHit").Child!.Opacity);
+            Assert.Contains(Named<MabiTool.Desktop.Controls.Tables.DataTable>(window, "DamageTable").GetVisualDescendants().OfType<ClientIconSlot>(),
+                slot => slot.Icon == "critical" && slot.ShowsIcon && Equals(ToolTip.GetTip(slot), "暴击"));
+
+            backend.ClientIcons = null;
+            backend.RaiseClientIconsChanged();
+            LayoutProbe.Settle();
+            Assert.False(critical.ShowsIcon);
+            Assert.Equal(1, critical.Child!.Opacity);
+            Assert.Null(ToolTip.GetTip(critical));
+            Assert.Equal(bounds, critical.Bounds);
         }
         finally { window.Close(); }
     }

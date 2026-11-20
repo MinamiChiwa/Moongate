@@ -59,7 +59,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
     public event Action? Changed;
 
     /// <summary>
-    /// 捕获从启动到就绪的期限：含 Worker 启动握手（至多 60 秒）、客户端文件核对与布局读取（整读约 370 MiB，
+    /// 捕获从启动到就绪的期限：含 Worker 启动握手（至多 60 秒）、客户端文件核对与布局读取（两文件流式哈希约 220 MiB，
     /// 机械硬盘或杀毒软件扫描下可达数十秒）；超过才报 <c>observation.readyTimeout</c>。
     /// </summary>
     internal static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(120);
@@ -76,13 +76,20 @@ public sealed partial class GameObservationService(GameControlContext controls, 
         if (!Path.IsPathFullyQualified(executable) || !File.Exists(executable))
             throw new ArgumentException("MABITOOL_OBSERVATION_EXECUTABLE 需要存在的绝对路径。");
         LocalDiscoverySecurity.RejectLinks(executable);
-        var folder = Path.GetDirectoryName(executable)!;
+        return () => WorkerOptions(executable, paths);
+    }
+    /// <summary>观察 Worker 启动环境中数据根缓存目录的变量名（Worker 读取后移除）。</summary>
+    internal const string CacheRootVariable = "MABITOOL_OBSERVATION_CACHE_ROOT";
+    /// <summary>
+    /// 观察 Worker 的启动选项：受管资产在数据根 temp/observation-worker，缓存根为数据根 cache（Worker 在其下的
+    /// inventory/client-layouts 与 game-access/client-builds 读写库存布局与构建核对结果，与宿主同一位置）。
+    /// </summary>
+    internal static WorkerProcessOptions WorkerOptions(string executable, PathService paths)
+    {
         var assets = Path.Combine(paths.Temporary, "observation-worker");
-        return () =>
-        {
-            Directory.CreateDirectory(assets);
-            return new(executable, folder, assets, "game-observation");
-        };
+        Directory.CreateDirectory(assets);
+        return new(executable, Path.GetDirectoryName(executable)!, assets, "game-observation")
+        { EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal) { [CacheRootVariable] = paths.Cache } };
     }
     public GameObservationRuntime Runtime()
     {
@@ -210,7 +217,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
                 }
                 catch
                 {
-                    await StopCoreAsync("observation.captureFailed");
+                    await StopCoreAsync("observation.captureFailed", stoppedKind: "host.launch");
                     throw;
                 }
             }
@@ -260,7 +267,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
                 }
                 else released = principal is not null;
             }
-            if (TotalDemands == 0 && worker is not null && !resident) await StopCoreAsync(null);
+            if (BlockingDemands == 0 && worker is not null && !resident) await StopCoreAsync(null);
             else if (worker is not null) { await ConfigureInterestsAsync(ct); ReleaseIdleActivity(); }
             Notify(); return new(id, released, Snapshot());
         }
@@ -297,7 +304,8 @@ public sealed partial class GameObservationService(GameControlContext controls, 
                     if (report.Sequence.Value < sourceSequence) throw new WorkerException("worker.sequenceInvalid");
                     sourceSequence = report.Sequence.Value;
                     lastReportMono = report.MonotonicMs;
-                    if (report.Value.Identity is { } identity && game is { } current) lastIdentity = (current.Id, identity);
+                    if (report.Value.Identity is { } identity && game is { } current)
+                        lastIdentity = (current.ProcessId, current.ProcessStartTime, current.Region, identity, ValidConnection(report.IdentityConnection));
                     var source = report.Source ?? new ObservationSource("unknown-observation", "0.0.0", "TW", null);
                     latest = report.Running ? new(report.Value, source, report.ObservedAt, system.InstanceId, report.MonotonicMs, 2000,
                         new(generation), new(++sequence), report.Value.Identity is null || report.Source is null ? ObservationQuality.Unknown :
@@ -308,37 +316,39 @@ public sealed partial class GameObservationService(GameControlContext controls, 
                 Notify();
             }
             var terminal = await request.Completion;
-            if (terminal.Kind == "error") OnFault(id, Failure(terminal).Code);
+            if (terminal.Kind == "error") OnFault(id, Failure(terminal).Code, FaultKind(terminal));
             else OnFault(id, "observation.sourceEnded");
         }
         catch (Exception error) when (error is WorkerException or OperationException or JsonException or OperationCanceledException or IOException)
-        { OnFault(id, error is WorkerException failure ? failure.Code : error is OperationException operation ? operation.Code : "observation.captureFailed"); }
+        { OnFault(id, error is WorkerException failure ? failure.Code : error is OperationException operation ? operation.Code : "observation.captureFailed", HostFaultKind(error)); }
     }
-    private void OnFault(string id, string code)
+    private void OnFault(string id, string code, string? kind = null)
     {
         WorkerSession? faulted;
         lock (gate)
         {
             if (captureId != id || state == "stopping") return;
             faulted = worker;
-            state = "faulted"; reason = code; latest = null; revision++; RecordFault(code);
+            state = "faulted"; reason = code; faultKind = kind; latest = null; revision++; RecordFault(code);
             interestAcknowledgement?.TrySetException(new WorkerException(code));
             foreach (var subscription in combatDemands.Values) subscription.Complete(new OperationException("combat.observationGap", code));
             foreach (var subscription in inventoryDemands.Values) subscription.Complete(new OperationException("inventory.observationGap", code));
         }
-        trace?.Emit(DiagnosticEvents.WorkerFaulted, new DiagnosticFields().Value("reason", code), code: code, detail: OperatingSystem.IsWindows() ? faulted?.DiagnosticTail : null);
+        trace?.Emit(DiagnosticEvents.WorkerFaulted, new DiagnosticFields().Value("reason", code).Value("kind", kind), code: code, detail: OperatingSystem.IsWindows() ? faulted?.DiagnosticTail : null);
         Notify();
     }
-    private async Task StopCoreAsync(string? stoppedReason, bool fault = true)
+    private async Task StopCoreAsync(string? stoppedReason, bool fault = true, string? stoppedKind = null)
     {
         WorkerSession? old;
         WorkerCall? oldCall;
         string? priorFault;
-        var wasResident = false;
+        var wasResident = false; string? endKind; double ranMs;
         lock (gate)
         {
             wasResident = resident;
             priorFault = state == "faulted" ? reason ?? "observation.captureFailed" : null;
+            endKind = priorFault is not null ? faultKind : stoppedKind;
+            ranMs = captureStartMono is { } began ? Mono() - began : 0;
             old = worker; oldCall = call; state = "stopping"; latest = null; revision++;
             foreach (var demand in demands.Values)
             { if (releases.Count >= 1000) releases.Remove(releases.Keys.First()); releases[demand.Id] = demand.Owner; }
@@ -354,6 +364,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
                 await old.DisposeAsync();
             }
             await pump.ConfigureAwait(false);
+            if (old is not null) TraceFinalDevices();
             if (OperatingSystem.IsWindows() && old is not null) InventoryWorkerAssets.CleanDirectory(Configuration().AssetRoot);
         }
         finally
@@ -362,7 +373,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
             finally { moduleDemand = null; activity?.Dispose(); activity = null; }
             lock (gate)
             {
-                worker = null; workerPid = null; call = null; captureId = null; game = null; channelId = null; profile = null; resident = false; autoChoice = null;
+                worker = null; workerPid = null; call = null; captureId = null; game = null; faultKind = null; channelId = null; profile = null; resident = false; autoChoice = null;
                 CaptureCleared();
                 state = stoppedReason is null || !fault ? "stopped" : "faulted"; reason = stoppedReason; revision++;
                 if (stoppedReason is not null && fault) RecordFault(stoppedReason, stop: true);
@@ -378,9 +389,9 @@ public sealed partial class GameObservationService(GameControlContext controls, 
                 trace?.Emit(DiagnosticEvents.WorkerStopped, new DiagnosticFields().Value("end", WorkerEndKind(end))
                     .Count("exitCode", old.ExitCode is { } exit ? unchecked((uint)exit) : 0UL).Flag("terminatedByHost", old.TerminatedByHost),
                     code: end, detail: end is not null ? old.DiagnosticTail : null);
-                trace?.Emit(DiagnosticEvents.CaptureEnded, new DiagnosticFields().Value("reason", end ?? "normal"), code: end);
+                trace?.Emit(DiagnosticEvents.CaptureEnded, new DiagnosticFields().Value("reason", end ?? "normal").Value("kind", endKind), code: end);
             }
-            if (wasResident && fault && (priorFault ?? stoppedReason) is { } failed && automation) ScheduleRetry(failed);
+            if (wasResident && fault && (priorFault ?? stoppedReason) is { } failed && automation) ScheduleRetry(failed, ranMs >= QuickRetryAfterMs);
             Notify();
         }
     }
@@ -408,7 +419,7 @@ public sealed partial class GameObservationService(GameControlContext controls, 
                 }
                 await ReleaseUnauthorizedCombatAsync();
                 await ReleaseUnauthorizedInventoryAsync();
-                if (worker is not null && (failure is not null || TotalDemands == 0 && !resident)) await StopCoreAsync(failure);
+                if (worker is not null && (failure is not null || BlockingDemands == 0 && !resident)) await StopCoreAsync(failure);
                 else if (changed) { await ConfigureInterestsAsync(stoppingToken); ReleaseIdleActivity(); Notify(); }
                 await AutomateAsync(stoppingToken);
                 await SuperviseCaptureAsync();
@@ -449,6 +460,24 @@ public sealed partial class GameObservationService(GameControlContext controls, 
     /// <see cref="GameSessionBindingTracker"/>）。窗口移动、缩放、换显示器、DPI、最小化与恢复只递增绑定修订，
     /// 不结束捕获，已识别的本机身份与已同步的背包、战斗状态因此保留；输入与截图仍按修订核对。
     /// </summary>
+    /// <summary>最近一次捕获故障的细分原因（observation.captureFailed 时有值），随 observation.capture.ended 写出。</summary>
+    private string? faultKind;
+    /// <summary>Worker 错误帧附带的细分原因：固定格式的短码（如 capture.processExited），其他内容丢弃。</summary>
+    private static string? FaultKind(WorkerFrame frame) =>
+        frame.Payload.TryGetProperty("detail", out var value) && value.ValueKind == JsonValueKind.String &&
+        value.GetString() is { } text && Regex.IsMatch(text, @"\A[a-z]+\.[A-Za-z]{1,48}\z") ? text : null;
+    /// <summary>宿主侧读取 Worker 事件失败的细分原因；带固定码的异常为空。</summary>
+    private static string? HostFaultKind(Exception error) => error switch
+    {
+        WorkerException or OperationException => null,
+        JsonException => "host.frameInvalid",
+        OperationCanceledException => "host.cancelled",
+        IOException => "host.pipe",
+        _ => "host.unclassified"
+    };
+    /// <summary>Worker 报告的身份连接；端口或地址不合规时丢弃（下一次捕获只沿用角色 ID）。</summary>
+    private static ObservedConnection? ValidConnection(ObservedConnection? value) =>
+        value is { LocalPort: > 0 and <= 65535, RemotePort: > 0 and <= 65535, RemoteAddress.Length: <= 45 } && IPAddress.TryParse(value.RemoteAddress, out _) ? value : null;
     internal static bool SameGameSession(GameSession? current, GameSession? captured) =>
         current is not null && captured is not null && current.Id == captured.Id;
     private double Mono() => clock.GetTimestamp() * (1000d / clock.TimestampFrequency);

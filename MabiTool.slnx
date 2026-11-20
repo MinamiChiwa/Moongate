@@ -25,6 +25,7 @@
     <Project Path="tests/Domain/MabiTool.Inventory.Tests/MabiTool.Inventory.Tests.csproj" />
     <Project Path="tests/Providers/MabiTool.Providers.TwObservation.Tests/MabiTool.Providers.TwObservation.Tests.csproj" />
     <Project Path="tests/Providers/MabiTool.Updates.Tests/MabiTool.Updates.Tests.csproj" />
+    <Project Path="tests/Providers/MabiTool.InventoryCatalog.Tests/MabiTool.InventoryCatalog.Tests.csproj" />
     <Project Path="tests/Contracts/MabiTool.Host.Tests/MabiTool.Host.Tests.csproj" />
     <Project Path="tests/EndToEnd/PersistenceProbe/MabiTool.PersistenceProbe.csproj" />
     <Project Path="tests/EndToEnd/RoomServerProbe/MabiTool.RoomServerProbe.csproj" />
@@ -37,6 +38,7 @@
     <Project Path="tests/Performance/BackendRuntimeProbe/MabiTool.BackendRuntimeProbe.csproj" />
     <Project Path="tests/Performance/ColorRuntimeProbe/MabiTool.ColorRuntimeProbe.csproj" />
     <Project Path="tests/Performance/CombatRuntimeProbe/MabiTool.CombatRuntimeProbe.csproj" />
+    <Project Path="tests/Performance/ObservationWorkerProbe/MabiTool.ObservationWorkerProbe.csproj" />
   </Folder>
   <Folder Name="/scripts/">
     <Project Path="scripts/build/ContractGenerator/MabiTool.ContractGenerator.csproj" />

@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json;
 using Avalonia.Headless.XUnit;
 using MabiTool.Contracts;
 using MabiTool.Desktop.Backend;
@@ -280,5 +281,55 @@ public sealed class CombatRangeMapperTests
         Assert.Same(shown.Kpis, held.Kpis);
         Assert.Equal("archer", Assert.Single(held.RangeTargets!, chip => chip.Current).Id);
         Assert.True(held.Pending);
+    }
+
+    [AvaloniaFact]
+    public void RecordDetailShowsTheSavedRecordAndSummaryOnlyRecordsSayThereIsNoDetail()
+    {
+        var saved = Encounter("enc-r", 1000, 10000, [Group("ce-a", "巨魔弓手", 300, 3), Group("ce-b", "巨魔弓手", 700, 7)], 100,
+            new("saved-range", "首领战", null, null, SavedAt: Now, DataIncomplete: true));
+        var data = CombatMapper.MapRecord(new(true, saved.Id, saved, null, Range(saved, null) with { Scope = "encounter" }, null));
+        Assert.Equal(("首领战", true, false), (data.RecordInfo!.Name, data.RecordInfo.DataIncomplete, data.RecordInfo.SummaryOnly));
+        Assert.StartsWith("保存于 ", data.RecordInfo.When);
+        Assert.Equal(["100", "1,000", "0:10", "10"], data.Kpis.Select(tile => tile.Value));
+        Assert.Equal(["重擊"], data.Skills.Select(row => row.Name));
+        Assert.Equal(2, data.Targets.Count);
+        Assert.Equal(["全部", "巨魔弓手", "巨魔弓手"], data.RangeTargets!.Select(chip => chip.Name));
+        Assert.Equal((string.Empty, string.Empty), (data.Scope!.Title, data.Scope.Problem));
+        Assert.True(CombatMapper.Map(new(true, true, null, [saved], null, null, [])).History[0].DataIncomplete);
+        // 保存时标为不完整、文档里没有缺口时段：只写影响。
+        Assert.Equal("抓包期间有数据缺失，数值可能偏低", data.RecordInfo.GapNote);
+
+        // 没有标记但文档带缺口（自动分段与旧记录）：同样标为数据不完整，并写出缺口的影响与时段。
+        var segment = saved with { Record = null, Gaps = [new("capture-gap", 2000, 3500, new(2)), new("observation-stopped", 8000, null, new(0))] };
+        var gapped = CombatMapper.MapRecord(new(true, segment.Id, segment, null, Range(segment, null) with { Scope = "encounter" }, null));
+        Assert.True(gapped.RecordInfo!.DataIncomplete);
+        Assert.Equal("抓包期间有数据缺失，数值可能偏低（0:02–0:03、0:08 起）", gapped.RecordInfo.GapNote);
+        Assert.True(CombatMapper.Map(new(true, true, null, [segment], null, null, [])).History[0].DataIncomplete);
+
+        // 本版本之前保存、只有摘要的记录：没有保存时刻与不完整标记，只给出主数据并写明没有明细，命中次数为未知而不是 0。
+        var legacy = JsonSerializer.Deserialize<CombatEncounter>(JsonSerializer.Serialize(
+            saved with { Skills = [], Targets = [], Record = new("saved-range", "旧记录", null, null) }, ContractJson.Options), ContractJson.Options)!;
+        var old = CombatMapper.MapRecord(new(true, legacy.Id, legacy, null, null, null));
+        Assert.Equal((true, false, "这条记录保存于旧版本，没有明细"), (old.RecordInfo!.SummaryOnly, old.RecordInfo.DataIncomplete, old.RecordInfo.Note));
+        Assert.StartsWith("开始于 ", old.RecordInfo.When);
+        Assert.Equal(["100", "1,000", "0:10", "—"], old.Kpis.Select(tile => tile.Value));
+        Assert.Empty(old.Skills);
+        Assert.Null(old.Healing);
+        Assert.Equal(string.Empty, old.Scope!.Problem);
+        Assert.Equal(string.Empty, old.RecordInfo.GapNote);
+    }
+
+    [Fact]
+    public void RecordWindowsTakeTheSmallestFreeSlotAndStayInsideTheWorkArea()
+    {
+        var area = new Avalonia.PixelRect(0, 0, 1920, 1040);
+        var size = new Avalonia.PixelSize(1200, 820);
+        // 关掉第 2 个后再开：取空出的 2 号，不与 3 号重合。
+        Assert.Equal((2, new Avalonia.PixelPoint(164, 164)), CombatDetailWindow.RecordPlacement([1, 3], new(100, 100), size, area));
+        // 错开后超出工作区：拉回工作区内。
+        Assert.Equal((1, new Avalonia.PixelPoint(720, 220)), CombatDetailWindow.RecordPlacement([], new(700, 200), size, area));
+        // 窗口比工作区大：贴左上角。
+        Assert.Equal((1, new Avalonia.PixelPoint(0, 0)), CombatDetailWindow.RecordPlacement([], new(50, 50), new(2000, 1200), area));
     }
 }

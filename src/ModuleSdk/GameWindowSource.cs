@@ -12,6 +12,12 @@ public interface IGameWindowSource
 {
     IReadOnlyList<SelectableGameWindow> Enumerate();
     GameWindowObservation? Refresh(GameWindowObservation selected);
+    /// <summary>同一游戏进程（进程 ID、启动时间、地区）当前可用的窗口；原窗口失效、游戏换用新窗口时用于在同一会话上换绑。没有时为空。</summary>
+    GameWindowObservation? Reacquire(GameWindowObservation selected) => Enumerate().Select(window => window.Observation)
+        .FirstOrDefault(window => window.ProcessId == selected.ProcessId && window.ProcessStartTime == selected.ProcessStartTime &&
+            string.Equals(window.Region, selected.Region, StringComparison.OrdinalIgnoreCase));
+    /// <summary>绑定的游戏进程是否已退出或被同进程号的新进程替换。默认按是否还能找到该进程的窗口判断。</summary>
+    bool ProcessExited(GameWindowObservation selected) => Reacquire(selected) is null;
     ValueTask<GameWindowObservation?> PrepareAsync(GameWindowObservation selected, CancellationToken ct) => ValueTask.FromResult(Refresh(selected));
     bool TryActivate(GameWindowObservation selected);
     /// <summary>显式准备时核对过的客户端文件，供宿主核对构建与记录指纹摘要；未准备或不适用时为空。</summary>

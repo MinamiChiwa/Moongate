@@ -393,6 +393,9 @@ public sealed class ColorPageModel : BackendPageModel<ColorPageData>, IPageLifec
         }
     }
 
+    // 染色方案与引擎状态只在染色页或染色浮窗元件显示时读取。
+    protected override string? Surface => "color";
+
     protected override void OnDataChanged()
     {
         Adopt();

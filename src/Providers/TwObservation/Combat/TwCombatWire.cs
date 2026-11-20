@@ -16,8 +16,12 @@ internal readonly record struct TwBreakPointUpdate(ulong Entity, float Current);
 internal readonly record struct TwHealCast(ulong Target, ulong HitFlags, long Amount);
 /// <summary>NotifyHealReceived 20645：HitFlags 与毛治疗量，不含来源。</summary>
 internal readonly record struct TwHealReceipt(ulong HitFlags, long Amount);
-/// <summary>SetHealth 170205：实体与明文 HP（长度 8）；加密形态时为空。</summary>
-internal readonly record struct TwHealthUpdate(ulong Entity, long? PlainValue);
+/// <summary>SetHealth 170205–170210：实体与明文 HP（长度 8，负值为空）；Encrypted 为长度 16 的正整数倍的加密形态，此时 PlainValue 为空。</summary>
+internal readonly record struct TwHealthUpdate(ulong Entity, long? PlainValue, bool Encrypted = false);
+/// <summary>SetDead 170197：实体与死亡标志（复活时为假）。</summary>
+internal readonly record struct TwDeathUpdate(ulong Entity, bool Dead);
+/// <summary>MainTarget.SetTarget 170739：复制对象（其主目标）与目标；-1 表示没有目标。</summary>
+internal readonly record struct TwMainTargetUpdate(ulong Owner, long Target);
 /// <summary>SetCombatState 170196：实体与客户端 CombatState 原值。</summary>
 internal readonly record struct TwCombatStateUpdate(ulong Entity, int State);
 
@@ -32,6 +36,7 @@ internal static class TwCombatWire
     /// <summary>SetHealth 的固定部分：实体 8 字节、值长度 4 字节、末尾 skipUIFx 1 字节。</summary>
     public const int HealthFixedBytes = 13;
     public const int HealthMaximumValueBytes = 4096;
+    public const int DeathFixedBytes = 34, MainTargetBytes = 16, BroadcastKeyBytes = 40;
 
     public static TwHitPresentation HitPresentation(ReadOnlySpan<byte> body, byte encoding)
     {
@@ -95,10 +100,54 @@ internal static class TwCombatWire
         var entity = U64(body, 0); var length = BinaryPrimitives.ReadUInt32LittleEndian(body[8..]);
         Require(entity != 0 && length <= HealthMaximumValueBytes && body.Length == HealthFixedBytes + (int)length && body[^1] <= 1);
         Require(length == 8 || length != 0 && length % 16 == 0);
-        if (length != 8) return new(entity, null);
+        if (length != 8) return new(entity, null, Encrypted: true);
         var value = BinaryPrimitives.ReadInt64LittleEndian(body[12..]);
         return new(entity, value >= 0 ? value : null);
     }
+
+    /// <summary>已通过 <see cref="Health"/> 校验的 SetHealth 消息的值字节（明文 8 字节或密文）。</summary>
+    public static ReadOnlySpan<byte> HealthValue(ReadOnlySpan<byte> body) => body.Slice(12, (int)BinaryPrimitives.ReadUInt32LittleEndian(body[8..]));
+
+    /// <summary>
+    /// SetDead 170197：实体 @0、isDead bool @8、deadTime Int64 @9、DeathReason Int32 @17、killerName（Int32 字节数加 UTF-16）@21，
+    /// 其后 killer MonsterSheetId、NPCSheetId 各 4 字节与 killedByBreakAttack bool；总长 34 加名字字节数。
+    /// </summary>
+    public static TwDeathUpdate Death(ReadOnlySpan<byte> body, byte encoding)
+    {
+        Require(encoding == 0 && body.Length >= DeathFixedBytes);
+        var entity = U64(body, 0); var name = BinaryPrimitives.ReadInt32LittleEndian(body[21..]);
+        Require(entity != 0 && body[8] <= 1 && name >= 0 && (name & 1) == 0 && name <= 512 && body.Length == DeathFixedBytes + name && body[^1] <= 1);
+        return new(entity, body[8] == 1);
+    }
+
+    /// <summary>DisappearingChannelObject 20272：8 字节实体 ID。</summary>
+    public static ulong Disappearing(ReadOnlySpan<byte> body, byte encoding)
+    {
+        Plain(body, encoding, 8);
+        var entity = U64(body, 0);
+        Require(entity != 0);
+        return entity;
+    }
+
+    public static TwMainTargetUpdate MainTarget(ReadOnlySpan<byte> body, byte encoding)
+    {
+        Plain(body, encoding, MainTargetBytes);
+        var owner = U64(body, 0); var target = BinaryPrimitives.ReadInt64LittleEndian(body[8..]);
+        Require(owner != 0 && target != 0 && target >= -1);
+        return new(owner, target);
+    }
+
+    /// <summary>SendBroadcastPacketAES 210022：两个 uint8[]（Int32 长度加内容），依次为 16 字节 AES 密钥与 16 字节 IV。</summary>
+    public static (byte[] Key, byte[] Iv) BroadcastKey(ReadOnlySpan<byte> body, byte encoding)
+    {
+        Plain(body, encoding, BroadcastKeyBytes);
+        Require(BinaryPrimitives.ReadInt32LittleEndian(body) == 16 && BinaryPrimitives.ReadInt32LittleEndian(body[20..]) == 16);
+        return (body.Slice(4, 16).ToArray(), body.Slice(24, 16).ToArray());
+    }
+
+    /// <summary>UpdateHealthMax 170151：以广播密钥加密的 16 字节倍数密文（明文为实体 UInt64 与最大值 Int64）。</summary>
+    public static void RequireHealthMaxCipher(ReadOnlySpan<byte> body, byte encoding) =>
+        Require(encoding == 0 && body.Length is > 0 and <= 64 && body.Length % 16 == 0);
 
     public static TwCombatStateUpdate CombatState(ReadOnlySpan<byte> body, byte encoding)
     {

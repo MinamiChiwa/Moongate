@@ -108,11 +108,11 @@ public sealed partial class GameObservationService
         if (worker is not null && state is "running" or "starting")
             try { await ConfigureInterestsAsync(CancellationToken.None); }
             catch (Exception error) when (error is WorkerException or OperationException or OperationCanceledException)
-            { failure ??= new OperationException("combat.observationGap", "共享捕获停止交接未完成"); OnFault(captureId!, "observation.captureFailed"); }
+            { failure ??= new OperationException("combat.observationGap", "共享捕获停止交接未完成"); OnFault(captureId!, "observation.captureFailed", "host.interestHandoff"); }
         lock (gate) { combatDemands.Remove(subscription.Id); revision++; }
         TraceSubscription("combat", "removed");
         subscription.Complete(failure);
-        if (TotalDemands == 0 && worker is not null && (!resident || failure is not null)) await StopCoreAsync(failure is null ? null : "observation.captureFailed");
+        if (worker is not null && (!resident && BlockingDemands == 0 || TotalDemands == 0 && failure is not null)) await StopCoreAsync(failure is null ? null : "observation.captureFailed");
         else ReleaseIdleActivity();
         Notify();
     }
@@ -192,14 +192,16 @@ public sealed partial class GameObservationService
             CaptureCombatSubscription[] targets;
             lock (gate) targets = combatDemands.Values.Where(value => value.InterestId == interest.GetString()).ToArray();
             if (targets.Length == 0) return true;
-            if (Encoding.UTF8.GetByteCount(payload.GetRawText()) > 256 * 1024) throw CaptureCombatValidation.Invalid("payload.size");
+            var raw = System.Runtime.InteropServices.JsonMarshal.GetRawUtf8Value(payload);
+            if (raw.Length > 256 * 1024) throw CaptureCombatValidation.Invalid("payload.size");
             var report = payload.Deserialize<CombatCaptureReport>(CaptureCombatValidation.Json) ?? throw CaptureCombatValidation.Invalid("payload.null");
             if (report.Frame is { } value && double.IsFinite(value.MonotonicMs)) age = Mono() - value.MonotonicMs;
             CaptureCombatValidation.Validate(report, targets[0].Source, targets[0].Request.GameSessionId);
             if (report.Frame.MonotonicMs > Mono() + 200) throw CaptureCombatValidation.Invalid("frame.ahead");
             if (Mono() - report.Frame.MonotonicMs > 2000) throw CaptureCombatValidation.Invalid("frame.stale");
             RecordCombatGaps(report.Frame.Gaps);
-            foreach (var target in targets) target.Publish(report);
+            if (report.Carry is { } carry) { GameSession? current; lock (gate) current = game; CombatCarry.Record(current, carry); }
+            foreach (var target in targets) target.Publish(report, raw);
             return true;
         }
         catch (WorkerException error) when (CaptureCombatValidation.Branch(error) is { } branch)
@@ -216,6 +218,16 @@ public sealed partial class GameObservationService
             throw;
         }
     }
+    /// <summary>离线性能探针：不启动 Worker，登记一个共享战斗订阅，之后的帧经 <see cref="AcceptCombatFrameForProbe"/> 走 Worker 帧的同一受理路径。</summary>
+    internal CaptureCombatSubscription AttachCombatForProbe(string principal, string observationId, CombatObservationRequest request, ObservationCombatProfile configured)
+    {
+        var subscription = new CaptureCombatSubscription(this, principal, observationId, Guid.NewGuid().ToString("N"), request, configured);
+        lock (gate) { combatDemands.Add(observationId, subscription); revision++; }
+        return subscription;
+    }
+    internal bool AcceptCombatFrameForProbe(WorkerFrame frame) => AcceptCombatEvent(frame);
+    /// <summary>离线性能探针：模拟 Worker 状态心跳（每 500 ms 一次）引起的观察快照变化通知。</summary>
+    internal void NotifyForProbe() => Notify();
     /// <summary>进程内诊断：首个战斗帧拒绝分支及已接受帧中的缺口时点（Worker 单调毫秒），供实机探针定位。</summary>
     public CombatCaptureDiagnostics CombatDiagnostics()
     {

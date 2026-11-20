@@ -91,10 +91,10 @@ public static class TwClientFingerprint
             // 同时持有只读共享句柄，Windows 在整个哈希窗口拒绝写入、替换及删除。
             foreach (var relative in Files)
                 streams.Add(new FileStream(Path.Combine(directory, relative), FileMode.Open, FileAccess.Read, FileShare.Read,
-                    1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan));
+                    1, FileOptions.Asynchronous | FileOptions.SequentialScan));
             var hashes = new string[streams.Count];
             for (var index = 0; index < streams.Count; index++)
-                hashes[index] = Convert.ToHexStringLower(await SHA256.HashDataAsync(streams[index], ct).ConfigureAwait(false));
+                hashes[index] = await ClientFileHash.ComputeAsync(streams[index], ct).ConfigureAwait(false);
             var after = ReadFileStamps(imagePath);
             return after is not null && before.SequenceEqual(after) ? new(hashes[0], hashes[1], hashes[2]) : null;
         }
@@ -161,4 +161,99 @@ public static class TwClientFingerprint
         for (FileSystemInfo? current = new FileInfo(path); current is not null; current = current is FileInfo file ? file.Directory : ((DirectoryInfo)current).Parent)
             if ((current.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("客户端路径包含链接");
     }
+}
+
+/// <summary>
+/// 客户端文件的流式 SHA-256：固定 1 MiB 缓冲、可取消，不整读文件。同一进程内文件身份（卷序列号、文件 ID、大小、修改与创建时间、USN）
+/// 未变时复用已算出的哈希。身份取自调用方已打开的只读共享句柄：句柄存续期间文件不能被写入、替换或删除，
+/// 因此命中时的哈希就是该句柄所指内容的哈希；调用方前后文件戳一致的核对照旧执行。宿主与 Worker 各自计算，不跨进程共享。
+/// </summary>
+public static class ClientFileHash
+{
+    private const int BufferBytes = 1024 * 1024, MaximumEntries = 16;
+    private sealed record Identity(uint Volume, ulong FileId, long Length, long LastWrite, long Creation, long Usn);
+    private static readonly object Gate = new();
+    private static readonly Dictionary<Identity, string> Known = [];
+    private static readonly Queue<Identity> Order = new();
+
+    /// <summary>从文件开头计算 <paramref name="stream"/> 的哈希（小写十六进制）。</summary>
+    public static string Compute(FileStream stream, CancellationToken ct)
+    {
+        var before = Read(stream);
+        if (Find(before) is { } known) return known;
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(BufferBytes);
+        try
+        {
+            stream.Position = 0;
+            for (int count; (count = stream.Read(buffer, 0, BufferBytes)) > 0;) { ct.ThrowIfCancellationRequested(); hash.AppendData(buffer, 0, count); }
+        }
+        finally { System.Buffers.ArrayPool<byte>.Shared.Return(buffer); }
+        return Remember(before, Read(stream), Convert.ToHexStringLower(hash.GetHashAndReset()));
+    }
+
+    /// <summary><see cref="Compute"/> 的异步版本。</summary>
+    public static async Task<string> ComputeAsync(FileStream stream, CancellationToken ct)
+    {
+        var before = Read(stream);
+        if (Find(before) is { } known) return known;
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(BufferBytes);
+        try
+        {
+            stream.Position = 0;
+            for (int count; (count = await stream.ReadAsync(buffer.AsMemory(0, BufferBytes), ct).ConfigureAwait(false)) > 0;) hash.AppendData(buffer, 0, count);
+        }
+        finally { System.Buffers.ArrayPool<byte>.Shared.Return(buffer); }
+        return Remember(before, Read(stream), Convert.ToHexStringLower(hash.GetHashAndReset()));
+    }
+
+    private static string? Find(Identity? identity)
+    {
+        if (identity is null) return null;
+        lock (Gate) return Known.GetValueOrDefault(identity);
+    }
+
+    private static string Remember(Identity? before, Identity? after, string value)
+    {
+        if (before is null || before != after) return value;
+        lock (Gate)
+        {
+            if (Known.TryAdd(before, value)) Order.Enqueue(before);
+            while (Order.Count > MaximumEntries) Known.Remove(Order.Dequeue());
+        }
+        return value;
+    }
+
+    /// <summary>
+    /// 文件身份。除卷、文件 ID、大小与时间外还取文件当前的 USN（NTFS 变更日志序号）：任何写入都会推进 USN，
+    /// 改写内容后再把修改时间改回原值也不会命中旧哈希。读不到 USN（卷未启用变更日志或不是 NTFS）时不复用。
+    /// </summary>
+    private static Identity? Read(FileStream stream)
+    {
+        if (!OperatingSystem.IsWindows() || !GetFileInformationByHandle(stream.SafeFileHandle, out var info)) return null;
+        var record = new byte[1024];
+        if (!DeviceIoControl(stream.SafeFileHandle, ReadFileUsnData, IntPtr.Zero, 0, record, record.Length, out var returned, IntPtr.Zero) ||
+            returned < 32 || BitConverter.ToUInt16(record, 4) != 2) return null;
+        var usn = BitConverter.ToInt64(record, 24);
+        return usn <= 0 ? null : new(info.VolumeSerialNumber, (ulong)info.FileIndexHigh << 32 | info.FileIndexLow, (long)info.FileSizeHigh << 32 | info.FileSizeLow,
+            info.LastWriteTime, info.CreationTime, usn);
+    }
+    private const uint ReadFileUsnData = 0x000900eb;
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool DeviceIoControl(Microsoft.Win32.SafeHandles.SafeFileHandle device, uint code, IntPtr input, int inputSize,
+        [System.Runtime.InteropServices.Out] byte[] output, int outputSize, out int returned, IntPtr overlapped);
+
+    /// <summary>BY_HANDLE_FILE_INFORMATION；FILETIME 为两个 DWORD，按 4 字节对齐。</summary>
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 4)]
+    private struct FileInformation
+    {
+        public uint Attributes; public long CreationTime, LastAccessTime, LastWriteTime;
+        public uint VolumeSerialNumber, FileSizeHigh, FileSizeLow, NumberOfLinks, FileIndexHigh, FileIndexLow;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle file, out FileInformation information);
 }

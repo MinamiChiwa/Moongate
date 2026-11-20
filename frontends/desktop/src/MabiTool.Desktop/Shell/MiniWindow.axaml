@@ -137,9 +137,10 @@
                       Command="{Binding NextPageCommand}" IsEnabled="{Binding CanNextPage}" />
               <TextBlock Classes="note" Margin="8,0" TextAlignment="Center" VerticalAlignment="Center" Text="{Binding PageLabel}" />
             </DockPanel>
-            <ScrollViewer x:Name="TileScroller" controls:EdgeFade.IsEnabled="True" Margin="-12,0,-12,0"
+            <!-- 滚动区向左右与上方伸出、内容再缩回同样多：位置不变，首尾磁贴悬停放大后不被视口切掉。 -->
+            <ScrollViewer x:Name="TileScroller" controls:EdgeFade.IsEnabled="True" Margin="-12,-8,-12,0"
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-              <StackPanel Margin="12,0,12,4">
+              <StackPanel Margin="12,8,12,4">
                 <Border Classes="panel" Padding="16" IsVisible="{Binding NoScores}">
                   <TextBlock Classes="note" Text="{DynamicResource M.NoScores}" />
                 </Border>

@@ -375,7 +375,7 @@ public sealed class SettingsUpdatePolicyTests
         finally { window.Close(); }
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void UpdateCardSaysNotCheckedUntilTheBackendReportsACheckForThisVersion()
     {
         var policy = new UpdatePolicySnapshot(new UpdatePolicy(), new UInt64String(0));

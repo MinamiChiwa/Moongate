@@ -14,13 +14,22 @@
     "REPLICATION_ActorBuff_Expire_REPL": 170070,
     "REPLICATION_ActorBuff_Refresh_REPL": 170071,
     "REPLICATION_ActorParameter_UpdateBreakPointMax_REPL": 170117,
+    "REPLICATION_ActorParameter_UpdateHealthMax_REPL": 170151,
     "REPLICATION_ActorStates_SetCombatState_REPL": 170196,
+    "REPLICATION_ActorStates_SetDead_REPL": 170197,
     "REPLICATION_ActorStatus_SetBreakPoint_REPL": 170204,
+    "REPLICATION_ActorStatus_SetHealth2_REPL": 170206,
+    "REPLICATION_ActorStatus_SetHealth3_REPL": 170207,
+    "REPLICATION_ActorStatus_SetHealth4_REPL": 170208,
+    "REPLICATION_ActorStatus_SetHealth5_REPL": 170209,
+    "REPLICATION_ActorStatus_SetHealth6_REPL": 170210,
     "REPLICATION_ActorStatus_SetHealth_REPL": 170205,
     "REPLICATION_Concerts_Add_REPL": 170415,
     "REPLICATION_Concerts_Remove_REPL": 170416,
     "REPLICATION_InstrumentPlayer_PlayInstrument_REPL": 170703,
-    "REPLICATION_InstrumentPlayer_Stop_REPL": 170704
+    "REPLICATION_InstrumentPlayer_Stop_REPL": 170704,
+    "REPLICATION_MainTarget_SetTarget_REPL": 170739,
+    "SYSTEM_SendBroadcastPacketAES_NTF": 210022
   },
   "handlers": {
     "CHANNEL_AppearingAutomaton_NTF": [
@@ -55,6 +64,10 @@
     ],
     "CHANNEL_ShowDamageFloater_NTF": [
       "Shared.GameLogic.Hits.DamageFloaterData"
+    ],
+    "SYSTEM_SendBroadcastPacketAES_NTF": [
+      "uint8[]",
+      "uint8[]"
     ]
   },
   "replicated": {
@@ -72,14 +85,46 @@
     "IActorParameterReplicated.UpdateBreakPointMax": [
       "int64"
     ],
+    "IActorParameterReplicated.UpdateHealthMax": [
+      "int64"
+    ],
     "IActorStatesReplicated.SetCombatState": [
       "Shared.GameLogic.ChannelObjects.Actors.CombatState"
+    ],
+    "IActorStatesReplicated.SetDead": [
+      "bool",
+      "Core.Times.RealTime",
+      "Shared.GameLogic.ChannelObjects.Actors.ActorStates.DeathReason",
+      "string",
+      "Shared.Symbols.MonsterSheetId",
+      "Shared.Symbols.NPCSheetId",
+      "bool"
     ],
     "IActorStatusReplicated.SetBreakPoint": [
       "float32",
       "bool"
     ],
     "IActorStatusReplicated.SetHealth": [
+      "uint8[]",
+      "bool"
+    ],
+    "IActorStatusReplicated.SetHealth2": [
+      "uint8[]",
+      "bool"
+    ],
+    "IActorStatusReplicated.SetHealth3": [
+      "uint8[]",
+      "bool"
+    ],
+    "IActorStatusReplicated.SetHealth4": [
+      "uint8[]",
+      "bool"
+    ],
+    "IActorStatusReplicated.SetHealth5": [
+      "uint8[]",
+      "bool"
+    ],
+    "IActorStatusReplicated.SetHealth6": [
       "uint8[]",
       "bool"
     ],
@@ -98,6 +143,9 @@
     ],
     "IInstrumentPlayerReplicated.Stop": [
       "Shared.GameLogic.Concerts.ConcertId"
+    ],
+    "IMainTargetReplicated.SetTarget": [
+      "Shared.ChannelObjects.ChannelObjectId"
     ]
   },
   "types": {

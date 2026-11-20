@@ -11,11 +11,21 @@ using MabiTool.Providers.TwObservation.ItemCatalog;
 namespace MabiTool.Observation.Worker;
 
 /// <param name="ChannelId">指定网卡（只在该设备上抓包）；省略时打开全部设备。</param>
-/// <param name="LocalIdentity">宿主为同一游戏会话（同一进程）记住的最近确认本机身份，Worker 重启后作为跨连接沿用的初值；可省略。</param>
+/// <param name="LocalIdentity">宿主为同一游戏进程记住的最近确认本机身份，捕获重启后作为沿用的初值；可省略。</param>
+/// <param name="LocalIdentityConnection">该身份的实体 ID 所属的游戏连接；只有同一连接的流沿用实体 ID，其他连接只沿用角色 ID。可省略。</param>
+/// <param name="CombatEntities">宿主为同一游戏进程记住的实体延续记录（类型、表 ID、最大 HP、首领标志与 HP 解码信息），只在同一连接的流上补足。可省略。</param>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ObservationCaptureRequest(string GameSessionId, string Region, int ProcessId,
-    DateTimeOffset ProcessStartTime, string? ChannelId, string Profile, ObservedGameIdentity? LocalIdentity = null)
+    DateTimeOffset ProcessStartTime, string? ChannelId, string Profile, ObservedGameIdentity? LocalIdentity = null,
+    ObservedConnection? LocalIdentityConnection = null, CombatEntityCarry? CombatEntities = null)
 {
+    /// <summary>校验后的实体延续记录：连接字段合规且至多 64 条，否则为空（不延续）。</summary>
+    internal CombatEntityCarry? KnownCombatEntities => CombatEntities is { Connection: { LocalPort: > 0 and <= 65535, RemotePort: > 0 and <= 65535 } connection } value &&
+        System.Net.IPAddress.TryParse(connection.RemoteAddress, out _) && value.Entities is { Count: <= TwCombatObserver.MaximumCarriedEntities } entities &&
+        entities.All(entity => entity is not null) ? value : null;
+    /// <summary>校验后的身份连接；字段不合规时为空（只沿用角色 ID）。</summary>
+    internal ObservedConnection? KnownConnection => LocalIdentityConnection is { LocalPort: > 0 and <= 65535, RemotePort: > 0 and <= 65535 } value &&
+        System.Net.IPAddress.TryParse(value.RemoteAddress, out _) ? value : null;
     /// <summary>校验后的初值身份；字段不合规时返回 false。</summary>
     internal bool TryKnownIdentity(out GameIdentity? identity)
     {
@@ -56,8 +66,7 @@ public sealed class NpcapObservationSource : IObservationCaptureSource
     {
         if (request.Region != "TW") throw new WorkerObservationException("inventory.buildUnsupported");
         using var game = SelectedGameProcess.Open(request.ProcessId, request.ProcessStartTime);
-        var layout = ClientLayoutReader.Read(ClientDirectory(game.ImagePath), ct);
-        ReleaseLayoutBuffers();
+        var layout = ClientLayoutReader.Read(ClientDirectory(game.ImagePath), ct, cacheDirectory: ObservationCache.Directory("inventory", "client-layouts"));
         // 钱包货币的名称、说明与补充间隔来自客户端表；读不到时资源照常按变化消息更新，只是没有名称与倒计时。
         try { layout = layout with { Resources = ClientResourceCatalog.Read(ClientItemCatalogLocation.Resolve(game.ImagePath), ct) }; }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException) { }
@@ -90,16 +99,6 @@ public sealed class NpcapObservationSource : IObservationCaptureSource
         if (!SelectedGameProcess.IsRunning(game)) throw new WorkerObservationException("input.bindingChanged");
         ct.ThrowIfCancellationRequested(); return result;
     }, ct);
-    /// <summary>
-    /// 布局解析整读 GameAssembly.dll 与 metadata（当前客户端约 310 + 58 MiB，进入大对象堆）。解析返回后这些数组已无引用，
-    /// 但 GC 按此前存活量放大大对象预算，提交内存会在共享捕获期间长期保持数百 MiB；此处做一次压缩回收并归还内存。
-    /// 实测（当前客户端）暂停约 70 ms，私有字节由约 410 MiB 回到约 20 MiB。
-    /// </summary>
-    internal static void ReleaseLayoutBuffers()
-    {
-        System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
-        GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-    }
     private bool Matches(ObservationCaptureRequest request, InventoryClientRequest value) => request.GameSessionId == value.GameSessionId &&
         request.ProcessId == value.ProcessId && request.ProcessStartTime == value.ProcessStartTime && request.Region == value.Region;
     public ClientCaptureLayout? InventoryLayoutFor(ObservationCaptureRequest request)
@@ -158,7 +157,8 @@ public sealed class NpcapObservationSource : IObservationCaptureSource
         IReadOnlyList<CaptureDevice> selected = request.ChannelId is null ? devices
             : [devices.SingleOrDefault(value => ChannelId(value.Name) == request.ChannelId) ?? throw new WorkerObservationException("observation.channelUnavailable")];
         request.TryKnownIdentity(out var known);
-        await CaptureChannels.ObserveAsync(game, selected, request.GameSessionId, context, ct, layout, known).ConfigureAwait(false);
+        context.CombatCarry = request.KnownCombatEntities;
+        await CaptureChannels.ObserveAsync(game, selected, request.GameSessionId, context, ct, layout, known, request.KnownConnection).ConfigureAwait(false);
     }
     internal static GameCaptureReport Project(CaptureObservation report, MapLocationResolver? maps = null)
     {

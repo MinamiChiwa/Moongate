@@ -218,6 +218,10 @@ test('observation Worker capture diagnostics stay integer-only with fixed codes 
     x => { x.frames.types['20000'] = '-1'; },
     x => { Object.assign(x.frames.types, types, { '30000': '1' }); },
     x => { delete x.queues.combatPeak; },
+    x => { x.devices[0].name = 'Realtek PCIe GbE'; },
+    x => { x.devices[0].kind = 'wifi'; },
+    x => { x.devices[2].issue = 'Realtek PCIe GbE'; },
+    x => { x.read.mode = 'busy'; },
     x => { x.schemaVersion = 2; }
   ]) {
     const changed = structuredClone(counters); mutate(changed);

@@ -99,6 +99,8 @@ public sealed class OverlayTests
             Assert.True(reopened.Remove("performance"));
             Assert.False(reopened.Remove("raid"));
 
+            // 保存在后台线程写盘：先等删除后的保存写完，再写入损坏的内容，否则迟到的保存会覆盖它。
+            reopened.Flush();
             File.WriteAllText(path, "{ not json");
             Assert.Equal(2, new OverlayLayoutStore(path).Layouts.Count);
         }
@@ -1087,8 +1089,8 @@ public sealed class OverlayTests
             Assert.Equal(2, store.Active.Widgets.Count);
             Assert.All(store.Active.Widgets, widget => Assert.True(widget.Locked));
             Assert.True(store.AllLocked);
-            // 旧文件没有不透明度：读取为不透明。
-            Assert.All(store.Active.Widgets, widget => Assert.Equal(1, widget.Opacity));
+            // 旧文件没有不透明度：背景与内容都读取为不透明。
+            Assert.All(store.Active.Widgets, widget => Assert.Equal((1d, 1d), (widget.BackgroundOpacity, widget.ContentOpacity)));
             // 旧文件没有宽高：按元件的默认尺寸显示，不需要迁移。
             var dps = store.Active.Widgets[0];
             Assert.Null(dps.Width);
@@ -1109,28 +1111,68 @@ public sealed class OverlayTests
             var store = new OverlayLayoutStore(path);
             var dps = store.Place("combat.dps");
             var skills = store.Place("combat.skills");
-            dps.Opacity = 0.4;
+            (dps.BackgroundOpacity, dps.ContentOpacity) = (0, 0.6);
             store.Commit();
 
-            // 重新读取：每个元件各自的不透明度恢复，没有调整过的仍为不透明。
+            // 重新读取：每个元件的背景与内容各自恢复，没有调整过的仍为不透明。
+            WidgetPlacement Dps(OverlayLayoutStore layouts) => layouts.Active.Widgets.Single(widget => widget.WidgetId == "combat.dps");
             var reloaded = new OverlayLayoutStore(path);
-            Assert.Equal(0.4, reloaded.Active.Widgets.Single(widget => widget.WidgetId == "combat.dps").Opacity, 3);
-            Assert.Equal(1, reloaded.Active.Widgets.Single(widget => widget.WidgetId == skills.WidgetId).Opacity);
+            Assert.Equal((0d, 0.6), (Dps(reloaded).BackgroundOpacity, Math.Round(Dps(reloaded).ContentOpacity, 3)));
+            var other = reloaded.Active.Widgets.Single(widget => widget.WidgetId == skills.WidgetId);
+            Assert.Equal((1d, 1d), (other.BackgroundOpacity, other.ContentOpacity));
 
-            // 文件里的值超出范围时限制在 0.2–1，不会完全看不见。
-            File.WriteAllText(path, File.ReadAllText(path).Replace("\"Opacity\": 0.4", "\"Opacity\": 0.01"));
-            Assert.Equal(WidgetPlacement.MinimumOpacity, new OverlayLayoutStore(path).Active.Widgets
-                .Single(widget => widget.WidgetId == "combat.dps").Opacity);
+            // 文件里的值超出范围时限制在各自范围内：背景 0–1，内容 0.2–1，内容不会完全看不见。
+            File.WriteAllText(path, File.ReadAllText(path)
+                .Replace("\"BackgroundOpacity\": 0,", "\"BackgroundOpacity\": -0.5,").Replace("\"ContentOpacity\": 0.6", "\"ContentOpacity\": 0.01"));
+            var clamped = Dps(new OverlayLayoutStore(path));
+            Assert.Equal((WidgetPlacement.MinimumBackgroundOpacity, WidgetPlacement.MinimumContentOpacity), (clamped.BackgroundOpacity, clamped.ContentOpacity));
         }
         finally { DeleteLayoutFile(path); }
 
-        // 浮窗上的按钮每点一次降 20%，到下限后回到不透明；编辑页的“－／＋”步进 10%，不越过 20% 与 100%。
-        var cycle = new List<double>();
-        for (double value = 1, i = 0; i < 6; i++) cycle.Add(value = WidgetPlacement.CycleOpacity(value));
-        Assert.Equal([0.8, 0.6, 0.4, 0.2, 1, 0.8], cycle.Select(value => Math.Round(value, 3)));
-        Assert.Equal(WidgetPlacement.MinimumOpacity, WidgetPlacement.StepOpacity(0.2, false));
-        Assert.Equal(1, WidgetPlacement.StepOpacity(1, true));
-        Assert.Equal(0.9, WidgetPlacement.StepOpacity(1, false), 3);
+        // 浮窗上的按钮每点一次降 20%，到下限后回到不透明：背景可以降到 0，内容最低 20%。编辑页的“－／＋”步进 10%，不越过各自的下限与 100%。
+        static List<double> Cycle(double minimum)
+        {
+            var values = new List<double>();
+            for (double value = 1, i = 0; i < 7; i++) values.Add(Math.Round(value = WidgetPlacement.CycleOpacity(value, minimum), 3));
+            return values;
+        }
+        Assert.Equal([0.8, 0.6, 0.4, 0.2, 0, 1, 0.8], Cycle(WidgetPlacement.MinimumBackgroundOpacity));
+        Assert.Equal([0.8, 0.6, 0.4, 0.2, 1, 0.8, 0.6], Cycle(WidgetPlacement.MinimumContentOpacity));
+        Assert.Equal(WidgetPlacement.MinimumContentOpacity, WidgetPlacement.StepOpacity(0.2, false, WidgetPlacement.MinimumContentOpacity));
+        Assert.Equal(0, WidgetPlacement.StepOpacity(0.1, false, WidgetPlacement.MinimumBackgroundOpacity));
+        Assert.Equal(1, WidgetPlacement.StepOpacity(1, true, WidgetPlacement.MinimumContentOpacity));
+        Assert.Equal(0.9, WidgetPlacement.StepOpacity(1, false, WidgetPlacement.MinimumBackgroundOpacity), 3);
+    }
+
+    [Fact]
+    public void LegacySingleOpacitySeedsBothValuesAndIsSavedAsTheNewFields()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"moongate-layout-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, """
+                { "ActiveId": "a", "Layouts": [ { "Id": "a", "Name": "A", "Widgets": [
+                    { "WidgetId": "combat.dps", "X": 1, "Y": 0, "Scale": 1, "Skin": "glass", "Opacity": 0.4 },
+                    { "WidgetId": "combat.skills", "X": 0, "Y": 1, "Scale": 1, "Skin": "glass", "Opacity": 0.05 } ] } ] }
+                """);
+            // 升级前的单一不透明度同时作为背景与内容的初值（先限制在旧的 0.2–1），视觉与升级前一致。
+            var store = new OverlayLayoutStore(path);
+            var (dps, skills) = (store.Active.Widgets[0], store.Active.Widgets[1]);
+            Assert.Equal((0.4, 0.4), (dps.BackgroundOpacity, dps.ContentOpacity));
+            Assert.Equal((0.2, 0.2), (skills.BackgroundOpacity, skills.ContentOpacity));
+
+            // 保存后写两个新字段、不再写旧字段；之后分别调整的值各自读回。
+            dps.BackgroundOpacity = 0.1;
+            store.Commit();
+            store.Flush();
+            var saved = File.ReadAllText(path);
+            Assert.DoesNotContain("\"Opacity\"", saved);
+            Assert.Contains("\"BackgroundOpacity\"", saved);
+            Assert.Contains("\"ContentOpacity\"", saved);
+            var reread = new OverlayLayoutStore(path).Active.Widgets[0];
+            Assert.Equal((0.1, 0.4), (reread.BackgroundOpacity, reread.ContentOpacity));
+        }
+        finally { DeleteLayoutFile(path); }
     }
 
     [AvaloniaFact]
@@ -1170,23 +1212,33 @@ public sealed class OverlayTests
             Assert.Equal(0, handle.Opacity);
             Assert.Equal(0, lockIcon.Opacity);
 
-            // 不透明度按钮：点一次降到 80%，外框跟随，设置写入版面；锁与按钮本身不变淡。
+            // 背景与内容两个不透明度按钮：各点一次降到 80%，只有底板或内容跟随，设置写入版面；外框整体、锁与按钮本身不变淡。
             canvas.HoverAt(frame.Center);
-            PressAt(window, Center(canvas.OpacityButtonOf("probe.widget")!, window));
-            Assert.Equal(0.8, probe.Opacity, 3);
+            PressAt(window, Center(canvas.OpacityButtonOf("probe.widget", false)!, window));
+            Assert.Equal((0.8, 1d), (Math.Round(probe.BackgroundOpacity, 3), probe.ContentOpacity));
             LayoutProbe.Render(window);
-            Assert.Equal(0.8, canvas.FrameOf("probe.widget")!.Opacity, 3);
+            Assert.Equal(0.8, canvas.PlateOf("probe.widget")!.Opacity, 3);
+            Assert.Equal(1, canvas.ContentOf("probe.widget")!.Opacity);
+            PressAt(window, Center(canvas.OpacityButtonOf("probe.widget", true)!, window));
+            Assert.Equal(0.8, probe.ContentOpacity, 3);
+            LayoutProbe.Render(window);
+            Assert.Equal(0.8, canvas.ContentOf("probe.widget")!.Opacity, 3);
+            Assert.Equal(0.8, canvas.PlateOf("probe.widget")!.Opacity, 3);
+            Assert.Equal(1, canvas.FrameOf("probe.widget")!.Opacity);
             Assert.Equal(1, zoom.Opacity);
         }
         finally { window.Close(); }
     }
 
-    /// <summary>扩展模块的测试元件：说明文字下方一个发出意图的按钮，元件其余部分可以按住拖动。</summary>
+    /// <summary>
+    /// 带控件的测试元件：说明文字下方一个发出意图的按钮，元件其余部分可以按住拖动。
+    /// 按内建模块登记：扩展来源的条目随后端的扩展界面同步，后端每次变化都会撤下后端不认识的扩展模块。
+    /// </summary>
     private static ModuleCatalog CatalogWithProbe(SampleBackend backend)
     {
         var catalog = BuiltInModules.CreateCatalog(backend);
         catalog.Register(new ModuleDescriptor("sample.probe", "测试元件", "测", Color.Parse("#4B5563"),
-            ModuleOrigin.Extension, () => new TextBlock(),
+            ModuleOrigin.BuiltIn, () => new TextBlock(),
             [new("probe.widget", "测试元件", [], source => new StackPanel
             {
                 Width = 180, Spacing = 8,
@@ -1741,5 +1793,110 @@ public sealed class OverlayTests
             Assert.True(overlay.Canvas.BoundsOf("performance.now-playing")!.Value.Width > 0);
         }
         finally { overlay.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void DpsWidgetHealthSwitchesTargetsAtOnceShowsTheDisabledReasonAndCollapsesWithoutResizing()
+    {
+        var motion = UiMotion.Enabled;
+        UiMotion.Enabled = true;
+        var backend = new SampleBackend { SampleCurrentTarget = SampleBackend.SampleTarget("ce-a", 80, 100, "怪物甲") };
+        var catalog = BuiltInModules.CreateCatalog(backend);
+        catalog.Overlay!.Store.Select("raid");
+        var window = new OverlayWindow(catalog.Overlay.Store, catalog, backend) { Width = 960, Height = 540 };
+        window.Show();
+        LayoutProbe.Settle();
+        try
+        {
+            var view = WidgetView(window, "combat.dps");
+            var model = (OverlayWidgetModel)view.DataContext!;
+            var gauge = Named<HealthBar>(view, "HealthGauge");
+            var frame = window.Canvas.BoundsOf("combat.dps")!.Value;
+            Assert.True(model.HealthExpanded);
+            Assert.Equal(("怪物甲", "80.0%", "80 / 100"),
+                (Named<TextBlock>(view, "HealthName").Text, Named<TextBlock>(view, "HealthPercent").Text, Named<TextBlock>(view, "HealthValue").Text));
+            Assert.Equal(0.8, gauge.Shown, 6);
+
+            // 后端换了目标：名称、数值与血量槽在同一次刷新里一起换，血量槽直接到新目标的比例（动效开启也不从旧比例过渡）。
+            backend.SampleCurrentTarget = SampleBackend.SampleTarget("ce-b", 20, 100, "怪物乙");
+            backend.RaiseChanged();
+            Assert.Equal(("怪物乙", "20.0%", "20 / 100"),
+                (Named<TextBlock>(view, "HealthName").Text, Named<TextBlock>(view, "HealthPercent").Text, Named<TextBlock>(view, "HealthValue").Text));
+            Assert.Equal(0.2, gauge.Shown, 6);
+            Assert.False(gauge.IsTransitioning);
+
+            // 未读取：名称保留，数值写“未读取”，血量槽不填充，任何位置不出现 0。
+            backend.SampleCurrentTarget = backend.SampleCurrentTarget with { Health = new(null, null, null, "unread", "combat.healthUnread") };
+            backend.RaiseChanged();
+            LayoutProbe.Settle();
+            Assert.Equal(0, gauge.Shown);
+            Assert.Equal(["—", "首领", "怪物乙", "未读取"], VisibleTexts(Named<TargetHealthPanel>(view, "DpsHealth")));
+
+            // 能力停用：整块只有停用原因。
+            backend.CapabilityNotices = id => id == CapabilityIds.MonsterHealth ? "暂不可用：客户端版本不支持" : null;
+            backend.RaiseChanged();
+            LayoutProbe.Settle();
+            Assert.Equal(["怪物血量暂不可用：客户端版本不支持"], VisibleTexts(Named<TargetHealthPanel>(view, "DpsHealth")));
+
+            // 没有当前目标：区块收起，外框尺寸不变。
+            backend.CapabilityNotices = null;
+            backend.SampleCurrentTarget = null;
+            backend.RaiseChanged();
+            LayoutProbe.Settle();
+            Assert.False(model.HealthExpanded);
+            Assert.False(Named<ExpandPanel>(view, "DpsHealthExpander").IsExpanded);
+            Assert.Equal(frame.Size, window.Canvas.BoundsOf("combat.dps")!.Value.Size);
+        }
+        finally
+        {
+            window.Close();
+            UiMotion.Enabled = motion;
+        }
+    }
+
+    [AvaloniaFact]
+    public void DpsWidgetHealthSwitchIsSavedInTheLayoutAndOldLayoutsShowIt()
+    {
+        UiMotion.Enabled = false;
+        var path = Path.Combine(Path.GetTempPath(), $"moongate-layout-{Guid.NewGuid():N}.json");
+        try
+        {
+            // 旧版面没有该字段：读入时显示，保存时不写出。
+            File.WriteAllText(path, """
+                { "ActiveId": "a", "Layouts": [ { "Id": "a", "Name": "A", "Widgets": [
+                    { "WidgetId": "combat.dps", "X": 1, "Y": 0, "Scale": 1, "Skin": "glass" } ] } ] }
+                """);
+            var store = new OverlayLayoutStore(path);
+            Assert.False(store.Active.Widgets.Single().HideMonsterHealth);
+            var backend = new SampleBackend();
+            var catalog = BuiltInModules.CreateCatalog(backend, store);
+            using var page = new OverlayPageModel(catalog, catalog.Overlay!) { SelectedWidgetId = "combat.dps" };
+            Assert.True(page.HasHealthSetting && page.HealthShown);
+            var window = new OverlayWindow(store, catalog, backend) { Width = 960, Height = 540 };
+            window.Show();
+            LayoutProbe.Settle();
+            try
+            {
+                var model = (OverlayWidgetModel)WidgetView(window, "combat.dps").DataContext!;
+                Assert.True(model.HealthExpanded);
+
+                // 在版面页隐藏：浮窗上的区块收起，保存进版面并在重新读取后保持。
+                page.HealthCommand.Execute("hide");
+                LayoutProbe.Settle();
+                Assert.False(model.HealthExpanded);
+                Assert.True(page.HealthHidden);
+                store.Flush();
+                Assert.Contains("\"HideMonsterHealth\": true", File.ReadAllText(path));
+                Assert.True(new OverlayLayoutStore(path).Active.Widgets.Single().HideMonsterHealth);
+
+                page.HealthCommand.Execute("show");
+                LayoutProbe.Settle();
+                Assert.True(model.HealthExpanded);
+                store.Flush();
+                Assert.DoesNotContain("HideMonsterHealth", File.ReadAllText(path));
+            }
+            finally { window.Close(); }
+        }
+        finally { DeleteLayoutFile(path); }
     }
 }

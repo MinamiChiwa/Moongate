@@ -378,7 +378,7 @@ public static class ApiContract
         EditRoomRoster, SetRoomMode, SetRoomReadiness, BindRoomCharacter, SelectRoomLeader, KickRoomMember, SetRoomGameOperation, StopRoomLocally, ReleaseRoomInput,
         StartColorRun, ColorRun, SelectColorCandidate, RetryColorRun, ColorLibrary, ColorProfile, EditColorLibrary, QueryColorHistory, ColorHistory, ExportColorHistory, ColorAsset, ColorAssetContent,
         CaptureColorScreen, PickColorPixel, ReadColorCapture, ReleaseColorCapture, PreviewColor, RenderColorPalette, ColorPresence, ColorRuntime,
-        .. InventoryApi.Endpoints
+        .. InventoryApi.Endpoints, .. ClientIconApi.Endpoints
     ]);
 
     public static IReadOnlyList<Type> DomainTypes { get; } = Array.AsReadOnly<Type>([

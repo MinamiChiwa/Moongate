@@ -148,6 +148,37 @@ public sealed class GameObservationApiTests
         Assert.Equal("0", await File.ReadAllTextAsync(Path.Combine(area.Root, "handles")));
         await app.StopAsync();
     }
+    [Fact]
+    public async Task WindowLostOrRecreatedDuringLoadingKeepsTheCaptureUntilTheProcessExits()
+    {
+        using var area = new Area(); await using var app = area.Build(); await app.StartAsync(); using var client = Client(app);
+        var initial = area.Bindings.Current!;
+        GameWindowObservation? window = new(initial.Session.Region, initial.Session.ProcessId, initial.Session.ProcessStartTime,
+            initial.Session.WindowIdentity, initial.Session.GameBuild, initial.Bounds, initial.DpiX, initial.DpiY, false);
+        var exited = false;
+        area.Bindings.BindSource(() => window, () => exited);
+        await Post<GameObservationSubscription>(client, ApiContract.StartGameObservation.Path, Request(area), "loading-capture", (await Read(client)).ETag);
+        var running = await WaitSnapshot(client, value => value.State == "running" && value.Latest?.Value.Identity is not null);
+        var pid = app.Services.GetRequiredService<GameObservationService>().Runtime().WorkerProcessId;
+        // 加载画面：窗口读不到（进程仍在）时只停止输入，随后游戏换用新窗口；会话、捕获、Worker 与身份都不变。
+        window = null;
+        await Task.Delay(600);
+        Assert.Equal((initial.Session.Id, false), (area.Bindings.Current!.Session.Id, area.Bindings.Current.CanAcceptInput));
+        window = new(initial.Session.Region, initial.Session.ProcessId, initial.Session.ProcessStartTime, new(501),
+            initial.Session.GameBuild, initial.Bounds with { X = 40 }, initial.DpiX, initial.DpiY, false);
+        await Task.Delay(600);
+        var rebound = area.Bindings.Current!;
+        Assert.Equal((initial.Session.Id, true, 501UL), (rebound.Session.Id, rebound.CanAcceptInput, rebound.Session.WindowIdentity.Value));
+        var kept = (await Read(client)).Snapshot;
+        Assert.Equal(("running", running.CaptureId), (kept.State, kept.CaptureId)); Assert.NotNull(kept.Latest?.Value.Identity);
+        Assert.Equal(pid, app.Services.GetRequiredService<GameObservationService>().Runtime().WorkerProcessId);
+        Assert.Single(Directory.GetFiles(area.Root, "capture-start-*"));
+        // 进程退出才结束会话与捕获。
+        window = null; exited = true;
+        var stopped = await WaitSnapshot(client, value => value.State == "faulted" && value.CaptureId is null);
+        Assert.Equal("input.bindingChanged", stopped.Reason); Assert.Null(area.Bindings.Current);
+        await app.StopAsync();
+    }
     [Theory]
     [InlineData("exit")]
     [InlineData("stale")]
@@ -333,6 +364,10 @@ public sealed class GameObservationApiTests
     private static GameObservationStartRequest Request(Area area) => new(new string('1', 32), area.Bindings.Current!.Session.BindingRevision);
     internal static async Task<GameObservationSubscription> BeginCapture(HttpClient client, Area area, string key) =>
         await Post<GameObservationSubscription>(client, ApiContract.StartGameObservation.Path, Request(area), key, (await Read(client)).ETag);
+    /// <summary>不指定网卡的模块需求：加入当前（常驻）捕获。</summary>
+    internal static async Task<GameObservationSubscription> JoinCapture(HttpClient client, Area area, string key) =>
+        await Post<GameObservationSubscription>(client, ApiContract.StartGameObservation.Path,
+            new GameObservationStartRequest(null, area.Bindings.Current!.Session.BindingRevision), key, (await Read(client)).ETag);
     internal static Task<GameObservationRelease> EndCapture(HttpClient client, string id) => Release(client, id);
     private static AccessGrant Pair(WebApplication app, bool observe, bool rooms = false)
     {

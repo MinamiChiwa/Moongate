@@ -25,8 +25,11 @@ public sealed class MiniWindowController(IDesktopBackend backend)
             return;
         }
         window = new MiniWindow { DataContext = new MiniWindowModel(backend, ShowMain) };
+        // 迷你窗打开期间页面状态（乐谱、活动）照常读取，主窗口最小化也不停。
+        backend.SetSurfaceVisible("mini", true);
         window.Closed += (_, _) =>
         {
+            backend.SetSurfaceVisible("mini", false);
             (window?.DataContext as IDisposable)?.Dispose();
             window = null;
         };

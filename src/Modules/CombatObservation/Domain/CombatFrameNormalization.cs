@@ -23,19 +23,30 @@ internal static class CombatFrameNormalization
             input.Healing is { } healing && (healing.Count > 256 || healing.Any(x => x is null || x.EventId is null || x.EventId.Length > 128 ||
                 !double.IsFinite(x.MonotonicMs) || x.EffectiveReason?.Length > 128)) ||
             input.CombatStates is { } states && (states.Count > 256 || states.Any(x => x is null || x.State.RawValue is null ||
-                !double.IsFinite(x.MonotonicMs))));
+                !double.IsFinite(x.MonotonicMs))) ||
+            input.MainTarget is { } main && !double.IsFinite(main.MonotonicMs));
+    /// <summary>
+    /// 规范化并复制全部列表（记录本身不可变，未变化的记录原样沿用）；结果不与输入共享可变集合，对已规范化的帧再次执行结果相同。
+    /// </summary>
     public static CombatFrame Normalize(CombatFrame input) =>
         input with
         {
-            Entities = input.Entities.Select(value => value with { BreakGauge = Gauge(value.BreakGauge, input.ObservedAt) }).ToArray(),
-            Damage = input.Damage.Select(value => value with { Classification = value.Classification ??
-                (OpenEnum<CombatDamageClassification>)CombatDamageClassification.Unknown,
-                // 元素列表超过已登记的八种或含空项时按未知处理，不截断猜测。
-                Elements = value.Elements is { } elements && (elements.Count > 8 || elements.Any(element => element.RawValue is null))
-                    ? null : value.Elements }).ToArray(),
+            Entities = input.Entities.Select(value => Gauge(value.BreakGauge, input.ObservedAt) is var gauge && ReferenceEquals(gauge, value.BreakGauge)
+                ? value : value with { BreakGauge = gauge }).ToArray(),
+            Damage = input.Damage.Select(Damage).ToArray(),
             Effects = input.Effects.Select(Duration).ToArray(),
-            Reconciliations = input.Reconciliations.Select(x => x with { Effects = x.Effects.Select(Duration).ToArray() }).ToArray()
+            Reconciliations = input.Reconciliations.Select(x => x with { Effects = x.Effects.Select(Duration).ToArray() }).ToArray(),
+            Gaps = input.Gaps.ToArray(),
+            Healing = input.Healing?.ToArray(),
+            CombatStates = input.CombatStates?.ToArray()
         };
+    private static CombatDamageEvent Damage(CombatDamageEvent value)
+    {
+        if (value.Classification is not null && value.Elements is null) return value;
+        // 元素列表超过已登记的八种或含空项时按未知处理，不截断猜测。
+        var elements = value.Elements is { } list && (list.Count > 8 || list.Any(element => element.RawValue is null)) ? null : value.Elements?.ToArray();
+        return value with { Classification = value.Classification ?? (OpenEnum<CombatDamageClassification>)CombatDamageClassification.Unknown, Elements = elements };
+    }
     private static bool ValidReason(string? value) => value is null || value.Length <= 128 && !value.Any(char.IsControl);
     private static CombatBreakGauge? Gauge(CombatBreakGauge? value, DateTimeOffset observedAt)
     {
@@ -50,7 +61,7 @@ internal static class CombatFrameNormalization
         double.IsFinite(value.MonotonicMs) && value.Category?.Length is not > 128;
     private static CombatEffectObservation Duration(CombatEffectObservation value)
     {
-        if (value.DurationKind.KnownValue != EffectDurationKind.Finite) return value with { DurationMs = null };
+        if (value.DurationKind.KnownValue != EffectDurationKind.Finite) return value.DurationMs is null ? value : value with { DurationMs = null };
         if (value.DurationMs is not { } ms || !double.IsFinite(ms) || ms <= 0 || ms > 315576000000 ||
             ms > (DateTimeOffset.MaxValue - value.ObservedAt).TotalMilliseconds)
             return value with { DurationKind = EffectDurationKind.Unknown, DurationMs = null };

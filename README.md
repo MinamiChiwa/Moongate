@@ -1,6 +1,6 @@
 # Moongate · 瑪奇 Mobile 台服工具
 
-[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [使用说明](docs/user-guide.md) · [更新说明](docs/release-notes-0.1.4.md) · [下载](https://github.com/MinamiChiwa/Moongate/releases) · [开发文档](docs/development.md)
+[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [使用说明](docs/user-guide.md) · [更新说明](docs/release-notes-0.1.5.md) · [下载](https://github.com/MinamiChiwa/Moongate/releases) · [开发文档](docs/development.md)
 
 > **☕ 支持作者**
 >
@@ -8,7 +8,7 @@
 >
 > 作者：**南千和** · [爱发电](https://afdian.com/a/minamichiwa) · [Patreon](https://patreon.com/chiwaminami)
 
-**Moongate 0.1.4（测试版）**是面向《瑪奇 Mobile》台服的 Windows 桌面工具，把战斗统计、背包与保管箱、多人合奏、染色和游戏浮窗放进同一个程序。它读取本机的游戏网络数据来识别角色、伤害、背包和演奏状态，并在你开启相应功能时代替你向游戏窗口发送按键或点击（合奏开奏、染色寻色）。0.1.0 是第一个公开版本，目前仍属于测试版：各项功能已经可以使用，但可能还有问题，欢迎到 [Issues](https://github.com/MinamiChiwa/Moongate/issues) 反馈。游戏内自动演奏乐谱暂不支持。完整清单与已知问题见[更新说明](docs/release-notes-0.1.4.md)。
+**Moongate 0.1.5（测试版）**是面向《瑪奇 Mobile》台服的 Windows 桌面工具，把战斗统计、背包与保管箱、多人合奏、染色和游戏浮窗放进同一个程序。它读取本机的游戏网络数据来识别角色、伤害、背包和演奏状态，并在你开启相应功能时代替你向游戏窗口发送按键或点击（合奏开奏、染色寻色）。0.1.0 是第一个公开版本，目前仍属于测试版：各项功能已经可以使用，但可能还有问题，欢迎到 [Issues](https://github.com/MinamiChiwa/Moongate/issues) 反馈。游戏内自动演奏乐谱暂不支持。完整清单与已知问题见[更新说明](docs/release-notes-0.1.5.md)。
 
 > **使用风险**
 >
@@ -16,7 +16,7 @@
 
 ## 1. 下载与安装
 
-1. 在 [GitHub Releases](https://github.com/MinamiChiwa/Moongate/releases) 的最新版本下方 Assets 里下载排在最上面的 **`Moongate-v0.1.4-Windows-x64.zip`**（约 170 MB）。同一发行里的 `.sha256` 是校验值，普通用户不用下载。
+1. 在 [GitHub Releases](https://github.com/MinamiChiwa/Moongate/releases) 的最新版本下方 Assets 里下载排在最上面的 **`Moongate-v0.1.5-Windows-x64.zip`**（约 170 MB）。同一发行里的 `.sha256` 是校验值，普通用户不用下载。
 2. 把压缩包**完整解压**到一个你有写入权限的文件夹，例如 `D:\Moongate`。不要放在 `C:\Program Files`、OneDrive 同步目录或网络磁盘里。
 3. 双击文件夹里的 **`Moongate.exe`**。第一次启动会自动完成初始化。在压缩包查看器里直接双击无法运行，工具会提示先完整解压。
 

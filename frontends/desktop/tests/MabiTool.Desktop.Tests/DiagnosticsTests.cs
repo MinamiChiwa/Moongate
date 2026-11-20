@@ -100,8 +100,8 @@ public sealed class DiagnosticsTests
         await model.Runtime.RefreshAsync();
 
         Assert.Equal(count, model.Runtime.Blocks.Count);
-        Assert.Contains("http.503", model.Runtime.Error);
-        Assert.Contains("上一次读取的结果", model.Runtime.Error);
+        // 错误码经共用映射写成短句，原码不上界面。
+        Assert.Equal("请求未完成：后端暂时不可用，以下是上一次读取的结果", model.Runtime.Error);
     }
 
     [AvaloniaFact]

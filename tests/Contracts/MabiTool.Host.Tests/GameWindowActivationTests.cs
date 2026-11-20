@@ -74,7 +74,7 @@ public sealed class GameWindowActivationTests
         public GameWindowActivation Result { get; set; } = new(true, true, true);
         public bool Gone { get; set; }
         public int Calls { get; set; }
-        public IReadOnlyList<SelectableGameWindow> Enumerate() => [new("测试游戏", "MabinogiMobile", window)];
+        public IReadOnlyList<SelectableGameWindow> Enumerate() => Gone ? [] : [new("测试游戏", "MabinogiMobile", window)];
         public GameWindowObservation? Refresh(GameWindowObservation selected) => Gone ? null : window;
         public bool TryActivate(GameWindowObservation selected) => true;
         public GameWindowActivation Activate(GameWindowObservation selected) { Calls++; return Result; }

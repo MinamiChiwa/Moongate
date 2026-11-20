@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="MabiTool.Host.Tests" />
+    <InternalsVisibleTo Include="MabiTool.BackendRuntimeProbe" />
     <ProjectReference Include="../Providers/GitHubReleases/MabiTool.Providers.GitHubReleases.csproj" />
     <ProjectReference Include="../Providers/Tunnels/MabiTool.Providers.Tunnels.csproj" />
     <ProjectReference Include="../RoomServer/MabiTool.RoomServer.csproj" />

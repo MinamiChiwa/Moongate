@@ -37,6 +37,18 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
         return result;
     }
     public GameWindowObservation? Refresh(GameWindowObservation selected) => Read(unchecked((nint)selected.WindowIdentity.Value), selected);
+    /// <summary>进程号已不存在，或该进程号的启动时间与绑定不同（被新进程复用）时为真；启动时间读不出时按仍在运行处理。</summary>
+    public bool ProcessExited(GameWindowObservation selected)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(selected.ProcessId);
+            if (process.HasExited) return true;
+            return process.StartTime.ToUniversalTime() != selected.ProcessStartTime.UtcDateTime;
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException) { return true; }
+        catch (System.ComponentModel.Win32Exception) { return false; }
+    }
     public GameClientFiles? PreparedClient(GameWindowObservation selected)
     {
         lock (preparedGate)
@@ -145,11 +157,13 @@ public sealed class WindowsGameWindowSource : IGameWindowSource
             lock (preparedGate)
                 if (prepared.TryGetValue(((int)pid, start), out var files))
                 {
+                    // 映像路径或文件戳一时读不出（文件被占用、查询被拒）时沿用已核对的构建；读出且不同才视为客户端变化。
                     var image = WindowsProcessAccess.ImagePath((int)pid);
-                    var stamps = image is not null && image.Equals(files.ImagePath, StringComparison.OrdinalIgnoreCase)
-                        ? TwClientFingerprint.ReadFileStamps(files.FinalPath) : null;
-                    if (stamps is not null && files.Files.SequenceEqual(stamps)) build = files.Build;
-                    else prepared.Remove(((int)pid, start));
+                    var stamps = image is null || !image.Equals(files.ImagePath, StringComparison.OrdinalIgnoreCase)
+                        ? null : TwClientFingerprint.ReadFileStamps(files.FinalPath);
+                    var changed = image is not null && !image.Equals(files.ImagePath, StringComparison.OrdinalIgnoreCase) ||
+                        stamps is not null && !files.Files.SequenceEqual(stamps);
+                    if (changed) prepared.Remove(((int)pid, start)); else build = files.Build;
                 }
             return new("TW", (int)pid, start, new(unchecked((ulong)window)), build, bounds, client.Dpi, client.Dpi, minimized);
         }

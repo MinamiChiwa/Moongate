@@ -16,8 +16,13 @@ namespace MabiTool.Host.Game;
 public sealed partial class GameObservationService
 {
     private bool resident;
-    /// <summary>最近一份状态报告确认的本机身份及其游戏会话；捕获停止后保留，供同一会话的下一次 Worker 启动下发。</summary>
-    private (string SessionId, ObservedGameIdentity Identity)? lastIdentity;
+    /// <summary>
+    /// 最近一份状态报告确认的本机身份及其游戏进程（进程 ID、启动时间、地区）；捕获停止或绑定重建后保留，
+    /// 供同一进程的下一次捕获启动下发。
+    /// </summary>
+    private (int ProcessId, DateTimeOffset StartedAt, string Region, ObservedGameIdentity Identity, ObservedConnection? Connection)? lastIdentity;
+    private static bool SameProcess((int ProcessId, DateTimeOffset StartedAt, string Region, ObservedGameIdentity Identity, ObservedConnection? Connection) remembered, GameSession game) =>
+        remembered.ProcessId == game.ProcessId && remembered.StartedAt == game.ProcessStartTime && remembered.Region == game.Region;
     private CaptureChannelChoice? autoChoice;
     private string autoState = "off";
     private string? autoReason;
@@ -27,6 +32,9 @@ public sealed partial class GameObservationService
     private long? nextAttemptAt;
     private DateTimeOffset? nextAttemptUtc;
     internal static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60)];
+    /// <summary>运行了一段时间（至少 <see cref="QuickRetryAfterMs"/>）后才故障的捕获，首次重试的间隔。</summary>
+    internal static readonly TimeSpan QuickRetryDelay = TimeSpan.FromSeconds(2);
+    internal static double QuickRetryAfterMs { get; set; } = 30_000;
 
     /// <summary>常驻捕获期间（含模块需求为零）是否由宿主持有。</summary>
     public bool Resident { get { lock (gate) return resident; } }
@@ -65,6 +73,10 @@ public sealed partial class GameObservationService
             Notify();
         }
     }
+    /// <summary>
+    /// 手动需求数（常驻库存与自动 DPS 订阅不计入）：决定更新活动屏障，也决定非常驻捕获何时停止——手动需求全部释放后停止，
+    /// 跟随捕获的常驻订阅随之结束，不让自动 DPS 把已关闭自动抓包时手动开始的捕获一直留着。
+    /// </summary>
     private int BlockingDemands => demands.Count + inventoryDemands.Values.Count(value => !value.Resident) + combatDemands.Values.Count(value => !value.Resident);
     /// <summary>手动模块需求占用更新活动屏障；只剩常驻捕获与自动 DPS 时释放。</summary>
     private void HoldActivity(string owner) { if (activity is null) activity = barrier.EnterActivity(owner, "game.observation"); }
@@ -76,7 +88,8 @@ public sealed partial class GameObservationService
 
     /// <summary>
     /// 按设置确定抓包设备。自动模式不选网卡（Worker 打开全部设备，不读取设置里留下的网卡）；指定模式先在同一 Worker 内枚举网卡，
-    /// 保存的网卡不在时报 savedChannelMissing。失败写入诊断事件 observation.channel.selected，成功时的打开结果由运行后的计数写出。
+    /// 保存的网卡不在时改为全部设备同时抓（来源 fallback，设置不改写），并在诊断事件 observation.channel.selected 记下 savedChannelMissing；
+    /// 成功时的打开结果由运行后的计数写出。
     /// </summary>
     private async Task<CaptureChannelChoice> ResolveChannelAsync(WorkerSession session, GameSession binding, GameCaptureSettings settings, CancellationToken ct)
     {
@@ -85,7 +98,9 @@ public sealed partial class GameObservationService
         try { return CaptureChannelSelection.Select(await QueryChannelsAsync(session, binding, ct), settings); }
         catch (OperationException error)
         {
-            trace?.Emit(DiagnosticEvents.ChannelSelected, new DiagnosticFields().Value("source", "saved").Value("reason", error.Code)); throw;
+            trace?.Emit(DiagnosticEvents.ChannelSelected, new DiagnosticFields().Value("source", "saved").Value("reason", error.Code));
+            if (error.Code == "observation.savedChannelMissing") return CaptureChannelChoice.Fallback(settings.ChannelId);
+            throw;
         }
     }
 
@@ -115,17 +130,30 @@ public sealed partial class GameObservationService
         var choice = await resolve(session, deadline.Token);
         lock (gate) { channelId = choice.ChannelId; autoChoice = choice.Source == "request" ? null : choice; revision++; }
         trace?.Emit(DiagnosticEvents.CaptureStarted, new DiagnosticFields().Value("profile", requestedProfile));
-        // Worker 重启（故障、维护后恢复）时随捕获请求下发同一游戏会话最近确认的本机身份，作为跨连接沿用的初值；
-        // 游戏会话按进程 ID 与启动时间区分，进程重启即新会话，不下发。
-        ObservedGameIdentity? known;
-        lock (gate) known = lastIdentity is { } remembered && remembered.SessionId == binding.Id ? remembered.Identity : null;
+        // 捕获重启（Worker 故障、维护后恢复、改网卡、同一进程重新绑定）时随捕获请求下发同一游戏进程最近确认的本机身份，
+        // 作为中途接入时沿用的初值；进程重启即不同进程，不下发。
+        ObservedGameIdentity? known; ObservedConnection? knownConnection;
+        var carriedEntities = CombatCarry.For(binding);
+        lock (gate)
+        {
+            known = lastIdentity is { } remembered && SameProcess(remembered, binding) ? remembered.Identity : null;
+            knownConnection = known is null ? null : lastIdentity!.Value.Connection;
+            carriedIdentitySent = known is not null;
+        }
         var arguments = known is null
             ? JsonSerializer.SerializeToElement(new { gameSessionId = binding.Id, region = binding.Region,
                 processId = binding.ProcessId, processStartTime = binding.ProcessStartTime,
                 channelId = choice.ChannelId, profile = requestedProfile }, ContractJson.Options)
             : JsonSerializer.SerializeToElement(new { gameSessionId = binding.Id, region = binding.Region,
                 processId = binding.ProcessId, processStartTime = binding.ProcessStartTime,
-                channelId = choice.ChannelId, profile = requestedProfile, localIdentity = known }, ContractJson.Options);
+                channelId = choice.ChannelId, profile = requestedProfile, localIdentity = known, localIdentityConnection = knownConnection }, ContractJson.Options);
+        // 实体延续记录只在有记录时附加：旧 Worker 按未知成员拒绝该字段。
+        if (carriedEntities is not null)
+        {
+            var extended = System.Text.Json.Nodes.JsonNode.Parse(arguments.GetRawText())!.AsObject();
+            extended["combatEntities"] = JsonSerializer.SerializeToNode(carriedEntities, ContractJson.Options);
+            arguments = JsonSerializer.SerializeToElement(extended, ContractJson.Options);
+        }
         call = await session.BeginAsync(new("observation.capture", arguments, id, binding.BindingRevision.ToString(), "0"), deadline.Token);
         lock (gate) CaptureRequested();
     }
@@ -194,20 +222,21 @@ public sealed partial class GameObservationService
                 OperationException value => value.Code, WorkerException value => value.Code,
                 ModuleRuntimeException value => value.Code, _ => "observation.captureFailed"
             };
-            await StopCoreAsync(code);
+            await StopCoreAsync(code, stoppedKind: code == "observation.captureFailed" ? "host.launch" : null);
             ScheduleRetry(code);
         }
     }
     internal const string ChannelChanged = "observation.channelChanged";
-    /// <summary>当前捕获的设备选择是否仍符合设置：自动模式为全部设备，指定模式为保存的那张网卡。</summary>
+    /// <summary>当前捕获的设备选择是否仍符合设置：自动模式为全部设备，指定模式为保存的那张网卡（或它不存在时改用的全部设备）。</summary>
     private static bool Matches(CaptureChannelChoice choice, GameCaptureSettings settings) => settings.ChannelMode == GameCaptureSettings.ManualChannel
-        ? choice.Source == "saved" && choice.ChannelId == settings.ChannelId
+        ? choice.Source == "saved" && choice.ChannelId == settings.ChannelId || choice.Source == "fallback" && choice.Missing == settings.ChannelId
         : choice.Source == "automatic";
     /// <summary>自动启动失败或常驻捕获故障后按退避时间再试；游戏会话或设置修订变化时由 <see cref="AutomateAsync"/> 立即重试。</summary>
-    private void ScheduleRetry(string code)
+    private void ScheduleRetry(string code, bool quick = false)
     {
-        var delay = RetryDelays[Math.Min(attemptFailures, RetryDelays.Length - 1)];
-        attemptFailures++;
+        // 运行满 QuickRetryAfterMs 后才故障：首次 2 秒重试，之后的连续失败从 15 秒起按原规则退避。
+        var delay = quick ? QuickRetryDelay : RetryDelays[Math.Min(attemptFailures, RetryDelays.Length - 1)];
+        attemptFailures = quick ? 1 : attemptFailures + 1;
         SetAutomation("failed", code);
         lock (gate) { nextAttemptAt = clock.GetTimestamp() + (long)(delay.TotalSeconds * clock.TimestampFrequency); nextAttemptUtc = clock.GetUtcNow() + delay; revision++; }
         Notify();

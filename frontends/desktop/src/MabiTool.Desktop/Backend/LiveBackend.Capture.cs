@@ -4,7 +4,7 @@ using static MabiTool.Desktop.Localization.UiText;
 
 namespace MabiTool.Desktop.Backend;
 
-// 全局抓包：每秒读取共享捕获、自动启动状态与设置；网卡检测进行中时一并读取进度。
+// 全局抓包：观测快照在 game.observation.changed 事件后读取，运行时、观测快照与设置另每五秒读取一次；网卡检测进行中时每秒读取进度。
 // 抓包由后端在绑定游戏后常驻运行，前端只显示状态并提交设置；合奏在房间内时登记音乐需求，离开房间时释放。
 public sealed partial class LiveBackend
 {
@@ -17,15 +17,34 @@ public sealed partial class LiveBackend
     private string? captureSignature;
     private DateTimeOffset musicDemandRetryAt;
 
+    private long lastCaptureFullRead;
+
     private async Task RefreshCaptureAsync(MabiToolClient api, CancellationToken token)
     {
-        var runtime = await Try(() => api.GetGameObservationRuntimeAsync(token));
-        var snapshot = await Try(() => api.GetGameObservationAsync(token));
-        string? tag = null;
-        var settings = await Try(() => api.GetGameCaptureSettingsAsync(token, metadata => tag = metadata.ETag));
+        bool full;
         CaptureChannelDetection? detection;
-        lock (gate) detection = channelDetection;
+        lock (gate)
+        {
+            detection = channelDetection;
+            var interval = detection?.State == "running" ? StatusInterval : SlowInterval;
+            if ((due & Due.Capture) == 0 && !Elapsed(lastCaptureRead, interval)) return;
+            due &= ~Due.Capture;
+            lastCaptureRead = Now;
+            full = Elapsed(lastCaptureFullRead, SlowInterval);
+            if (full) lastCaptureFullRead = lastCaptureRead;
+        }
+        GameObservationRuntime? runtime = null;
+        GameCaptureSettings? settings = null;
+        string? tag = null;
+        if (full) runtime = await Try(() => api.GetGameObservationRuntimeAsync(token));
+        var snapshot = await Try(() => api.GetGameObservationAsync(token));
+        if (full) settings = await Try(() => api.GetGameCaptureSettingsAsync(token, metadata => tag = metadata.ETag));
         if (detection?.State == "running") detection = await Try(() => api.GetChannelDetectionAsync(token)) ?? detection;
+        lock (gate)
+        {
+            runtime ??= captureRuntime;
+            if (!full) (settings, tag) = (captureSettings, captureSettingsETag);
+        }
         var automation = snapshot?.Automation;
         var next = string.Join('|', runtime?.Installed, runtime?.Npcap, snapshot?.BackendEpoch, snapshot?.Revision, snapshot?.State, snapshot?.Reason,
             automation?.State, automation?.Reason, automation?.ChannelDescription, settings?.Revision, tag,
@@ -42,7 +61,12 @@ public sealed partial class LiveBackend
             changed = next != captureSignature;
             captureSignature = next;
         }
-        if (changed) Notify();
+        if (changed)
+        {
+            // 抓包状态变了，自动观测的状态（等待抓包、等待识别）通常随之变化。
+            MarkDue(Due.Auto, immediate: false);
+            Notify();
+        }
     }
 
     /// <summary>

@@ -38,7 +38,7 @@ public sealed class InventoryTests
         ],
         [new("c1", "琉特", "琉特"), new("c2", "艾薇", "艾薇"), new("c3", "諾娃", "諾娃")], true, [], shared ?? []);
 
-    [Fact]
+    [AvaloniaFact]
     public void PivotWritesZeroOnlyWhenTheContainerWasReadCompletely()
     {
         InventoryAccountItems Items(IReadOnlyList<InventoryCoverage>? shared) => new(AccountView(shared),
@@ -74,7 +74,7 @@ public sealed class InventoryTests
         Assert.Equal("未读取", partialShared.Single(row => row.TypeKey == "consumable:5102").Shared.Text);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void EachScoreIsOneRowNamedByItsTitleWithComposerInTheTip()
     {
         // 合成标题与作曲者。两张自制谱共用表编号 0，各有实例 ID。
@@ -284,7 +284,7 @@ public sealed class InventoryTests
     /// <summary>
     /// 补充倒计时按“上次补充时间 + n × 间隔”逐秒递减；到零后接着倒数下一次并标“待进图”（游戏进图时才结算），已到的次数随结果给出。
     /// </summary>
-    [Fact]
+    [AvaloniaFact]
     public void RefillCountdownTicksEverySecondAndKeepsCountingAfterZero()
     {
         var last = new DateTimeOffset(2026, 11, 15, 8, 12, 49, TimeSpan.Zero);

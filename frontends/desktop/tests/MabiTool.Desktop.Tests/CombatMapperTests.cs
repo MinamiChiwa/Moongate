@@ -153,7 +153,7 @@ public sealed class CombatMapperTests
         Assert.True(idle.TargetChips.Single(chip => chip.Id == "ce-b").Current);
         Assert.Equal("", idle.TargetEffectsNote);
         // 选中的目标已不在当前观测里（例如整场范围里上一张地图的怪物）：写明没有实时效果。
-        Assert.Equal("该目标已不在当前观测中，没有实时效果", Map(At(3), target: "ce-old").TargetEffectsNote);
+        Assert.Equal("目标已不在观测范围", Map(At(3), target: "ce-old").TargetEffectsNote);
         // 伤害数值变化不改变顺序。
         var grown = At(3) with { Encounter = At(3).Encounter! with { Targets = [.. targets.Select(group => group with { AttributedDamage = new(new BigInteger(5000 - (long)group.AttributedDamage.Value)) })] } };
         Assert.Equal(["ce-a", "ce-c", "ce-b"], Map(grown).TargetChips.Select(chip => chip.Id));
@@ -211,7 +211,8 @@ public sealed class CombatMapperTests
             Assert.StartsWith("观测中，切换地图中，等待识别本机角色", status);
             Assert.DoesNotContain(reason, status);
             Assert.DoesNotContain("本场", status);
-            Assert.Contains("combat.other", status);
+            // 其余原因照常列在质量说明里；没有文案的 combat.* 码写成“抓包缺口”，不露出原码。
+            Assert.Equal("观测中，切换地图中，等待识别本机角色，观测完整（抓包缺口），只读取不操作游戏", status);
         }
     }
 
@@ -244,7 +245,8 @@ public sealed class CombatMapperTests
     {
         var history = CombatMapper.Map(new(true, true, WithSegment(new(1, string.Empty)),
             [Past("a", new(1, string.Empty)), Past("b", new(2, "???")), Past("c", null)], null, null, [])).History;
-        Assert.Equal(["第 1 段", "第 2 段 · ???", ""], history.Select(row => row.Segment));
+        // 没有文案的开始原因只写“未知原因”，不显示原码。
+        Assert.Equal(["第 1 段", "第 2 段 · 未知原因", ""], history.Select(row => row.Segment));
         Assert.Contains("第 1 段", Map(WithSegment(new(1, string.Empty))).Status);
         Assert.DoesNotContain("段", Map(WithSegment(null)).Status);
     }
@@ -255,7 +257,7 @@ public sealed class CombatMapperTests
         var history = CombatMapper.Map(new(true, true, null, [
             Past("a", new(1, "first-damage")), Past("b", new(2, "manual-start")), Past("c", new(3, "reset")),
             Past("d", new(4, "map-change")), Past("e", new(5, "future-reason")), Past("f", null)], null, null, [])).History;
-        Assert.Equal(["第 1 段 · 首次伤害", "第 2 段 · 手动开始", "第 3 段 · 重置", "第 4 段 · 切换地图", "第 5 段 · future-reason", ""],
+        Assert.Equal(["第 1 段 · 首次伤害", "第 2 段 · 手动开始", "第 3 段 · 重置", "第 4 段 · 切换地图", "第 5 段 · 未知原因", ""],
             history.Select(row => row.Segment));
         Assert.False(history[^1].HasSegment);
         Assert.True(history[0].HasSegment);
@@ -722,5 +724,72 @@ public sealed class CombatMapperTests
             Assert.False(overlay.SelfFavoriteHint);
         }
         finally { CombatEffectFavorites.Use(null); }
+    }
+
+    [AvaloniaFact]
+    public void CurrentTargetHealthShowsEachStateWithoutZeroForUnknownValues()
+    {
+        static CombatCurrentTarget Target(string? state, ulong? current, ulong? maximum, string? reason = null) =>
+            SampleBackend.SampleTarget("ce-a", 0, null, "深層雷霆光靈") with
+            {
+                Health = state is null ? null : new(current is { } c ? new(c) : null, maximum is { } m ? new(m) : null, Now, state, reason),
+                IsBoss = null
+            };
+        TargetHealthView Show(CombatCurrentTarget? target, string? unavailable = null) =>
+            CombatMapper.Map(new(true, true, Workspace([]) with { CurrentTarget = target }, [], null, null, [], HealthUnavailable: unavailable)).Health!;
+
+        // 已读且有最大值：整数计算的一位小数百分比与比例，不超过 30% 用警示色。
+        var read = Show(Target("read", 6_170_000, 61_700_000));
+        Assert.Equal(("深層雷霆光靈", "10.0%", "6,170,000 / 61,700,000", HealthTone.Low), (read.Name, read.Percent, read.Value, read.Tone));
+        Assert.Equal(0.1, read.Fill, 6);
+        Assert.Equal(HealthTone.Normal, Show(Target("read", 30_001, 100_000)).Tone);
+        Assert.Equal("30.0%", Show(Target("read", 29_999, 100_000)).Percent);
+        // Int64 范围的大数：数字逐位显示，百分比与比例不经 double 除法。
+        var huge = Show(Target("read", 4_611_686_018_427_387_905, 9_223_372_036_854_775_807));
+        Assert.Equal(("50.0%", "4,611,686,018,427,387,905 / 9,223,372,036,854,775,807"), (huge.Percent, huge.Value));
+        Assert.Equal(0.5, huge.Fill, 6);
+        Assert.Equal("100.0%", Show(Target("read", 9_223_372_036_854_775_807, 9_223_372_036_854_775_807)).Percent);
+
+        // 最大值未知、未读取、血量由首领体现：不给比例、不写 0。
+        var noMaximum = Show(Target("read", 1_234_567, null, "combat.healthMaximumUnknown"));
+        Assert.Equal(("最大值未知", "1,234,567", HealthTone.Empty), (noMaximum.Percent, noMaximum.Value, noMaximum.Tone));
+        var unread = Show(Target("unread", null, 61_700_000, "combat.healthUnread"));
+        Assert.Equal(("—", "未读取", HealthTone.Empty), (unread.Percent, unread.Value, unread.Tone));
+        Assert.Contains("重新进入怪物视野", unread.Tip);
+        Assert.Equal("未读取", Show(Target(null, null, null)).Value);
+        var shared = Show(Target("shared", 500, 1_000, "combat.healthShared"));
+        Assert.Equal(("—", "血量由首领体现", HealthTone.Empty), (shared.Percent, shared.Value, shared.Tone));
+        foreach (var view in new[] { noMaximum, unread, shared })
+        {
+            Assert.DoesNotContain("0%", view.Percent);
+            Assert.NotEqual("0", view.Value);
+        }
+
+        // 死亡为 0%；过期照常显示并带标记；改指首领时带首领与同场首领标记。
+        var dead = Show(Target("read", 12, 1_000) with { Dead = true });
+        Assert.Equal(("0.0%", "0 / 1,000", 0d), (dead.Percent, dead.Value, dead.Fill));
+        Assert.True(Show(Target("read", 1, 2) with { Health = new(new(1), new(2), Now, "read", Stale: true) }).Stale);
+        var redirected = Show(Target("read", 1, 2) with { IsBoss = true, RedirectedFrom = "ce-black" });
+        Assert.True(redirected.Boss && redirected.Redirected);
+
+        // 能力停用只给停用原因；没有当前目标时为空，观测中写“当前没有攻击目标”。
+        var disabled = Show(Target("read", 1, 2), "暂不可用：客户端版本不支持");
+        Assert.Equal("怪物血量暂不可用：客户端版本不支持", disabled.Disabled);
+        Assert.False(disabled.IsTarget);
+        var idle = CombatMapper.Map(new(true, true, Workspace([]), [], null, null, []));
+        Assert.Null(idle.Health);
+        Assert.True(idle.HealthIdle);
+        Assert.Null(CombatMapper.Map(new(true, true, Workspace([], "stopped") with { CurrentTarget = Target("read", 1, 2) }, [], null, null, [])).Health);
+        // 战斗能力表里的停用并入能力表，说明与其他能力同一规则。
+        var capabilities = LiveBackend.WithCombatCapabilities([], new(false,
+            [new(CapabilityIds.MonsterHealth, CapabilityStatus.Unavailable, Source, "combat.buildUnsupported", null, null)]));
+        Assert.Equal("暂不可用：客户端版本不支持", CapabilityNotice.Describe(capabilities!.Single()));
+
+        // 新的名称种类：AI 同伴为固定文案带实体编号，客户端名称为空的怪物为未知目标并写明原因。
+        var companion = CombatNames.Of(new("ai-companion", new(0), null, "generic", "combat.nameGeneric"), CombatNameKind.Target, number: "77");
+        Assert.Equal("AI 同伴 #77", companion.Text);
+        var empty = CombatNames.Of(new("monster", new(762736525), null, "unknown", "combat.nameEmpty"), CombatNameKind.Target, number: "9");
+        Assert.Equal("未知目标 #9", empty.Text);
+        Assert.Contains("客户端名称为空", empty.Tip);
     }
 }

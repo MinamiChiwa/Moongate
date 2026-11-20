@@ -86,6 +86,7 @@ public sealed partial class TwCombatObserver
     {
         if (damage.Attacker == 0 || damage.Target == 0 || damage.Attacker == damage.Target || damage.Amount <= 0) return;
         Observe(damage.Attacker); Observe(damage.Target);
+        if (damage.Attacker == localEntity) NoteLocalTarget(damage.Target);
         Enqueue(new PendingDamage(offset, wireLength, damage.Attacker, damage.Target, (ulong)damage.Amount, damage.HitFlags, inputMs, clockUtc));
     }
 
@@ -243,11 +244,12 @@ public sealed partial class TwCombatObserver
         queue.Enqueue(record);
     }
 
-    /// <summary>缺口使所有怪物的破防值过期；缺口列表满 32 条后并入最后一条并累计丢弃数。</summary>
+    /// <summary>缺口使所有怪物的破防值与已读 HP 过期；缺口列表满 32 条后并入最后一条并累计丢弃数。</summary>
     private void AddGap(string reason, ulong dropped)
     {
         foreach (var (id, entity) in entities.ToArray())
             if (entity.BreakGauge is { } gauge) entities[id] = entity with { BreakGauge = gauge with { Stale = true, Reason = reason } };
+        MarkHealthStale();
         if (gaps.Count < MaximumGaps) { gaps.Add(new(reason, inputMs, inputMs, new(dropped))); return; }
         var last = gaps[^1];
         gaps[^1] = last with { ToMs = inputMs, DroppedEvents = new(checked(last.DroppedEvents.Value + dropped)) };
@@ -295,9 +297,11 @@ public sealed partial class TwCombatObserver
         return batch;
     }
 
-    /// <summary>没有记录与缺口时的快照帧：队列已空，且实体快照有变化，或本机已识别且距上次发布满 100 ms。</summary>
+    /// <summary>
+    /// 没有记录与缺口时的快照帧：队列已空，且实体快照有变化、只有 HP 变化且距上次发布满 200 ms，或本机已识别且距上次发布满 100 ms。
+    /// </summary>
     private bool SnapshotDue(double nowMs) =>
-        queue.Count == 0 && (snapshotDirty || LocalEntity is not null && nowMs - publishedMs >= KeepAliveMs);
+        queue.Count == 0 && (snapshotDirty || healthDirty && nowMs - publishedMs >= HealthPublishMs || LocalEntity is not null && nowMs - publishedMs >= KeepAliveMs);
 
     /// <summary>队首记录已超过关联等待期（或强制发布）时继续成批发布。</summary>
     private bool MoreDue(double nowMs, bool force) =>
@@ -306,6 +310,7 @@ public sealed partial class TwCombatObserver
     /// <summary>成批发布待发记录与缺口；每帧附有界实体快照，使新订阅取得本机及目标归属。</summary>
     private void Publish(double nowMs, bool force = false)
     {
+        PurgeDeparted(nowMs);
         do
         {
             var batch = Drain(nowMs, force);
@@ -317,10 +322,12 @@ public sealed partial class TwCombatObserver
             var batchGaps = gaps.ToArray(); gaps.Clear();
             foreach (var gap in batchGaps) batch.Mono = Math.Max(batch.Mono, gap.ToMs ?? gap.FromMs);
             // 已发布的帧时点是后续输入的下限：保活帧之后才读到的较早包不能落到 Host 的 250 ms 批内窗口之外。
-            publishedMs = batch.Mono; inputMs = Math.Max(inputMs, batch.Mono); snapshotDirty = false;
+            publishedMs = batch.Mono; inputMs = Math.Max(inputMs, batch.Mono); snapshotDirty = false; healthDirty = false;
+            if (localEntity is not null) reseed = null;
             publish(new(1, source, session, new(generation), new(checked(++sequence)), batch.At, batch.Mono,
-                entities.Values.ToArray(), batch.Damage, batch.Effects, [], batchGaps, LocalEntity is not null,
-                Healing: batch.Healing.Count > 0 ? batch.Healing : null, CombatStates: batch.States.Count > 0 ? batch.States : null));
+                ReportEntities(batch.Mono), batch.Damage, batch.Effects, [], batchGaps, LocalEntity is not null,
+                Healing: batch.Healing.Count > 0 ? batch.Healing : null, CombatStates: batch.States.Count > 0 ? batch.States : null,
+                MainTarget: MainTargetField()));
         } while (MoreDue(nowMs, force));
     }
 }

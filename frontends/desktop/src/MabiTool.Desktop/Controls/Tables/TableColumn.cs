@@ -23,6 +23,8 @@ public sealed class TableColumn
     /// <summary>列组标题（例如“背包”）；相邻的同组列在表头上方合并显示一个组标题。</summary>
     public string? Group { get; set; }
     public string? GroupKey { get; set; }
+    /// <summary>列组标题的客户端属性图标键；图标可用时组标题只显示图标，标题文字进悬浮提示，不可用时显示文字。</summary>
+    public string? GroupIcon { get; set; }
     public string? Path { get; set; }
     public Func<object, string?>? Value { get; set; }
     /// <summary>为真时单元格文字显示为次要色（例如“未读取”）。</summary>

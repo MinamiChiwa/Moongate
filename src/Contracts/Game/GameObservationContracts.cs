@@ -28,8 +28,13 @@ public sealed record ObservedLocation(int ChannelSheetId, string? MapName, int? 
 /// <param name="Location">当前地图与频道；不依赖模块兴趣，进图时更新，连接重置或换绑定时清空；旧 Worker 为空。</param>
 public sealed record GameObservationValue(string CaptureGeneration, ObservedGameIdentity? Identity,
     ObservedConcert? Concert, ObservedMusic? Music, UInt64String Packets, string Detail, ObservedLocation? Location = null);
+/// <param name="IdentityConnection">报告中本机身份（其实体 ID）所属的游戏连接；只在 Worker 与宿主之间传递，宿主随捕获请求回传给下一次捕获，
+/// 不进入公开快照。当前构建每次进图、换频道都换用新连接，实体 ID 只在同一连接（同一地图实例）内有效。</param>
 public sealed record GameCaptureReport(GameObservationValue Value, UInt64String Sequence, bool Running,
-    double MonotonicMs, DateTimeOffset ObservedAt, string? Reason, ObservationSource? Source = null);
+    double MonotonicMs, DateTimeOffset ObservedAt, string? Reason, ObservationSource? Source = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObservedConnection? IdentityConnection = null);
+/// <summary>游戏连接的本机端口与远端地址、端口。</summary>
+public sealed record ObservedConnection(int LocalPort, string RemoteAddress, int RemotePort);
 /// <param name="Npcap">Npcap 是否已安装：installed、missing（系统目录下没有 <c>Npcap\wpcap.dll</c>）；宿主只检查文件、不加载 DLL，无法判定时为空。</param>
 public sealed record GameObservationRuntime(bool Installed, string State, int SubscriberCount, int? WorkerProcessId,
     int MaximumSubscribers, int MaximumConnections, string? Reason, string? Npcap = null);
@@ -53,7 +58,8 @@ public sealed record GameCaptureSettings(UInt64String Revision, bool AutomaticCa
     public static GameCaptureSettings Default => new(new(0), true, AutomaticChannel, null, null, true);
 }
 /// <summary>常驻抓包的自动启动状态。State 为 off/waiting/starting/running/failed；Reason 为固定错误码。
-/// ChannelSource 为 automatic（全部网卡同时抓，ChannelId 为空）、saved（设置里指定的网卡）或 request。</summary>
+/// ChannelSource 为 automatic（全部网卡同时抓，ChannelId 为空）、saved（设置里指定的网卡）、fallback（指定的网卡不存在，
+/// 改为全部网卡同时抓，ChannelId 为空）或 request。</summary>
 /// <param name="Build">绑定客户端的构建核对；没有台服绑定或旧宿主时为空。</param>
 /// <param name="SourceKind">实际出数据的主来源类别：physical、wintun、tap、hyperv、virtual 或 loopback；还没有游戏流或旧宿主时为空。</param>
 public sealed record GameCaptureAutomation(bool Enabled, string State, string? Reason, string? ChannelId,

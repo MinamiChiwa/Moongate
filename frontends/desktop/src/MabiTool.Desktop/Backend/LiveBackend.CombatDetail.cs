@@ -6,7 +6,8 @@ namespace MabiTool.Desktop.Backend;
 
 // DPS 明细窗口：窗口有自己的范围与目标（打开时取主页面当时的选择），按它读取范围汇总与时间线分桶，与主页面互不影响。
 // 窗口内切换只发出窗口自己的读取并通知窗口（CombatDetailChanged），不唤醒整轮刷新、不通知主页面与浮窗；
-// 例行刷新时随主页面同一轮更新窗口的数据。时间线只在窗口打开时读取，同一记录与目标在修订未变时不重读，至多每 3 秒一次。
+// 主页面同一轮战斗读取时更新窗口的数据。时间线只在窗口打开时读取，同一记录与目标在修订未变时不重读，至多每 3 秒一次，
+// 间隔内跳过的修订在间隔结束时补读。
 public sealed partial class LiveBackend
 {
     internal static readonly TimeSpan TimelineInterval = TimeSpan.FromSeconds(3);
@@ -41,6 +42,8 @@ public sealed partial class LiveBackend
         var chosen = selection.Snapshot();
         detailSelection.Assign(chosen.Scope, chosen.Target);
         _ = RefreshDetailNowAsync();
+        // 主页面与浮窗都不可见时战斗数据可能已停读：窗口打开后立即补读一次快照。
+        MarkDue(Due.Snapshot | Due.Recompute, immediate: true);
     }
 
     /// <summary>窗口自己的范围与目标意图：只改窗口的选择，立即通知窗口（只移动选中标记），再单独读取新选择的结果。</summary>
@@ -88,7 +91,7 @@ public sealed partial class LiveBackend
         var pending = !direct && key != chosen.Key;
         var data = CombatMapper.Map(new(current.Connected, current.Binding?.Binding is not null, current.Workspace,
             current.History, current.TargetEffects, current.EffectProblem, current.Coverage, null, chosen.Scope, chosen.Target,
-            pending ? null : range, pending ? null : problem, current.Measurement, current.MeasurementAt, current.EffectsAt))
+            pending ? null : range, pending ? null : problem, current.Measurement, current.MeasurementAt, current.EffectsAt, current.TargetEffectsAt))
             with { SelectedScope = chosen.Scope, SelectedTarget = chosen.Target, Pending = pending };
         return CombatEffectFavorites.Apply(data);
     }
@@ -96,6 +99,14 @@ public sealed partial class LiveBackend
     private string TimelineSignature()
     {
         lock (gate) return $"{combatDetailOpen}:{timelineRead?.Key}:{timelineRead?.At.Ticks}:{timelineProblem}:{detailRangeKey}:{detailRange?.Result.Revision}";
+    }
+
+    // 调用方持有 gate。时间线因间隔未到而跳过了较新的修订：间隔结束时安排一轮补读，不依赖之后还有事件。
+    private void FollowUp(DateTimeOffset lastRead)
+    {
+        var remaining = TimelineInterval - (DateTimeOffset.UtcNow - lastRead);
+        var at = Now + Span(remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining);
+        followUpAt = followUpAt == 0 ? at : Math.Min(followUpAt, at);
     }
 
     public CombatTimelineView? GetCombatTimeline()
@@ -174,7 +185,11 @@ public sealed partial class LiveBackend
         var revision = scope == "segment" ? workspace?.Encounter?.Revision.ToString() : range?.Result.Revision.ToString();
         var key = string.Join('|', id, target, revision);
         lock (gate)
-            if (timelineRead is { } last && (last.Key == key || DateTimeOffset.UtcNow - last.At < TimelineInterval)) return;
+            if (timelineRead is { } last && (last.Key == key || DateTimeOffset.UtcNow - last.At < TimelineInterval))
+            {
+                if (last.Key != key) FollowUp(last.At);
+                return;
+            }
         try
         {
             var page = await api.QueryCombatTimelineAsync(id, new(PageSize: 1, BucketWidthMs: CombatMapper.BucketWidth(duration), EntityId: target), token);
@@ -204,7 +219,11 @@ public sealed partial class LiveBackend
         var key = string.Join('|', target, range.Result.Revision, string.Join(',', ids.Select(id => known.TryGetValue(id, out var item) ? id + ":" + item.Revision : id)));
         lock (gate)
         {
-            if (timelineRead is { } last && (last.Key == key || DateTimeOffset.UtcNow - last.At < TimelineInterval)) return;
+            if (timelineRead is { } last && (last.Key == key || DateTimeOffset.UtcNow - last.At < TimelineInterval))
+            {
+                if (last.Key != key) FollowUp(last.At);
+                return;
+            }
             if (segmentBucketsTarget != target) { segmentBuckets.Clear(); segmentBucketsTarget = target; }
         }
         var reads = 0;

@@ -13,7 +13,8 @@ namespace MabiTool.Desktop.Backend;
 /// <see cref="Npcap"/> 是后端运行时报告的 Npcap 安装状态（installed、missing），未读取或后端不报告时为空，按未知处理。
 /// <see cref="Build"/> 是绑定客户端的构建核对（已登记、已自动适配及单项停用），后端不报告时为空。
 /// <see cref="Hint"/> 是抓包运行中后端给出的提示原因：<c>observation.noGameFrames</c>（约 20 秒收不到游戏数据）或
-/// <c>observation.identityPending</c>（能分帧但还没有本机角色信息），其余时候为空。
+/// <c>observation.identityPending</c>（能分帧但还没有本机角色信息）或 <c>observation.identityUnconfirmed</c>
+/// （抓包重启后沿用的角色没有得到印证），其余时候为空。
 /// <see cref="SourceKind"/> 是自动模式下实际出数据的主来源类别（physical、wintun、tap、hyperv、virtual、loopback），没有时为空。
 /// </summary>
 public sealed record CaptureStatusView(bool Connected, bool? Installed, bool Enabled, string State, string? Automation, string? Reason,
@@ -59,6 +60,8 @@ public static class CaptureText
         var channel = value.ChannelSource is "saved" or "request" && value.Channel is { Length: > 0 } name
             ? Pick("网卡：", "網卡：") + name + (value.ChannelSource == "saved" ? Pick("（已指定）", "（已指定）") : string.Empty)
             : Source(value.SourceKind) is { } source ? Pick("来源：", "來源：") + source : null;
+        if (value.ChannelSource == "fallback")
+            channel = Pick("指定的网卡不存在，已改为自动", "指定的網卡不存在，已改為自動") + (channel is null ? string.Empty : " · " + channel);
         var build = Build(value.Build) is { } note ? " · " + note : string.Empty;
         return value.State switch
         {
@@ -91,6 +94,7 @@ public static class CaptureText
     {
         "observation.noGameFrames" => Pick("收不到游戏数据", "收不到遊戲資料"),
         "observation.identityPending" => Pick("等待角色信息，请切换一次地图", "等待角色資訊，請切換一次地圖"),
+        "observation.identityUnconfirmed" => Pick("角色待确认，请切换一次地图", "角色待確認，請切換一次地圖"),
         _ => null
     } : null;
 

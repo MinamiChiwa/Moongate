@@ -41,6 +41,9 @@ public sealed class App : Application
             LoadAssetPack(args);
             var backend = CreateBackend(args);
             desktop.MainWindow = CreateMainWindow(backend, new OverlayLayoutStore(OverlayLayoutStore.DefaultPath));
+            UiMotion.FollowSystem(desktop.MainWindow);
+            var shown = desktop.MainWindow;
+            shown.Opened += (_, _) => _ = UiRendering.DetectAsync(shown);
             PackagedHost.ActivationRequested += () => Dispatcher.UIThread.Post(() =>
             {
                 if (desktop.MainWindow is not { } main) return;
@@ -62,8 +65,12 @@ public sealed class App : Application
     }
 
     /// <summary>以指定后端组装主窗口；侧栏内容来自模块注册表。</summary>
-    public static Window CreateMainWindow(IDesktopBackend backend, OverlayLayoutStore? layouts = null) =>
-        new MainWindow { DataContext = new ShellViewModel(BuiltInModules.CreateCatalog(backend, layouts), backend) };
+    public static Window CreateMainWindow(IDesktopBackend backend, OverlayLayoutStore? layouts = null)
+    {
+        // 主窗口、明细窗口与浮窗里的属性图标都经同一个中转取用这个后端的图标。
+        ClientIconHub.Use(backend);
+        return new MainWindow { DataContext = new ShellViewModel(BuiltInModules.CreateCatalog(backend, layouts), backend) };
+    }
 
     /// <summary>默认素材包目录：工具根下的 desktopssets（存在时载入）。</summary>
     public static string DefaultAssetDirectory => DesktopFiles.File("assets");

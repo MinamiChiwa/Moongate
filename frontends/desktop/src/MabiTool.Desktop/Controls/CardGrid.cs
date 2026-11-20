@@ -849,6 +849,14 @@ public sealed class CardGridEditBar : Decorator
 
     public CardGrid? Target { get => GetValue(TargetProperty); set => SetValue(TargetProperty, value); }
 
+    // 窄窗口下放不下的按钮在右端被裁掉；裁切范围四周外扩悬停放大的余量，按钮放大时边缘不被切掉。
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        var size = base.ArrangeOverride(finalSize);
+        HoverRoom.Clip(this, new Rect(size).Inflate(HoverRoom.Size));
+        return size;
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);

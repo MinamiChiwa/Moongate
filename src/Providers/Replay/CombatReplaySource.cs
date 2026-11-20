@@ -16,7 +16,8 @@ public sealed class CombatReplaySource(TimeProvider? timeProvider = null) : ICom
         new[] { "combat.damage.local", "combat.effects.self", "combat.effects.monster" }.Select(id =>
             new CombatCapability(id, CapabilityStatus.Available, ReplayProvider.Source, null, null, null))
             .Append(new CombatCapability("combat.healing.local", CapabilityStatus.Unavailable, ReplayProvider.Source,
-                "combat.sourceUnavailable", null, null)).ToArray());
+                "combat.sourceUnavailable", null, null))
+            .Append(new CombatCapability("combat.health.monster", CapabilityStatus.Available, ReplayProvider.Source, null, null, null)).ToArray());
     public ValueTask<ICombatObservationSubscription> OpenAsync(string observationId, CombatObservationRequest request, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -52,6 +53,10 @@ public sealed class CombatReplaySource(TimeProvider? timeProvider = null) : ICom
     }
 }
 
+/// <summary>
+/// 合成帧：normal、partial、failure 只有前三步带伤害；live 为模拟宿主的持续场景，每步按三步周期重复同样的伤害，
+/// 并给两个怪物 HP（第一个按伤害递减、第二个为不下发血量的加密形态）与本机主目标，供前端在模拟宿主上开发定时测量与血量显示。
+/// </summary>
 public static class CombatReplayFrames
 {
     public static CombatEntityObservation Entity(EntityKey key, CombatEntityRole role, string name) =>
@@ -61,21 +66,30 @@ public static class CombatReplayFrames
         var monster = self with { RawInstanceId = new(9007199254740995) };
         var other = monster with { RawInstanceId = new(monster.RawInstanceId.Value + (1UL << 32)) };
         var mono = (step - 1) * 1000d; var partial = scenario == "partial" && step == 2;
+        var live = scenario == "live"; var hit = live ? (step - 1) % 3 + 1 : step;
         CombatEffectObservation Effect(EntityKey entity, ulong instance) => new(CombatEffectChangeKind.Refresh, entity,
             new(100), new(instance), self, EffectDurationKind.Finite, 3000, step, "synthetic", false, at, mono, ObservationQuality.Confirmed);
         var entities = new[] { Entity(self, CombatEntityRole.LocalPlayer, "模擬角色"),
             Entity(monster, CombatEntityRole.Monster, "同名怪物") with { BreakGauge = new(step * 12.5, new(1000), at, ObservationQuality.Confirmed) },
             Entity(other, CombatEntityRole.Monster, "同名怪物") with { BreakGauge = new(step * 25.5, new(2000), at, ObservationQuality.Confirmed) } };
+        if (live)
+        {
+            const ulong maximum = 1_000_000;
+            var current = maximum - (ulong)(step * 2400 % (long)maximum);
+            entities[1] = entities[1] with { Health = new(new(current), new(maximum), at, "read", Encrypted: true, Updated: true), IsBoss = true, Dead = false, ActorType = "monster" };
+            entities[2] = entities[2] with { Health = new(new(maximum), new(maximum), at, "read", Encrypted: true, Updated: false), IsBoss = false, Dead = false, ActorType = "monster" };
+        }
         return new(1, ReplayProvider.Source, self.GameSessionId, self.ObservationGeneration, new((ulong)step), at, mono, entities,
-            step <= 3 ? [new("synthetic-hit-" + step, ReplayProvider.Source, self, step == 2 ? other : monster, new(1000), new(1200),
-                CombatDamageKind.Unclassified, at, mono, new((ulong)step), 0, step == 2, true, ObservationQuality.Confirmed)
-                { PowerfulHit = step is 1 or 3, RapidHit = step is 2 or 3, DoubleHit = step == 3,
-                  Classification = step switch { 1 => CombatDamageClassification.Direct, 2 => CombatDamageClassification.Indirect,
+            step <= 3 || live ? [new("synthetic-hit-" + step, ReplayProvider.Source, self, hit == 2 ? other : monster, new(1000), new(1200),
+                CombatDamageKind.Unclassified, at, mono, new((ulong)step), 0, hit == 2, true, ObservationQuality.Confirmed)
+                { PowerfulHit = hit is 1 or 3, RapidHit = hit is 2 or 3, DoubleHit = hit == 3,
+                  Classification = hit switch { 1 => CombatDamageClassification.Direct, 2 => CombatDamageClassification.Indirect,
                       _ => CombatDamageClassification.DamageOverTime },
-                  BreakedHit = step is 1 or 2, BreakOccurred = false, FirstAttack = step == 1, DefaultAttack = false, MultiHit = step == 1, AdditionalHit = step == 2,
-                  Elements = [step switch { 1 => CombatDamageElement.Fire, 2 => CombatDamageElement.Ice, _ => CombatDamageElement.Lightning }] }] : [],
+                  BreakedHit = hit is 1 or 2, BreakOccurred = false, FirstAttack = hit == 1, DefaultAttack = false, MultiHit = hit == 1, AdditionalHit = hit == 2,
+                  Elements = [hit switch { 1 => CombatDamageElement.Fire, 2 => CombatDamageElement.Ice, _ => CombatDamageElement.Lightning }] }] : [],
             [], step <= 3 ? [new(self, !partial, partial ? [] : [Effect(self, 200)]), new(monster, !partial, partial ? [] : [Effect(monster, 201)]),
                 new(other, !partial, partial ? [] : [Effect(other, 202)])] : [],
-            partial ? [new("synthetic-gap", mono, mono + 500, new(1))] : [], ObservationResumed: scenario == "partial" && step == 3);
+            partial ? [new("synthetic-gap", mono, mono + 500, new(1))] : [], ObservationResumed: scenario == "partial" && step == 3,
+            MainTarget: live ? new(monster, at, mono) : null);
     }
 }

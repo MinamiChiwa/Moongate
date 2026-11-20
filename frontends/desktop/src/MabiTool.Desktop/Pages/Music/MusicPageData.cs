@@ -127,6 +127,11 @@ public sealed class MusicPageModel : BackendPageModel<MusicPageData>
     public bool CanNextPage => pager.CanNext;
     public string PageLabel => pager.Label;
 
+    // 乐谱库、清单与演奏队列只在乐谱页、迷你窗、合奏页或演奏中浮窗元件显示时读取。
+    protected override string? Surface => "music";
+
+    protected override bool OtherStateChanged() => !Equals(Backend.GetActivity(), Activity);
+
     protected override void OnDataChanged()
     {
         Activity = Backend.GetActivity();

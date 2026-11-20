@@ -13,6 +13,7 @@ public static class ObservationWorkerApplication
     public static async Task RunAsync(IObservationCaptureSource source, CancellationToken ct = default)
     {
         WorkerMemoryTrace.StartFromEnvironment();
+        ObservationCache.StartFromEnvironment();
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
         await using var peer = await WorkerPeerConnection.ConnectFromEnvironmentAsync("game-observation", lifetime.Token);
         var assetRoot = Environment.GetEnvironmentVariable("MABITOOL_WORKER_ASSET_ROOT")
@@ -191,8 +192,8 @@ public static class ObservationWorkerApplication
                         stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
                         active = frame;
                         var currentStop = stop;
-                        captureRun = new(peer, source, request, frame,
-                            (report, token) => assets.PrepareInventoryAsync(report, token), reportDiagnostics);
+                        captureRun = new(new ObservationPeer(peer), source, request, frame,
+                            (report, encoded, token) => assets.PrepareInventoryAsync(report, encoded, token), reportDiagnostics);
                         captureRun.Initialize();
                         var currentRun = captureRun;
                         work = Task.Run(async () =>
@@ -233,6 +234,7 @@ public static class ObservationWorkerApplication
         if (lifetime.IsCancellationRequested) return;
         if (failure is OperationCanceledException && stop.IsCancellationRequested || failure is null && stop.IsCancellationRequested)
             await peer.SendAsync("cancelled", new { }, scope, lifetime);
+        else if (failure is CaptureFaultException fault) await peer.SendAsync("error", new { code = Code(failure), detail = fault.Kind }, scope, lifetime);
         else if (failure is not null) await peer.SendAsync("error", new { code = Code(failure) }, scope, lifetime);
         else await peer.SendAsync("result", new { }, scope, lifetime);
     }

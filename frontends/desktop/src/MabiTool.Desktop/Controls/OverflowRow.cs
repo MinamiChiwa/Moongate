@@ -25,7 +25,6 @@ public sealed class OverflowRow : Panel
     {
         AffectsMeasure<OverflowRow>(IsExpandedProperty);
         IsPinnedProperty.Changed.AddClassHandler<Control>((control, _) => (control.Parent as OverflowRow)?.InvalidateMeasure());
-        ClipToBoundsProperty.OverrideDefaultValue<OverflowRow>(true);
         IsExpandedProperty.Changed.AddClassHandler<OverflowRow>((row, _) => row.StartHeightTransition());
     }
 
@@ -127,6 +126,10 @@ public sealed class OverflowRow : Panel
 
     protected override Size ArrangeOverride(Size finalSize)
     {
+        // 裁切留出悬停放大的余量：左边总留；右边只在展开（换行排列、没有被截短的项）时留；高度过渡中纵向按当前高度裁切。
+        var room = HoverRoom.Size;
+        HoverRoom.Clip(this, new Rect(-room, transitionFrom is null ? -room : 0,
+            finalSize.Width + room + (IsExpanded ? room : 0), finalSize.Height + (transitionFrom is null ? room * 2 : 0)));
         var children = Children.Where(child => child.IsVisible).ToList();
         if (children.Count == 0) return finalSize;
         if (IsExpanded)
@@ -141,7 +144,7 @@ public sealed class OverflowRow : Panel
         {
             var visible = placed.Contains(child) || child == toggle && showToggle;
             var size = child.DesiredSize;
-            // 放不下的项排到面板外，由 ClipToBounds 裁掉。
+            // 放不下的项排到面板外，由裁切范围裁掉。
             child.Arrange(visible ? new Rect(x, 0, Math.Min(size.Width, Math.Max(0, finalSize.Width - x)), size.Height)
                 : new Rect(-100000, 0, size.Width, size.Height));
             if (visible) x += size.Width;

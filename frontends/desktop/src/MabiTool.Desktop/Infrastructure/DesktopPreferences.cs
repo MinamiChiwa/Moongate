@@ -47,18 +47,18 @@ public static class SidebarPreference
 /// 前端自己的界面偏好：界面语言、主题、动效、用户选定的素材包目录、侧栏分组的展开状态和模块入口的顺序、
 /// 各表格的列设置、背包所选账号与显示的列组、背包窗口的位置与尺寸、各页卡片的状态（<see cref="CardStateStore"/>，没有保存过的卡片取各自的缺省值）。
 /// </summary>
-public sealed record DesktopPreferences(UiLanguage Language, UiThemeChoice Theme, bool Motion, string? AssetPack = null,
+public sealed record DesktopPreferences(UiLanguage Language, UiThemeChoice Theme, bool? Motion, string? AssetPack = null,
     bool PendingExpanded = false, IReadOnlyList<string>? ModuleOrder = null,
     IReadOnlyDictionary<string, TableSettings>? Tables = null, string? InventoryAccount = null,
     IReadOnlyList<string>? InventoryHiddenGroups = null, WindowPlacement? InventoryWindow = null,
     IReadOnlyDictionary<string, CardState>? Cards = null, WindowPlacement? CombatWindow = null,
     string? RoomsNicknameSource = null)
 {
-    /// <summary>简体中文、跟随系统、动效开启。</summary>
-    public static DesktopPreferences Default { get; } = new(UiLanguage.SimplifiedChinese, UiThemeChoice.System, true);
+    /// <summary>简体中文、主题跟随系统、动效未选择（跟随系统的动画设置）。</summary>
+    public static DesktopPreferences Default { get; } = new(UiLanguage.SimplifiedChinese, UiThemeChoice.System, null);
 
     /// <summary>界面当前使用的选择。</summary>
-    public static DesktopPreferences Current => new(UiText.Language, UiTheme.Choice, UiMotion.Enabled, IconRegistry.ChosenDirectory,
+    public static DesktopPreferences Current => new(UiText.Language, UiTheme.Choice, UiMotion.Choice, IconRegistry.ChosenDirectory,
         SidebarPreference.PendingExpanded, SidebarPreference.ModuleOrder, TableSettingsStore.All.Count == 0 ? null : TableSettingsStore.All,
         InventoryPreference.Account, InventoryPreference.HiddenGroups.Count == 0 ? null : InventoryPreference.HiddenGroups,
         InventoryPreference.Window,
@@ -83,6 +83,10 @@ public sealed class DesktopPreferenceStore
     {
         public UiLanguage? Language { get; set; }
         public UiThemeChoice? Theme { get; set; }
+        /// <summary>用户明确选择的动效：<c>On</c> 或 <c>Reduced</c>；缺省为未选择。</summary>
+        public string? MotionChoice { get; set; }
+        // 旧版字段：只读取，按当时设置页显示的选择恢复；下次保存时改写成 MotionChoice。
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? Motion { get; set; }
         public string? AssetPack { get; set; }
         public bool? PendingExpanded { get; set; }
@@ -114,7 +118,7 @@ public sealed class DesktopPreferenceStore
             return new DesktopPreferences(
                 document.Language is { } language && Enum.IsDefined(language) ? language : fallback.Language,
                 document.Theme is { } theme && Enum.IsDefined(theme) ? theme : fallback.Theme,
-                document.Motion ?? fallback.Motion,
+                MotionChoice(document),
                 string.IsNullOrWhiteSpace(document.AssetPack) ? null : DesktopFiles.FromToolRoot(document.AssetPack),
                 document.PendingExpanded ?? false,
                 document.ModuleOrder?.Where(id => !string.IsNullOrWhiteSpace(id)).ToList(),
@@ -132,6 +136,13 @@ public sealed class DesktopPreferenceStore
             return fallback;
         }
     }
+
+    private static bool? MotionChoice(Document document) => document.MotionChoice switch
+    {
+        "On" => true,
+        "Reduced" => false,
+        _ => document.Motion
+    };
 
     private static readonly string[] LegacyRoomsCards = ["connection", "local", "roster", "diagnostics", "status"];
 
@@ -191,7 +202,8 @@ public sealed class DesktopPreferenceStore
             var temporary = path + ".tmp";
             File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(new Document
             {
-                Language = preferences.Language, Theme = preferences.Theme, Motion = preferences.Motion,
+                Language = preferences.Language, Theme = preferences.Theme,
+                MotionChoice = preferences.Motion switch { true => "On", false => "Reduced", null => null },
                 AssetPack = preferences.AssetPack is { } pack ? DesktopFiles.ToToolRoot(pack) : null, PendingExpanded = preferences.PendingExpanded,
                 ModuleOrder = preferences.ModuleOrder is { Count: > 0 } order ? order.ToList() : null,
                 Tables = preferences.Tables is { Count: > 0 } tables ? new Dictionary<string, TableSettings>(tables) : null,
@@ -215,7 +227,7 @@ public sealed class DesktopPreferenceStore
         var preferences = Load();
         if (UiText.Language != preferences.Language) UiText.Apply(application, preferences.Language);
         UiTheme.Apply(application, preferences.Theme);
-        UiMotion.Enabled = preferences.Motion;
+        UiMotion.Restore(preferences.Motion);
         IconRegistry.ChosenDirectory = preferences.AssetPack;
         SidebarPreference.Restore(preferences.PendingExpanded, preferences.ModuleOrder);
         TableSettingsStore.Restore(preferences.Tables);

@@ -320,9 +320,11 @@ public sealed class Card : Control
         // 网格里可以取固定高度档的卡片：内容放进外壳的滚动区（高度不固定时等同没有滚动区）；内容自己安排滚动的、只有随内容档的不放。
         if (grid is not null && ScrollsBody && Sizes.Any(CardGrid.IsFixedHeight))
         {
+            // 滚动区向四周伸进面板内边距 HoverRoom.Size、内容再缩回同样多：内容位置不变，贴边按钮悬停放大后不被视口切掉。
             scroller ??= new ScrollViewer
             {
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Margin = new Thickness(-HoverRoom.Size), Padding = new Thickness(HoverRoom.Size)
             };
             if (!ReferenceEquals(bodyHost.Child, scroller)) bodyHost.Child = scroller;
             scroller.Content = Body;

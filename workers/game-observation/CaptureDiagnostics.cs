@@ -17,6 +17,9 @@ public sealed class CaptureDiagnostics
     private IReadOnlyList<CaptureDeviceCounters>? devices;
     /// <summary>捕获线程每次读连接表后写入的按设备分项；随下一份计数快照上报。</summary>
     internal void Devices(IReadOnlyList<CaptureDeviceCounters> value) => Volatile.Write(ref devices, value);
+    private CaptureReadCounters? read;
+    /// <summary>打开设备后确定的读取方式；随此后每份计数快照上报。</summary>
+    internal void ReadMode(CaptureReadCounters value) => Volatile.Write(ref read, value);
 
     internal void ConnectionOpened() => Interlocked.Increment(ref opened);
     internal void ConnectionClosed() => Interlocked.Increment(ref closed);
@@ -32,6 +35,9 @@ public sealed class CaptureDiagnostics
     internal void PrearmForeign(int count) => Interlocked.Add(ref prearmForeign, count);
     internal void PrearmBudget(int count) => Interlocked.Add(ref prearmBudget, count);
     internal void LaneRejected() => Interlocked.Increment(ref laneRejected);
+    private long gapSceneResets;
+    /// <summary>同一连接内的重组重置使战斗解析整体重置（重传内容不一致）；宿主侧对应分段以 stream-reset 结束。</summary>
+    internal void GapSceneReset() => Interlocked.Increment(ref gapSceneResets);
     internal void Rejected(string branch)
     {
         switch (branch)
@@ -69,11 +75,12 @@ public sealed class CaptureDiagnostics
             new(U(combatDepth), U(Interlocked.Read(ref combatPeak)), U(inventoryDepth), U(Interlocked.Read(ref inventoryPeak)),
                 U(Interlocked.Read(ref laneRejected))),
             new(new(stream.Segments), new(stream.Bytes), new(stream.OutOfOrder), new(stream.Retransmitted),
-                stream.Resets.ToDictionary(pair => pair.Key, pair => new UInt64String(pair.Value), StringComparer.Ordinal)),
+                stream.Resets.ToDictionary(pair => pair.Key, pair => new UInt64String(pair.Value), StringComparer.Ordinal),
+                new UInt64String(Stream.GapSkippedBytes), U(Interlocked.Read(ref gapSceneResets))),
             new(new(stream.Frames), new(stream.Dispatched), new(stream.DecompressFailures), rejected,
                 stream.Types.ToDictionary(pair => pair.Key.ToString(CultureInfo.InvariantCulture), pair => new UInt64String(pair.Value), StringComparer.Ordinal),
                 new(stream.OtherFrames)),
             new(U(Interlocked.Read(ref prearmBuffered)), U(Interlocked.Read(ref prearmDelivered)), U(Interlocked.Read(ref prearmExpired)),
-                U(Interlocked.Read(ref prearmForeign)), U(Interlocked.Read(ref prearmBudget))), Volatile.Read(ref devices));
+                U(Interlocked.Read(ref prearmForeign)), U(Interlocked.Read(ref prearmBudget))), Volatile.Read(ref devices), Volatile.Read(ref read));
     }
 }

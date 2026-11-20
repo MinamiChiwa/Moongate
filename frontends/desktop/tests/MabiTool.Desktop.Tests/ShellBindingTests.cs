@@ -279,12 +279,14 @@ public sealed class ShellBindingTests
     }
 
     [AvaloniaFact]
-    public void SidebarAndMiniWindowShowTheBindingName()
+    public void MiniWindowShowsTheBindingNameAndTheSidebarCardShowsTheWindow()
     {
         var window = LayoutProbe.Open(new LongTextBackend(), 1280, 860, "music-library");
         try
         {
-            Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(),
+            // 侧栏的绑定卡只写窗口本身，角色名只在左上角的抓包状态里（本样本没有抓包数据，不出现）。
+            Assert.Equal("游戏窗口", Named<TextBlock>(window, "BindingTitle").Text);
+            Assert.DoesNotContain(window.GetVisualDescendants().OfType<TextBlock>(),
                 text => text.IsEffectivelyVisible && text.Text == "名字非常非常長的角色名稱測試用琉特");
             var mini = OpenMini(new LongTextBackend(), 440, 920, UiThemeChoice.Light, UiLanguage.SimplifiedChinese);
             try

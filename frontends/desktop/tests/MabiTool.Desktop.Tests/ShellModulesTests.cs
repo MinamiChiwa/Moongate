@@ -43,11 +43,11 @@ public sealed class ShellModulesTests
         var model = (ModulesPageModel)page.DataContext!;
 
         Assert.Contains(model.Cards, card => card.Id == "combat-observation" && card.Name == "DPS检测");
-        // 只有后端知道的模块：名称与功能说明取自模块清单，标识放在来源一行，并带上后端给出的原因。
+        // 只有后端知道的模块：名称与功能说明取自模块清单，来源一行写明没有前端页面（内部标识不上界面），并带上后端给出的原因。
         var environment = model.Cards.Single(card => card.Id == "environment");
         Assert.Equal("环境信息", environment.Name);
         Assert.Equal("提供游戏内时间、天气、频道与区域等环境信息", environment.Description);
-        Assert.Contains("environment", environment.Source);
+        Assert.Equal("后端模块，没有前端页面", environment.Source);
         Assert.Contains("台服数据来源待接入", environment.State);
         Assert.Contains(VisibleTexts(page), text => text == "提供游戏内时间、天气、频道与区域等环境信息");
         // 模块清单的多语言文字按界面语言选取，缺当前语言时取另一种中文，旧宿主没有时为空（卡片以标识显示）。
@@ -151,7 +151,8 @@ public sealed class ShellModulesTests
         var backend = new SampleBackend();
         var catalog = BuiltInModules.CreateCatalog(backend);
         var created = 0;
-        catalog.Register(new ModuleDescriptor("sample.counted", "計數（範例）", "計", Color.Parse("#4B5563"), ModuleOrigin.Extension,
+        // 计数用的不保留页面登记为内建模块：扩展分组的入口由后端的扩展界面决定，手工登记的扩展模块会在同步时被换掉。
+        catalog.Register(new ModuleDescriptor("sample.counted", "計數（範例）", "計", Color.Parse("#4B5563"), ModuleOrigin.BuiltIn,
             () => { created++; return new PendingPage { DataContext = new PendingPageModel("計數", "範例擴充") }; }));
         UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
         UiMotion.Enabled = false;
@@ -162,7 +163,7 @@ public sealed class ShellModulesTests
         try
         {
             var modules = shell.ShellEntries.Single(item => item.Module.Id == "shell.modules");
-            var counted = shell.Extensions.Single(item => item.Module.Id == "sample.counted");
+            var counted = shell.BuiltIn.Single(item => item.Module.Id == "sample.counted");
             var intents = backend.UiIntents.Count;
 
             // 切换返回时只显示了骨架（模块标题与占位面板），页面还没有建立。

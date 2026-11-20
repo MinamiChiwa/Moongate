@@ -14,11 +14,13 @@ public sealed record TwCapabilityCheck(bool Enabled, string? Reason)
 /// <summary>
 /// 客户端构建的核对结果。已登记构建各项直接启用；未登记构建按运行时从客户端读出的协议枚举、收包签名与字段布局
 /// 逐项核对：<see cref="Identity"/>（本机身份与地图频道）、<see cref="Music"/>（合奏与演奏）、<see cref="Combat"/>（战斗统计与效果，
-/// 依赖身份）。<see cref="KnownProtocols"/> 为分帧可识别的协议号集合，为空时不能抓包。
+/// 依赖身份）、<see cref="Health"/>（实体血量、死亡、离场与本机主目标，依赖战斗）。<see cref="KnownProtocols"/> 为分帧可识别的协议号集合，为空时不能抓包。
 /// </summary>
 public sealed record TwBuildVerdict(string Build, bool Registered, string? RegisteredName, TwCapabilityCheck Identity,
-    TwCapabilityCheck Music, TwCapabilityCheck Combat, IReadOnlySet<int> KnownProtocols)
+    TwCapabilityCheck Music, TwCapabilityCheck Combat, IReadOnlySet<int> KnownProtocols, TwCapabilityCheck? HealthCheck = null)
 {
+    /// <summary>实体血量能力的核对结果；构造时未给出时与战斗相同。</summary>
+    public TwCapabilityCheck Health => HealthCheck ?? Combat;
     public bool CaptureUsable => KnownProtocols.Count > 0;
     public static TwBuildVerdict ForRegistered(TwRegisteredBuild build) => new(TwClientFingerprint.GameBuild, true, build.Name,
         TwCapabilityCheck.Ok, TwCapabilityCheck.Ok, TwCapabilityCheck.Ok, Tw20261110CombatProtocol.StreamProfile.KnownProtocols);
@@ -26,7 +28,7 @@ public sealed record TwBuildVerdict(string Build, bool Registered, string? Regis
     public static TwBuildVerdict Failed(string build, string reason)
     {
         var failed = new TwCapabilityCheck(false, reason);
-        return new(build, false, null, failed, failed, failed, FrozenSet<int>.Empty);
+        return new(build, false, null, failed, failed, failed, FrozenSet<int>.Empty, failed);
     }
 }
 
@@ -39,7 +41,7 @@ public sealed record TwBuildVerdict(string Build, bool Registered, string? Regis
 public static class TwBuildVerification
 {
     /// <summary>核对规则版本；规则变化后旧缓存失效。</summary>
-    public const int RulesVersion = 1;
+    public const int RulesVersion = 2;
     public const string ProtocolChanged = "gameBuild.protocolChanged", LayoutChanged = "gameBuild.layoutChanged",
         VerifyFailed = "gameBuild.verifyFailed", IdentityUnavailable = "gameBuild.identityUnavailable";
     private const string Handler = "MM.Client.Framework.Network.GC.IGCPacketHandler";
@@ -71,7 +73,17 @@ public static class TwBuildVerification
             "Shared.Protocols.ProtocolDatas.ReplicatedDatas.BuffReplicatedData", "Shared.GameLogic.ChannelObjects.Actors.Buffs.BuffInstanceId",
             "Shared.ChannelObjects.ChannelObjectId", "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime"],
         ["MabiTool.Tw20261110AutomatonSchema", "MabiTool.Tw20261110CharacterSchema"]);
-    private static readonly Requirement[] Requirements = [IdentityRequirement, MusicRequirement, CombatRequirement];
+    private static readonly Requirement HealthRequirement = new(
+        ["REPLICATION_ActorStatus_SetHealth2_REPL", "REPLICATION_ActorStatus_SetHealth3_REPL", "REPLICATION_ActorStatus_SetHealth4_REPL",
+            "REPLICATION_ActorStatus_SetHealth5_REPL", "REPLICATION_ActorStatus_SetHealth6_REPL", "REPLICATION_ActorParameter_UpdateHealthMax_REPL",
+            "SYSTEM_SendBroadcastPacketAES_NTF", "REPLICATION_ActorStates_SetDead_REPL", "CHANNEL_DisappearingChannelObject_NTF",
+            "REPLICATION_MainTarget_SetTarget_REPL"],
+        ["SYSTEM_SendBroadcastPacketAES_NTF", "CHANNEL_DisappearingChannelObject_NTF"],
+        ["IActorStatusReplicated.SetHealth2", "IActorStatusReplicated.SetHealth3", "IActorStatusReplicated.SetHealth4",
+            "IActorStatusReplicated.SetHealth5", "IActorStatusReplicated.SetHealth6", "IActorParameterReplicated.UpdateHealthMax",
+            "IActorStatesReplicated.SetDead", "IMainTargetReplicated.SetTarget"],
+        [], ["MabiTool.Tw20261110AutomatonSchema"]);
+    private static readonly Requirement[] Requirements = [IdentityRequirement, MusicRequirement, CombatRequirement, HealthRequirement];
 
     private static readonly Lazy<JsonDocument> Baseline = new(() => JsonDocument.Parse(
         typeof(TwBuildVerification).Assembly.GetManifestResourceStream("MabiTool.Tw20261110BuildFacts")!));
@@ -98,7 +110,8 @@ public static class TwBuildVerification
         var identity = Check(IdentityRequirement, facts);
         var music = identity.Enabled ? Check(MusicRequirement, facts) : new(false, IdentityUnavailable);
         var combat = identity.Enabled ? Check(CombatRequirement, facts) : new(false, IdentityUnavailable);
-        return new(build, false, null, identity, music, combat, known);
+        var health = combat.Enabled ? Check(HealthRequirement, facts) : combat;
+        return new(build, false, null, identity, music, combat, known, health);
     }
 
     private static TwCapabilityCheck Check(Requirement requirement, ClientBuildFacts facts)
@@ -212,12 +225,18 @@ public static class TwBuildVerification
 
 /// <summary>
 /// 未登记构建的核对结果缓存：每个构建一个 JSON 文件，按 GameAssembly 与 metadata 哈希前缀命名，内容带完整哈希与规则版本；
-/// 不符、损坏或规则版本不同的文件视为没有缓存。
+/// 不符、损坏或规则版本不同的文件视为没有缓存。读到即刷新文件时间，写入后按最近使用只保留 <see cref="MaximumEntries"/> 个，
+/// 其余删除（链接与重解析点不跟随、不删除）。
 /// </summary>
 public static class TwBuildVerdictCache
 {
+    /// <summary>
+    /// 保留的构建数：每个文件不足 1 KiB；台服客户端约每周至多更新一次，同一数据根里的宿主与 Worker 实际只用当前与上一个构建，
+    /// 8 个覆盖约两个月的更新与回退，合计不超过 8 KiB。
+    /// </summary>
+    public const int MaximumEntries = 8;
     private sealed record Entry(int RulesVersion, string AssemblySha256, string MetadataSha256, string Build,
-        Check Identity, Check Music, Check Combat, int[] KnownProtocols);
+        Check Identity, Check Music, Check Combat, int[] KnownProtocols, Check? Health = null);
     private sealed record Check(bool Enabled, string? Reason);
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
     private static string FilePath(string directory, TwClientHashes hashes) =>
@@ -230,11 +249,13 @@ public static class TwBuildVerdictCache
             var path = FilePath(directory, hashes);
             if (!File.Exists(path) || new FileInfo(path).Length > 1024 * 1024) return null;
             var entry = JsonSerializer.Deserialize<Entry>(File.ReadAllBytes(path), Options);
+            try { File.SetLastWriteTimeUtc(path, DateTime.UtcNow); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
             if (entry is null || entry.RulesVersion != TwBuildVerification.RulesVersion || entry.AssemblySha256 != hashes.AssemblySha256 ||
                 entry.MetadataSha256 != hashes.MetadataSha256 || entry.Build != TwClientFingerprint.AdaptiveBuild(hashes.AssemblySha256, hashes.MetadataSha256) ||
-                entry.Identity is null || entry.Music is null || entry.Combat is null || entry.KnownProtocols is null) return null;
+                entry.Identity is null || entry.Music is null || entry.Combat is null || entry.KnownProtocols is null || entry.Health is null) return null;
             return new(entry.Build, false, null, new(entry.Identity.Enabled, entry.Identity.Reason), new(entry.Music.Enabled, entry.Music.Reason),
-                new(entry.Combat.Enabled, entry.Combat.Reason), entry.KnownProtocols.Where(value => value > 0).ToFrozenSet());
+                new(entry.Combat.Enabled, entry.Combat.Reason), entry.KnownProtocols.Where(value => value > 0).ToFrozenSet(),
+                new(entry.Health.Enabled, entry.Health.Reason));
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { return null; }
     }
@@ -247,9 +268,21 @@ public static class TwBuildVerdictCache
             var path = FilePath(directory, hashes); var temporary = path + ".tmp";
             File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(new Entry(TwBuildVerification.RulesVersion, hashes.AssemblySha256,
                 hashes.MetadataSha256, verdict.Build, new(verdict.Identity.Enabled, verdict.Identity.Reason), new(verdict.Music.Enabled, verdict.Music.Reason),
-                new(verdict.Combat.Enabled, verdict.Combat.Reason), verdict.KnownProtocols.Order().ToArray()), Options));
+                new(verdict.Combat.Enabled, verdict.Combat.Reason), verdict.KnownProtocols.Order().ToArray(),
+                new(verdict.Health.Enabled, verdict.Health.Reason)), Options));
             File.Move(temporary, path, overwrite: true);
+            Prune(directory);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>按最近使用（文件时间）保留最近 <see cref="MaximumEntries"/> 个 tw-*.json，删除其余；跳过链接与重解析点。</summary>
+    private static void Prune(string directory)
+    {
+        var files = new DirectoryInfo(directory).EnumerateFiles("tw-*.json", SearchOption.TopDirectoryOnly)
+            .Where(file => (file.Attributes & FileAttributes.ReparsePoint) == 0 && file.LinkTarget is null)
+            .OrderByDescending(file => file.LastWriteTimeUtc).ThenBy(file => file.Name, StringComparer.Ordinal).Skip(MaximumEntries).ToArray();
+        foreach (var file in files)
+            try { file.Delete(); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
 }

@@ -23,11 +23,13 @@ public sealed class InventoryAssetStore : IDisposable
         root = Path.GetFullPath(assetsDirectory);
     }
 
-    /// <summary>编码库存报告；超过内联上限的报告写入受管资产，返回待发送的事件信封。</summary>
-    public async Task<object> PrepareInventoryAsync(InventoryCaptureReport report, CancellationToken ct)
+    /// <summary>
+    /// 编码库存报告（已有入队时的编码 <paramref name="encoded"/> 时直接使用）；超过内联上限的报告写入受管资产，返回待发送的事件信封。
+    /// </summary>
+    public async Task<object> PrepareInventoryAsync(InventoryCaptureReport report, byte[]? encoded, CancellationToken ct)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(report, ContractJson.Options);
-        if (bytes.Length <= InlineReportBytes) return new { inventory = report };
+        var bytes = encoded ?? JsonSerializer.SerializeToUtf8Bytes(report, ContractJson.Options);
+        if (bytes.Length <= InlineReportBytes) return EncodedEvent.Inventory(bytes);
         var asset = await WriteAsync(bytes, ct).ConfigureAwait(false);
         return new { inventoryAsset = new InventoryCaptureArtifact(asset.FileName, asset.Bytes, asset.Sha256) };
     }

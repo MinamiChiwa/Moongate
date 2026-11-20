@@ -40,8 +40,14 @@ public sealed class WindowsDesktopSurface : IDesktopSurface, IAsyncDisposable
         OnThread(() =>
         {
             Validate();
-            if (change.Topmost is { } topmost && !SetWindowPos(window, topmost ? (nint)(-1) : (nint)(-2),
-                0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)) throw Failure();
+            if (change.Topmost is { } topmost)
+            {
+                if (!SetWindowPos(window, topmost ? (nint)(-1) : (nint)(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)) throw Failure();
+                // 部分 Windows 版本上，从未调整过层级的窗口第一次置顶会返回成功但不置顶；回读未生效时先取消置顶再置顶一次。
+                if (topmost && (ReadLong(-20) & Topmost) == 0 &&
+                    (!SetWindowPos(window, -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010) || !SetWindowPos(window, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)))
+                    throw Failure();
+            }
             if (change.ClickThrough is { } clickThrough)
             {
                 Validate();

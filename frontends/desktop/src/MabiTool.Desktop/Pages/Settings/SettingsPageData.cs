@@ -107,6 +107,7 @@ public sealed partial class SettingsPageModel : BackendPageModel<SettingsPageDat
         (limitText, limitUnit) = Describe(Data.Policy?.MaximumBytesPerSecond);
         shownLimitText = limitText;
         UiTheme.Changed += OnThemeChanged;
+        UiMotion.Changed += OnMotionChanged;
         InitializeCapture();
     }
 
@@ -291,6 +292,7 @@ public sealed partial class SettingsPageModel : BackendPageModel<SettingsPageDat
     public override void Dispose()
     {
         UiTheme.Changed -= OnThemeChanged;
+        UiMotion.Changed -= OnMotionChanged;
         base.Dispose();
     }
 
@@ -347,6 +349,9 @@ public sealed partial class SettingsPageModel : BackendPageModel<SettingsPageDat
         _ => key.ToString()
     };
 
+    // 快捷键清单与设置只在设置页显示时读取。
+    protected override string? Surface => "settings";
+
     protected override void OnDataChanged()
     {
         ResetCapture();
@@ -381,6 +386,22 @@ public sealed partial class SettingsPageModel : BackendPageModel<SettingsPageDat
     public ICommand MotionOffCommand { get; }
     public bool MotionOn => UiMotion.Enabled;
     public bool MotionOff => !UiMotion.Enabled;
+
+    /// <summary>动效一项的问号说明；系统关闭了动画时补一句当前选择的效果。</summary>
+    public string MotionHint
+    {
+        get
+        {
+            var hint = UiText.Pick("减弱后按钮、页面切换和图标不再播放动画，状态立即切换。", "減弱後按鈕、頁面切換和圖示不再播放動畫，狀態立即切換。");
+            if (!UiMotion.SystemReduced) return hint;
+            return hint + UiMotion.Choice switch
+            {
+                true => UiText.Pick("系统已关闭动画效果，这里的选择仍然生效。", "系統已關閉動畫效果，這裡的選擇仍然生效。"),
+                false => string.Empty,
+                null => UiText.Pick("系统已关闭动画效果，未选择时按减弱处理。", "系統已關閉動畫效果，未選擇時按減弱處理。")
+            };
+        }
+    }
     public bool IsSimplified => UiText.Language == UiLanguage.SimplifiedChinese;
     public bool IsTraditional => UiText.Language == UiLanguage.TraditionalChinese;
     public bool NoShortcuts => Data.Shortcuts.Count == 0;
@@ -392,11 +413,14 @@ public sealed partial class SettingsPageModel : BackendPageModel<SettingsPageDat
         new(UiText.Pick("许可", "授權"), "MIT，MinamiChiwa（南千和）")
     ];
 
-    private void SetMotion(bool enabled)
+    private static void SetMotion(bool enabled) => UiMotion.Enabled = enabled;
+
+    // 动效也可能随系统设置变化（用户从未选择时），两段开关与说明随之同步。
+    private void OnMotionChanged(object? sender, EventArgs e)
     {
-        UiMotion.Enabled = enabled;
         Raise(nameof(MotionOn));
         Raise(nameof(MotionOff));
+        Raise(nameof(MotionHint));
     }
 
     // 换语言后外壳会重建当前页面，所以这里不必自己刷新。

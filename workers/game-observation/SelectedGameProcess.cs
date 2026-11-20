@@ -6,6 +6,33 @@ internal sealed class WorkerObservationException(string code) : Exception(code)
 {
     public string Code { get; } = code;
 }
+
+/// <summary>
+/// 归入 observation.captureFailed 的捕获故障及其细分原因（固定码，不含地址、路径与载荷），随错误帧的 detail 字段送到宿主，
+/// 写入 observation.worker.faulted 与 observation.capture.ended 的 kind 字段。
+/// </summary>
+internal sealed class CaptureFaultException(string kind, Exception? inner = null) : IOException(kind, inner)
+{
+    public string Kind { get; } = kind;
+
+    /// <summary>未归类异常按类型给出的细分码：前缀为发生位置（capture 捕获循环、writer 写出循环）。</summary>
+    public static string Classify(string area, Exception error) => error switch
+    {
+        CaptureFaultException fault => fault.Kind,
+        ObjectDisposedException => area + ".disposed",
+        InvalidOperationException => area + ".invalidOperation",
+        ArgumentException => area + ".argument",
+        IndexOutOfRangeException => area + ".indexOutOfRange",
+        NullReferenceException => area + ".nullReference",
+        OverflowException => area + ".overflow",
+        InvalidDataException => area + ".invalidData",
+        KeyNotFoundException => area + ".keyNotFound",
+        OutOfMemoryException => area + ".outOfMemory",
+        System.Runtime.InteropServices.SEHException or System.Runtime.InteropServices.ExternalException => area + ".native",
+        IOException => area + ".io",
+        _ => area + ".unclassified"
+    };
+}
 internal sealed class SelectedGameProcess : IDisposable
 {
     private readonly Process process;

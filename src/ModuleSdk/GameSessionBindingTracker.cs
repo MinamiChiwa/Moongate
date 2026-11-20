@@ -13,6 +13,7 @@ public sealed class GameSessionBindingTracker(TimeProvider? clock = null)
     private readonly TimeProvider time = clock ?? TimeProvider.System;
     private readonly object gate = new();
     private Func<GameWindowObservation?>? source;
+    private Func<bool>? exited;
     private GameWindowBinding? current;
     private string? currentRegion;
     private string? currentBuild;
@@ -42,12 +43,16 @@ public sealed class GameSessionBindingTracker(TimeProvider? clock = null)
     /// <summary>最近一次刷新得到的绑定；不调用窗口来源，供诊断等只读路径使用。</summary>
     public GameWindowBinding? LastKnown { get { lock (gate) return current; } }
 
-    public GameWindowBinding? BindSource(Func<GameWindowObservation?> refresh)
+    /// <summary>
+    /// 以窗口来源维持绑定。来源返回空表示当前读不到窗口：给出 <paramref name="processExited"/> 时，进程仍在则保留原绑定、
+    /// 停止接收输入并递增修订（同一游戏会话），进程已退出才清除；不给出时读不到即清除。
+    /// </summary>
+    public GameWindowBinding? BindSource(Func<GameWindowObservation?> refresh, Func<bool>? processExited = null)
     {
         ArgumentNullException.ThrowIfNull(refresh);
         lock (gate)
         {
-            source = refresh;
+            source = refresh; exited = processExited;
             RefreshCore();
             return current;
         }
@@ -57,13 +62,25 @@ public sealed class GameSessionBindingTracker(TimeProvider? clock = null)
     {
         if (source is null) return;
         var observed = source();
-        if (observed is null) ClearCore(); else UpdateCore(observed);
+        if (observed is not null) UpdateCore(observed);
+        // 清除后不再沿用这个来源：游戏进程已结束，重新绑定由用户选择或自动绑定决定。
+        else if (current is null || exited is null || exited()) { ClearCore(); source = null; exited = null; }
+        else HoldCore();
         refreshedAt = time.GetTimestamp();
+    }
+
+    /// <summary>进程仍在而窗口读不到（加载画面无响应、几何中间态、换窗口途中）：会话与几何不变，只停止接收输入。</summary>
+    private void HoldCore()
+    {
+        if (current is not { CanAcceptInput: true } held) return;
+        current = held with { CanAcceptInput = false,
+            Session = held.Session with { BindingRevision = new(checked(held.Session.BindingRevision.Value + 1)) } };
+        Raise(current, false);
     }
 
     public GameWindowBinding Update(GameWindowObservation observation)
     {
-        lock (gate) { source = null; return UpdateCore(observation); }
+        lock (gate) { source = null; exited = null; return UpdateCore(observation); }
     }
 
     private GameWindowBinding UpdateCore(GameWindowObservation observation)
@@ -75,7 +92,7 @@ public sealed class GameSessionBindingTracker(TimeProvider? clock = null)
             !string.Equals(currentBuild, observation.GameBuild, StringComparison.Ordinal);
         var bindingChanged = processRestarted || current!.Session.WindowIdentity != observation.WindowIdentity ||
             current.Bounds != observation.Bounds || current.DpiX != observation.DpiX || current.DpiY != observation.DpiY ||
-            current.IsMinimized != observation.IsMinimized;
+            current.IsMinimized != observation.IsMinimized || current.CanAcceptInput == observation.IsMinimized;
 
         var sessionId = processRestarted ? Guid.NewGuid().ToString("N") : current!.Session.Id;
         var revision = bindingChanged ? checked((current?.Session.BindingRevision.Value ?? 0) + 1) : current!.Session.BindingRevision.Value;
@@ -91,7 +108,7 @@ public sealed class GameSessionBindingTracker(TimeProvider? clock = null)
 
     public void Clear()
     {
-        lock (gate) { source = null; ClearCore(); }
+        lock (gate) { source = null; exited = null; ClearCore(); }
     }
 
     private void ClearCore()

@@ -17,6 +17,24 @@ internal sealed class QueueLagCorrector
     public int CorrectedInventoryFrames { get; private set; }
 
     public CombatCaptureReport Combat(CombatCaptureReport value, double now) { lock (gate) return CombatCore(value, now); }
+    /// <summary>帧时点为 <paramref name="frameMono"/> 的战斗帧无需校正时按原样通过（记录同 <see cref="Combat"/>）并返回真；需要校正时不改状态、返回假。</summary>
+    public bool CombatPasses(double frameMono, double now)
+    {
+        lock (gate)
+        {
+            if (frameMono < now - ObservationCaptureRun.MaximumQueueLagMs && double.IsFinite(frameMono)) return false;
+            combatLagging = false; combatFloor = Math.Max(combatFloor, frameMono); return true;
+        }
+    }
+    /// <summary>库存帧无需校正时按原样通过（记录同 <see cref="Inventory"/>）并返回真；需要校正时不改状态、返回假。</summary>
+    public bool InventoryPasses(double frameMono, double now)
+    {
+        lock (gate)
+        {
+            if (frameMono < now - ObservationCaptureRun.MaximumQueueLagMs && double.IsFinite(frameMono)) return false;
+            inventoryFloor = Math.Max(inventoryFloor, frameMono); return true;
+        }
+    }
     public InventoryCaptureReport Inventory(InventoryCaptureReport value, double now) { lock (gate) return InventoryCore(value, now); }
     private CombatCaptureReport CombatCore(CombatCaptureReport value, double now)
     {

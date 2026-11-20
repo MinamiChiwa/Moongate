@@ -10,8 +10,11 @@ namespace MabiTool.Contracts;
 public sealed record ObservationCaptureCounters(int SchemaVersion, CaptureConnectionCounters Connections,
     CapturePacketCounters Packets, CaptureQueueCounters Queues, CaptureReassemblyCounters Reassembly, CaptureFrameCounters Frames,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CapturePrearmCounters? Prearm = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CaptureDeviceCounters>? Devices = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CaptureDeviceCounters>? Devices = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CaptureReadCounters? Read = null)
 {
+    /// <summary>读取方式的固定码。</summary>
+    public static IReadOnlySet<string> ReadModes { get; } = new HashSet<string>(StringComparer.Ordinal) { "immediate", "poll", "minToCopy" };
     /// <summary>按设备分项的上限（打开的设备与因上限跳过的设备合计）。</summary>
     public const int MaximumDevices = 64;
     /// <summary>设备类别的固定码。</summary>
@@ -45,9 +48,13 @@ public sealed record CapturePacketCounters(UInt64String Received, UInt64String B
 public sealed record CaptureQueueCounters(UInt64String CombatDepth, UInt64String CombatPeak, UInt64String InventoryDepth,
     UInt64String InventoryPeak, UInt64String InventoryLaneRejected);
 /// <param name="Resets">按固定原因码的重组重置次数，只含非零项。</param>
+/// <param name="GapSkippedBytes">缺口超时跳过的字节数（可选新增，旧 Worker 不发送）。</param>
+/// <param name="GapSceneResets">同一连接内的重置使战斗解析整体重置的次数（重传内容不一致；可选新增）。</param>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CaptureReassemblyCounters(UInt64String Segments, UInt64String Bytes, UInt64String OutOfOrder,
-    UInt64String Retransmitted, IReadOnlyDictionary<string, UInt64String> Resets);
+    UInt64String Retransmitted, IReadOnlyDictionary<string, UInt64String> Resets,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UInt64String? GapSkippedBytes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UInt64String? GapSceneResets = null);
 /// <param name="Total">已分帧的帧数；Dispatched 为交给至少一个观察器的帧，其余为当前兴趣不使用的已知协议号。</param>
 /// <param name="Types">按十进制协议号的帧数，至多 24 种；之后新出现协议号的帧计入 OtherFrames。</param>
 /// <param name="Rejected">按固定分支码（combat、music、inventory）的解析拒绝数，只含非零项。</param>
@@ -78,6 +85,14 @@ public sealed record CaptureFrameCounters(UInt64String Total, UInt64String Dispa
 public sealed record CaptureDeviceCounters(string ChannelId, string Kind, int LinkType, bool Opened, string? Issue, bool Primary,
     UInt64String Packets, UInt64String PortPackets, UInt64String GameStreams, UInt64String Frames,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UInt64String? CandidateDropped = null);
+/// <summary>本次捕获实际采用的读取方式（打开设备后确定，整次捕获不变）；可省略（旧 Worker）。</summary>
+/// <param name="Mode">immediate：Npcap 即时模式、等待各设备的读事件；poll：按固定间隔非阻塞读取全部设备；minToCopy：最小拷贝量加超时（只用于实验）。</param>
+/// <param name="Fallback">计划采用读事件方式，但有打开的设备取不到读事件或即时模式（旧版 Npcap），整次捕获回退为轮询。</param>
+/// <param name="CoalesceMs">immediate 方式持续有包时的合批间隔毫秒，0 为不合批。</param>
+/// <param name="PollMs">poll 方式的轮询间隔、minToCopy 方式的等待超时毫秒。</param>
+/// <param name="BufferBytes">每个句柄的内核缓冲字节数。</param>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record CaptureReadCounters(string Mode, bool Fallback, int CoalesceMs, int PollMs, int BufferBytes);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CapturePrearmCounters(UInt64String Buffered, UInt64String Delivered, UInt64String Expired,
     UInt64String Foreign, UInt64String Budget);

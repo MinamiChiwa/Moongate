@@ -317,6 +317,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public object? CurrentPage => currentFrame?.Page;
 
     private PageFrame? currentFrame;
+    private bool windowShown;
+
+    /// <summary>
+    /// 主窗口显示或最小化、隐藏：向后端报告可见处 <c>main</c>，最小化期间当前页面停止接收通知与本页专用的读取（保留界面与数据），
+    /// 还原后重新激活并补读一次。
+    /// </summary>
+    public void SetWindowShown(bool shown)
+    {
+        if (windowShown == shown || disposed && shown) return;
+        windowShown = shown;
+        backend.SetSurfaceVisible("main", shown);
+        if (shown) currentFrame?.Resume();
+        else currentFrame?.Suspend();
+    }
 
     // 每个模块的页面外框；页面是否在切走后保留由外框按页面模型的 IPageLifecycle.Cacheable 决定。
     private readonly Dictionary<string, PageFrame> frames = new(StringComparer.Ordinal);
@@ -405,6 +419,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         backend.Changed -= OnBackendChanged;
         backend.ShortcutTriggered -= OnShortcutTriggered;
         ShellRequests.NpcapGuideRequested -= NpcapGuide.Show;
+        SetWindowShown(false);
         // 关闭窗口时当前页面与保留的页面都退订，并释放它们持有的后端资源（例如取色用的冻结画面）。
         ReleasePages();
         catalog.Overlay?.Hide();
@@ -422,7 +437,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     private void OnBackendChanged(object? sender, EventArgs e)
     {
-        RefreshBackendState();
+        RefreshBackendState(onlyChanges: true);
         RefreshEnabledModules();
     }
 
@@ -434,11 +449,31 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         else if (actionId == "combat-measurement-toggle") _ = backend.SendIntentAsync("combat.measure.toggle", null, CancellationToken.None);
     }
 
-    private void RefreshBackendState()
+    /// <param name="onlyChanges">后端通知：活动、绑定与抓包状态的值都没变时不重发这些属性（多数通知来自战斗数据）。</param>
+    private void RefreshBackendState(bool onlyChanges = false)
     {
-        Activity = backend.GetActivity();
-        Binding = backend.GetGameBinding();
-        Capture = backend.GetCaptureStatus();
+        var activity = backend.GetActivity();
+        var binding = backend.GetGameBinding();
+        var capture = backend.GetCaptureStatus();
+        if (!onlyChanges || !Equals(activity, Activity) || !Equals(binding, Binding) || !Equals(capture, Capture))
+            RaiseBackendState(activity, binding, capture);
+        var release = AvailableUpdate(backend);
+        if (release != UpdateRelease)
+        {
+            UpdateRelease = release;
+            Raise(nameof(UpdateRelease));
+            Raise(nameof(HasUpdate));
+            Raise(nameof(UpdateLabel));
+        }
+        else if (!onlyChanges) Raise(nameof(UpdateLabel));
+        GamePicker.OnBackendChanged();
+    }
+
+    private void RaiseBackendState(ActivitySnapshot activity, BindingView binding, CaptureStatusView capture)
+    {
+        Activity = activity;
+        Binding = binding;
+        Capture = capture;
         Raise(nameof(Activity));
         Raise(nameof(Binding));
         Raise(nameof(Capture));
@@ -452,15 +487,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         Raise(nameof(ActivityOwnerBrush));
         Raise(nameof(Stages));
         Raise(nameof(ShowStages));
-        var release = AvailableUpdate(backend);
-        if (release != UpdateRelease)
-        {
-            UpdateRelease = release;
-            Raise(nameof(UpdateRelease));
-            Raise(nameof(HasUpdate));
-        }
-        Raise(nameof(UpdateLabel));
-        GamePicker.OnBackendChanged();
     }
 
     // 界面文字换语言后，由后端状态组成的文字和当前页面都重新取一次。

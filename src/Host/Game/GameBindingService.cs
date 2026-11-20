@@ -130,11 +130,7 @@ public sealed partial class GameBindingService(GameControlContext controls, IGam
             if (!SameIdentity(source.Refresh(candidate.Window.Observation), candidate.Window.Observation)) throw new OperationException("input.bindingChanged", "候选游戏进程或窗口已变化");
             if (receipts.Count >= 1000) throw new OperationException("resource.capacityExceeded", "游戏绑定回执达到上限");
             controls.Input.EmergencyStop();
-            if (controls.Bindings.BindSource(() =>
-            {
-                var refreshed = source.Refresh(candidate.Window.Observation);
-                return SameIdentity(refreshed, candidate.Window.Observation) ? refreshed : null;
-            }) is null)
+            if (BindProcess(candidate.Window.Observation) is null)
                 throw new OperationException("input.bindingChanged", "候选游戏进程或窗口已变化");
             selected = true;
             var value = Snapshot(controls.Bindings.LastKnown); receipts.Add((owner, key!), new(hash, value, time.GetTimestamp())); return value;
@@ -188,6 +184,24 @@ public sealed partial class GameBindingService(GameControlContext controls, IGam
             case var other: logger?.LogWarning("游戏窗口访问检查：{code}，进程 {pid}，继续绑定", other, observation.ProcessId); return;
         }
     }
+    /// <summary>
+    /// 以所选窗口建立绑定并按游戏进程维持：每次核对先读当前窗口，读不到时找同一进程的其他可见窗口换绑（游戏重建窗口），
+    /// 都没有时由跟踪器按进程是否退出决定保留（停止输入）或清除。调用方持有 <see cref="gate"/>。
+    /// </summary>
+    private GameWindowBinding? BindProcess(GameWindowObservation selected)
+    {
+        var windows = source!;
+        var bound = selected;
+        return controls.Bindings.BindSource(() =>
+        {
+            var refreshed = windows.Refresh(bound);
+            if (!SameProcess(refreshed, bound)) refreshed = windows.Reacquire(bound) is { } other && SameProcess(other, bound) ? other : null;
+            if (refreshed is not null) bound = refreshed;
+            return refreshed;
+        }, () => windows.ProcessExited(bound));
+    }
+    private static bool SameProcess(GameWindowObservation? current, GameWindowObservation selected) => current is not null &&
+        current.ProcessId == selected.ProcessId && current.ProcessStartTime == selected.ProcessStartTime && current.Region == selected.Region;
     private static bool SameIdentity(GameWindowObservation? current, GameWindowObservation selected) => current is not null &&
         current.ProcessId == selected.ProcessId && current.ProcessStartTime == selected.ProcessStartTime &&
         current.WindowIdentity == selected.WindowIdentity && current.Region == selected.Region;

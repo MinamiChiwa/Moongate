@@ -173,6 +173,26 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     public QueueRow? Upcoming => Music.Queue.SkipWhile(row => !row.Current).Skip(1).FirstOrDefault();
     public string UpcomingTitle => Upcoming?.Title ?? UiText.Pick("没有下一首", "沒有下一首");
     public string PrimaryDps => Combat.Kpis.FirstOrDefault(tile => tile.Primary)?.Value ?? "—";
+
+    /// <summary>
+    /// 版面里这个元件的“怪物血量”开关（画布按摆放数据写入）；默认显示。
+    /// </summary>
+    public bool ShowHealth
+    {
+        get => showHealth;
+        set
+        {
+            if (Set(ref showHealth, value)) Raise(nameof(HealthExpanded));
+        }
+    }
+
+    /// <summary>DPS 元件的血量区块展开：有当前目标（或能力停用说明）且开关打开。</summary>
+    public bool HealthExpanded => IsDps && showHealth && Combat.Health is not null;
+
+    /// <summary>血量区块显示的内容：当前目标的血量；目标清空后的收起过程中保留最后一次的内容。</summary>
+    public TargetHealthView? HealthShown => Combat.Health ?? lastHealth;
+    private TargetHealthView? lastHealth;
+    private bool showHealth = true;
     /// <summary>战斗状态标签（战斗中／战斗外／空闲／切图中／未观测），与 DPS检测页工具栏的状态标签同一来源。</summary>
     public string CombatState => Combat.Location?.Activity ?? string.Empty;
     public string RollingDps => Combat.Kpis.Count > 1 ? $"{Combat.Kpis[1].Label} {Combat.Kpis[1].Value}" : string.Empty;
@@ -286,12 +306,31 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     public bool HasRoomScore => RoomStatus.ScoreCard.Length > 0;
     public bool NoSkills => TopSkills.Count == 0;
 
-    /// <summary>元件是否在画面上显示；由视图在挂上可见窗口与离开时设置，决定倒计时定时器是否运行。</summary>
+    /// <summary>
+    /// 元件是否在画面上显示；由视图在挂上可见窗口与离开时设置，决定倒计时定时器是否运行，并向后端报告可见处
+    /// （隐藏的元件不为它拉数据）。隐藏期间到达的变化在重新显示时补读一次。
+    /// </summary>
     public void SetShown(bool value)
     {
-        shown = value;
+        shownReported = true;
+        if (shown != value)
+        {
+            shown = value;
+            backend.SetSurfaceVisible("overlay", value);
+            if (DataSurface is { } surface) backend.SetSurfaceVisible(surface, value);
+            if (value && stale && Read()) Raise(string.Empty);
+        }
         UpdateClock();
     }
+
+    private bool Combatant => WidgetId.StartsWith("combat.", StringComparison.Ordinal);
+
+    // 元件所需数据对应的可见处：战斗元件要战斗数据，演奏中与合奏元件要乐谱与队列，染色元件要染色状态。
+    private string? DataSurface => Combatant ? "overlay.combat"
+        : WidgetId is "performance.now-playing" or "rooms.readiness" ? "music"
+        : WidgetId == "color.current" ? "color" : null;
+    private bool stale, shownReported;
+    private TopicNotice? shownNotice;
 
     /// <summary>倒计时定时器是否在运行。</summary>
     public bool ClockRunning => clockTimer.IsEnabled;
@@ -300,25 +339,45 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     {
         backend.Changed -= OnChanged;
         CombatEffectFavorites.Changed -= OnChanged;
-        shown = false;
+        SetShown(false);
         clockTimer.Stop();
     }
 
+    // 隐藏的元件只记下有变化；显示的元件只重读自己用到的数据，数据对象没变（后端适配层对同一状态返回同一对象）时不通知。
     private void OnChanged(object? sender, EventArgs e)
     {
-        Read();
-        Raise(string.Empty);
+        // 视图还没报告过显示状态（单独使用模型时）按显示处理。
+        if (shownReported && !shown) { stale = true; return; }
+        if (Read()) Raise(string.Empty);
         UpdateClock();
     }
 
-    private void Read()
+    private bool Read()
     {
-        Combat = backend.GetCombat();
-        Music = backend.GetMusic();
-        Rooms = backend.GetRooms();
-        Color = backend.GetColor();
-        roomTiming = Rooms.Timing;
-        roomStatus = null;
+        var first = (object?)Combat is null;
+        var changed = false;
+        if (first || Combatant) changed |= Swap<CombatPageData>(Combat!, backend.GetCombat(), value => Combat = value);
+        if (first || WidgetId == "performance.now-playing") changed |= Swap<MusicPageData>(Music!, backend.GetMusic(), value => Music = value);
+        if (first || WidgetId == "rooms.readiness") changed |= Swap<RoomsPageData>(Rooms!, backend.GetRooms(), value => Rooms = value);
+        if (first || WidgetId == "color.current") changed |= Swap<ColorPageData>(Color!, backend.GetColor(), value => Color = value);
+        var notice = Notice;
+        changed |= !Equals(notice, shownNotice);
+        shownNotice = notice;
+        stale = false;
+        if (changed)
+        {
+            roomTiming = Rooms.Timing;
+            roomStatus = null;
+            if (Combat?.Health is { } health) lastHealth = health;
+        }
+        return changed;
+    }
+
+    private static bool Swap<T>(T current, T next, Action<T> assign) where T : class
+    {
+        if (ReferenceEquals(current, next)) return false;
+        assign(next);
+        return true;
     }
 
     private void UpdateClock()

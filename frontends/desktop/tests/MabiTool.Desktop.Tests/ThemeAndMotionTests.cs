@@ -309,4 +309,94 @@ public sealed class ThemeAndMotionTests
         Assert.Null(host.PageTransition);
         window.Close();
     }
+
+    /// <summary>
+    /// 系统关闭了动画：从未选择时设置页显示“减弱”、动效不生效，并随系统设置变化；
+    /// 用户选了“开启”后动效生效、问号说明写明选择仍然生效，之后系统设置变化不再改变它。
+    /// </summary>
+    [AvaloniaFact]
+    public void ExplicitChoiceWinsOverTheSystemAndUnsetFollowsIt()
+    {
+        var window = LayoutProbe.Open(new SampleBackend(), 1280, 860, "shell.settings");
+        var host = window.GetVisualDescendants().OfType<PageHost>().Single();
+        var page = window.GetVisualDescendants().OfType<SettingsPage>().Single();
+        var model = (SettingsPageModel)page.DataContext!;
+        Button Named(string name) => page.GetVisualDescendants().OfType<Button>().Single(button => button.Name == name);
+        try
+        {
+            UiMotion.Restore(null);
+            UiMotion.SystemReduced = true;
+            LayoutProbe.Settle();
+            Assert.False(UiMotion.Active);
+            Assert.DoesNotContain("motion", window.Classes);
+            Assert.Contains("active", Named("MotionOffButton").Classes);
+            Assert.EndsWith("系统已关闭动画效果，未选择时按减弱处理。", model.MotionHint);
+            Assert.Null(DesktopPreferences.Current.Motion);
+
+            // 从未选择：系统重新开启动画时跟随。
+            UiMotion.SystemReduced = false;
+            LayoutProbe.Settle();
+            Assert.True(UiMotion.Active);
+            Assert.Contains("motion", window.Classes);
+            Assert.Contains("active", Named("MotionOnButton").Classes);
+
+            UiMotion.SystemReduced = true;
+            LayoutProbe.Settle();
+            Named("MotionOnButton").Command!.Execute(null);
+            LayoutProbe.Settle();
+            Assert.True(UiMotion.Active);
+            Assert.Contains("motion", window.Classes);
+            Assert.NotNull(host.PageTransition);
+            Assert.EndsWith("系统已关闭动画效果，这里的选择仍然生效。", model.MotionHint);
+            Assert.Equal(true, DesktopPreferences.Current.Motion);
+
+            // 选择过后系统设置变化不改变动效。
+            UiMotion.SystemReduced = false;
+            UiMotion.SystemReduced = true;
+            LayoutProbe.Settle();
+            Assert.True(UiMotion.Active);
+            Assert.Contains("active", Named("MotionOnButton").Classes);
+        }
+        finally
+        {
+            UiMotion.SystemReduced = false;
+            UiMotion.Enabled = false;
+            window.Close();
+        }
+    }
+
+    /// <summary>明确的选择存为 MotionChoice 并读回；未选择不写；旧版文件的 Motion 按当时的选择读取，下次保存改写成 MotionChoice。</summary>
+    [Fact]
+    public void MotionChoiceIsSavedAndReadBack()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "moongate-preferences-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var store = new DesktopPreferenceStore(path);
+            store.Save(DesktopPreferences.Default with { Motion = true });
+            var saved = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal("On", (string?)saved["MotionChoice"]);
+            Assert.False(saved.ContainsKey("Motion"));
+            Assert.Equal(true, new DesktopPreferenceStore(path).Load().Motion);
+
+            store.Save(DesktopPreferences.Default with { Motion = false });
+            Assert.Equal(false, new DesktopPreferenceStore(path).Load().Motion);
+            store.Save(DesktopPreferences.Default);
+            Assert.Null(new DesktopPreferenceStore(path).Load().Motion);
+
+            File.WriteAllText(path, "{\"Motion\": true}");
+            var legacy = new DesktopPreferenceStore(path).Load();
+            Assert.Equal(true, legacy.Motion);
+            store.Save(legacy);
+            var rewritten = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal("On", (string?)rewritten["MotionChoice"]);
+            Assert.False(rewritten.ContainsKey("Motion"));
+            File.WriteAllText(path, "{\"Motion\": false}");
+            Assert.Equal(false, new DesktopPreferenceStore(path).Load().Motion);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

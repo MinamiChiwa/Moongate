@@ -65,7 +65,8 @@ public sealed class CombatControlRequestTests
         {
             Assert.Equal("obs", request.Body.GetProperty("observationId").GetString());
             Assert.Equal(90000, request.Body.GetProperty("durationMs").GetInt32());
-            Assert.Equal(2000, request.Body.GetProperty("countdownMs").GetInt32());
+            // 预备倒计时已停用：测量从第一次有效伤害起计时，请求里的预备时长固定为 0，不取设定里的旧值。
+            Assert.Equal(0, request.Body.GetProperty("countdownMs").GetInt32());
         });
     }
 

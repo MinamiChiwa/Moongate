@@ -40,7 +40,7 @@ public sealed class CurrentCombatStreamTests
             .Concat(Frame(20054, Convert.FromBase64String(fixture.RootElement.GetProperty("characterBodyBase64").GetString()!), true)).ToArray();
         var at = new DateTimeOffset(2026, 11, 10, 0, 0, 0, TimeSpan.Zero);
         stream.Feed(0, initial, 0, 0, at);
-        Assert.NotNull(stream.LocalEntity);
+        var local = stream.LocalEntity!.Key;
         reports.Clear();
         switch (cause)
         {
@@ -63,7 +63,9 @@ public sealed class CurrentCombatStreamTests
         }
         var gap = Assert.Single(reports.SelectMany(value => value.Frame.Gaps));
         Assert.Equal(cause == "unknown" ? "combat.streamGap" : "combat.streamGap." + cause, gap.Reason);
-        Assert.Null(stream.LocalEntity);
+        // 同一连接内、数据本身一致的缺口保留本机实体与代次（分段不结束）；重传不一致、连接变化与原因不明时整体重置（换代次）。
+        var kept = cause is "gapTimeout" or "invalidFrameHeader" or "payloadTooLarge" or "pendingCapacity" or "captureDrops" or "truncatedPacket";
+        Assert.Equal(kept, stream.LocalEntity?.Key == local);
         Assert.DoesNotContain("private native detail", JsonSerializer.Serialize(reports, ContractJson.Options));
         var validate = typeof(MabiTool.Host.Game.GameObservationService).Assembly.GetType("MabiTool.Host.Game.CaptureCombatValidation")!
             .GetMethod("Validate", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;

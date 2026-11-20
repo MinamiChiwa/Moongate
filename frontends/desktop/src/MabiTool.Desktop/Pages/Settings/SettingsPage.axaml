@@ -11,7 +11,7 @@
       <DockPanel Margin="{DynamicResource TitleReserve}">
         <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource T.Title}" />
         <controls:HelpTip DockPanel.Dock="Left" Margin="8,0,0,0" Text="{DynamicResource T.Status}" />
-        <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" ClipToBounds="True" />
+        <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" />
       </DockPanel>
     </StackPanel>
 
@@ -46,7 +46,7 @@
               </controls:SelectionBorder>
             </controls:PairRow>
             <controls:PairRow>
-              <StackPanel Orientation="Horizontal" Spacing="4"><TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource T.Motion}" /><controls:HelpTip Text="{DynamicResource T.MotionHint}" /></StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="4"><TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource T.Motion}" /><controls:HelpTip Text="{Binding MotionHint}" /></StackPanel>
               <controls:SelectionBorder Classes="segmented">
                 <StackPanel Orientation="Horizontal">
                   <Button x:Name="MotionOnButton" Classes="segment" Classes.active="{Binding MotionOn}"

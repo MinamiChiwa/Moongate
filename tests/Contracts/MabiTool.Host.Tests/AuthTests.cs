@@ -363,11 +363,40 @@ public sealed class AuthTests
             Assert.Equal(0, await pipe.ReadAsync(buffer, timeout.Token));
         }
         Assert.NotNull(await LocalBootstrapClient.ConnectAsync(file, "after-bad-frame"));
+        var world = new SecurityIdentifier(WellKnownSidType.WorldSid, null);
         var info = new FileInfo(file);
-        var security = info.GetAccessControl();
-        security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null), FileSystemRights.Read, AccessControlType.Allow));
-        info.SetAccessControl(security);
-        await Assert.ThrowsAsync<IOException>(() => LocalBootstrapClient.ConnectAsync(file, "insecure-file"));
+        var directory = info.Directory!;
+        GrantWorldRead(info);
+        // 运行目录仍是当前用户独占：只有发现文件多出主体时先改回当前用户独占，再照常连接。
+        Assert.NotNull(await LocalBootstrapClient.ConnectAsync(file, "repaired-file"));
+        Assert.False(GrantsWorld(info));
+        // 运行目录本身也授予了其他主体：不修复，拒绝连接。
+        GrantWorldRead(directory);
+        GrantWorldRead(info);
+        try { await Assert.ThrowsAsync<IOException>(() => LocalBootstrapClient.ConnectAsync(file, "insecure-file")); }
+        finally
+        {
+            var restored = directory.GetAccessControl();
+            restored.RemoveAccessRuleAll(new FileSystemAccessRule(world, FileSystemRights.Read, AccessControlType.Allow));
+            directory.SetAccessControl(restored);
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static bool GrantsWorld(FileInfo file)
+    {
+        var world = new SecurityIdentifier(WellKnownSidType.WorldSid, null);
+        foreach (FileSystemAccessRule rule in file.GetAccessControl().GetAccessRules(true, true, typeof(SecurityIdentifier)))
+            if (world.Equals(rule.IdentityReference)) return true;
+        return false;
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void GrantWorldRead(FileSystemInfo target)
+    {
+        var world = new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null), FileSystemRights.Read, AccessControlType.Allow);
+        if (target is DirectoryInfo directory) { var security = directory.GetAccessControl(); security.AddAccessRule(world); directory.SetAccessControl(security); }
+        else { var file = (FileInfo)target; var security = file.GetAccessControl(); security.AddAccessRule(world); file.SetAccessControl(security); }
     }
 
     [Fact]
@@ -440,15 +469,13 @@ public sealed class AuthTests
             await File.WriteAllTextAsync(temporary, "new");
             using var held = new FileStream(target, FileMode.Open, FileAccess.Read, FileShare.Read);
             var delays = 0;
+            // 占用期间运行目录被授予了其他主体：重试前重新校验目录，拒绝发布。
             Task Delay(TimeSpan duration, CancellationToken token)
             {
                 if (!OperatingSystem.IsWindows()) return Task.CompletedTask;
                 delays++;
                 held.Dispose();
-                var file = new FileInfo(target);
-                var security = file.GetAccessControl();
-                security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null), FileSystemRights.Read, AccessControlType.Allow));
-                file.SetAccessControl(security);
+                GrantWorldRead(new DirectoryInfo(runtime));
                 return Task.CompletedTask;
             }
             await Assert.ThrowsAsync<IOException>(() => LocalDiscoveryService.PublishAsync(temporary, target, default, Delay));

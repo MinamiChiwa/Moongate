@@ -134,6 +134,10 @@ public sealed class CoexistenceScenario(IGameEnvironment environment, Coexistenc
             {
                 setup.CancelAfter(TimeSpan.FromSeconds(settings.SetupSeconds));
                 await host.StartAsync(setup.Token);
+                // 本场景核对音乐、库存与本场景战斗三类需求的增减：在场景私有数据根关闭自动 DPS 观测，它不会在任意时点并入共享捕获。
+                var sdk = host.Client(); string? etag = null;
+                await sdk.GetCombatAutoObservationAsync(setup.Token, onResponse: metadata => etag = metadata.ETag);
+                await ObservationHost.RetryAsync(() => sdk.SetCombatAutoObservationAsync(new(false), "debug-coexistence-auto-off", etag ?? throw new ProbeException("combat.autoRevisionMissing"), setup.Token), setup.Token);
             }
             captureStartMono = Stopwatch.GetTimestamp() * (1000d / Stopwatch.Frequency);
             await host.StartCaptureAsync(preparation.Token);

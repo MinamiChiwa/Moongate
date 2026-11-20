@@ -31,13 +31,24 @@ public sealed class CombatNameCatalog(GameControlContext controls, TimeProvider 
     {
         var current = Current(out var reason);
         if (current is null) return new(kind, new(sheetId), null, CombatNames.Unavailable, reason);
+        if (kind == CombatNames.AiCompanion) return new(kind, new(0), null, CombatNames.Generic, CombatNames.GenericReason);
         var key = kind switch { CombatNames.Monster => "monster", CombatNames.Skill => "skill", CombatNames.Effect => "effect", _ => null };
-        if (key is null) return new(kind, new(sheetId), null, CombatNames.Unknown, "combat.nameKindUnknown");
+        if (key is null && !CombatNames.ActorKinds.Contains(kind)) return new(kind, new(sheetId), null, CombatNames.Unknown, "combat.nameKindUnknown");
+        key ??= kind;
         if (current.Unsupported.TryGetValue(key, out var unsupported)) return new(kind, new(sheetId), null, CombatNames.Unavailable, unsupported);
-        var table = key switch { "monster" => current.Monsters, "skill" => current.Skills, _ => current.Effects };
-        return table.TryGetValue(sheetId, out var text)
-            ? new(kind, new(sheetId), text, CombatNames.Resolved)
-            : new(kind, new(sheetId), null, CombatNames.Unknown, "combat.nameNotFound");
+        var table = key switch
+        {
+            "monster" => current.Monsters, "skill" => current.Skills, "effect" => current.Effects,
+            _ => current.Actors?.GetValueOrDefault(key)
+        };
+        if (table is null) return new(kind, new(sheetId), null, CombatNames.Unavailable, "combat.nameTableMissing");
+        if (table.TryGetValue(sheetId, out var text)) return new(kind, new(sheetId), text, CombatNames.Resolved);
+        // 怪物表名称为空：经 Raid／BattleZone 关联到首领组名时用组名，否则给出“客户端名称为空”。
+        if (key == "monster" && current.EmptyMonsters?.Contains(sheetId) == true)
+            return current.BossGroupNames?.TryGetValue(sheetId, out var group) == true
+                ? new(kind, new(sheetId), group, CombatNames.Resolved)
+                : new(kind, new(sheetId), null, CombatNames.Unknown, "combat.nameEmpty");
+        return new(kind, new(sheetId), null, CombatNames.Unknown, "combat.nameNotFound");
     }
 
     public string? EffectPolarity(uint sheetId) =>

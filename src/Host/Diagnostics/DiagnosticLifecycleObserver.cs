@@ -34,7 +34,8 @@ internal sealed class DiagnosticLifecycleObserver(DiagnosticTrace trace, GameCon
     }
 
     /// <summary>
-    /// 绑定修订变化记 game.binding.changed：changed 写明相对上一次的变化（window、position、size、dpi、minimized，多项以 + 连接），
+    /// 绑定修订变化记 game.binding.changed：changed 写明相对上一次的变化（window、position、size、dpi、minimized，
+    /// 以及窗口读不到或恢复时能否接收输入的 input，多项以 + 连接），
     /// 会话、绑定状态或最小化变化立即记录；只有几何变化时按 <see cref="GeometryInterval"/> 合并。
     /// </summary>
     private void OnBinding(GameWindowBinding? binding, bool sessionChanged)
@@ -70,6 +71,7 @@ internal sealed class DiagnosticLifecycleObserver(DiagnosticTrace trace, GameCon
         if (previous.Bounds.Width != current.Bounds.Width || previous.Bounds.Height != current.Bounds.Height) result.Add("size");
         if (previous.DpiX != current.DpiX || previous.DpiY != current.DpiY) result.Add("dpi");
         if (previous.IsMinimized != current.IsMinimized) result.Add("minimized");
+        else if (previous.CanAcceptInput != current.CanAcceptInput) result.Add("input");
         return result;
     }
 

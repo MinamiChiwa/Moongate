@@ -20,9 +20,11 @@ public static class DiagnosticEvents
     public static readonly DiagnosticEventDefinition AutomationChanged = new("observation.automation.changed", Observation, "observation.capture", DiagnosticLevel.Info,
         ["state", "reason", "repeats"]);
     /// <summary>抓包设备的打开结果：source 为 automatic（全部设备）/saved/request，opened 与 failed 为打开成功与失败（含跳过）的设备数，
-    /// primary 为当前主来源类别；指定网卡不可用时 reason 为原因码。打开结果或主来源变化时记录。</summary>
+    /// primary 为当前主来源类别；指定网卡不可用时 reason 为原因码。readMode 为实际读取方式（immediate/poll），readFallback 为是否因 Npcap
+    /// 不支持读事件或即时模式而回退轮询，coalesceMs 为合批间隔，kernelBufferKiB 为每句柄内核缓冲（旧 Worker 不上报时省略这四项）。
+    /// 打开结果、主来源或读取方式变化时记录。</summary>
     public static readonly DiagnosticEventDefinition ChannelSelected = new("observation.channel.selected", Observation, "observation.capture", DiagnosticLevel.Info,
-        ["source", "reason", "opened", "failed", "primary"]);
+        ["source", "reason", "opened", "failed", "primary", "readMode", "readFallback", "coalesceMs", "kernelBufferKiB"]);
     /// <summary>抓包流量摘要（流量计数）：捕获开始后第 10、30 秒，之后每 60 秒且有变化时一条，同一时点另有 <see cref="CaptureParse"/>。
     /// 不含地址、端口与载荷。packets/bytes 为收到的包与字节，filtered 为不属于游戏连接的包，truncated 与 driverDropped 为截断与驱动丢包，
     /// connections 为当前接收连接数，segments 为交给重组的数据段。</summary>
@@ -32,7 +34,14 @@ public static class DiagnosticEvents
     /// decompressFailures 与 rejected 为解码失败与拒绝数，identity 为是否已取得本机身份，各 *AgeMs 为对应产出距今毫秒（没有产出时省略）。</summary>
     public static readonly DiagnosticEventDefinition CaptureParse = new("observation.capture.parse", Observation, "observation.capture", DiagnosticLevel.Info,
         ["elapsedSeconds", "frames", "dispatched", "decompressFailures", "rejected", "identity", "reportAgeMs", "combatAgeMs", "inventoryAgeMs"]);
-    /// <summary>流量摘要的按设备分项，每条摘要后逐设备一条：index 为设备序号，kind 为 physical/wintun/tap/hyperv/virtual/loopback，
+    /// <summary>抓包流量摘要（重组重置分项），与 <see cref="CaptureSummary"/> 同时写出：各原因的累计重置次数（新连接 connectionSyn、
+    /// 结束或复位 connectionEnded、移除 connectionRemoved、缺口超时 gapTimeout、驱动丢包 captureDrops、重传不一致 conflictingRetransmission、
+    /// 帧头失步 invalidFrameHeader，其余原因合计 other），gapSkippedBytes 为缺口超时跳过的字节数，combatGapResets 为同一连接内的重置使战斗解析
+    /// 整体重置（对应分段以 stream-reset 结束）的次数，inventoryGapInvalidations 为宿主收到的因重组缺口失效的库存帧数。</summary>
+    public static readonly DiagnosticEventDefinition CaptureReassembly = new("observation.capture.reassembly", Observation, "observation.capture", DiagnosticLevel.Info,
+        ["elapsedSeconds", "gapSkippedBytes", "connectionSyn", "connectionEnded", "connectionRemoved", "gapTimeout",
+            "captureDrops", "conflictingRetransmission", "invalidFrameHeader", "other", "combatGapResets", "inventoryGapInvalidations"]);
+    /// <summary>流量摘要的按设备分项：每张设备只在首次摘要、打开结果／链路类型／主来源变化或计数自上次写出后变化时写一条，停止抓包时为计数有变化的设备补写；index 为设备序号，kind 为 physical/wintun/tap/hyperv/virtual/loopback，
     /// linkType 为链路类型值（未打开为 -1），opened 与 issue 为打开结果，primary 为是否主来源，packets、portPackets、gameStreams、frames
     /// 为收包、游戏端口包、确认的游戏流与分帧数，candidateDropped 为确认前超出候选缓冲而丢弃的字节。不含设备名与地址。</summary>
     public static readonly DiagnosticEventDefinition CaptureDevice = new("observation.capture.device", Observation, "observation.capture", DiagnosticLevel.Info,
@@ -40,9 +49,11 @@ public static class DiagnosticEvents
     public static readonly DiagnosticEventDefinition WorkerStarted = new("observation.worker.started", Observation, "observation.worker", DiagnosticLevel.Info, ["pid"]);
     public static readonly DiagnosticEventDefinition WorkerStopped = new("observation.worker.stopped", Observation, "observation.worker", DiagnosticLevel.Info,
         ["end", "exitCode", "terminatedByHost"]);
-    public static readonly DiagnosticEventDefinition WorkerFaulted = new("observation.worker.faulted", Observation, "observation.worker", DiagnosticLevel.Info, ["reason"]);
+    /// <summary>捕获故障：reason 为原因码；kind 为 observation.captureFailed 的细分原因（capture.*、writer.* 来自 Worker，host.* 来自宿主），其他原因为空。</summary>
+    public static readonly DiagnosticEventDefinition WorkerFaulted = new("observation.worker.faulted", Observation, "observation.worker", DiagnosticLevel.Info, ["reason", "kind"]);
     public static readonly DiagnosticEventDefinition CaptureStarted = new("observation.capture.started", Observation, "observation.capture", DiagnosticLevel.Info, ["profile"]);
-    public static readonly DiagnosticEventDefinition CaptureEnded = new("observation.capture.ended", Observation, "observation.capture", DiagnosticLevel.Info, ["reason"]);
+    /// <summary>捕获结束：reason 为结束原因；kind 同 <see cref="WorkerFaulted"/> 的细分原因。</summary>
+    public static readonly DiagnosticEventDefinition CaptureEnded = new("observation.capture.ended", Observation, "observation.capture", DiagnosticLevel.Info, ["reason", "kind"]);
     public static readonly DiagnosticEventDefinition InventorySynced = new("inventory.sync.completed", "inventory", "inventory.sync", DiagnosticLevel.Info,
         ["items", "generation"]);
     /// <summary>Worker 送达的非增量库存帧（登录数据到达即等待身份、完整同步、撤销及原因），附带端点预挂缓冲的累计计数；不含身份与条目内容。</summary>
@@ -89,7 +100,7 @@ public static class DiagnosticEvents
     public static readonly DiagnosticEventDefinition ChannelClosed = new("worker.channel.closed", null, "worker.channel", DiagnosticLevel.Debug,
         ["exitCode", "terminatedByHost"]);
 
-    public static IReadOnlyList<DiagnosticEventDefinition> All { get; } = [BindingChanged, GameBuildChecked, AutomationChanged, ChannelSelected, CaptureSummary, CaptureParse, CaptureDevice, WorkerStarted, WorkerStopped, WorkerFaulted, CaptureStarted,
+    public static IReadOnlyList<DiagnosticEventDefinition> All { get; } = [BindingChanged, GameBuildChecked, AutomationChanged, ChannelSelected, CaptureSummary, CaptureParse, CaptureReassembly, CaptureDevice, WorkerStarted, WorkerStopped, WorkerFaulted, CaptureStarted,
         CaptureEnded, InventorySynced, InventoryFrameState, InventoryFrameRejected, SegmentStarted, SegmentEnded, CombatFrameRejected, HostLog, ColorRunStarted, ColorRunEnded, RoomConnection, DebugCaptureStarted, DebugCaptureEnded, LegacyDataImported, HostPortFallback,
         FrameRejected, CaptureGap, InterestsChanged, SubscriptionChanged, ConnectionChanged, InventoryFrame,
         ChannelConnected, ChannelRequest, ChannelFault, ChannelClosed];

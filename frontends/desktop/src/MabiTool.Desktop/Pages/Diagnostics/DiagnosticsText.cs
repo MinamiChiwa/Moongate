@@ -80,7 +80,7 @@ public static class DiagnosticsText
         return text.EndsWith($"（{code}）", StringComparison.Ordinal) ? text : $"{text}（{code}）";
     }
 
-    /// <summary>请求被拒绝或失败时的页面文字：已知错误码给短句，其余带码显示。</summary>
+    /// <summary>请求被拒绝或失败时的页面文字：常见错误码给专门的短句，其余经共用映射写成短句。</summary>
     public static string Error(string code) => code switch
     {
         "diagnostics.captureActive" => Pick("已有采集在进行", "已有採集在進行"),

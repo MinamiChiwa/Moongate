@@ -64,6 +64,13 @@ public partial interface IDesktopBackend
     /// </summary>
     bool SetCombatPageVisible(bool visible) => false;
 
+    /// <summary>
+    /// 界面某一处显示或隐藏（成对调用，按次数计）：<c>main</c> 主窗口、<c>mini</c> 迷你窗、<c>overlay</c> 任一浮窗元件、
+    /// <c>overlay.combat</c> 战斗浮窗元件，以及按所需数据报告的 <c>music</c>、<c>color</c>、<c>settings</c>、<c>inventory</c>。
+    /// 没有可见使用者的数据不读取，重新可见时立即补读。
+    /// </summary>
+    void SetSurfaceVisible(string surface, bool visible) { }
+
     /// <summary>DPS 明细窗口打开或关闭；打开期间后端适配层按窗口自己的选择读取范围汇总与时间线分桶。</summary>
     void SetCombatDetailOpen(bool open) { }
 
@@ -79,6 +86,23 @@ public partial interface IDesktopBackend
     /// <summary>DPS 随时间曲线的数据；后端或适配层不提供时返回停用说明。</summary>
     MabiTool.Desktop.Pages.Combat.CombatTimelineView? GetCombatTimeline() =>
         new([], 0, 0, Localization.UiText.Pick("后端没有提供时间线", "後端沒有提供時間線"));
+
+    /// <summary>记录明细窗口打开或关闭；打开期间后端适配层读取这条记录的范围汇总与时间线分桶（各记录分别保存目标筛选）。</summary>
+    void SetCombatRecordOpen(string id, bool open) { }
+
+    /// <summary>
+    /// 记录明细窗口的数据：范围固定为这条记录，目标筛选走意图 combat.record.target（参数“记录 ID|目标 ID”）。
+    /// 不提供记录明细的后端返回停用说明，不给出数值。
+    /// </summary>
+    CombatPageData GetCombatRecord(string id) =>
+        CombatMapper.MapRecord(new(false, id, null, null, null, null, Unsupported: true));
+
+    /// <summary>记录明细窗口的 DPS 曲线（相对时间）；不提供时返回停用说明。</summary>
+    MabiTool.Desktop.Pages.Combat.CombatTimelineView? GetCombatRecordTimeline(string id) =>
+        new([], 0, 0, Localization.UiText.Pick("后端没有提供时间线", "後端沒有提供時間線"));
+
+    /// <summary>记录明细的读取结果到达时触发，在界面线程上；只有记录明细窗口订阅。</summary>
+    event EventHandler? CombatRecordChanged { add { } remove { } }
     MusicPageData GetMusic();
     RoomsPageData GetRooms();
 
@@ -100,6 +124,18 @@ public partial interface IDesktopBackend
 
     /// <summary>把只在前端发生的操作结果（浮窗显隐、全部上锁）写进活动胶囊；不连接后端时不显示。</summary>
     void ReportNotice(string text) { }
+
+    /// <summary>
+    /// 客户端属性图标（键见 <see cref="ClientIconNames"/>）：目录就绪、该键可用且已下载时返回解码后的图标，否则为空（界面显示文字）。
+    /// 图标是游戏美术，只在运行时由后端从本机客户端读取，不随工具分发。
+    /// </summary>
+    ClientIconImage? GetClientIcon(string key) => null;
+
+    /// <summary>界面上是否有位置在使用图标；为真时后端适配层才读取图标目录与下载图标。</summary>
+    void SetClientIconsInUse(bool inUse) { }
+
+    /// <summary>图标的可用状态或内容变化时触发，在界面线程上；只有图标位置订阅。</summary>
+    event EventHandler? ClientIconsChanged { add { } remove { } }
 
     /// <summary>
     /// 后端能力表里该能力不可用时的本地化说明，页面显示在对应主操作旁；

@@ -4,7 +4,11 @@ using MabiTool.Contracts;
 
 namespace MabiTool.Modules.CombatObservation.Domain;
 
-public sealed record CombatTimelineRecord(string EncounterId, CombatTimelineItem Item);
+public sealed record CombatTimelineRecord(string EncounterId, CombatTimelineItem Item)
+{
+    /// <summary>条目加入时已算出的 JSON 编码（UTF-8），保存时直接写入时间线页；为空时保存方自行编码。</summary>
+    internal byte[]? Encoded { get; init; }
+}
 public sealed record CombatCheckpoint(CombatWorkspace Workspace, IReadOnlyList<CombatEncounter> Encounters,
     IReadOnlyList<CombatEntityEffects> Effects, IReadOnlyList<CombatTimelineRecord> Timeline,
     IReadOnlyList<CombatGap> Gaps, UInt64String TimelineWatermark)
@@ -22,6 +26,8 @@ public sealed record CombatCheckpoint(CombatWorkspace Workspace, IReadOnlyList<C
     /// <summary>需要在本次检查点立即保存：分段进行中、定时测量计时中、有待保存的已结束分段或删除，或观察已停止。</summary>
     public bool Urgent { get; init; } = true;
     internal CombatSession.PersistedShape? Shape { get; init; }
+    /// <summary>捕获时的效果变化序号；确认时清除不晚于它的效果标脏。</summary>
+    internal ulong EffectWatermark { get; init; }
 }
 
 /// <summary>
@@ -46,10 +52,20 @@ public sealed class CombatSession
     private readonly Func<string> encounterIdFactory;
     private readonly bool healing;
     private readonly Dictionary<EntityKey, CombatEntity> entities = [];
-    private readonly Dictionary<string, (string Hash, double At)> deduplication = new(StringComparer.Ordinal);
+    /// <summary>去重表：事件身份 → 内容（伤害为 <see cref="DamageContent"/>，治疗为内容摘要）与登记时点。</summary>
+    private readonly Dictionary<string, (object Content, double At)> deduplication = new(StringComparer.Ordinal);
+    // 当前攻击目标：本机有效伤害、主目标与实体状态由选取器评估，结果随快照投影；localHits 为本机命中过的实体，healthDrops 为最近一次掉血时点。
+    private readonly CurrentTargetSelector targets = new();
+    private CurrentTargetSelection? selection;
+    private readonly HashSet<EntityKey> localHits = [];
+    private readonly Dictionary<EntityKey, double> healthDrops = [];
+    private const int MaximumLocalHits = 2048;
     private readonly Queue<(string Key, double At)> deduplicationOrder = [];
     private readonly EffectTracker effects;
-    private readonly HashSet<EntityKey> dirtyEffects = [];
+    private readonly Dictionary<EntityKey, ulong> dirtyEffects = [];
+    /// <summary>效果变化序号：标脏时记下当时的序号，确认时只清除不晚于该检查点的标记，后台保存期间的新变化保留。</summary>
+    private ulong effectChanges;
+    private void MarkEffect(EntityKey key) => dirtyEffects[key] = ++effectChanges;
     private readonly List<EncounterState> closed = [];
     private readonly List<CombatTimelineRecord> pendingTimeline = [];
     private readonly List<CombatGap> gaps = [];
@@ -88,7 +104,16 @@ public sealed class CombatSession
     private ulong frameSequence, revision, timelineIndex, dropped;
     private ulong boundaryRevision = 1;
     private int pendingBytes;
-    private string? frameHash;
+    /// <summary>移除待写时间线条目并按各条目加入时的编码长度扣减待写字节。</summary>
+    private void RemovePending(Predicate<CombatTimelineRecord> match)
+    {
+        foreach (var record in pendingTimeline) if (match(record)) pendingBytes -= Size(record);
+        pendingTimeline.RemoveAll(match);
+    }
+    private static int Size(CombatTimelineRecord record) => record.Encoded?.Length ?? JsonSerializer.SerializeToUtf8Bytes(record.Item, ContractJson.Options).Length;
+    /// <summary>最近一帧（已规范化）；同一序号的帧再次到达时才按编码比较内容，正常帧不计算哈希。</summary>
+    private CombatFrame? lastFrame;
+    private static string FrameHash(CombatFrame value) => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value, ContractJson.Options)));
     private string state = "observing";
     // 定时测量：与分段并行统计窗口内的伤害与治疗，不受分段边界影响；取消的记录在下一个检查点删除。
     // 受理后先等待本机第一次有效伤害（measurementPending），窗口从那一击开始按设定时长计时。
@@ -130,6 +155,14 @@ public sealed class CombatSession
     public double MonotonicMs { get { lock (gate) return mono; } }
     public string? CurrentEncounterId { get { lock (gate) return encounter?.Id; } }
     public bool Active { get { lock (gate) return state == "observing"; } }
+    /// <summary>
+    /// 自上次确认以来有不必构建快照即可判定的待保存变化（待写时间线、效果、缺口、已结束分段或删除）；实体集合与观察状态的变化只在
+    /// <see cref="Capture"/> 时比较。宿主据此决定空闲时是否需要立即捕获。
+    /// </summary>
+    public bool PendingChanges
+    {
+        get { lock (gate) return pendingTimeline.Count > 0 || dirtyEffects.Count > 0 || gapRevision != acknowledgedGapRevision || closed.Count > 0 || deletedRecords.Count > 0; }
+    }
     private long OtherCacheBytes() => entities.Count * 1536L + deduplication.Count * 768L +
         (encounter?.GroupBytes ?? 0) + (measurement?.GroupBytes ?? 0) +
         closed.Where(x => !ReferenceEquals(x, encounter) && !ReferenceEquals(x, measurement)).Sum(x => x.GroupBytes);
@@ -141,7 +174,7 @@ public sealed class CombatSession
     {
         if (!Scope(value.Key) || value.RawName is null || value.DisplayName is null || value.RawName.Length > 256 ||
             value.DisplayName.Length > 256 || value.RawName.Any(char.IsControl) || value.DisplayName.Any(char.IsControl) ||
-            value.OwnerKey is { } ownerKey && !Scope(ownerKey))
+            value.OwnerKey is { } ownerKey && !Scope(ownerKey) || !ValidActor(value))
         { MarkGap("entity-invalid", mono, mono, 1); return false; }
         if (!entities.ContainsKey(value.Key) && (entities.Count >= limits.MaximumEntities || OtherCacheBytes() + effects.Bytes + 1664 > limits.MaximumCacheBytes) &&
             !EvictAbsentEntity())
@@ -155,21 +188,54 @@ public sealed class CombatSession
             gauge = gauge with { Stale = true, Reason = "entity-out-of-scope" };
         if (gauge is not null && gauge.Quality.KnownValue is not (ObservationQuality.Confirmed or ObservationQuality.Estimated))
             gauge = gauge with { Stale = true };
+        // 来源只在 HP 变化后（及定期全量）随帧附带 health：未附带时沿用同一实体上次的值，快照对外仍给出完整 health。
         var entity = new CombatEntity(EntityId(value.Key), value.Key, value.RawName, value.DisplayName, value.Role,
-            value.OwnerKey, value.OwnerConfirmed && value.Quality.KnownValue == ObservationQuality.Confirmed, value.InScope, at, value.Quality, gauge);
+            value.OwnerKey, value.OwnerConfirmed && value.Quality.KnownValue == ObservationQuality.Confirmed, value.InScope, at, value.Quality, gauge,
+            null, value.Health ?? previous?.Health, value.IsBoss, value.Dead, value.ActorType, value.SheetId);
+        if (previous?.Health?.Current is { } before && entity.Health?.Current is { } after && after.Value < before.Value) healthDrops[value.Key] = mono;
         var changedScope = previous is null || previous.InScope != entity.InScope;
         var changedGauge = previous?.BreakGauge != entity.BreakGauge;
         // 效果文档只随效果或范围变化重写；来源每批重报的实体（只有观测时刻不同）不使其效果文档变脏。
         entities[value.Key] = entity; effects.Scope(value.Key, value.InScope);
-        if (changedScope) dirtyEffects.Add(value.Key);
+        if (changedScope) MarkEffect(value.Key);
         if (value.Key == local) RenameLocal(entity.DisplayName);
-        if (changedScope || changedGauge) Timeline("entity", null, null, null, null, entity);
+        if (changedScope || changedGauge) Timeline("entity", null, null, null, null, TimelineEntity(entity));
         // 破防区间在目标破防值归零时结束（进行中的分段与定时测量各自记录）。
         if (changedGauge && entity.BreakGauge is { Current: 0, Stale: false })
             foreach (var state in new[] { encounter, measurement })
                 if (state is { Final: false }) state.Breaks.GaugeZero(entity.Id, Math.Max(0, mono - state.StartedMs));
         return true;
     }
+    /// <summary>实体的 HP 与类型字段：状态、原因与类型为有界文本，当前值不超过 Int64。</summary>
+    private static bool ValidActor(CombatEntityObservation value) =>
+        value.ActorType is null or { Length: <= 32 } && value.ActorType?.Any(char.IsControl) != true &&
+        (value.Health is null || value.Health is { State: { Length: > 0 and <= 32 } state } health && !state.Any(char.IsControl) &&
+            health.Reason?.Length is not > 128 && health.Reason?.Any(char.IsControl) != true &&
+            health.Current is null or { Value: <= long.MaxValue } && health.Maximum is null or { Value: <= long.MaxValue });
+    /// <summary>时间线中的实体条目不带 HP：HP 只随实体快照返回，不为高频变化写时间线。</summary>
+    private static CombatEntity TimelineEntity(CombatEntity entity) => entity.Health is null ? entity : entity with { Health = null };
+    /// <summary>
+    /// 实体的有效血量：加密形态、本机命中过、出现后始终没有 HP 更新的实体（服务器不下发其血量）标为 shared，由同场首领体现。
+    /// </summary>
+    private CombatEntityHealth? EffectiveHealth(CombatEntity entity) =>
+        entity.Health is { Encrypted: true, Updated: not true } health && localHits.Contains(entity.Key)
+            ? health with { State = "shared", Reason = "combat.healthShared" } : entity.Health;
+    private CombatEntityHealth? EffectiveHealth(EntityKey key) => entities.TryGetValue(key, out var entity) ? EffectiveHealth(entity) : null;
+    private void EvaluateTarget()
+    {
+        if (!settings.DamageEnabled) { selection = null; return; }
+        selection = targets.Evaluate(mono, entities, EffectiveHealth, key => healthDrops.TryGetValue(key, out var at) ? at : null, localCombatState);
+    }
+    /// <summary>当前目标切换次数（不含清空），供离线回放统计。</summary>
+    public int TargetSwitches { get { lock (gate) return targets.Switches; } }
+    private CombatCurrentTarget? CurrentTarget()
+    {
+        if (selection is not { } chosen || !entities.TryGetValue(chosen.Target, out var entity)) return null;
+        return new(entity.Id, entity.Key, entity.DisplayName, chosen.Basis, SelectedAt(chosen.SelectedMs), lastObserved ?? startedAt, EffectiveHealth(entity), entity.IsBoss, entity.Dead, null,
+            chosen.RedirectedFrom is { } from ? EntityId(from) : null, entity.ActorType);
+    }
+    /// <summary>观察单调时点换算为观测时刻：以最近一帧的观测时刻与单调时点为基准。</summary>
+    private DateTimeOffset SelectedAt(double ms) => (lastObserved ?? startedAt).AddMilliseconds(ms - mono);
     /// <summary>
     /// 本机昵称可能晚于分段开始才识别（Worker 在识别前以实体 ID 作本机显示名）：进行中的分段与定时测量仍是实体 ID 占位时，
     /// 改用本机实体的新显示名。已结束的分段与已有昵称的摘要不改。
@@ -188,7 +254,7 @@ public sealed class CombatSession
         foreach (var key in entities.Keys)
         {
             if (key == local || sourceEntities.Contains(key)) continue;
-            entities.Remove(key); effects.Remove(key); dirtyEffects.Remove(key);
+            entities.Remove(key); effects.Remove(key); dirtyEffects.Remove(key); healthDrops.Remove(key); localHits.Remove(key);
             return true;
         }
         return false;
@@ -233,7 +299,8 @@ public sealed class CombatSession
                 }
                 var identity = identities[0];
                 local = identity.Key; entities.Clear(); effects.Clear(); deduplication.Clear(); deduplicationOrder.Clear();
-                dirtyEffects.Clear(); frameSequence = 0; frameHash = null;
+                dirtyEffects.Clear(); frameSequence = 0; lastFrame = null;
+                targets.Clear(); selection = null; localHits.Clear(); healthDrops.Clear();
                 if (awaiting)
                 {
                     // 连接变化后重新取得本机身份，视为进入新地图。
@@ -242,13 +309,12 @@ public sealed class CombatSession
             }
             if (frame.Damage.Any(x => !double.IsFinite(x.MonotonicMs)) || frame.Effects.Any(x => !double.IsFinite(x.MonotonicMs)))
             { RejectFrame("frame.eventTime"); return false; }
-            var hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(frame, ContractJson.Options)));
             if (frame.Sequence.Value <= frameSequence)
             {
-                if (frame.Sequence.Value == frameSequence && frameHash != hash) MarkGap("frame-conflict", mono, frame.MonotonicMs, 1);
+                if (frame.Sequence.Value == frameSequence && (lastFrame is null || FrameHash(lastFrame) != FrameHash(frame))) MarkGap("frame-conflict", mono, frame.MonotonicMs, 1);
                 return false;
             }
-            mono = Math.Max(mono, frame.MonotonicMs); sourceMono = Math.Max(sourceMono, frame.MonotonicMs); lastObserved = frame.ObservedAt; frameSequence = frame.Sequence.Value; frameHash = hash;
+            mono = Math.Max(mono, frame.MonotonicMs); sourceMono = Math.Max(sourceMono, frame.MonotonicMs); lastObserved = frame.ObservedAt; frameSequence = frame.Sequence.Value; lastFrame = frame;
             if (frame.ObservationResumed)
             {
                 for (var i = 0; i < gaps.Count; i++) if (gaps[i].ToMs is null) gaps[i] = gaps[i] with { ToMs = mono };
@@ -264,6 +330,7 @@ public sealed class CombatSession
             if (frame.Entities.Count > 0) sourceEntities = frame.Entities.Select(value => value.Key).ToHashSet();
             foreach (var value in frame.Entities)
                 PutEntity(value, frame.ObservedAt);
+            if (frame.MainTarget is { } main && (main.Target is null || Scope(main.Target))) targets.MainTarget(main.Target);
             if (frame.CombatStates is { Count: > 0 } states) ApplyInStreamOrder(frame, states);
             else
             {
@@ -278,14 +345,14 @@ public sealed class CombatSession
                 if (!EffectAllowed(reconciliation.EntityKey)) continue;
                 if (reconciliation.Effects.Any(value => !EffectValid(value))) { MarkGap("effect-invalid", mono, mono, 1); continue; }
                 foreach (var value in effects.Reconcile(reconciliation, frame.ObservedAt, mono)) Timeline("effect", null, value, null, null);
-                dirtyEffects.Add(reconciliation.EntityKey);
+                MarkEffect(reconciliation.EntityKey);
             }
             // 同帧伤害与效果先归入旧分段，再处理切图边界。
             foreach (var gap in frame.Gaps.Where(x => ConnectionChange(x.Reason)))
                 ConnectionBoundary(gap, frame.ObservedAt);
-            foreach (var key in effects.Tick(mono)) dirtyEffects.Add(key);
+            foreach (var key in effects.Tick(mono)) MarkEffect(key);
             if (frame.EncounterEnded) CloseCore("source-end", frame.ObservedAt, mono);
-            CloseCombatLeft(mono); ExpireWhole(mono);
+            CloseCombatLeft(mono); ExpireWhole(mono); EvaluateTarget();
             return true;
         }
     }
@@ -379,6 +446,7 @@ public sealed class CombatSession
             else CloseCore("connection-changed", at, double.IsFinite(gap.FromMs) ? Math.Min(gap.FromMs, mono) : mono);
         }
         awaitingIdentity = true; mapChanged = false; splitPending = false; combatLeft = false; localCombatState = null; combatLeftAt = null;
+        targets.Clear(); selection = null;
         // 切图使整场到期：已有数据保留，新地图的第一个分段开启新的一场。
         if (lastActionMs is not null || encounter is not null) wholeExpired ??= "map-change";
         if (lost == 0) BoundaryGap(gap.Reason, gap.FromMs, gap.ToMs, 0);
@@ -395,7 +463,7 @@ public sealed class CombatSession
         else gaps[^1] = CombatGapAccumulator.Merge(gaps[^1], gap);
         gapRevision++;
         if (awaitingReasons.Count < 128) awaitingReasons.Add(reason);
-        effects.Gap(); foreach (var key in entities.Keys) dirtyEffects.Add(key);
+        effects.Gap(); foreach (var key in entities.Keys) MarkEffect(key);
         StaleGauges(reason);
     }
     private string Attribution(EntityKey key)
@@ -418,15 +486,12 @@ public sealed class CombatSession
         while (deduplicationOrder.TryPeek(out var expired) && expired.At < mono - 30000)
         { deduplicationOrder.Dequeue(); deduplication.Remove(expired.Key); }
         var key = (value.EventId.Length == 0 ? "seq:" + value.Sequence : "id:" + value.EventId) + ":" + value.SubEventIndex;
-        var hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { value.SourceEntity, value.TargetEntity, value.SkillId, value.Amount,
-            value.AmountKind, value.Critical, value.Hit, value.SkillCasterKey, value.SkillResolved, value.Chain,
-            value.PowerfulHit, value.RapidHit, value.DoubleHit, value.Classification, value.BreakedHit, value.BreakOccurred,
-            value.FirstAttack, value.DefaultAttack, value.MultiHit, value.Elements, value.AdditionalHit }, ContractJson.Options)));
+        var content = DamageContent.Of(value);
         if (deduplication.TryGetValue(key, out var previous))
-        { if (previous.Hash != hash) MarkGap("damage-conflict", value.MonotonicMs, mono, 0); return; }
+        { if (!previous.Content.Equals(content)) MarkGap("damage-conflict", value.MonotonicMs, mono, 0); return; }
         if (deduplication.Count >= limits.MaximumDeduplicationEntries || OtherCacheBytes() + effects.Bytes + 768 > limits.MaximumCacheBytes)
         { MarkGap("deduplication-capacity", value.MonotonicMs, mono, 1); return; }
-        deduplication.Add(key, (hash, mono)); deduplicationOrder.Enqueue((key, mono));
+        deduplication.Add(key, (content, mono)); deduplicationOrder.Enqueue((key, mono));
         var attribution = value.Chain == true ? "chain" : Attribution(value.SourceEntity);
         if (measurementPending is { } waiting && value.Amount.Value > 0 && value.MonotonicMs >= waiting.RequestedMs &&
             (attribution == "local" || attribution == "owned" && settings.IncludeOwnedEntities))
@@ -444,6 +509,11 @@ public sealed class CombatSession
         if (value.MonotonicMs < resetFloorMs) { MarkGap("damage-before-boundary", value.MonotonicMs, mono, 1); return; }
         var attributed = attribution == "local" || attribution == "owned" && settings.IncludeOwnedEntities;
         if (value.Amount.Value > 0 && (attributed || value.TargetEntity == local)) CombatAction(value.MonotonicMs);
+        if (attributed && value.Amount.Value > 0 && value.TargetEntity != local)
+        {
+            targets.Hit(value.MonotonicMs, value.TargetEntity, value.Amount.Value);
+            if (localHits.Count < MaximumLocalHits) localHits.Add(value.TargetEntity);
+        }
         if (attributed && value.Amount.Value > 0)
         {
             // 离开 in-combat 超过余量后的伤害属于下一段；余量内的伤害计入本段，回到 in-combat 才取消余量。
@@ -477,7 +547,7 @@ public sealed class CombatSession
         var key = "heal:" + value.EventId;
         var hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value with { ObservedAt = default, MonotonicMs = 0 }, ContractJson.Options)));
         if (deduplication.TryGetValue(key, out var previous))
-        { if (previous.Hash != hash) MarkGap("heal-conflict", value.MonotonicMs, mono, 0); return; }
+        { if (!previous.Content.Equals(hash)) MarkGap("heal-conflict", value.MonotonicMs, mono, 0); return; }
         if (deduplication.Count >= limits.MaximumDeduplicationEntries || OtherCacheBytes() + effects.Bytes + 768 > limits.MaximumCacheBytes)
         { MarkGap("deduplication-capacity", value.MonotonicMs, mono, 1); return; }
         deduplication.Add(key, (hash, mono)); deduplicationOrder.Enqueue((key, mono));
@@ -510,7 +580,7 @@ public sealed class CombatSession
         if (!EffectAllowed(value.EntityKey)) return;
         if (!EffectValid(value)) { MarkGap("effect-invalid-or-late", mono, mono, 1); return; }
         if (!effects.Apply(value)) return;
-        dirtyEffects.Add(value.EntityKey); Timeline("effect", null, value, null, null);
+        MarkEffect(value.EntityKey); Timeline("effect", null, value, null, null);
     }
     private void Begin(DateTimeOffset at, double time, bool manual, string startReason)
     {
@@ -527,7 +597,7 @@ public sealed class CombatSession
             healing);
         encounter.BoundaryRevision = new(checked(++boundaryRevision));
         foreach (var gap in gaps.Where(x => x.ToMs is null)) encounter.Gap(gap with { FromMs = 0 });
-        foreach (var entity in entities.Values) Timeline("entity-baseline", null, null, null, null, entity);
+        foreach (var entity in entities.Values) Timeline("entity-baseline", null, null, null, null, TimelineEntity(entity));
         foreach (var value in effects.Baseline(at, time)) Timeline("effect-baseline", null, value, null, null);
     }
     private void CloseCore(string reason, DateTimeOffset at, double time)
@@ -544,10 +614,10 @@ public sealed class CombatSession
         {
             if (state != "observing" || !double.IsFinite(time) || time < mono) return;
             mono = time;
-            foreach (var key in effects.Tick(mono)) dirtyEffects.Add(key);
+            foreach (var key in effects.Tick(mono)) MarkEffect(key);
             if (encounter is { Final: false, Manual: false, LastDamageMs: { } last } && mono - last >= settings.IdleTimeoutMs)
                 CloseCore("idle-timeout", encounter.LastDamageAt!.Value, last);
-            CloseCombatLeft(mono); ExpireWhole(mono);
+            CloseCombatLeft(mono); ExpireWhole(mono); EvaluateTarget();
         }
     }
     public void StartManual(DateTimeOffset at, double time)
@@ -612,7 +682,7 @@ public sealed class CombatSession
             else if (measurement is { Final: false }) FinishMeasurementCore(at, "observation-stopped");
             state = partial ? "interrupted" : "stopped";
             boundaryRevision = checked(boundaryRevision + 1);
-            effects.Gap(); foreach (var key in entities.Keys) dirtyEffects.Add(key);
+            effects.Gap(); foreach (var key in entities.Keys) MarkEffect(key);
             StaleGauges(reason);
         }
     }
@@ -635,7 +705,7 @@ public sealed class CombatSession
         }
         if (gaps.Count < 256) gaps.Add(gap);
         else gaps[^1] = CombatGapAccumulator.Merge(gaps[^1], gap);
-        effects.Gap(); foreach (var key in entities.Keys) dirtyEffects.Add(key);
+        effects.Gap(); foreach (var key in entities.Keys) MarkEffect(key);
         StaleGauges(reason);
         if (encounter is { Final: false })
         {
@@ -664,7 +734,7 @@ public sealed class CombatSession
             if (entity.BreakGauge is not { } gauge) continue;
             var stale = entity with { BreakGauge = gauge with { Stale = true, Reason = reason } };
             entities[key] = stale;
-            if (stale.BreakGauge != gauge) Timeline("entity", null, null, null, null, stale);
+            if (stale.BreakGauge != gauge) Timeline("entity", null, null, null, null, TimelineEntity(stale));
         }
     }
     private void Timeline(string kind, CombatDamageEvent? damage, CombatEffectObservation? effect, CombatGap? gap, string? attribution,
@@ -683,7 +753,7 @@ public sealed class CombatSession
         var at = damage?.ObservedAt ?? effect?.ObservedAt ?? heal?.ObservedAt ?? lastObserved ?? startedAt;
         var time = damage?.MonotonicMs ?? effect?.MonotonicMs ?? heal?.MonotonicMs ?? mono;
         var item = new CombatTimelineItem(new(checked(timelineIndex + 1)), Math.Max(0, time - target.StartedMs), at, kind, damage, effect, gap, attribution, entity, heal);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(item, ContractJson.Options).Length;
+        var encoded = JsonSerializer.SerializeToUtf8Bytes(item, ContractJson.Options); var bytes = encoded.Length;
         var effectKind = kind is "effect" or "effect-baseline" or "entity" or "entity-baseline";
         if (effectKind && (target.EffectTimelineCount >= (ulong)(limits.MaximumTimelineItems * 2 / 5) ||
             target.EffectTimelineBytes + (ulong)bytes > (ulong)(limits.MaximumTimelineBytes / 8 * 3)))
@@ -696,7 +766,7 @@ public sealed class CombatSession
             return;
         }
         timelineIndex++;
-        pendingTimeline.Add(new(target.Id, item)); pendingBytes += bytes;
+        pendingTimeline.Add(new(target.Id, item) { Encoded = encoded }); pendingBytes += bytes;
         target.TimelineCount++; target.TimelineBytes += (ulong)bytes;
         if (effectKind) { target.EffectTimelineCount++; target.EffectTimelineBytes += (ulong)bytes; }
     }
@@ -713,17 +783,19 @@ public sealed class CombatSession
             var status = new CombatObservationStatus(observationId, owner, settings.GameSessionId, state, source, local, settings, next,
                 startedAt, lastObserved, mono, statusReasons.Length == 0 ? ObservationQuality.Confirmed : ObservationQuality.Partial,
                 statusReasons, new(dropped), localCombatState, wholeOrdinal, wholeExpired);
-            var workspace = new CombatWorkspace(status, encounter is null ? null : Snapshot(encounter), entities.Values.OrderBy(x => x.Id, StringComparer.Ordinal).ToArray(),
-                settings.SelfEffectsEnabled ? effects.Snapshot(local, owner, observationId, mono, next) : null, next, new(boundaryRevision));
-            var shape = new PersistedShape(workspace.Entities.Select(x => x with { LastObservedAt = default }).ToArray(),
+            var workspace = new CombatWorkspace(status, encounter is null ? null : Snapshot(encounter),
+                entities.Values.OrderBy(x => x.Id, StringComparer.Ordinal).Select(x => EffectiveHealth(x) is var health && ReferenceEquals(health, x.Health) ? x : x with { Health = health }).ToArray(),
+                settings.SelfEffectsEnabled ? effects.Snapshot(local, owner, observationId, mono, next) : null, next, new(boundaryRevision), CurrentTarget());
+            // HP 与当前目标只随快照返回：只有它们变化时不算需要保存的变化。
+            var shape = new PersistedShape(workspace.Entities.Select(x => x with { LastObservedAt = default, Health = null }).ToArray(),
                 status with { Revision = default, LastObservedAt = null, MonotonicMs = 0 }, boundaryRevision, encounter?.Id, encounter?.Final, measurement?.Id, measurement?.Final);
             var material = pendingTimeline.Count > 0 || dirtyEffects.Count > 0 || gapRevision != acknowledgedGapRevision || deletedRecords.Count > 0 ||
                 closed.Count > 0 || acknowledgedShape is null || !shape.Equals(acknowledgedShape);
             var urgent = closed.Count > 0 || deletedRecords.Count > 0 || encounter is { Final: false } || measurement is { Final: false } || state != "observing";
-            return new(workspace, changed, dirtyEffects.Select(key => effects.Snapshot(key, owner, observationId, mono, next)).ToArray(),
+            return new(workspace, changed, dirtyEffects.Keys.Select(key => effects.Snapshot(key, owner, observationId, mono, next)).ToArray(),
                 pendingTimeline.ToArray(), gaps.ToArray(), new(timelineIndex))
             { GapsChanged = gapRevision != acknowledgedGapRevision, GapRevision = gapRevision, DeletedEncounters = deletedRecords.ToArray(),
-              Material = material, Urgent = urgent, Shape = shape };
+              Material = material, Urgent = urgent, Shape = shape, EffectWatermark = effectChanges };
         }
     }
     /// <summary>检查点中决定是否需要持久保存的部分：实体（不含观测时刻）与观察状态（不含修订、观测时刻与单调时点）及分段身份。</summary>
@@ -754,10 +826,9 @@ public sealed class CombatSession
     {
         lock (gate)
         {
-            pendingTimeline.RemoveAll(x => x.Item.Index.Value <= checkpoint.TimelineWatermark.Value);
-            pendingBytes = pendingTimeline.Sum(x => JsonSerializer.SerializeToUtf8Bytes(x.Item, ContractJson.Options).Length);
+            RemovePending(x => x.Item.Index.Value <= checkpoint.TimelineWatermark.Value);
             foreach (var value in checkpoint.Encounters.Where(x => x.Summary.Final)) closed.RemoveAll(x => x.Id == value.Id);
-            if (revision == checkpoint.Workspace.Revision.Value) dirtyEffects.Clear();
+            foreach (var (key, mark) in dirtyEffects.ToArray()) if (mark <= checkpoint.EffectWatermark) dirtyEffects.Remove(key);
             acknowledgedGapRevision = Math.Max(acknowledgedGapRevision, checkpoint.GapRevision);
             if (checkpoint.Shape is { } shape) acknowledgedShape = shape;
             deletedRecords.RemoveAll(checkpoint.DeletedEncounters.Contains);
@@ -871,8 +942,7 @@ public sealed class CombatSession
     {
         if (measurementPending is not null) { measurementPending = null; return; }
         var id = measurement!.Id;
-        pendingTimeline.RemoveAll(x => x.EncounterId == id);
-        pendingBytes = pendingTimeline.Sum(x => JsonSerializer.SerializeToUtf8Bytes(x.Item, ContractJson.Options).Length);
+        RemovePending(x => x.EncounterId == id);
         if (deletedRecords.Count < 64) deletedRecords.Add(id);
         measurement = null;
     }

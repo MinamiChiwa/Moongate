@@ -17,7 +17,11 @@ public sealed record KpiTile(string Label, string Value, bool Primary, string No
     public bool HasNote => Note.Length > 0;
 }
 
-public sealed record CoverageTile(string Name, string Percent, double Ratio, string Note);
+/// <summary>
+/// 比率表的一格：名称、百分比、比例与分子分母说明。<see cref="Icon"/> 是客户端属性图标的键（见 <see cref="ClientIconNames"/>），
+/// 图标可用时界面只显示图标与百分比、名称进悬浮提示；没有图标的项（普通攻击、追加打击、间接与持续伤害）为空。
+/// </summary>
+public sealed record CoverageTile(string Name, string Percent, double Ratio, string Note, string? Icon = null);
 
 /// <summary>
 /// 技能或目标的一行伤害统计。强击、连击、追击对应后端的 powerfulHit、rapidHit、doubleHit；
@@ -52,8 +56,11 @@ public sealed record FirstAttackRow(string Skill, string Damage, string Target, 
     public string TargetHint => TargetTip.Length > 0 ? TargetTip : Target;
 }
 
-/// <summary>整场元素构成里的一种元素：<see cref="Label"/> 是名称与占比，<see cref="ColorHex"/> 是固定的色块颜色。</summary>
-public sealed record ElementPart(string Label, double Weight, string ColorHex)
+/// <summary>
+/// 整场元素构成里的一种元素：<see cref="Label"/> 是名称与占比，<see cref="ColorHex"/> 是固定的色块颜色；
+/// 图例分开显示名称（<see cref="Name"/>，图标可用时换成 <see cref="Icon"/> 的图标）与占比（<see cref="Share"/>）。
+/// </summary>
+public sealed record ElementPart(string Label, double Weight, string ColorHex, string Name = "", string Share = "", string? Icon = null)
 {
     public BarSegment Segment => new(Weight, new SolidColorBrush(Color.Parse(ColorHex)));
 }
@@ -155,12 +162,23 @@ public sealed record HealingTargetRow(string Name, string Amount, string Share, 
 }
 
 public sealed record EncounterRow(string Id, string When, string Target, string Length, string Dps, string Quality,
-    bool Favorite, string Segment = "", string Record = "")
+    bool Favorite, string Segment = "", string Record = "", bool DataIncomplete = false)
 {
     /// <summary>定时测量或保存的记录：“定时测量 1:00”或记录名称；自动分段为空。</summary>
     public bool HasRecord => Record.Length > 0;
     public bool HasSegment => Segment.Length > 0;
     public string FavoriteLabel => Favorite ? "已收藏" : "收藏";
+}
+
+/// <summary>
+/// 记录明细窗口的标题信息：记录名称（定时测量、保存的记录名或分段说明）、保存或开始时刻、数据不完整标记，
+/// 以及只有摘要、没有技能分组时的说明（<see cref="SummaryOnly"/> 为真时窗口只显示主数据）。
+/// </summary>
+public sealed record RecordHeader(string Name, string When, bool DataIncomplete, bool SummaryOnly, string Note)
+{
+    public bool HasNote => Note.Length > 0;
+    /// <summary>数据不完整时的影响与缺口时段（“抓包期间有数据缺失，数值可能偏低（0:12–0:15）”）；完整时为空。</summary>
+    public string GapNote { get; init; } = string.Empty;
 }
 
 /// <summary>各项操作此刻是否可用，由后端状态推出；不可用的按钮显示为停用。</summary>
@@ -248,6 +266,38 @@ public sealed record TargetDetailView(string Name, string Damage, string Contrib
     public string Tip => NameTip.Length > 0 ? NameTip : Name;
 }
 
+/// <summary>血量槽的语气：剩余正常、剩余不超过 30%（警示色）、没有可画的比例（置灰不填充）。</summary>
+public enum HealthTone { Normal, Low, Empty }
+
+/// <summary>
+/// 后端选定的当前攻击目标的血量（DPS 浮窗与 DPS检测页共用）。<see cref="EntityId"/> 是目标的实体，血量槽据此判断目标是否换了；
+/// <see cref="Fill"/> 为 0–1 的剩余比例，<see cref="Tone"/> 为 Empty 时不填充；<see cref="Percent"/> 与 <see cref="Value"/> 是名称行右侧与第三行的文字；
+/// <see cref="Tip"/> 是第三行的悬停说明（未读取等原因）。<see cref="Disabled"/> 非空时能力停用，整块只显示这句。
+/// </summary>
+public sealed record TargetHealthView(string EntityId, string Name, string NameTip, string Percent, string Value, double Fill, HealthTone Tone)
+{
+    public bool Boss { get; init; }
+    /// <summary>后端把锁血实体改指到同场首领。</summary>
+    public bool Redirected { get; init; }
+    public bool Stale { get; init; }
+    public string Tip { get; init; } = string.Empty;
+    public string Disabled { get; init; } = string.Empty;
+
+    public bool IsDisabled => Disabled.Length > 0;
+    public bool IsTarget => !IsDisabled;
+    public bool Low => Tone == HealthTone.Low;
+    public bool Empty => Tone == HealthTone.Empty;
+    /// <summary>第三行的悬停提示；没有原因时为空，不显示空提示框。</summary>
+    public string? ValueTip => Tip.Length > 0 ? Tip : null;
+    public string BossMark => Localization.UiText.Pick("首领", "首領");
+    public string RedirectMark => Localization.UiText.Pick("同场首领", "同場首領");
+    public string StaleMark => Localization.UiText.Pick("已过期", "已過期");
+
+    /// <summary>能力停用：整块只显示停用原因。</summary>
+    public static TargetHealthView Unavailable(string text) =>
+        new(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, 0, HealthTone.Empty) { Disabled = text };
+}
+
 /// <summary>
 /// 破防期间（命中带无防备标记）的累计：伤害、次数、每击平均；持续时间、区间次数、时间占比与平均 DPS 需要破防开始与结束事件，暂为“未知”。
 /// </summary>
@@ -286,9 +336,18 @@ public sealed record CombatPageData(string Status, IReadOnlyList<KpiTile> Kpis, 
     /// </summary>
     public bool Pending { get; init; }
 
+    /// <summary>记录明细窗口的记录标题；DPS检测页与实时明细窗口为空。</summary>
+    public RecordHeader? RecordInfo { get; init; }
+
     /// <summary>自身与怪物效果卡片“只显示收藏”时没有可显示的收藏效果；整体没有效果时为假。</summary>
     public bool SelfFavoritesEmpty { get; init; }
     public bool TargetFavoritesEmpty { get; init; }
+
+    /// <summary>当前攻击目标的血量（或能力停用说明）；没有当前目标、未在观测或记录明细时为空。</summary>
+    public TargetHealthView? Health { get; init; }
+
+    /// <summary>观测进行中、能力可用但后端没有当前目标：DPS检测页写“当前没有攻击目标”，浮窗折叠。</summary>
+    public bool HealthIdle { get; init; }
 }
 
 /// <summary>
@@ -302,6 +361,8 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     private readonly bool page;
     // 明细窗口的伴随模型：范围与目标是窗口自己的选择，读窗口的数据并只额外接收窗口的通知。
     private readonly bool detail;
+    // 记录明细窗口的伴随模型：范围固定为这条记录，读记录的数据，只接收记录明细的通知。
+    private readonly string? recordId;
     private bool byTarget;
     private bool favoritesOnly;
     private bool stopping;
@@ -315,11 +376,13 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
 
     /// <param name="page">DPS检测页本身为真；明细窗口的伴随模型为假，不改变页面的显示状态。</param>
     /// <param name="detail">明细窗口的伴随模型：范围与目标走窗口自己的选择，与主页面互不影响。</param>
-    public CombatPageModel(IDesktopBackend backend, bool page = true, bool detail = false)
+    /// <param name="record">记录明细窗口的伴随模型：所显示的战斗记录 ID。</param>
+    public CombatPageModel(IDesktopBackend backend, bool page = true, bool detail = false, string? record = null)
     {
         this.backend = backend;
         this.page = page;
-        this.detail = detail;
+        this.detail = detail || record is not null;
+        recordId = record;
         Data = Fetch();
         AttributionSegments = Data.Attribution.Select(part => part.Segment).ToList();
         ElementSegments = (Data.Elements?.Parts ?? []).Select(part => part.Segment).ToList();
@@ -382,13 +445,34 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
             Send(CombatIntent.ResetEncounter, null);
         });
         clock.Tick += (_, _) => RaiseClock();
-        backend.Changed += OnBackendChanged;
-        if (detail) backend.CombatDetailChanged += OnBackendChanged;
-        CombatEffectFavorites.Changed += OnFavoritesChanged;
-        CombatEffectFavorites.CatalogChanged += OnCatalogChanged;
+        Subscribe(true);
     }
 
-    private CombatPageData Fetch() => detail ? backend.GetCombatDetail() : backend.GetCombat();
+    private CombatPageData Fetch() => recordId is { } id ? backend.GetCombatRecord(id) : detail ? backend.GetCombatDetail() : backend.GetCombat();
+
+    // 后端通知：页面与实时明细窗口跟随每轮刷新（明细窗口另收窗口自己的通知）；记录明细只收记录的通知，记录已结束，不随例行刷新重读。
+    private void Subscribe(bool on)
+    {
+        if (recordId is not null)
+        {
+            if (on) backend.CombatRecordChanged += OnBackendChanged; else backend.CombatRecordChanged -= OnBackendChanged;
+            return;
+        }
+        if (on)
+        {
+            backend.Changed += OnBackendChanged;
+            if (detail) backend.CombatDetailChanged += OnBackendChanged;
+            CombatEffectFavorites.Changed += OnFavoritesChanged;
+            CombatEffectFavorites.CatalogChanged += OnCatalogChanged;
+        }
+        else
+        {
+            backend.Changed -= OnBackendChanged;
+            if (detail) backend.CombatDetailChanged -= OnBackendChanged;
+            CombatEffectFavorites.Changed -= OnFavoritesChanged;
+            CombatEffectFavorites.CatalogChanged -= OnCatalogChanged;
+        }
+    }
 
     // ---- 开始观测的结果：等待识别角色（可取消）或失败原因 ----
 
@@ -591,6 +675,14 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     private ICommand? toggleTargets;
     public TargetDetailView? TargetDetail => Data.TargetDetail;
     public bool HasTargetDetail => Data.TargetDetail is not null;
+
+    // 当前攻击目标的血量（与 DPS 浮窗同一份数据与控件）：观测中保留这一块，没有目标时写“当前没有攻击目标”，有目标时就地更新。
+    public TargetHealthView? Health => Data.Health;
+    public bool HasHealth => Data.Health is not null;
+    public bool HealthIdle => Data.Health is null && Data.HealthIdle;
+    public bool HasHealthRow => HasHealth || HealthIdle;
+    public string HealthTitle => UiText.Pick("当前攻击目标", "目前攻擊目標");
+    public string NoHealthTarget => UiText.Pick("当前没有攻击目标", "目前沒有攻擊目標");
     public BreakView? Break => Data.Break;
     public bool HasBreak => Data.Break is not null;
     public StableList<CoverageTile> Classes { get; } = [];
@@ -617,13 +709,21 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     /// <summary>页面挂上可见窗口与离开时调用；只有显示且处于预备或计时中时，剩余时间定时器才运行。</summary>
     public void SetAttached(bool value)
     {
-        if (value && !effectTicking) { EffectTicker.Tick += OnEffectTick; effectTicking = true; }
-        else if (!value && effectTicking) { EffectTicker.Tick -= OnEffectTick; effectTicking = false; }
-        attached = value;
+        viewAttached = value;
+        SyncTicking();
+    }
+
+    // 效果倒计时节拍与计时定时器只在页面挂在窗口上且在接收通知（未切走、主窗口未最小化）时运行。
+    private void SyncTicking()
+    {
+        var on = viewAttached && subscribed;
+        if (on && !effectTicking) { EffectTicker.Tick += OnEffectTick; effectTicking = true; }
+        else if (!on && effectTicking) { EffectTicker.Tick -= OnEffectTick; effectTicking = false; }
+        attached = on;
         UpdateClock();
     }
 
-    private bool effectTicking;
+    private bool effectTicking, viewAttached;
     // 倒计时节拍：推算归零的效果从各区移除（行本身的进度与文字由 EffectLine 自行重绘）。
     private void OnEffectTick(object? sender, EventArgs e) => PruneEffects(System.Diagnostics.Stopwatch.GetTimestamp());
 
@@ -651,9 +751,18 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     }
 
     // 明细窗口里的范围与目标意图改走窗口自己的选择（combat.detail.*），主页面的选择不变。
-    private void Intent(string name, string? argument) => _ = backend.SendIntentAsync(
-        detail && name is "combat.scope" or "combat.scope.live" or "combat.target" ? "combat.detail." + name["combat.".Length..] : name,
-        argument, CancellationToken.None);
+    // 记录明细的范围固定，只有目标筛选（combat.record.target，参数为“记录 ID|目标 ID”）。
+    private void Intent(string name, string? argument)
+    {
+        if (recordId is { } id)
+        {
+            if (name == "combat.target") _ = backend.SendIntentAsync("combat.record.target", id + "|" + argument, CancellationToken.None);
+            return;
+        }
+        _ = backend.SendIntentAsync(
+            detail && name is "combat.scope" or "combat.scope.live" or "combat.target" ? "combat.detail." + name["combat.".Length..] : name,
+            argument, CancellationToken.None);
+    }
 
     public CombatPageData Data { get; private set; }
 
@@ -704,13 +813,9 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     {
         if (!subscribed) return;
         subscribed = false;
-        backend.Changed -= OnBackendChanged;
-        if (detail) backend.CombatDetailChanged -= OnBackendChanged;
-        CombatEffectFavorites.Changed -= OnFavoritesChanged;
-        CombatEffectFavorites.CatalogChanged -= OnCatalogChanged;
+        Subscribe(false);
         if (page) backend.SetCombatPageVisible(false);
-        attached = false;
-        UpdateClock();
+        SyncTicking();
     }
 
     /// <summary>回到页面：立即显示后端适配层内存中的最近结果；后端在下一轮刷新后通知，届时清除“更新中”。</summary>
@@ -718,12 +823,10 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     {
         if (subscribed) return;
         subscribed = true;
-        backend.Changed += OnBackendChanged;
-        if (detail) backend.CombatDetailChanged += OnBackendChanged;
-        CombatEffectFavorites.Changed += OnFavoritesChanged;
-        CombatEffectFavorites.CatalogChanged += OnCatalogChanged;
+        Subscribe(true);
         Refreshing = page && backend.SetCombatPageVisible(true);
         Apply(Fetch());
+        SyncTicking();
     }
     private bool subscribed = true;
     public IReadOnlyList<BarSegment> AttributionSegments { get; private set; }
@@ -787,9 +890,9 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
                 var tag = CombatMapper.Tags[i];
                 if (!Data.TagIds.Contains(tag.Id)) continue;
                 var (count, damage) = (i * 2, i * 2 + 1);
-                list.Add(new() { Id = $"tag.{tag.Id}.count", HeaderKey = "C.TagCount", Group = tag.Name, Width = 120,
+                list.Add(new() { Id = $"tag.{tag.Id}.count", HeaderKey = "C.TagCount", Group = tag.Name, GroupIcon = tag.Icon, Width = 120,
                     Value = row => (row as DamageRow)?.TagCell(count), ToolTip = _ => TagTip });
-                list.Add(new() { Id = $"tag.{tag.Id}.damage", HeaderKey = "C.TagDamage", Group = tag.Name, Width = 150,
+                list.Add(new() { Id = $"tag.{tag.Id}.damage", HeaderKey = "C.TagDamage", Group = tag.Name, GroupIcon = tag.Icon, Width = 150,
                     Value = row => (row as DamageRow)?.TagCell(damage), ToolTip = _ => TagTip });
             }
             if (Data.ShowTraitColumns)
@@ -868,20 +971,23 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     public void Dispose()
     {
         if (subscribed && page) backend.SetCombatPageVisible(false);
+        if (subscribed) Subscribe(false);
         subscribed = false;
-        backend.Changed -= OnBackendChanged;
-        if (detail) backend.CombatDetailChanged -= OnBackendChanged;
-        CombatEffectFavorites.Changed -= OnFavoritesChanged;
-        CombatEffectFavorites.CatalogChanged -= OnCatalogChanged;
-        attached = false;
+        SyncTicking();
         clock.Stop();
     }
 
+    // 后端适配层对同一份状态返回同一个对象：没变时不重排列表、不通知（多数通知来自与本页无关的状态）。
+    // 回到页面后的第一次通知照常应用，以清除“更新中”。
     private void OnBackendChanged(object? sender, EventArgs e)
     {
+        var next = Fetch();
+        if (ReferenceEquals(next, fetched) && !Refreshing) return;
         Refreshing = false;
-        Apply(Fetch());
+        Apply(next);
     }
+
+    private CombatPageData? fetched;
 
     // 收藏或“只显示收藏”变化：重读同一份战斗数据（筛选在后端适配层统一套用）。
     private void OnFavoritesChanged(object? sender, EventArgs e)
@@ -896,6 +1002,7 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
     // 刚切换范围或目标、新结果还没到时只移动选中标记，数值与列表保持上一次的显示，不清空重建。
     private void Apply(CombatPageData data)
     {
+        fetched = data;
         Data = data.Pending ? Hold(Data, data) : data;
         if (stopping && !Data.Actions.CanStop) SetStopping(false);
         var attribution = Data.Attribution.Select(part => part.Segment).ToList();

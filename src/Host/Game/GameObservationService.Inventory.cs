@@ -95,11 +95,11 @@ public sealed partial class GameObservationService
         if (worker is not null && state is "running" or "starting")
             try { await ConfigureInterestsAsync(CancellationToken.None); }
             catch (Exception error) when (error is WorkerException or OperationException or OperationCanceledException)
-            { failure ??= new OperationException("inventory.observationGap", "库存兴趣停止交接未完成"); OnFault(captureId!, "observation.captureFailed"); }
+            { failure ??= new OperationException("inventory.observationGap", "库存兴趣停止交接未完成"); OnFault(captureId!, "observation.captureFailed", "host.interestHandoff"); }
         lock (gate) { inventoryDemands.Remove(subscription.Id); revision++; }
         TraceSubscription("inventory", "removed");
         subscription.Complete(failure);
-        if (TotalDemands == 0 && worker is not null && (!resident || failure is not null)) await StopCoreAsync(failure is null ? null : "observation.captureFailed");
+        if (worker is not null && (!resident && BlockingDemands == 0 || TotalDemands == 0 && failure is not null)) await StopCoreAsync(failure is null ? null : "observation.captureFailed");
         else ReleaseIdleActivity();
         Notify();
     }

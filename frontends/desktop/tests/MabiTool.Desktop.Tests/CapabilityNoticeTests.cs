@@ -95,7 +95,8 @@ public sealed class CapabilityNoticeTests
                          {
                              (CodeText.KnownOperations, code => CodeText.Operation(code)), (CodeText.KnownPhases, code => CodeText.Phase(code)),
                              (CodeText.KnownStates, CodeText.State), (CodeText.KnownReasons, CodeText.Reason), (CodeText.KnownModules, CodeText.Module),
-                             (CodeText.KnownResources, CodeText.Resource), (ColorStages.Known, ColorStages.Name)
+                             (CodeText.KnownResources, CodeText.Resource), (CodeText.KnownCapabilities, CodeText.Capability),
+                             (ColorStages.Known, ColorStages.Name)
                          })
                     foreach (var code in codes)
                         Assert.False(string.IsNullOrWhiteSpace(text(code)) || text(code).Contains(code, StringComparison.Ordinal), $"{language} {code} → {text(code)}");

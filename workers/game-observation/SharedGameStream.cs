@@ -35,7 +35,28 @@ public sealed class SharedGameStream : IDisposable
     public CombatEntityObservation? LocalEntity => combat?.LocalEntity;
     public ulong? LocalCharacterId => combat?.LocalCharacterId;
     private readonly LocalIdentityMemory identities;
-    private readonly bool identityEnabled, musicEnabled, combatEnabled;
+    private readonly bool identityEnabled, musicEnabled, combatEnabled, healthEnabled;
+    private bool carrySeeded;
+    private ulong carriedRevision = ulong.MaxValue;
+    private double carriedAt = double.NegativeInfinity;
+    /// <summary>实体延续记录随战斗报告上报的最短间隔。</summary>
+    private const double CarryIntervalMs = 1000;
+    /// <summary>
+    /// 本连接的实体延续记录有变化且距上次上报满 1 秒时随报告上报（Worker 与宿主之间私有，宿主按进程与连接保存）；连接未确认时不报。
+    /// </summary>
+    private CombatEntityCarry? Carry()
+    {
+        if (combat is null || Connection is not { } connection || combat.CarryRevision == carriedRevision || now - carriedAt < CarryIntervalMs) return null;
+        carriedRevision = combat.CarryRevision; carriedAt = now;
+        return new(new(connection.LocalPort, connection.RemoteAddress, connection.RemotePort), combat.ExportCarry());
+    }
+    /// <summary>宿主下发的延续记录属于本流的连接时，在本连接第一次出现战斗帧时补足一次。</summary>
+    private void SeedCarriedEntities()
+    {
+        if (carrySeeded || combat is null || utc == default) return;
+        carrySeeded = true;
+        if (context.CombatCarry is { } carry && SameConnection(Connection, carry.Connection)) combat.SeedEntities(carry.Entities, now, utc);
+    }
     /// <param name="localIdentities">同一游戏进程的捕获内各连接共用的本机身份记录；为空时只在本连接内保留。</param>
     /// <param name="build">当前布局下客户端构建的核对结果；为空按已登记构建处理。未登记构建的分帧使用读到的协议号，
     /// 核对不过的身份（含地图频道）、音乐与战斗解析分别停用：身份帧不解码，音乐兴趣不生效，战斗兴趣以 combat.buildUnsupported 拒绝。</param>
@@ -47,6 +68,7 @@ public sealed class SharedGameStream : IDisposable
         identities = localIdentities ?? new();
         this.layout = layout;
         identityEnabled = build?.Identity.Enabled ?? true; musicEnabled = build?.Music.Enabled ?? true; combatEnabled = build?.Combat.Enabled ?? true;
+        healthEnabled = build?.Health.Enabled ?? true;
         Music = new(layout == CombatProtocolLayout.MusicOnly ? TwMusicProtocolMap.Reference : TwMusicProtocolMap.Tw20261110);
         inventorySelected = inventoryPrimary ?? (_ => true);
         // 共用流按当前兴趣分发：战斗 profile 只列出战斗协议号，库存协议号来自运行时客户端布局，
@@ -134,16 +156,19 @@ public sealed class SharedGameStream : IDisposable
                 combat = new(gameSession, profile.Source, frame =>
                 {
                     if (selected(this)) context.Publish(LocalName(new CombatCaptureReport(1, interestId!, combat!.LocalEntity,
-                        frame with { Sequence = new(++delivered) }),
+                        frame with { Sequence = new(++delivered) }, Carry()),
                         LocalIdentity(Music.Current.Identity, identities.Last, combat.LocalEntity, combat.LocalCharacterId)));
                 }, NextGeneration);
+                carrySeeded = false; carriedRevision = ulong.MaxValue;
                 SeedCombatIdentity();
             }
         }
-        // 治疗随伤害开关，只在 v2、v3 兴趣解析；v1 兴趣（旧宿主）的帧不含治疗条目。本机战斗状态只在 v3 兴趣解析。
+        // 治疗随伤害开关，只在 v2 起的兴趣解析；v1 兴趣（旧宿主）的帧不含治疗条目。本机战斗状态在 v3 起解析；
+        // 实体血量、死亡、离场与本机主目标只在 v4 兴趣解析，且构建核对停用血量能力时不解析。
         if (next.Combat is { } value) combat?.Configure(new(value.DamageEnabled, value.SelfEffectsEnabled, value.MonsterEffectsEnabled,
-            value.DamageEnabled && value.Profile is Tw20261110CombatProtocol.Profile or Tw20261110CombatProtocol.ProfileV2,
-            value.Profile == Tw20261110CombatProtocol.Profile));
+            value.DamageEnabled && value.Profile is Tw20261110CombatProtocol.Profile or Tw20261110CombatProtocol.ProfileV3 or Tw20261110CombatProtocol.ProfileV2,
+            value.Profile is Tw20261110CombatProtocol.Profile or Tw20261110CombatProtocol.ProfileV3,
+            value.Profile == Tw20261110CombatProtocol.Profile && healthEnabled));
         if (old.Inventory != next.Inventory)
         {
             PostInventoryReset("inventory.interestChanged");
@@ -168,11 +193,16 @@ public sealed class SharedGameStream : IDisposable
         // 战斗先于库存处理同一帧（登录个人数据 20590 两者共用）：完整库存解码较重，不推迟战斗身份与帧发布。
         if (combat is not null && ObserveCombat(code))
         {
-            var before = combat.Generation; var rejections = combat.ProtocolRejections;
+            if (code != Tw20261110CombatProtocol.PersonalData) SeedCarriedIdentity();
+            SeedCarriedEntities();
+            var before = combat.Generation; var rejections = combat.ProtocolRejections; var hadLocal = combat.LocalEntity is not null;
             // 观察器内部拒绝的帧按计数差记入战斗分支；逃出的解析异常照常交给重组器的拒绝分支，筛选只计数。
             try { combat.Accept(code, body, Stream.FrameStreamOffset, Stream.FrameWireLength, CombatReceipt(), utc, Stream.FrameEncoding); }
             catch (Exception error) when ((error is InvalidDataException or DecoderFallbackException) && RejectedCombat()) { throw; }
             if (combat.ProtocolRejections != rejections) context.Diagnostics.Rejected("combat");
+            if (combat.CarriedContradicted) identities.DiscardCarried();
+            // 只沿用角色 ID 的连接由受疗配对或本机出现帧确认本机实体：以确认时点作初始化时点，成为主连接。
+            if (!hadLocal && combat.LocalEntity is not null && double.IsNegativeInfinity(CombatInitializerAt)) CombatInitializerAt = Stopwatch.GetTimestamp();
             if (code == Tw20261110CombatProtocol.PersonalData && combat.Generation != before) CombatInitializerAt = Stopwatch.GetTimestamp();
         }
         if (ObserveMusic(code))
@@ -254,6 +284,33 @@ public sealed class SharedGameStream : IDisposable
         };
     }
     /// <summary>
+    /// 捕获中途接入、还没有任何连接确认身份时，按宿主下发的沿用身份补足本连接的战斗起点。实体 ID 由各地图实例按计数器分配，
+    /// 只在确认它的那条连接（同一地图实例）内有效：同一连接（本机端口与远端地址、端口相同）沿用角色 ID 与本机实体 ID，
+    /// 其他连接只沿用角色 ID，本机实体待受疗配对或本机出现帧确认。只在本连接出现战斗帧时补足，个人数据随后以新观测替换。
+    /// </summary>
+    private void SeedCarriedIdentity()
+    {
+        if (combat is null || combat.LocalEntity is not null || utc == default || Music.Current.Identity is not null ||
+            !identities.Carried || identities.Last is not { } carried) return;
+        if (SameConnection(Connection, identities.CarriedConnection))
+        {
+            var previous = CombatInitializerAt;
+            CombatInitializerAt = Stopwatch.GetTimestamp();
+            if (!combat.SeedLocal(carried.CharacterId, carried.ActorId, now, utc, carried: true)) CombatInitializerAt = previous;
+        }
+        else combat.SeedCharacter(carried.CharacterId, now, utc);
+    }
+    /// <summary>本流所属的连接（由流路由在确认后设置）；离线验证与测试中可为空。</summary>
+    internal CaptureConnection? Connection { get; set; }
+    internal static bool SameConnection(CaptureConnection? stream, ObservedConnection? carried) => stream is not null && carried is not null &&
+        stream.LocalPort == carried.LocalPort && stream.RemotePort == carried.RemotePort &&
+        System.Net.IPAddress.TryParse(stream.RemoteAddress, out var left) && System.Net.IPAddress.TryParse(carried.RemoteAddress, out var right) && left.Equals(right);
+    /// <summary>报告中的本机身份（其实体 ID）所属的连接：本机实体或共享身份的实体与之相同、初始化最晚的那条流。</summary>
+    internal static CaptureConnection? IdentityConnection(GameIdentity identity, IEnumerable<SharedGameStream> streams) =>
+        streams.Where(stream => stream.Connection is not null &&
+                (stream.LocalEntity?.Key.RawInstanceId.Value == identity.ActorId || stream.Music.Current.Identity?.ActorId == identity.ActorId))
+            .MaxBy(stream => Math.Max(stream.CombatInitializerAt, stream.MusicInitializerAt))?.Connection;
+    /// <summary>
     /// 本机显示名所用的身份。本连接共享身份的 ActorId 与本机实体一致时直接使用。否则沿用同一捕获内最近确认的身份，
     /// 条件是本连接战斗解析由个人数据确认的本机角色 ID 与之相同：进地下城、换频道时游戏更换连接，新连接的身份解析从空开始，
     /// 在个人数据帧被错过且本机出现帧尚未到达时确认不了（出现帧到达后按记住的角色 ID 补足，见 TwGameObserver.RememberedCharacterId）。
@@ -280,10 +337,10 @@ public sealed class SharedGameStream : IDisposable
         var primary = streams.Where(stream => stream.LocalEntity is not null && !double.IsNegativeInfinity(stream.CombatInitializerAt))
             .MaxBy(stream => stream.CombatInitializerAt);
         return primary is not null && LocalIdentity(null, memory.Last, primary.LocalEntity, primary.LocalCharacterId) is { } carried
-            ? observation with { Identity = carried, Detail = "已识别本机角色。" } : observation;
+            ? observation with { Identity = carried, Detail = memory.Carried ? "沿用本进程先前识别的本机角色，切换地图后确认。" : "已识别本机角色。" } : observation;
     }
-    /// <summary>战斗解析按线上协议号接收 v3 协议集合；v1、v2 兴趣的差异由 <see cref="CombatProtocolInterest"/> 开关决定。</summary>
-    private bool ObserveCombat(int code) => combat is not null && Tw20261110CombatProtocol.ProtocolsV3.Contains(code);
+    /// <summary>战斗解析按线上协议号接收 v4 协议集合；v1–v3 兴趣的差异由 <see cref="CombatProtocolInterest"/> 开关决定。</summary>
+    private bool ObserveCombat(int code) => combat is not null && Tw20261110CombatProtocol.ProtocolsV4.Contains(code);
     /// <summary>tw-music-v1 捕获的已知协议号：固定 MabiSync 构建的全部 GCProtocol（不含 0）。</summary>
     private static readonly IReadOnlySet<int> MusicOnlyProtocols = TwGameProtocol.KnownProtocols.Where(code => code != 0).ToHashSet();
     /// <summary>
@@ -293,6 +350,8 @@ public sealed class SharedGameStream : IDisposable
     internal static bool NewConnection(GameStreamResetCause cause) => cause is GameStreamResetCause.Unknown or
         GameStreamResetCause.ConnectionSyn or GameStreamResetCause.ConnectionClosed or GameStreamResetCause.ConnectionReset or
         GameStreamResetCause.ConnectionRemoved || !Enum.IsDefined(cause);
+    /// <summary>同一连接内、数据本身一致的缺口：战斗解析保留场景（见 <see cref="TwCombatObserver.Resync"/>）。</summary>
+    internal static bool KeepsScene(GameStreamResetCause cause) => !NewConnection(cause) && cause != GameStreamResetCause.ConflictingRetransmission;
     private void ResetParsers(string reason)
     {
         var cause = Stream.LastResetCause;
@@ -300,10 +359,19 @@ public sealed class SharedGameStream : IDisposable
         var code = Enum.IsDefined(cause) && cause != GameStreamResetCause.Unknown
             ? "combat.streamGap." + char.ToLowerInvariant(cause.ToString()[0]) + cause.ToString()[1..]
             : "combat.streamGap";
-        combat?.Reset(code, now, utc); lagSince = null;
+        // 同一连接内仍是同一地图与角色（当前构建每次进图都换连接）：缺口只丢这一段帧，战斗保留代次、本机与实体映射，分段不结束、只记缺口；
+        // 重传内容不一致说明数据本身不可信，与连接更换一样整体重置并以保留的身份重新补足起点。
+        if (KeepsScene(cause)) combat?.Resync(code, now, utc);
+        else
+        {
+            // 同一连接内容矛盾的重置：实体类型、最大 HP 与解码信息在新代次延续；新连接不延续。
+            combat?.Reset(code, now, utc, keepEntities: !NewConnection(cause));
+            if (!NewConnection(cause)) SeedCombatIdentity();
+        }
+        lagSince = null;
+        // 库存增量不可重放，缺口里可能有库存帧，本连接的库存照常失效（只有库存主连接发布）。
         PostInventoryReset("inventory.streamGap");
-        // 同一连接内仍是同一地图与角色（当前构建每次进图都换连接），以保留的身份重新补足战斗起点。
-        if (!NewConnection(cause)) SeedCombatIdentity();
+        if (!KeepsScene(cause) && !NewConnection(cause) && combat is not null) context.Diagnostics.GapSceneReset();
     }
     private int disposed;
     public void Dispose()
@@ -318,15 +386,21 @@ public sealed class SharedGameStream : IDisposable
 
 /// <summary>
 /// 一次捕获（绑定一个游戏进程）内最近确认的本机身份，由各连接共用；新的确认身份直接替换旧值。
-/// 游戏进程变化或解绑会结束捕获，记录随之丢弃。Worker 意外重启后由宿主随捕获请求下发同一游戏会话（同一进程）
-/// 最近确认的身份作为初值。
+/// 游戏进程变化会结束捕获，记录随之丢弃。捕获重启后由宿主随捕获请求下发同一游戏进程最近确认的身份作为沿用初值。
 /// </summary>
-public sealed class LocalIdentityMemory(GameIdentity? initial = null)
+public sealed class LocalIdentityMemory(GameIdentity? initial = null, ObservedConnection? initialConnection = null)
 {
     private readonly object gate = new();
     private GameIdentity? last = initial;
+    private bool carried = initial is not null;
+    /// <summary>沿用初值的实体 ID 所属的连接；只有同一连接的流沿用实体 ID。</summary>
+    public ObservedConnection? CarriedConnection { get; } = initial is null ? null : initialConnection;
     public GameIdentity? Last { get { lock (gate) return last; } }
-    public void Remember(GameIdentity identity) { lock (gate) last = identity; }
+    /// <summary>当前记录仍是宿主下发的沿用初值（本次捕获还没有任何连接确认过身份）；沿用初值被作废后为空记录。</summary>
+    public bool Carried { get { lock (gate) return carried; } }
+    public void Remember(GameIdentity identity) { lock (gate) { last = identity; carried = false; } }
+    /// <summary>观测与沿用初值矛盾（其实体属于其他角色）时作废，本机回到未识别。</summary>
+    public void DiscardCarried() { lock (gate) if (carried) { last = null; carried = false; } }
     /// <summary>库存的账户主角色对应（见 <see cref="InventoryAccountMemory"/>），范围同本机身份记录。</summary>
     public InventoryAccountMemory Accounts { get; } = new();
 }

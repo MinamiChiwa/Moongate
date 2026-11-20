@@ -93,9 +93,6 @@ public sealed class GameBuildAdaptation(IGameWindowSource? source, string? cache
                 TwClientFingerprint.AdaptiveBuild(hashes.AssemblySha256, hashes.MetadataSha256) == build)
             {
                 verdict = await TwBuildVerification.EvaluateAsync(client.ImagePath, hashes, cacheDirectory, CancellationToken.None).ConfigureAwait(false);
-                // 读取客户端事实整读两个大文件（进入大对象堆），结束后压缩回收一次，宿主常驻时不长期占用。
-                System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
-                GC.Collect();
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException) { verdict = null; }

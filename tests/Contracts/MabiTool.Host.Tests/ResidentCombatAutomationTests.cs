@@ -68,10 +68,12 @@ public sealed class ResidentCombatAutomationTests
         await File.WriteAllTextAsync(Path.Combine(area.Root, "pause-damage"), "pause");
         await Until(() => Task.FromResult(File.Exists(Path.Combine(area.Root, "damage-paused"))), paused => paused);
         var emitted = Counter(area, "damage-feeds") - previousDamage;
+        // 切图使整场到期，切图后的分段开启新的一场：观察范围（当前整场）只含切图后的分段；切图前后两段合计等于重新开启后发出的全部伤害。
+        var before = await sdk.QueryCombatRangeAsync(new("encounter", oldEncounter.Id));
         var range = await Until(() => sdk.QueryCombatRangeAsync(new("observation", ObservationId: resumed.Data.Observation.Id)),
-            value => value.Totals.EventCount.Value == (ulong)emitted);
-        Assert.Equal(new BigInteger(emitted) * 4294967395L, range.RangeDamage.Value);
-        Assert.Equal(2, range.EncounterIds.Count);
+            value => value.Totals.EventCount.Value + before.Totals.EventCount.Value == (ulong)emitted);
+        Assert.Equal([mapped.Data!.Encounter!.Id], range.EncounterIds);
+        Assert.Equal(new BigInteger(emitted) * 4294967395L, range.RangeDamage.Value + before.RangeDamage.Value);
         Assert.Empty(area.Device.Commands);
         await SetAuto(sdk, false, "resident-off-after-map");
         await Until(() => Task.FromResult(capture.Runtime()), runtime => runtime.SubscriberCount == 0);
@@ -98,7 +100,8 @@ public sealed class ResidentCombatAutomationTests
         await Until(() => Task.FromResult(barrier.Snapshot()), state => state.Activities.Count == 0);
         Assert.False(Interests(area).MusicEnabled);
 
-        var music = await GameObservationApiTests.BeginCapture(client, area, "resident-music-lifetime");
+        // 常驻捕获打开全部网卡；手动音乐需求不指定网卡，加入同一捕获。
+        var music = await GameObservationApiTests.JoinCapture(client, area, "resident-music-lifetime");
         Assert.Single(barrier.Snapshot().Activities, activity => activity.Kind == "game.observation");
         Assert.Equal(2, capture.Runtime().SubscriberCount);
         Assert.True(Interests(area).MusicEnabled);

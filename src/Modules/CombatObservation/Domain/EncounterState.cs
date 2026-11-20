@@ -75,6 +75,8 @@ internal sealed class EncounterState(string id, string owner, string observation
             if (!groups.ContainsKey(key) && (groups.Count >= maximum - 1 || !groupCapacity()))
             { key = fallback; name = fallback; label = null; Gap(new("group-capacity", value.MonotonicMs, value.MonotonicMs, new(0))); }
             if (!groups.TryGetValue(key, out var group)) groups.Add(key, group = (new(), name, label));
+            // 分组创建时实体还没有类型信息：之后的命中带来名称占位时补写。
+            else if (group.Label is null && label is not null) groups[key] = group with { Label = label };
             group.Value.Add(value);
         }
     }

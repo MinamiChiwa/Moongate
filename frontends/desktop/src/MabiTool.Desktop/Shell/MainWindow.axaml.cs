@@ -45,8 +45,12 @@ public sealed partial class MainWindow : Window
         // 小屏或高缩放时按工作区收缩初始与最小尺寸：显示前按主屏先收缩一次，显示后按实际所在屏幕再核对并把标题栏拉回屏幕内。
         if (Screens.Primary is { } primary) FitTo(primary, reposition: false);
         Opened += (_, _) => { if (Screens.ScreenFromWindow(this) is { } screen) FitTo(screen, reposition: true); };
+        // 最小化、隐藏或关闭时告诉外壳，后台不再为当前页面拉数据；还原后补读。
+        void ReportShown() => (DataContext as ShellViewModel)?.SetWindowShown(IsVisible && WindowState != WindowState.Minimized);
+        Opened += (_, _) => ReportShown();
         PropertyChanged += (_, e) =>
         {
+            if (e.Property == IsVisibleProperty || e.Property == WindowStateProperty) ReportShown();
             // 最大化时占满工作区，不保留圆角。
             if (e.Property != WindowStateProperty) return;
             Frame.CornerRadius = new Avalonia.CornerRadius(WindowState == WindowState.Maximized ? 0 : 30);

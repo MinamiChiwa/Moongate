@@ -470,12 +470,50 @@ public sealed class CombatRangeMeasurementTests
     }
 
     [Fact]
-    public async Task MeasurementSettingsPersistAndDefaultToOneMinuteWithFiveSecondCountdown()
+    public async Task MeasurementSettingsPersistAndDefaultToOneMinuteWithoutCountdown()
     {
         await using var area = new Area();
-        Assert.Equal(new CombatMeasurementSettings(60000, 5000), area.History.MeasurementSettings());
+        Assert.Equal(new CombatMeasurementSettings(60000, 0), area.History.MeasurementSettings());
         await area.History.SaveMeasurementSettingsAsync(new(90000, 0));
         Assert.Equal(new CombatMeasurementSettings(90000, 0), area.History.MeasurementSettings());
+    }
+
+    [Fact]
+    public async Task SavedSegmentReopensWithTheSameDetailAndCurve()
+    {
+        await using var area = new Area(); var session = await area.Start(healing: true);
+        await area.Commit(session, Frame(1, 0, [Hit("a", 0, 100, Monster, breaked: true), Hit("b", 0, 300, Twin)], entities: Monsters));
+        await area.Commit(session, Frame(2, 2000, [Hit("c", 2000, 200, Monster), Hit("d", 2000, 50, Twin)], entities: Monsters)
+            with { Healing = [Cast("h1", 2000, 400, Ally)] });
+        await area.Commit(session, Frame(3, 5000, [Hit("e", 5000, 160, Monster)], entities: Monsters));
+        var segment = session.Capture().Workspace.Encounter!;
+        var query = new CombatRangeQuery("encounter", segment.Id);
+        var before = area.History.QueryRange("client-a", false, query);
+        var curve = new CombatTimelineQuery(PageSize: 1, BucketWidthMs: 1000);
+
+        var saved = await area.History.SaveRangeAsync("client-a", false, new(query, "对比用"), "save-detail");
+        Assert.NotNull(saved.Record!.SavedAt); Assert.Null(saved.Record.DataIncomplete);
+        var reopened = area.History.QueryRange("client-a", false, new("encounter", saved.Id));
+        Assert.True(reopened.Complete);
+        Assert.Equal(before.Result.Summary.AttributedDamage, reopened.Result.Summary.AttributedDamage);
+        Assert.Equal(Json(before.Result.Skills), Json(reopened.Result.Skills));
+        Assert.Equal(Json(before.Result.Targets), Json(reopened.Result.Targets));
+        Assert.Equal(Json(before.Totals), Json(reopened.Totals));
+        Assert.Equal(Json(before.Break), Json(reopened.Break));
+        Assert.Equal(Json(before.Result.Healing!.Targets), Json(reopened.Result.Healing!.Targets));
+        var sourceBuckets = area.History.Timeline("client-a", false, segment.Id, curve).DamageBuckets;
+        Assert.NotEmpty(sourceBuckets);
+        Assert.Equal(Json(sourceBuckets), Json(area.History.Timeline("client-a", false, saved.Id, curve).DamageBuckets));
+
+        // 分段随后出现抓包缺口：再保存的记录标为数据不完整，并带同一缺口。
+        await area.Commit(session, Frame(4, 6000, [Hit("f", 6000, 120, Monster)], entities: Monsters, gaps: [new("capture-gap", 5500, 5800, new(2))]));
+        var gapped = await area.History.SaveRangeAsync("client-a", false, new(query, "有缺口"), "save-detail-gap");
+        Assert.True(gapped.Record!.DataIncomplete);
+        Assert.Contains(gapped.Gaps, gap => gap.Reason == "capture-gap");
+
+        // 本版本之前保存的记录没有保存时刻与不完整标记，读回为空。
+        var legacy = JsonSerializer.Deserialize<CombatRecordInfo>("""{"kind":"saved-range","name":"旧记录","measurement":null,"source":null}""", ContractJson.Options)!;
+        Assert.Null(legacy.SavedAt); Assert.Null(legacy.DataIncomplete);
     }
 
     private sealed class Area : IAsyncDisposable

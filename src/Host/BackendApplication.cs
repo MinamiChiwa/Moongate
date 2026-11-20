@@ -95,6 +95,8 @@ public static class BackendApplication
         // 未登记构建的核对结果缓存在数据根 cache/game-access/client-builds；没有数据根时只保存在内存。
         builder.Services.AddSingleton(sp => buildAdaptation?.Invoke(sp) ?? new GameBuildAdaptation(windowSource,
             sp.GetService<PathService>()?.Resolve("cache", "game-access", "client-builds"), sp.GetRequiredService<DiagnosticTrace>()));
+        builder.Services.AddSingleton(sp => new ClientIconService(sp.GetRequiredService<GameControlContext>(),
+            sp.GetService<PathService>()?.Resolve("cache", "game-access", "client-icons"), sp.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton(clock ?? TimeProvider.System);
         builder.Services.AddSingleton(sp => new DiagnosticTrace(sp.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton(sp => new OwnedInstrumentProvider(sp.GetService<IInventoryReadModel>(), info.InstanceId, mock));
@@ -365,6 +367,7 @@ public static class BackendApplication
         ShortcutSettingsEndpoints.Map(app);
         GameObservationEndpoints.Map(app);
         CombatEndpoints.Map(app);
+        ClientIconEndpoints.Map(app);
         InventoryEndpoints.Map(app);
         PerformanceEndpoints.Map(app);
         FileTransferEndpoints.Map(app);

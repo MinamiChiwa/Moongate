@@ -22,11 +22,13 @@ public sealed partial class LiveBackend
 
     /// <summary>常驻自动观测的状态说明；观测进行中为空。</summary>
     /// <param name="waiting">抓包运行中没有数据时的统一提示（<see cref="CaptureText.Waiting"/>）；为空时用默认的等待识别角色说明。</param>
-    internal static MabiTool.Desktop.Pages.Combat.AutoObservationView? AutoView(CombatAutoObservationState? value, CombatWorkspace? workspace, string? waiting = null)
+    internal static MabiTool.Desktop.Pages.Combat.AutoObservationView? AutoView(CombatAutoObservationState? value, CombatWorkspace? workspace, string? waiting = null,
+        string? observingNote = null)
     {
         if (value is null) return null;
+        // 观测进行中但抓包撤回了未印证的沿用角色（角色待确认）时同样写明原因，不显示看似正常的空数据。
         if (workspace?.Observation.State == "observing" && value.State is "observing" or "waiting" && value.ObservationId == workspace.Observation.Id)
-            return new(value.Enabled, string.Empty, false);
+            return new(value.Enabled, observingNote ?? string.Empty, false);
         var (text, problem) = value.State switch
         {
             "waiting" => (waiting ?? Pick("等待识别角色，请切换一次地图", "等待識別角色，請切換一次地圖"), false),
@@ -102,11 +104,11 @@ public sealed partial class LiveBackend
         {
             case "combat.scope":
                 selection.SelectScope(argument);
-                Signal(); Notify();
+                MarkDue(Due.Recompute, immediate: true); Notify();
                 return Task.CompletedTask;
             case "combat.scope.live":
                 selection.BackToLive();
-                Signal(); Notify();
+                MarkDue(Due.Recompute, immediate: true); Notify();
                 return Task.CompletedTask;
             case "combat.auto":
             {
@@ -120,13 +122,16 @@ public sealed partial class LiveBackend
             }
             case "combat.target":
                 selection.SelectTarget(argument);
-                Signal(); Notify();
+                MarkDue(Due.Recompute, immediate: true); Notify();
                 return Task.CompletedTask;
             // 明细窗口自己的选择：不改主页面的选择，不唤醒整轮刷新。
             case "combat.detail.scope":
             case "combat.detail.scope.live":
             case "combat.detail.target":
                 return SelectDetailAsync(intent, argument);
+            // 记录明细窗口的目标筛选：只重读这条记录，不唤醒整轮刷新。
+            case "combat.record.target":
+                return SelectRecordTargetAsync(argument);
         }
         // 测量开始后自动切到这次测量：只在发出请求后用户没有另选范围时生效。
         var issuedAt = selection.Version;
@@ -149,6 +154,8 @@ public sealed partial class LiveBackend
                         var next = FollowMeasurement(selection.Scope, seenMeasurementRun ?? string.Empty, seenMeasurementResult, state);
                         if (next.Scope != selection.Scope) selection.Follow(issuedAt, next.Scope);
                         (seenMeasurementRun, seenMeasurementResult) = (next.SeenRun, next.SeenResult);
+                        if (measurementState is null || measurementState.Revision.Value <= state.Revision.Value)
+                            (measurementState, measurementAt) = (state, Stopwatch.GetTimestamp());
                     }
                     var settings = measurementCall.Settings;
                     return state.Phase == "running"
@@ -194,56 +201,54 @@ public sealed partial class LiveBackend
     }
 
     /// <summary>
-    /// 每秒刷新：读取定时测量状态；测量刚完成时把范围切到这次结果。再按范围与目标读取后端重新统计的结果，
-    /// 目标已不在范围内时回到“全部”。
+    /// 按当前范围与目标读取后端重新统计的结果，目标已不在范围内时回到“全部”。同一查询在数据修订没变时沿用上次结果：
+    /// 整场随工作区与战斗记录修订、当前分段随分段修订、进行中的测量随测量与工作区修订（计时中累计随检查点增长，测量修订只在阶段变化时变）、
+    /// 已结束的记录随战斗记录修订重读。
     /// </summary>
-    private async Task<(CombatRangeSummary? Range, string? Problem, CombatMeasurementState? Measurement, long At, CombatSelectionSnapshot Selection)> RefreshRangeAsync(
-        MabiToolClient api, CombatWorkspace? workspace, CombatEncounterPage history, CancellationToken token)
+    private async Task<(CombatRangeSummary? Range, string? Problem, CombatSelectionSnapshot Selection)> RangeAsync(
+        MabiToolClient api, CombatWorkspace? workspace, CombatEncounterPage history, CombatMeasurementState? measurement, CancellationToken token)
     {
-        var issuedAt = selection.Version;
-        try { var auto = await api.GetCombatAutoObservationAsync(token); lock (gate) autoObservation = auto; }
-        catch (MabiToolApiException) { }
-        CombatMeasurementState? measurement = null; long at = 0;
-        try { measurement = await api.GetCombatMeasurementAsync(token); at = Stopwatch.GetTimestamp(); }
-        catch (MabiToolApiException) { }
-        if (measurement is not null)
-            lock (gate)
-            {
-                var next = FollowMeasurement(selection.Scope, seenMeasurementRun, seenMeasurementResult, measurement);
-                // 新测量开始或出结果时切到它；这一轮读取期间用户另选了范围时以用户的选择为准。
-                if (next.Scope != selection.Scope) selection.Follow(issuedAt, next.Scope);
-                (seenMeasurementRun, seenMeasurementResult) = (next.SeenRun, next.SeenResult);
-            }
         // 这一轮读取针对的选择；结果带着它返回，选择已经改变时页面不采用。
         var chosen = selection.Snapshot();
         var (scope, target) = (chosen.Scope, chosen.Target);
         var current = Read().State with { Workspace = workspace, History = history.Items };
         var query = RangeQuery(current, scope, target, forDisplay: true);
-        if (query is null) return (null, null, measurement, at, chosen);
+        if (query is null) return (null, null, chosen);
         // 整场范围要等这次观察有了第一段战斗记录才有结果（观测开始前、等待识别角色时都没有），此前不查询。
-        if (query.Scope == "observation" && !HasSegments(workspace, history.Items)) return (null, null, measurement, at, chosen);
+        if (query.Scope == "observation" && !HasSegments(workspace, history.Items)) return (null, null, chosen);
         // 同一查询刚得到“不存在”时，等分段或战斗记录变化后再查，不按每轮刷新反复请求。
         var memo = string.Join('|', query.Scope, query.EncounterId, query.ObservationId, query.TargetId, workspace?.Encounter?.Id, history.Revision);
-        lock (gate) if (missingRange is { } missing && missing.Key == memo) return (null, missing.Problem, measurement, at, chosen);
-        try { return (await api.QueryCombatRangeAsync(query, token), null, measurement, at, chosen); }
+        lock (gate) if (missingRange is { } missing && missing.Key == memo) return (null, missing.Problem, chosen);
+        var live = query.Scope == "observation" ? $"w{workspace?.Revision}"
+            : query.EncounterId == workspace?.Encounter?.Id ? $"e{workspace?.Encounter?.Revision}"
+            : query.EncounterId == measurement?.MeasurementId ? $"m{measurement?.Revision}|w{workspace?.Revision}"
+            : string.Empty;
+        var key = memo + "|" + live;
+        lock (gate) if (rangeRead is { } read && read.Key == key) return (read.Range, read.Problem, chosen);
+        try
+        {
+            var range = await api.QueryCombatRangeAsync(query, token);
+            lock (gate) rangeRead = (key, range, null);
+            return (range, null, chosen);
+        }
         catch (MabiToolApiException error) when (error.Problem?.Code == "combat.entityOutOfScope" && target is not null)
         {
             selection.DropTarget(target);
             var all = chosen with { Target = null, Version = selection.Version };
-            if (RangeQuery(current, scope, null, forDisplay: true) is not { } whole) return (null, null, measurement, at, all);
-            try { return (await api.QueryCombatRangeAsync(whole, token), null, measurement, at, all); }
-            catch (MabiToolApiException again) { return (null, again.Problem?.Code ?? $"http.{again.Status}", measurement, at, all); }
+            if (RangeQuery(current, scope, null, forDisplay: true) is not { } whole) return (null, null, all);
+            try { return (await api.QueryCombatRangeAsync(whole, token), null, all); }
+            catch (MabiToolApiException again) { return (null, again.Problem?.Code ?? $"http.{again.Status}", all); }
         }
         catch (MabiToolApiException error) when (error.Status == 404)
         {
             // 进行中的测量在第一次检查点写入前查不到：不记为“不存在”，下一轮照常再查。
-            if (measurement?.MeasurementId is { } live && query.EncounterId == live) return (null, null, measurement, at, chosen);
+            if (measurement?.MeasurementId is { } running && query.EncounterId == running) return (null, null, chosen);
             // 整场范围在观察还没有战斗记录时为空，不算错误；记录已删除时写明。
             var problem = query.Scope == "observation" ? null : error.Problem?.Code ?? "resource.notFound";
             lock (gate) missingRange = (memo, problem);
-            return (null, problem, measurement, at, chosen);
+            return (null, problem, chosen);
         }
-        catch (MabiToolApiException error) { return (null, error.Problem?.Code ?? $"http.{error.Status}", measurement, at, chosen); }
+        catch (MabiToolApiException error) { return (null, error.Problem?.Code ?? $"http.{error.Status}", chosen); }
     }
 
     /// <summary>

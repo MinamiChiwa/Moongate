@@ -7,13 +7,18 @@ namespace MabiTool.Providers.TwObservation.ItemCatalog;
 /// 当前客户端的怪物、技能与效果名称表。Id 为资源包索引的 SHA-256；Unsupported 记录未能读取的表及原因
 /// （monster、skill、effect → combat.nameTableMissing / combat.nameLayoutUnsupported）。
 /// EffectPolarities 为 Buff 表 AffectType 列：buff（增益）、debuff（减益）、none（表里标为无）；列结构不符时为空，效果极性按未知处理。
+/// Actors 为怪物以外的自动体名称（键为种类 npc、npc-companion、pet、summoned-automaton、gimmick、memorial-saga-minion）；
+/// EmptyMonsters 为 Monster 表中名称为空或只有空格的行；BossGroupNames 为这些空名怪物经 Raid → RaidGroup、BattleZone → BattleZoneGroup 关联到的首领组名。
 /// </summary>
 public sealed record CombatNameTables(string Id, IReadOnlyDictionary<uint, string> Monsters, IReadOnlyDictionary<uint, string> Skills,
     IReadOnlyDictionary<uint, string> Effects, IReadOnlyDictionary<string, string> Unsupported,
-    IReadOnlyDictionary<uint, string>? EffectPolarities = null)
+    IReadOnlyDictionary<uint, string>? EffectPolarities = null,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<uint, string>>? Actors = null,
+    IReadOnlySet<uint>? EmptyMonsters = null, IReadOnlyDictionary<uint, string>? BossGroupNames = null)
 {
     /// <summary>名称常驻内存的估算：每条按 48 字节加 UTF-16 文本计。</summary>
-    public long Bytes => new[] { Monsters, Skills, Effects }.Sum(table => table.Sum(pair => 48L + pair.Value.Length * 2L)) + (EffectPolarities?.Count ?? 0) * 24L;
+    public long Bytes => new[] { Monsters, Skills, Effects }.Concat(Actors?.Values ?? []).Append(BossGroupNames ?? new Dictionary<uint, string>())
+        .Sum(table => table.Sum(pair => 48L + pair.Value.Length * 2L)) + (EffectPolarities?.Count ?? 0) * 24L + (EmptyMonsters?.Count ?? 0) * 16L;
 }
 
 /// <summary>
@@ -28,7 +33,23 @@ public static partial class ClientCombatNameCatalog
     private const string TextPath = "Sheetdata_Client/client.sheettext.bin";
     private const string DataPath = "Sheetdata_Client/client.sheetdata.bin";
     public const string MonsterSheet = "Monster", SkillSheet = "Skill", BuffSheet = "Buff";
-    private static readonly string[] Sheets = [MonsterSheet, SkillSheet, BuffSheet];
+    /// <summary>怪物以外的自动体名称表（种类 → 表名）；第 1 列均为 DisplayName（tw-20261118 客户端 metadata 核对）。</summary>
+    public static readonly IReadOnlyDictionary<string, string> ActorSheets = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["npc"] = "NPC", ["npc-companion"] = "NPCCompanion", ["pet"] = "Pet", ["summoned-automaton"] = "SummonedAutomaton",
+        ["memorial-saga-minion"] = "MemorialSagaMinion"
+    };
+    private const string GimmickSheet = "GimmickActor", GimmickStateSheet = "GimmickActorState";
+    private const string RaidSheet = "Raid", RaidGroupSheet = "RaidGroup", BattleZoneSheet = "BattleZone", BattleZoneGroupSheet = "BattleZoneGroup";
+    private static readonly string[] Sheets = [MonsterSheet, SkillSheet, BuffSheet, .. ActorSheets.Values, GimmickSheet, GimmickStateSheet,
+        RaidSheet, RaidGroupSheet, BattleZoneSheet, BattleZoneGroupSheet];
+    /// <summary>GimmickActor 第 0–5 列：出生状态 SpawnActivateState 与 ActivateStates 引用 GimmickActorState 行。</summary>
+    public static readonly IReadOnlyList<string> GimmickColumns = ["Id", "ModelName", "ModelScale", "ActivateStates", "SpawnAction", "SpawnActivateState"];
+    /// <summary>Raid 第 0–13 列（Index、Id 在键块）：行内依次为 RaidGroup、RaidDifficulty、六个 int32、ChannelSheetId、一个枚举文本偏移与 BossMonsterSheetId。</summary>
+    public static readonly IReadOnlyList<string> RaidColumns = ["Index", "Id", "RaidGroup", "RaidDifficulty", "RequiredCombatScore", "RecommendedCombatScore",
+        "OverwhelmingCombatScore", "ContentLevel", "MaxCharacterCount", "MaxReviveCount", "ChannelSheetId", "PlayMode", "ChanceMeetingEnableType", "BossMonsterSheetId"];
+    public static readonly IReadOnlyList<string> BattleZoneColumns = ["Id", "BattleZoneType", "DifficultyType", "BossMonsterSheetId", "SubBossMonsterSheetIds",
+        "BossMonsterCutsceneSheetId", "BattleZoneGroupId"];
     /// <summary>当前客户端 BuffSheetData 第 0–7 列（tw-20261110 构建离线核对）：第 1–6 列为文本偏移，第 7 列 AffectType 为枚举名的文本偏移（Buff、Debuff、None）。</summary>
     public static readonly IReadOnlyList<string> BuffPolarityColumns = ["Id", "DisplayBuffTypeText", "DisplayName", "DescriptionText",
         "BuffScrollDisplayName", "BuffScrollDescriptionText", "BuffGainNotification", "AffectType"];
@@ -74,13 +95,13 @@ public static partial class ClientCombatNameCatalog
     {
         var tables = ClientNameTable.ReadTables(meta, text, cancellationToken);
         var unsupported = new Dictionary<string, string>(StringComparer.Ordinal);
-        Dictionary<uint, string> Read(string kind, string sheet, IReadOnlyList<string> columns, Func<ClientDataReader, uint> name)
+        // 逐行读取：表缺失或列顺序与已核对的不符时整表记原因；单行编码异常只跳过该行。
+        bool Rows(string kind, string sheet, IReadOnlyList<string> columns, Action<uint, ClientDataReader> visit)
         {
-            var result = new Dictionary<uint, string>();
-            if (!tables.TryGetValue(sheet, out var table)) { unsupported[kind] = "combat.nameTableMissing"; return result; }
+            if (!tables.TryGetValue(sheet, out var table)) { unsupported[kind] = "combat.nameTableMissing"; return false; }
             if (!fields.TryGetValue(sheet, out var declared) || declared.Count < columns.Count || !declared.Take(columns.Count).SequenceEqual(columns, StringComparer.Ordinal) ||
                 table.Rows > MaximumEntriesPerTable || table.Block.Length < checked((long)table.Rows * 4))
-            { unsupported[kind] = "combat.nameLayoutUnsupported"; return result; }
+            { unsupported[kind] = "combat.nameLayoutUnsupported"; return false; }
             var ids = new ClientDataReader(table.Block);
             for (var row = 0; row < table.Rows; row++)
             {
@@ -88,18 +109,82 @@ public static partial class ClientCombatNameCatalog
                 var key = ids.UInt32();
                 var start = table.DataOffsets[row];
                 var end = row + 1 < table.Rows ? table.DataOffsets[row + 1] : table.DataEnd;
-                if (start > end || end > (ulong)data.Length) { unsupported[kind] = "combat.nameLayoutUnsupported"; return new(); }
-                // 单行编码异常只使该行名称未知，不影响其余行。
-                try
-                {
-                    var offset = name(new ClientDataReader(data, checked((int)start), checked((int)end)));
-                    if (Clean(ClientNameTable.ReadString(text, checked((int)offset))) is { } value) result.TryAdd(key, value);
-                }
+                if (start > end || end > (ulong)data.Length) { unsupported[kind] = "combat.nameLayoutUnsupported"; return false; }
+                try { visit(key, new ClientDataReader(data, checked((int)start), checked((int)end))); }
                 catch (InvalidDataException) { }
             }
+            return true;
+        }
+        Dictionary<uint, string> Read(string kind, string sheet, IReadOnlyList<string> columns, Func<ClientDataReader, uint> name, HashSet<uint>? empty = null)
+        {
+            var result = new Dictionary<uint, string>();
+            var complete = Rows(kind, sheet, columns, (key, row) =>
+            {
+                var raw = ClientNameTable.ReadString(text, checked((int)name(row)));
+                if (Clean(raw) is { } value) result.TryAdd(key, value);
+                else if (string.IsNullOrWhiteSpace(raw)) empty?.Add(key);
+            });
+            return complete ? result : new();
+        }
+        var emptyMonsters = new HashSet<uint>();
+        var monsters = Read("monster", MonsterSheet, ["Id", "DisplayName"], row => row.Var(), emptyMonsters);
+        var actors = new Dictionary<string, IReadOnlyDictionary<uint, string>>(StringComparer.Ordinal);
+        foreach (var (kind, sheet) in ActorSheets) actors[kind] = Read(kind, sheet, ["Id", "DisplayName"], row => row.Var());
+        actors["gimmick"] = Gimmicks();
+        // 机关取出生状态（其次第一个有名字的可激活状态）在 GimmickActorState 表的名称。
+        Dictionary<uint, string> Gimmicks()
+        {
+            var states = Read("gimmick", GimmickStateSheet, ["Id", "DisplayName"], row => row.Var());
+            var result = new Dictionary<uint, string>();
+            if (unsupported.ContainsKey("gimmick")) return result;
+            Rows("gimmick", GimmickSheet, GimmickColumns, (key, row) =>
+            {
+                row.Var(); Skip(row, "F");
+                var count = row.Var();
+                if (count > 4096) throw new InvalidDataException("机关状态数组超过预算");
+                var activate = new uint[count];
+                for (var index = 0; index < count; index++) activate[index] = row.UInt32();
+                row.Var();
+                var spawn = row.UInt32();
+                if ((states.TryGetValue(spawn, out var name) ? name : activate.Select(state => states.GetValueOrDefault(state)).FirstOrDefault(value => value is not null)) is { } found)
+                    result.TryAdd(key, found);
+            });
+            return unsupported.ContainsKey("gimmick") ? new() : result;
+        }
+        var bossGroups = BossGroups();
+        // 空名怪物经 Raid（BossMonsterSheetId）→ RaidGroup.DisplayName、BattleZone（首领与副首领）→ BattleZoneGroup.DisplayName 关联首领组名；
+        // 读出的怪物 ID 不在 Monster 表中的行视为列结构不符，跳过。
+        Dictionary<uint, string> BossGroups()
+        {
+            var result = new Dictionary<uint, string>();
+            if (emptyMonsters.Count == 0) return result;
+            var raidGroups = Read("boss-group", RaidGroupSheet, ["Id", "DisplayName"], row => row.Var());
+            var zoneGroups = Read("boss-group", BattleZoneGroupSheet, ["Index", "Id", "DisplayName"], row => row.Var());
+            bool Known(uint monster) => monsters.ContainsKey(monster) || emptyMonsters.Contains(monster);
+            Rows("boss-group", RaidSheet, RaidColumns, (_, row) =>
+            {
+                var group = row.UInt32(); row.UInt32();
+                for (var index = 0; index < 6; index++) Skip(row, "I");
+                row.UInt32(); row.Var();
+                var boss = row.UInt32();
+                if (Known(boss) && emptyMonsters.Contains(boss) && raidGroups.TryGetValue(group, out var name)) result.TryAdd(boss, name);
+            });
+            Rows("boss-group", BattleZoneSheet, BattleZoneColumns, (_, row) =>
+            {
+                row.Var(); row.Var();
+                var boss = row.UInt32();
+                var count = row.Var();
+                if (count > 64) throw new InvalidDataException("副首领数组超过预算");
+                var bosses = new List<uint> { boss };
+                for (var index = 0; index < count; index++) bosses.Add(row.UInt32());
+                row.UInt32();
+                var group = row.UInt32();
+                if (!bosses.All(Known) || !zoneGroups.TryGetValue(group, out var name)) return;
+                foreach (var id in bosses.Where(emptyMonsters.Contains)) result.TryAdd(id, name);
+            });
+            unsupported.Remove("boss-group");
             return result;
         }
-        var monsters = Read("monster", MonsterSheet, ["Id", "DisplayName"], row => row.Var());
         var effects = Read("effect", BuffSheet, ["Id", "DisplayBuffTypeText", "DisplayName"], row => { _ = row.Var(); return row.Var(); });
         var skills = Read("skill", SkillSheet, SkillColumns, row =>
         {
@@ -112,7 +197,7 @@ public static partial class ClientCombatNameCatalog
         if (!unsupported.Remove("effect-polarity", out _))
             foreach (var (key, value) in affect)
                 if (value switch { "Buff" => "buff", "Debuff" => "debuff", "None" => "none", _ => null } is { } polarity) polarities[key] = polarity;
-        return new(id, monsters, skills, effects, unsupported, polarities);
+        return new(id, monsters, skills, effects, unsupported, polarities, actors, emptyMonsters, bossGroups);
     }
     private static void Skip(ClientDataReader row, string codec)
     {

@@ -122,6 +122,12 @@
   <SolidColorBrush x:Key="OverlayLockBrush" Color="#CC121624" />
   <SolidColorBrush x:Key="OverlayLockEdgeBrush" Color="#80FFFFFF" />
   <SolidColorBrush x:Key="OverlayLockGlyphBrush" Color="#FFFFFF" />
+  <!-- 浮窗元件底板的玻璃细边：上沿较亮、向下渐淡，不随主题变化。 -->
+  <LinearGradientBrush x:Key="OverlayPlateEdgeBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Offset="0" Color="#59FFFFFF" />
+    <GradientStop Offset="0.4" Color="#1FFFFFFF" />
+    <GradientStop Offset="1" Color="#0AFFFFFF" />
+  </LinearGradientBrush>
   <SolidColorBrush x:Key="InventoryBrush" Color="#0E8C7D" />
   <!-- 染色页的屏幕吸管：盖在冻结画面上，外观固定，取值同原工具 Eyedropper.qml。 -->
   <SolidColorBrush x:Key="EyedropperLineBrush" Color="#B3FFFFFF" />

@@ -448,7 +448,11 @@ public sealed class DataTable : Border
                     var label = new TextBlock { Text = text, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Center };
                     label.Classes.Add("muted");
                     ToolTip.SetTip(label, text);
-                    var box = new Border { Child = label, Padding = new Thickness(8, 4), Margin = new Thickness(4, 0) };
+                    // 有客户端图标的列组（暴击、元素等）在图标可用时只显示图标，组标题进图标的悬浮提示。
+                    Control title = slots[i].Column.GroupIcon is { Length: > 0 } icon
+                        ? new ClientIconSlot { Icon = icon, Label = text, FontSize = 12, Child = label, IconAlignment = HorizontalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center }
+                        : label;
+                    var box = new Border { Child = title, Padding = new Thickness(8, 4), Margin = new Thickness(4, 0) };
                     box.Classes.Add("tablegroup");
                     runs.Add((box, slots[i].X, slots[j].X + slots[j].Width - slots[i].X));
                 }

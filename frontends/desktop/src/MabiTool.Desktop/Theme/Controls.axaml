@@ -49,6 +49,14 @@
     <Thickness x:Key="TitleReserve">0,0,200,0</Thickness>
   </Styles.Resources>
 
+  <!--
+    普通列表（ItemsControl）按内容定高、不裁切：贴边的按钮、选项卡与磁贴悬停放大后不被列表边缘切掉。
+    需要裁切的地方由外层的滚动区或容器负责，容器内留出悬停放大所需的余量。
+  -->
+  <Style Selector="ItemsControl">
+    <Setter Property="ClipToBounds" Value="False" />
+  </Style>
+
   <Style Selector="Window">
     <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
     <Setter Property="FontSize" Value="14" />
@@ -574,24 +582,37 @@
     <Setter Property="Background" Value="{DynamicResource StopHoverBrush}" />
   </Style>
 
-  <!-- 浮窗元件的外框：深色半透明底，玻璃感同样只做在边缘。 -->
+  <!--
+    浮窗元件的外框分三层叠在同一格里：底板 overlayplate 画底色、玻璃边缘与投影（按背景不透明度显示），
+    内容层 overlayframe 只管内边距与圆角裁切（按内容不透明度显示），编辑高亮边 overlayoutline 在最上面。
+    内容层保留 1 px 透明边，内容位置与原先带实色边时相同；透明底让整块外框（含内容之间的空白）照常接收按下与拖动。
+    编辑提示条同时带 overlayframe 与 overlayplate。
+  -->
   <Style Selector="Border.overlayframe">
-    <Setter Property="Background" Value="#A3121624" />
-    <Setter Property="BorderBrush" Value="#80FFFFFF" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="18" />
     <!-- 右侧内边距 26：外框内右上角的锁（离边 6、边长 18）与右下角的缩放手柄都在这一列里，不盖住内容。 -->
     <Setter Property="Padding" Value="14,12,26,12" />
-    <Setter Property="BoxShadow" Value="inset 0 1 0 0 #73FFFFFF, inset 0 -1 0 0 #40000000, 0 8 24 0 #38000000" />
   </Style>
-  <Style Selector="Border.overlayframe.solid">
+  <!-- 底板：深色半透明底，玻璃感只做在边缘——上亮下淡的渐变细边、上沿内侧高光与下沿内侧暗线、轻投影，没有实色边线。 -->
+  <Style Selector="Border.overlayplate">
+    <Setter Property="Background" Value="#A3121624" />
+    <Setter Property="BorderBrush" Value="{DynamicResource OverlayPlateEdgeBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="18" />
+    <Setter Property="BoxShadow" Value="inset 0 1 0 0 #40FFFFFF, inset 0 -1 0 0 #33000000, 0 8 24 0 #2E000000" />
+  </Style>
+  <Style Selector="Border.overlayplate.solid">
     <Setter Property="Background" Value="#F2121624" />
-    <Setter Property="BorderBrush" Value="#33FFFFFF" />
-    <Setter Property="BoxShadow" Value="0 8 24 0 #38000000" />
+    <Setter Property="BoxShadow" Value="0 8 24 0 #2E000000" />
   </Style>
-  <Style Selector="Border.overlayframe.selected">
+  <!-- 编辑状态的高亮边：不随背景与内容不透明度变化，背景为 0 时也看得出元件范围。 -->
+  <Style Selector="Border.overlayoutline">
     <Setter Property="BorderBrush" Value="White" />
     <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="CornerRadius" Value="18" />
   </Style>
   <!-- 浮窗元件右上角的锁：上锁为深底闭锁、较淡；解锁为浮窗色调底开锁、不透明。两种状态图形与颜色都不同。 -->
   <Style Selector="Border.overlaylock">
@@ -688,7 +709,7 @@
       </Transitions>
     </Setter>
   </Style>
-  <Style Selector="Window.motion Border.tablerow, Window.motion Border.listrow, Window.motion Border.overlayframe">
+  <Style Selector="Window.motion Border.tablerow, Window.motion Border.listrow, Window.motion Border.overlayplate">
     <Setter Property="Transitions">
       <Transitions>
         <BrushTransition Property="Background" Duration="0:0:0.2" />

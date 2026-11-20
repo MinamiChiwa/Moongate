@@ -131,6 +131,9 @@ public sealed class ShellTests
             Named<MabiTool.Desktop.Controls.Tables.DataTable>(window, "DamageTable").BringIntoView();
             LayoutProbe.Render(window);
         }
+        // 效果名称由效果行自绘，不在文字块里，按各行显示的名称取。
+        HashSet<string> Shown() => [.. VisibleTexts(window), .. window.GetVisualDescendants().OfType<MabiTool.Desktop.Pages.Combat.EffectLine>()
+            .Where(line => line.IsEffectivelyVisible && line.Row is not null).Select(line => line.Row!.Name)];
         try
         {
             RevealDamageTable();
@@ -140,7 +143,7 @@ public sealed class ShellTests
             Assert.Contains("暴击", simplified);
             Assert.DoesNotContain("DPS檢測", simplified);
             // 游戏来源的名称在两种语言下都保持原文。
-            Assert.Subset(simplified.ToHashSet(), gameNames.ToHashSet());
+            Assert.Subset(Shown(), gameNames.ToHashSet());
 
             Click(window, Named<Button>(window, "LanguageTraditional"));
 
@@ -151,7 +154,7 @@ public sealed class ShellTests
             Assert.Contains("緊急停止", traditional);
             Assert.Contains("暴擊", traditional);
             Assert.DoesNotContain("DPS检测", traditional);
-            Assert.Subset(traditional.ToHashSet(), gameNames.ToHashSet());
+            Assert.Subset(Shown(), gameNames.ToHashSet());
         }
         finally
         {

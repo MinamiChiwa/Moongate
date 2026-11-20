@@ -430,7 +430,8 @@ public sealed class StorageTests
         try
         {
             using var lease = DataRootLease.Open(workspace.Options);
-            Assert.Throws<IOException>(() => lease.Paths.Resolve("cache", "linked", "file.json"));
+            var error = Assert.Throws<LinkedPathException>(() => lease.Paths.Resolve("cache", "linked", "file.json"));
+            Assert.Equal((link, false), (error.LinkedPath, error.CloudPlaceholder));
             Assert.Empty(Directory.EnumerateFileSystemEntries(target));
         }
         finally { Directory.Delete(link); }

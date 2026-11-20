@@ -12,7 +12,8 @@ using static MabiTool.Desktop.Localization.UiText;
 namespace MabiTool.Desktop.Backend;
 
 // 乐谱库、背包、模块和设置页的后端读取，染色页的方案与引擎状态也在这里一并读取（页面在 LiveBackend.Color.cs，合奏在 LiveBackend.Rooms.cs）。
-// 这些状态变化慢，每五秒读一次，发出意图后立即重读；某个接口不可用时只影响对应页面。
+// 这些状态变化慢：有界面可见时每五秒读一次，发出意图后立即重读，内容没变时不通知界面；背包只在背包页可见时读取。
+// 某个接口不可用时只影响对应页面。
 public sealed partial class LiveBackend
 {
     private sealed record PageState(MusicLibraryInfo? Library, IReadOnlyList<MusicPlaylist> Playlists,
@@ -34,7 +35,7 @@ public sealed partial class LiveBackend
     private string musicSearch = string.Empty;
     private string? playlistId;
     private string? inventoryAccount;
-    private DateTimeOffset pagesReadAt;
+    private long pagesReadAt;
     private bool pagesDue = true;
     // 背包快照（含全部条目）只在后端发出背包事件、用户操作或重新连接后重读；五秒例行刷新沿用上次结果。
     private bool inventoryDue = true;
@@ -84,6 +85,13 @@ public sealed partial class LiveBackend
     }
 
     public MusicPageData GetMusic()
+    {
+        var (current, page, search, playlist) = ReadPages();
+        return musicMemo.Get([current.Connected, current.Binding?.Binding is null, page, search, playlist, durations.KnownCount, Localization.UiText.Language],
+            MapMusic);
+    }
+
+    private MusicPageData MapMusic()
     {
         var (current, page, search, playlist) = ReadPages();
         var unknown = Pick("未知", "未知");
@@ -151,6 +159,14 @@ public sealed partial class LiveBackend
     public InventoryPageData GetInventory()
     {
         var (current, page, _, _) = ReadPages();
+        object?[] key;
+        lock (gate) key = [current.Connected, page, captureRuntime, captureSnapshot, Localization.UiText.Language];
+        return inventoryMemo.Get(key, MapInventory);
+    }
+
+    private InventoryPageData MapInventory()
+    {
+        var (current, page, _, _) = ReadPages();
         var workspace = page.Inventory?.Data;
         string Container(OpenEnum<InventoryContainer> container) => container.KnownValue switch
         {
@@ -203,6 +219,14 @@ public sealed partial class LiveBackend
     public ModulesPageData GetModules()
     {
         var (current, page, _, _) = ReadPages();
+        object?[] key;
+        lock (gate) key = [current.Connected, page, extensions, Localization.UiText.Language];
+        return modulesMemo.Get(key, MapModules);
+    }
+
+    private ModulesPageData MapModules()
+    {
+        var (current, page, _, _) = ReadPages();
         var extensions = current.Connected ? GetExtensions() : null;
         return new(current.Connected, page.Modules.Select(module => new ModuleState(module.Id, module.Version, module.Enabled,
             Code(module.State), string.Join("、", module.Problems.Select(problem => Localization.CodeText.Readable(problem.Message) ?? Localization.CodeText.Reason(problem.Code)).Distinct()),
@@ -217,6 +241,14 @@ public sealed partial class LiveBackend
         .Any(attribute => attribute.InformationalVersion.Split('+')[0].EndsWith("-preview", StringComparison.Ordinal));
 
     public SettingsPageData GetSettings()
+    {
+        var (current, page, _, _) = ReadPages();
+        object?[] key;
+        lock (gate) key = [current.Connected, current.Problem, current.Simulation, page, apiAddress, Localization.UiText.Language];
+        return settingsMemo.Get(key, MapSettings);
+    }
+
+    private SettingsPageData MapSettings()
     {
         var (current, page, _, _) = ReadPages();
         string? address;
@@ -408,54 +440,114 @@ public sealed partial class LiveBackend
         lock (gate) return (state, pages, musicSearch, playlistId);
     }
 
+    // 背包读取被拒绝（模块未启用等）后，下一次按五秒的例行间隔再试，不立即重读整轮页面状态。
+    private bool inventoryFailed;
+    // 系统信息（版本、API、运行环境）在一次连接内不变，连接后读一次。
+    private SystemInfo? systemInfo;
+    private byte[]? pagesContent;
+
+    // 调用方持有 gate。没有任何可见界面时不读页面状态；背包只在背包页或背包表格窗口可见时读取。
+    private bool PagesDue(long now) => AnySurface && (pagesDue || inventoryDue && Showing("inventory")
+        || now - pagesReadAt >= Span(TimeSpan.FromSeconds(5)));
+
     private async Task RefreshPagesAsync(MabiToolClient api, CancellationToken token)
     {
         string search;
-        bool readInventory;
+        bool readInventory, readMusic, readColor, readSettings;
         InventorySnapshot? previousInventory;
+        PageState previous;
         lock (gate)
         {
-            if (!pagesDue && !inventoryDue && DateTimeOffset.UtcNow - pagesReadAt < TimeSpan.FromSeconds(5)) return;
-            readInventory = pagesDue || inventoryDue || pages.Inventory is null;
-            pagesDue = false; inventoryDue = false;
+            if (!PagesDue(Now)) return;
+            // 各页专用的读取只在对应页面（或用到它的浮窗元件、迷你窗）显示时进行；不显示时沿用上次结果。
+            previous = pages;
+            readMusic = Showing("music");
+            readColor = Showing("color");
+            readSettings = Showing("settings");
+            readInventory = Showing("inventory") && (pagesDue || inventoryDue || inventoryFailed || pages.Inventory is null);
+            pagesDue = false;
+            if (readInventory) { inventoryDue = false; inventoryFailed = false; }
             search = musicSearch;
             previousInventory = pages.Inventory;
+            pagesReadAt = Now;
         }
 
-        var library = await Try(() => api.GetMusicLibraryAsync(token));
-        var playlists = await Try(() => api.QueryMusicLibraryAsync(new(MusicCollection.Playlists, null, null, null, string.Empty, 200, null), token));
+        var library = readMusic ? await Try(() => api.GetMusicLibraryAsync(token)) : previous.Library;
+        var playlists = readMusic
+            ? (await Try(() => api.QueryMusicLibraryAsync(new(MusicCollection.Playlists, null, null, null, string.Empty, 200, null), token)))?.Playlists ?? []
+            : previous.Playlists;
         var scope = library?.Sources.FirstOrDefault()?.ScopeKey;
-        var scores = scope is null ? null
-            : await Try(() => api.QueryMusicLibraryAsync(new(MusicCollection.Scores, null, null, scope, search, 200, null), token));
-        var next = new PageState(library, playlists?.Playlists ?? [], scores?.Scores ?? [],
-            (await Try(() => api.GetMusicInstrumentsAsync(token)))?.Items ?? [],
-            (await Try(() => api.ListPerformanceSessionsAsync(token)))?.Items.FirstOrDefault(IsLive),
-            await Try(() => api.GetColorLibraryAsync(token)), await Try(() => api.GetColorRuntimeAsync(token)),
+        var scores = !readMusic ? previous.Scores : scope is null ? []
+            : (await Try(() => api.QueryMusicLibraryAsync(new(MusicCollection.Scores, null, null, scope, search, 200, null), token)))?.Scores ?? [];
+        SystemInfo? system;
+        lock (gate) system = systemInfo;
+        system ??= await Try(() => api.GetSystemInfoAsync(token));
+        lock (gate) systemInfo = system;
+        var next = new PageState(library, playlists, scores,
+            readMusic ? (await Try(() => api.GetMusicInstrumentsAsync(token)))?.Items ?? [] : previous.Instruments,
+            readMusic ? (await Try(() => api.ListPerformanceSessionsAsync(token)))?.Items.FirstOrDefault(IsLive) : previous.Session,
+            readColor ? await Try(() => api.GetColorLibraryAsync(token)) : previous.Colors,
+            readColor ? await Try(() => api.GetColorRuntimeAsync(token)) : previous.ColorRuntime,
             readInventory ? await Try(() => api.GetInventorySnapshotAsync(token)) : previousInventory, (await Try(() => api.GetModulesAsync(token)))?.Items ?? [],
-            (await Try(() => api.GetShortcutsAsync(token)))?.Items ?? [], await Try(() => api.GetUpdateStateAsync(token)),
-            await Try(() => api.GetSystemInfoAsync(token)),
-            await Try(() => api.GetShortcutSettingsAsync(token)), (await Try(() => api.GetCapabilitiesAsync(token)))?.Items,
+            readSettings ? (await Try(() => api.GetShortcutsAsync(token)))?.Items ?? [] : previous.Shortcuts, await Try(() => api.GetUpdateStateAsync(token)),
+            system,
+            readSettings ? await Try(() => api.GetShortcutSettingsAsync(token)) : previous.ShortcutSettings,
+            WithCombatCapabilities((await Try(() => api.GetCapabilitiesAsync(token)))?.Items,
+                await Try(() => api.GetCombatCapabilitiesAsync(token))),
             null, await Try(() => api.GetUpdatePolicyAsync(token)));
-        next = await ReadInventoryPivotAsync(api, next, token);
-        // 资源视图按账户读取（账户级加该账户下各角色的角色级），跟随账号下拉（与公共保管箱列同一选择）；还没有所选账号时读取当前库存身份所属账户。
-        next = next with { InventoryResources = next.Pivot?.AccountId is { } account
-            ? await Try(() => api.GetInventoryAccountResourcesAsync(account, token))
-            : await Try(() => api.GetInventoryResourcesAsync(token)) };
-        // 游戏观测只读取：昵称用于绑定卡与合奏页的昵称预填。
-        var identity = (await Try(() => api.GetGameObservationAsync(token)))?.Latest?.Value.Identity;
+        if (readInventory)
+        {
+            next = await ReadInventoryPivotAsync(api, next, token);
+            // 资源视图按账户读取（账户级加该账户下各角色的角色级），跟随账号下拉（与公共保管箱列同一选择）；还没有所选账号时读取当前库存身份所属账户。
+            next = next with { InventoryResources = next.Pivot?.AccountId is { } account
+                ? await Try(() => api.GetInventoryAccountResourcesAsync(account, token))
+                : await Try(() => api.GetInventoryResourcesAsync(token)) };
+        }
+        else next = next with { InventoryAccounts = previous.InventoryAccounts, Pivot = previous.Pivot, InventoryResources = previous.InventoryResources };
+        // 游戏观测只读取：昵称用于绑定卡与合奏页的昵称预填；与抓包状态读的是同一份观测（RefreshCaptureAsync）。
+        GameObservationSnapshot? observation;
+        lock (gate) observation = captureSnapshot;
+        observation ??= await Try(() => api.GetGameObservationAsync(token));
+        var identity = observation?.Latest?.Value.Identity;
         // 展示接口只取附近与环境两个主题的状态，浮窗元件据此显示或隐藏。
         var sources = (await Try(() => api.QueryPresentationAsync(new(PresentationTopics.Watched), token)))?.Sources;
         next = next with { Identity = identity, Nickname = identity?.Nickname is { Length: > 0 } nickname ? nickname : null, Sources = sources };
         await RefreshDurationsAsync(api, next.Session, token);
-        await RefreshExtensionsAsync(api, token);
+        var extensionsChanged = await RefreshExtensionsAsync(api, token);
+        // 内容与上次相同时保留原对象、不通知界面：页面与外壳取到同一份数据，不重排。
+        var content = PageContent(next);
+        bool changed;
         lock (gate)
         {
-            pages = next;
-            pagesReadAt = DateTimeOffset.UtcNow;
-            // 读取被拒绝（模块未启用等）时下一轮再试，与原先每五秒读取一次相同。
-            if (next.Inventory is null) inventoryDue = true;
+            if (readInventory && next.Inventory is null) inventoryFailed = true;
+            changed = !ReferenceEquals(next.Inventory, pages.Inventory) || !ReferenceEquals(next.Pivot, pages.Pivot)
+                || pagesContent is null || !content.AsSpan().SequenceEqual(pagesContent);
+            if (changed) { pages = next; pagesContent = content; }
         }
-        Notify();
+        if (changed || extensionsChanged) Notify();
+    }
+
+    /// <summary>
+    /// 全局能力表没有的战斗能力（怪物血量与当前目标）取自战斗能力表，换成能力表的一项并入，界面经同一个入口读取说明与状态。
+    /// 检查时刻取能力自己的最近观测时刻（没有时为固定值），内容不变时页面状态保持不变。
+    /// </summary>
+    internal static IReadOnlyList<CapabilitySnapshot>? WithCombatCapabilities(IReadOnlyList<CapabilitySnapshot>? items, CombatCapabilities? combat)
+    {
+        if (combat?.Capabilities.FirstOrDefault(item => item.Id == CapabilityIds.MonsterHealth) is not { } health) return items;
+        var snapshot = new CapabilitySnapshot(health.Id, "combat-observation", health.Status, health.Source?.Provider, health.Source?.ProviderVersion,
+            health.Source?.GameBuild, null, health.Reason ?? "available", health.LastObservedAt ?? DateTimeOffset.UnixEpoch,
+            combat.Simulation ? ["synthetic-observation"] : []);
+        return [.. (items ?? []).Where(item => item.Id != health.Id), snapshot];
+    }
+
+    // 页面状态（背包快照与透视表按对象比较，不计入）序列化后的内容，用来判断两次读取是否相同。
+    private static byte[] PageContent(PageState value)
+    {
+        try
+        {
+            return JsonSerializer.SerializeToUtf8Bytes(value with { Inventory = null, Pivot = null }, ContractJson.Options);
+        }
+        catch (Exception error) when (error is JsonException or NotSupportedException) { return Guid.NewGuid().ToByteArray(); }
     }
 
     /// <summary>

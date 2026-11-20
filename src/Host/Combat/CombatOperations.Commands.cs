@@ -16,10 +16,32 @@ public sealed partial class CombatOperations
         if (await history.BoundaryReceiptAsync(principal, route, resource, key, hash, ct) is { } previous) return previous;
         if (!active.TryGetValue(request.ObservationId, out var job) || !owner && job.Owner != principal)
             throw new OperationException("combat.planStale", "观察已结束或不属于当前主体");
+        CombatEncounter? result = null;
         await job.Gate.WaitAsync(ct);
         try
         {
-            if (await history.BoundaryReceiptAsync(principal, route, resource, key, hash, ct) is { } retry) return retry;
+            // 边界回执按已提交的工作区核对修订：先等进行中的后台保存，再把已发布但未保存的状态写入，已提交状态与最新捕获一致后再核对。
+            await job.SaveGate.WaitAsync(ct);
+            try { await BoundaryCoreAsync(); }
+            finally { job.SaveGate.Release(); }
+        }
+        finally { job.Gate.Release(); }
+        return result!;
+
+        async Task BoundaryCoreAsync()
+        {
+            if (await history.BoundaryReceiptAsync(principal, route, resource, key, hash, ct) is { } retry) { result = retry; return; }
+            if (job.Session is { Active: true } live && !job.Stop.IsCancellationRequested)
+            {
+                if (job.Saving is { } pending) { job.Saving = null; await pending; }
+                var current = live.Capture();
+                if (current.Material || current.Urgent)
+                {
+                    if (!await history.SaveAsync(current)) throw new OperationException("combat.planStale", "观察已被停止");
+                    live.Acknowledge(current); job.LastSaved = clock.GetTimestamp(); job.SavedTick = Interlocked.Read(ref job.Ticks); TraceSegments(job, current);
+                }
+                history.PublishLive(current.Workspace, live.EntityEffects);
+            }
             var workspace = history.Workspace(principal, owner, job.Id);
             if (workspace is null || job.Session is null || job.Stop.IsCancellationRequested || !job.Session.Active)
                 throw new OperationException("combat.planStale", "观察已经结束");
@@ -46,17 +68,16 @@ public sealed partial class CombatOperations
             }
             catch (InvalidOperationException error) { throw new OperationException("resource.busy", error.Message); }
             var checkpoint = job.Session.Capture();
-            var result = closed is null ? checkpoint.Workspace.Encounter! : checkpoint.Encounters.FirstOrDefault(x => x.Id == closed.Id) ?? closed;
+            var outcome = closed is null ? checkpoint.Workspace.Encounter! : checkpoint.Encounters.FirstOrDefault(x => x.Id == closed.Id) ?? closed;
             try
             {
-                var receipt = new CombatBoundaryReceipt(principal, route, resource, key!, hash, CombatHistoryStore.WorkspaceETag(workspace), result);
+                var receipt = new CombatBoundaryReceipt(principal, route, resource, key!, hash, CombatHistoryStore.WorkspaceETag(workspace), outcome);
                 if (!await history.SaveAsync(checkpoint, boundary: receipt)) throw new OperationException("combat.planStale", "观察已被停止");
                 TraceSegments(job, checkpoint);
-                job.Session.Acknowledge(checkpoint); job.LastSaved = clock.GetTimestamp();
-                history.PublishLive(checkpoint.Workspace, job.Session.EntityEffects); return result;
+                job.Session.Acknowledge(checkpoint); job.LastSaved = clock.GetTimestamp(); job.SavedTick = Interlocked.Read(ref job.Ticks);
+                history.PublishLive(checkpoint.Workspace, job.Session.EntityEffects); result = outcome; return;
             }
             catch (Exception error) { job.Failure = error; job.StopReason = "boundary-interrupted"; job.Stop.Cancel(); throw; }
         }
-        finally { job.Gate.Release(); }
     }
 }

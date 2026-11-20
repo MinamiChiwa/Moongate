@@ -810,6 +810,9 @@ public sealed class RoomsPageModel : BackendPageModel<RoomsPageData>, IPageLifec
         if (Data.Preferences is null && !Data.Connected) known = null;
     }
 
+    // 合奏页用到乐器目录（与乐谱页同一组读取）。
+    protected override string? Surface => "music";
+
     protected override void OnDataChanged()
     {
         status = null;

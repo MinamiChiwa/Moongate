@@ -286,6 +286,8 @@ public sealed partial class CombatHistoryStore
         var id = "enc-" + Guid.NewGuid().ToString("N");
         var items = new List<CombatTimelineItem>(); long bytes = 0; ulong truncated = 0;
         double cumulative = 0; var healingNotRetained = false;
+        // 来源在所选范围内带缺口（或来源本身已标为数据不完整）时，新记录标为数据不完整。
+        var sourceIncomplete = false;
         foreach (var source in sources.TakeLast(MaximumRangeEncounters))
         {
             var value = source.Encounter;
@@ -342,9 +344,13 @@ public sealed partial class CombatHistoryStore
                 if (items.Count >= RangeLimits.MaximumTimelineItems || bytes + size > RangeLimits.MaximumTimelineBytes) { truncated++; continue; }
                 items.Add(copy); bytes += size;
             }
+            sourceIncomplete |= value.Record?.DataIncomplete == true;
             foreach (var gap in value.Gaps.Where(gap => gap.FromMs <= source.To && (gap.ToMs ?? double.MaxValue) >= source.From))
+            {
+                sourceIncomplete = true;
                 state.Gap(gap with { FromMs = cumulative + Math.Max(0, gap.FromMs - source.From),
                     ToMs = gap.ToMs is { } end ? cumulative + Math.Clamp(end - source.From, 0, span) : null });
+            }
             var expected = value.Skills.Aggregate(0UL, (sum, group) => sum + group.EventCount.Value);
             if (retainedEvents != expected || retainedDamage != value.Summary.AttributedDamage.Value)
                 state.Gap(new("timeline-incomplete", cumulative, cumulative + span, new(0)));
@@ -361,7 +367,8 @@ public sealed partial class CombatHistoryStore
         var keepMeasurement = request.Range.Scope == "encounter" && first.Record?.Measurement is { } measured &&
             sources[0].From <= 0 && sources[0].To >= first.Summary.DurationMs ? measured : null;
         state.Record = new(keepMeasurement is null ? "saved-range" : "timed-measurement", name, keepMeasurement,
-            new(request.Range.Scope, sources.Select(x => x.Encounter.Id).ToArray(), request.Range.FromMs, request.Range.ToMs));
+            new(request.Range.Scope, sources.Select(x => x.Encounter.Id).ToArray(), request.Range.FromMs, request.Range.ToMs), clock.GetUtcNow(),
+            sourceIncomplete ? true : null);
         var snapshot = state.Snapshot(new(1), cumulative, first.Summary.RollingWindowMs is > 0 and <= int.MaxValue ? (int)first.Summary.RollingWindowMs : 60000,
             EmptyResources with { TimelineItems = items.Count, TimelineBytes = new((ulong)bytes), TruncatedTimelineItems = new(truncated) });
         var savedHealing = snapshot.Healing;

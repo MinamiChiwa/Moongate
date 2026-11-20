@@ -14,7 +14,7 @@ namespace MabiTool.Desktop.Overlay;
 /// <summary>
 /// 游戏浮窗里按版面摆放元件的画布，每块显示器的浮窗一个。
 /// 每个元件的右上角有一把锁：已上锁的元件只有锁图标与关闭按钮接收鼠标；已解锁的元件可以直接拖动、拖右下角把手改变尺寸、
-/// 按锁左侧的“－／＋”缩放、按“－／＋”左侧的不透明度按钮调整不透明度，元件内的控件也接收输入。
+/// 按锁左侧的“－／＋”缩放、按“－／＋”左侧的背景与内容两个不透明度按钮分别调整底板与内容的不透明度，元件内的控件也接收输入。
 /// 锁、不透明度按钮、“－／＋”与尺寸手柄只在光标位于元件上时显示（<see cref="HoverAt"/>，由浮窗按光标位置调用），
 /// 不论元件是否上锁；隐藏的锁仍在原处接收鼠标，光标移到元件上即显示，可以解锁。
 /// 编辑状态（<see cref="OverlayLayoutStore.IsEditing"/>，版面页的“编辑位置”）下全部元件显示并可拖动、改尺寸与缩放，不受锁状态限制，
@@ -22,6 +22,7 @@ namespace MabiTool.Desktop.Overlay;
 /// 手柄改变的是元件外框的宽高（缩放前的逻辑像素，<see cref="WidgetPlacement.Width"/>、<see cref="WidgetPlacement.Height"/>），
 /// 内容按新的尺寸重新排版；缩放倍率只由“－／＋”与版面页的缩放控件改变。拖动按光标位置跨显示器（<see cref="DragTo"/>）。
 /// 元件的内容由模块声明的 <see cref="WidgetDescriptor.CreateView"/> 提供。
+/// 外框分三层：底板（底色或自定图像、玻璃边缘与投影，按背景不透明度显示）、内容（按内容不透明度显示，内边距不变）、编辑高亮边。
 /// </summary>
 public sealed class OverlayCanvas : Panel
 {
@@ -35,8 +36,10 @@ public sealed class OverlayCanvas : Panel
     public const double HandleSize = 14, HandleInset = 4;
     /// <summary>“－／＋”按钮在元件缩放为 1 时的边长，两个按钮之间以及与锁之间的间隔。</summary>
     public const double ZoomSize = 18, ZoomGap = 4;
-    /// <summary>锁左侧一行按钮的宽度（元件缩放为 1 时）：不透明度、“－”、“＋”三个按钮与其间的两个间隔。</summary>
-    public const double ZoomRowWidth = ZoomSize * 3 + ZoomGap * 2;
+    /// <summary>锁左侧一行按钮的宽度（元件缩放为 1 时）：背景不透明度、内容不透明度、“－”、“＋”四个按钮与其间的三个间隔。</summary>
+    public const double ZoomRowWidth = ZoomSize * 4 + ZoomGap * 3;
+    /// <summary>背景不透明度低于这个值时内容加一层浅投影，底板变淡后文字与图标在游戏画面上仍可读。</summary>
+    public const double ContentShadowBelow = 0.5;
     /// <summary>关闭按钮在元件缩放为 1 时的边长；它在外框右上角最右侧，锁在它左边隔 <see cref="ZoomGap"/>。</summary>
     public const double CloseSize = 18;
 
@@ -51,15 +54,21 @@ public sealed class OverlayCanvas : Panel
 
     private static readonly Geometry MinusGlyph = Geometry.Parse("M7 12H17");
     private static readonly Geometry PlusGlyph = Geometry.Parse("M7 12H17M12 7V17");
-    // 不透明度：圆圈与竖直的分界线，左半填色。
-    private static readonly Geometry OpacityGlyph = Geometry.Parse("M12 5A7 7 0 1 0 12 19A7 7 0 1 0 12 5ZM12 5V19");
-    private static readonly Geometry OpacityFill = Geometry.Parse("M12 5A7 7 0 0 0 12 19Z");
+    // 背景不透明度：圆角方框（底板），左半填色。
+    private static readonly Geometry BackgroundGlyph = Geometry.Parse("M7 6H17A2 2 0 0 1 19 8V16A2 2 0 0 1 17 18H7A2 2 0 0 1 5 16V8A2 2 0 0 1 7 6Z");
+    private static readonly Geometry BackgroundFill = Geometry.Parse("M7 6H12V18H7A2 2 0 0 1 5 16V8A2 2 0 0 1 7 6Z");
+    // 内容不透明度：字母 A（文字与图标）。
+    private static readonly Geometry ContentGlyph = Geometry.Parse("M7.5 18L12 6L16.5 18M9.2 14H14.8");
+    // 背景较低时内容层的投影：向下 1、模糊 3、黑色 85%。
+    private static readonly DropShadowEffect ContentShadow = new() { OffsetX = 0, OffsetY = 1, BlurRadius = 3, Color = Colors.Black, Opacity = 0.85 };
 
     /// <summary>一个元件在画布上的几个部件：外框（含缩放）、锁图标、“－／＋”、尺寸手柄，以及元件声明的默认与最小尺寸。</summary>
-    private sealed class Slot(WidgetPlacement placement, LayoutTransformControl frame, Border skin,
+    private sealed class Slot(WidgetPlacement placement, LayoutTransformControl frame, Border plate, Border skin, Border outline,
         LayoutTransformControl lockHost, Border lockFace, LayoutTransformControl handle, OverlayWidgetModel? model,
         LayoutTransformControl zoom, Size? defaultSize, Size minimumSize, LayoutTransformControl close, LayoutTransformControl next)
     {
+        public Border Plate { get; } = plate;
+        public Border Outline { get; } = outline;
         public LayoutTransformControl Next { get; } = next;
         public LayoutTransformControl Close { get; } = close;
         public LayoutTransformControl Zoom { get; } = zoom;
@@ -134,7 +143,7 @@ public sealed class OverlayCanvas : Panel
         return new Border
         {
             Name = "EditBanner", MaxWidth = 640, Padding = new Thickness(16, 8, 12, 8), IsVisible = false,
-            Classes = { "overlayframe", "solid" }, Child = new DockPanel { Children = { finish, text } }
+            Classes = { "overlayframe", "overlayplate", "solid" }, Child = new DockPanel { Children = { finish, text } }
         };
     }
 
@@ -261,8 +270,14 @@ public sealed class OverlayCanvas : Panel
     /// <summary>元件在画布里的位置，供测试核对。</summary>
     public Rect? BoundsOf(string widgetId) => Find(widgetId)?.Frame.Bounds;
 
-    /// <summary>元件的外框（含内容，按元件的不透明度显示）。</summary>
+    /// <summary>元件的外框（底板、内容与编辑高亮边三层；编辑状态下关闭的元件整体变淡）。</summary>
     public Control? FrameOf(string widgetId) => Find(widgetId)?.Frame;
+
+    /// <summary>元件的底板（底色或自定图像、玻璃边缘与投影），按背景不透明度显示。</summary>
+    public Control? PlateOf(string widgetId) => Find(widgetId)?.Plate;
+
+    /// <summary>元件的内容层，按内容不透明度显示。</summary>
+    public Control? ContentOf(string widgetId) => Find(widgetId)?.Skin;
 
     /// <summary>元件右上角的锁图标。</summary>
     public Control? LockOf(string widgetId) => Find(widgetId)?.Lock;
@@ -281,11 +296,11 @@ public sealed class OverlayCanvas : Panel
 
     /// <summary>“－”或“＋”按钮本身。</summary>
     public Control? ZoomButtonOf(string widgetId, bool up) =>
-        Find(widgetId)?.Zoom.Child is StackPanel { Children: [_, var minus, var plus] } ? up ? plus : minus : null;
+        Find(widgetId)?.Zoom.Child is StackPanel { Children: [_, _, var minus, var plus] } ? up ? plus : minus : null;
 
-    /// <summary>“－／＋”左侧的不透明度按钮。</summary>
-    public Control? OpacityButtonOf(string widgetId) =>
-        Find(widgetId)?.Zoom.Child is StackPanel { Children: [var opacity, _, _] } ? opacity : null;
+    /// <summary>“－／＋”左侧的不透明度按钮：<paramref name="content"/> 为假时是背景，为真时是内容。</summary>
+    public Control? OpacityButtonOf(string widgetId, bool content) =>
+        Find(widgetId)?.Zoom.Child is StackPanel { Children: [var background, var foreground, _, _] } ? content ? foreground : background : null;
 
     /// <summary>光标所在的元件（游戏浮窗上它的锁与调整控件显示）；光标不在任何元件上时为空。</summary>
     public string? HoveredWidgetId => hoveredWidgetId;
@@ -475,6 +490,8 @@ public sealed class OverlayCanvas : Panel
         {
             slot.Frame.PointerPressed -= OnFramePressed;
             slot.Frame.PointerMoved -= OnPointerMovedWhileDragging;
+            slot.Frame.PointerMoved -= OnFrameHover;
+            slot.Frame.PointerExited -= OnFrameLeft;
             slot.Frame.PointerReleased -= OnPointerReleasedAfterDragging;
             slot.Frame.PointerCaptureLost -= OnCaptureLost;
             slot.Handle.PointerPressed -= OnHandlePressed;
@@ -527,11 +544,14 @@ public sealed class OverlayCanvas : Panel
                 ? new OverlayWidgetModel(placement.WidgetId, backend, descriptor.PresentationTopic, descriptor.Title) { Editing = store.IsEditing }
                 : null;
             var view = descriptor.CreateView?.Invoke(backend) ?? new OverlayWidgetView { DataContext = model };
-            // 外框按元件尺寸固定宽高并裁掉超出的内容；内容自己按尺寸排版（截断、滚动或显示更多行）。
+            // 内容层按元件尺寸固定宽高并裁掉超出的内容；内容自己按尺寸排版（截断、滚动或显示更多行）。
+            // 底板与编辑高亮边在同一格里铺满内容层的尺寸，两项不透明度互不影响。
             var skin = new Border { Child = view, ClipToBounds = true, Classes = { "overlayframe", placement.Skin } };
+            var plate = new Border { IsHitTestVisible = false, Classes = { "overlayplate", placement.Skin } };
             // 自定外框图片读得到才覆盖样式里的底色。
-            if (Skin(placement) is { } brush) skin.Background = brush;
-            var frame = new LayoutTransformControl { Child = skin };
+            if (Skin(placement) is { } brush) plate.Background = brush;
+            var outline = new Border { IsHitTestVisible = false, IsVisible = false, Classes = { "overlayoutline" } };
+            var frame = new LayoutTransformControl { Child = new Panel { Children = { plate, skin, outline } } };
             var face = new Border
             {
                 Classes = { "overlaylock" }, Width = LockSize, Height = LockSize, CornerRadius = new CornerRadius(LockSize / 2),
@@ -559,20 +579,27 @@ public sealed class OverlayCanvas : Panel
                 },
                 Cursor = new Cursor(StandardCursorType.BottomRightCorner), IsVisible = false, Classes = { "overlaycontrol" }
             };
-            var opacity = ZoomButton(OpacityGlyph, "opacity", OpacityFill);
+            var backgroundOpacity = ZoomButton(BackgroundGlyph, "background", BackgroundFill);
+            var contentOpacity = ZoomButton(ContentGlyph, "content");
+            ToolTip.SetTip(backgroundOpacity, this.TryFindResource("O.BackgroundOpacityTip", out var backgroundTip) ? backgroundTip : null);
+            ToolTip.SetTip(contentOpacity, this.TryFindResource("O.ContentOpacityTip", out var contentTip) ? contentTip : null);
             var minus = ZoomButton(MinusGlyph, "minus");
             var plus = ZoomButton(PlusGlyph, "plus");
             var zoom = new LayoutTransformControl
             {
-                Child = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = ZoomGap, Children = { opacity, minus, plus } },
+                Child = new StackPanel
+                {
+                    Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = ZoomGap, Children = { backgroundOpacity, contentOpacity, minus, plus }
+                },
                 IsVisible = false, Classes = { "overlaycontrol" }
             };
-            foreach (var button in new[] { opacity, minus, plus })
+            foreach (var button in new[] { backgroundOpacity, contentOpacity, minus, plus })
             {
                 button.PointerPressed += OnZoomPressed;
                 button.PointerReleased += OnZoomReleased;
             }
-            opacity.PointerWheelChanged += OnOpacityWheel;
+            backgroundOpacity.PointerWheelChanged += OnOpacityWheel;
+            contentOpacity.PointerWheelChanged += OnOpacityWheel;
             // 关闭按钮：与锁一样不论锁状态都接收鼠标（上锁时也能关），外观同“－／＋”。
             var close = new LayoutTransformControl
             {
@@ -589,12 +616,14 @@ public sealed class OverlayCanvas : Panel
             ToolTip.SetTip(next, Localization.UiText.Pick("移到下一块显示器", "移到下一塊顯示器"));
             next.PointerPressed += OnNextPressed;
             next.PointerReleased += OnNextReleased;
-            var slot = new Slot(placement, frame, skin, lockHost, face, handle, model, zoom,
+            var slot = new Slot(placement, frame, plate, skin, outline, lockHost, face, handle, model, zoom,
                 OverlayWidgetSizes.DefaultOf(descriptor), OverlayWidgetSizes.MinimumOf(descriptor), close, next);
             // 依赖的展示主题缺失时元件在游戏浮窗里隐藏；状态随后端刷新变化。
             if (model is not null) model.PropertyChanged += (_, _) => UpdateStates();
             frame.PointerPressed += OnFramePressed;
             frame.PointerMoved += OnPointerMovedWhileDragging;
+            frame.PointerMoved += OnFrameHover;
+            frame.PointerExited += OnFrameLeft;
             frame.PointerReleased += OnPointerReleasedAfterDragging;
             frame.PointerCaptureLost += OnCaptureLost;
             handle.PointerPressed += OnHandlePressed;
@@ -642,24 +671,29 @@ public sealed class OverlayCanvas : Panel
     /// <summary>
     /// 按编辑状态与锁状态更新各元件：已上锁的元件只有锁图标与关闭按钮接收鼠标，已解锁的元件整块接收鼠标并显示手柄与“－／＋”。
     /// 编辑状态下全部元件（包括关闭的与展示主题缺失的）显示、整块可拖动并显示手柄与“－／＋”，内容不接收输入。
-    /// 外框按元件的不透明度显示，编辑状态下关闭的元件变淡。拖动中的元件在发起拖动的画布上一直画着，跨到别的显示器时那块显示器的画布同时显示它。
+    /// 底板按背景不透明度、内容按内容不透明度显示（背景较低时内容带投影），编辑状态下显示高亮边、关闭的元件整体变淡。拖动中的元件在发起拖动的画布上一直画着，跨到别的显示器时那块显示器的画布同时显示它。
     /// </summary>
     private void UpdateStates()
     {
         var editing = IsEditing;
         foreach (var slot in slots)
         {
-            if (slot.Model is { } model) model.Editing = editing;
+            if (slot.Model is { } model)
+            {
+                model.Editing = editing;
+                model.ShowHealth = !slot.Placement.HideMonsterHealth;
+            }
             // 在浮窗上关闭的元件只在编辑状态下留着（变淡），其余时候不显示。
             var closed = slot.Placement.Closed;
             slot.Frame.IsVisible = (slot.Model?.FrameVisible ?? true) && (editing || !closed) && (OnThisCanvas(slot.Placement) || slot == dragging);
             var visible = slot.Frame.IsVisible;
             var locked = slot.Placement.Locked;
             var movable = editing || !locked;
-            slot.Skin.Classes.Set("selected", editing);
+            slot.Outline.IsVisible = editing;
             // 上锁时内容里的操作区（overlayactions）隐藏；编辑状态下不隐藏，但内容整块不接收输入，按哪里都是拖动。
             slot.Skin.Classes.Set("locked", locked && !editing);
             if (slot.Skin.Child is { } content) content.IsHitTestVisible = !editing;
+            if (!editing) ShowFrameTip(slot.Frame, null);
             slot.Frame.IsHitTestVisible = movable;
             slot.LockFace.Classes.Set("open", !locked);
             slot.Lock.IsVisible = visible;
@@ -668,11 +702,22 @@ public sealed class OverlayCanvas : Panel
             slot.Handle.IsVisible = visible && movable;
             slot.Zoom.IsVisible = visible && movable;
             slot.Next.IsVisible = visible && editing && OverlayArea.Next(monitors, MonitorOf(slot.Placement)?.Key) is not null;
-            slot.Frame.Opacity = editing && closed ? slot.Placement.Opacity * 0.4 : slot.Placement.Opacity;
+            slot.Frame.Opacity = editing && closed ? 0.4 : 1;
+            ApplyOpacity(slot);
         }
         banner.IsVisible = editing;
         UpdateControls();
         InvalidateArrange();
+    }
+
+    // 两项不透明度分别作用于底板与内容层；背景较低时内容加投影，不低时去掉（免去离屏绘制）。
+    private static void ApplyOpacity(Slot slot)
+    {
+        var (background, content) = (slot.Placement.BackgroundOpacity, slot.Placement.ContentOpacity);
+        if (!slot.Plate.Opacity.Equals(background)) slot.Plate.Opacity = background;
+        if (!slot.Skin.Opacity.Equals(content)) slot.Skin.Opacity = content;
+        var shadow = background < ContentShadowBelow ? ContentShadow : null;
+        if (slot.Skin.Child is { } view && !ReferenceEquals(view.Effect, shadow)) view.Effect = shadow;
     }
 
     /// <summary>
@@ -778,6 +823,27 @@ public sealed class OverlayCanvas : Panel
         lastActivity = Clock.GetUtcNow();
         if (CursorSource is not null && area is not null) PollDrag();
         else DragTo(e.GetPosition(this), "pointer", null);
+    }
+
+    // 编辑状态下元件内容不接收输入（按哪里都是拖动），属性图标自己的悬浮提示出不来：由外框按光标所在的图标给出名称。
+    private void OnFrameHover(object? sender, PointerEventArgs e)
+    {
+        if (slots.FirstOrDefault(item => item.Frame == sender) is not { } slot) return;
+        var name = IsEditing && dragging is null && slot.Skin.Child is Visual content
+            ? Controls.ClientIconSlot.NameAt(content, e.GetPosition(content)) : null;
+        ShowFrameTip(slot.Frame, name);
+    }
+
+    private void OnFrameLeft(object? sender, PointerEventArgs e)
+    {
+        if (sender is Control frame) ShowFrameTip(frame, null);
+    }
+
+    private static void ShowFrameTip(Control frame, string? name)
+    {
+        if (Equals(ToolTip.GetTip(frame), name)) return;
+        ToolTip.SetTip(frame, name);
+        ToolTip.SetIsOpen(frame, name is not null);
     }
 
     /// <summary>拖动或改尺寸到光标位置（本画布坐标，逻辑像素）；见 <see cref="DragTo(Point, string, PixelPoint?)"/>。</summary>
@@ -989,9 +1055,15 @@ public sealed class OverlayCanvas : Panel
         e.Pointer.Capture(null);
         e.Handled = true;
         if (button.Name != pressedZoomName || !new Rect(button.Bounds.Size).Contains(e.GetPosition(button))) return;
-        if (button.Name == "opacity")
+        if (button.Name == "background")
         {
-            slot.Placement.Opacity = WidgetPlacement.CycleOpacity(slot.Placement.Opacity);
+            slot.Placement.BackgroundOpacity = WidgetPlacement.CycleOpacity(slot.Placement.BackgroundOpacity, WidgetPlacement.MinimumBackgroundOpacity);
+            store?.Commit();
+            return;
+        }
+        if (button.Name == "content")
+        {
+            slot.Placement.ContentOpacity = WidgetPlacement.CycleOpacity(slot.Placement.ContentOpacity, WidgetPlacement.MinimumContentOpacity);
             store?.Commit();
             return;
         }
@@ -1001,16 +1073,21 @@ public sealed class OverlayCanvas : Panel
         store?.Commit();
     }
 
-    // 在不透明度按钮上滚动滚轮：向上加 10%，向下减 10%，限制在 20%–100%。
+    // 在不透明度按钮上滚动滚轮：向上加 10%，向下减 10%；背景限制在 0%–100%，内容限制在 20%–100%。
     private void OnOpacityWheel(object? sender, PointerWheelEventArgs e)
     {
         if (sender is not Control button || e.Delta.Y == 0) return;
         var slot = slots.FirstOrDefault(item => ((StackPanel)item.Zoom.Child!).Children.Contains(button));
         if (slot is null || (!IsEditing && slot.Placement.Locked)) return;
         e.Handled = true;
-        var next = WidgetPlacement.StepOpacity(slot.Placement.Opacity, e.Delta.Y > 0);
-        if (next.Equals(slot.Placement.Opacity)) return;
-        slot.Placement.Opacity = next;
+        var placement = slot.Placement;
+        var content = button.Name == "content";
+        var current = content ? placement.ContentOpacity : placement.BackgroundOpacity;
+        var next = WidgetPlacement.StepOpacity(current, e.Delta.Y > 0,
+            content ? WidgetPlacement.MinimumContentOpacity : WidgetPlacement.MinimumBackgroundOpacity);
+        if (next.Equals(current)) return;
+        if (content) placement.ContentOpacity = next;
+        else placement.BackgroundOpacity = next;
         store?.Commit();
     }
 }

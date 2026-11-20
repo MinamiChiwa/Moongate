@@ -104,6 +104,50 @@ public sealed class CombatHistoryTests
         Assert.True(await area.History.SaveAsync(checkpoint));
         Assert.Single(area.History.Timeline("client-a", false, checkpoint.Workspace.Encounter!.Id, new()).Items, x => x.Damage is not null);
     }
+    // 宿主先发布最新捕获、再在后台保存检查点：保存滞后于捕获期间崩溃，重启后从最近提交的检查点恢复，
+    // 不重复计入已提交的伤害，也不丢已随该检查点提交的通知。
+    [Fact]
+    public async Task CrashWhileTheCheckpointLagsBehindLaterCapturesRecoversTheLastCommitExactlyOnce()
+    {
+        await using var area = new Area(); var session = await area.Start();
+        session.Apply(Frame(1, 0, [Damage("first", 0)], [Effect(Self, 0)]));
+        var saving = session.Capture();
+        session.Apply(Frame(2, 1000, [Damage("second", 1000, 50)], [Effect(Self, 1000, CombatEffectChangeKind.Apply, 201)]));
+        _ = session.Capture();
+        Assert.True(await area.History.SaveAsync(saving)); session.Acknowledge(saving);
+        // 确认较早的检查点只清除它已包含的待写条目与效果变化：下一次捕获只带第二帧的伤害与效果。
+        var next = session.Capture();
+        Assert.True(next.Material);
+        Assert.Equal(["second"], next.Timeline.Where(x => x.Item.Damage is not null).Select(x => x.Item.Damage!.EventId));
+        Assert.Single(next.Effects);
+        var encounter = saving.Workspace.Encounter!.Id;
+        var notified = area.Database.ReadScalar("SELECT count(*) FROM core_outbox WHERE event_type='combat.summary.changed' AND revision=$r",
+            ("$r", saving.Workspace.Revision.ToString()));
+        Assert.Equal(1L, notified);
+        // 崩溃：next 未提交。重启恢复以 saving 为准。
+        await area.Database.RecoverOperationsAsync(); await area.History.RecoverAsync();
+        var value = area.History.Encounter(encounter, "client-a", false);
+        Assert.True(value.Summary.Final); Assert.Equal("backend-restarted", value.Summary.BoundaryReason);
+        Assert.Equal("100", value.Summary.AttributedDamage.ToString());
+        Assert.Equal(["first"], area.History.Timeline("client-a", false, encounter, new()).Items.Where(x => x.Damage is not null).Select(x => x.Damage!.EventId));
+        Assert.Equal(1L, area.Database.ReadScalar("SELECT count(*) FROM core_outbox WHERE event_type='combat.summary.changed' AND revision=$r",
+            ("$r", saving.Workspace.Revision.ToString())));
+    }
+    [Fact]
+    public async Task SummaryNotificationIsAppendedOnlyWhenTheSummaryContentChanges()
+    {
+        await using var area = new Area(); var session = await area.Start();
+        await area.Commit(session, Frame(1, 0, [Damage("first", 0)]));
+        long Count() => (long)area.Database.ReadScalar("SELECT count(*) FROM core_outbox WHERE event_type='combat.summary.changed'")!;
+        Assert.Equal(1L, Count());
+        // 只有时间推进（分段时长变长）：检查点照常提交，摘要通知不再追加。
+        session.Tick(At.AddMilliseconds(3000), 3000); var later = session.Capture();
+        Assert.True(await area.History.SaveAsync(later)); session.Acknowledge(later);
+        Assert.Equal(1L, Count());
+        Assert.True(area.History.Workspace("client-a", false)!.Encounter!.Summary.DurationMs >= 3000);
+        await area.Commit(session, Frame(2, 3500, [Damage("second", 3500)]));
+        Assert.Equal(2L, Count());
+    }
     [Fact]
     public async Task RestartClosesCommittedEncounterAsPartialAndKeepsHistoryAndEffects()
     {

@@ -40,6 +40,9 @@ public static class CombatEffectFavorites
     /// <summary>目录新增或更名；收藏层据此刷新列表。</summary>
     public static event EventHandler? CatalogChanged;
 
+    /// <summary>收藏或筛选每变化一次加一；战斗数据的映射缓存据此失效。</summary>
+    public static int Version { get; private set; }
+
     public static bool SelfOnly { get; private set; }
     public static bool TargetOnly { get; private set; }
     public static IReadOnlyCollection<string> Favorites => favorites;
@@ -59,6 +62,7 @@ public static class CombatEffectFavorites
     public static void Use(string? file)
     {
         path = file;
+        Version++;
         favorites.Clear(); catalog.Clear(); SelfOnly = TargetOnly = false;
         if (file is null || !File.Exists(file)) return;
         try
@@ -78,19 +82,20 @@ public static class CombatEffectFavorites
     {
         if (string.IsNullOrWhiteSpace(id)) return;
         if (!favorites.Remove(id)) favorites.Add(id);
+        Version++;
         Save(); Changed?.Invoke(null, EventArgs.Empty);
     }
 
     public static void SetSelfOnly(bool value)
     {
         if (SelfOnly == value) return;
-        SelfOnly = value; Save(); Changed?.Invoke(null, EventArgs.Empty);
+        SelfOnly = value; Version++; Save(); Changed?.Invoke(null, EventArgs.Empty);
     }
 
     public static void SetTargetOnly(bool value)
     {
         if (TargetOnly == value) return;
-        TargetOnly = value; Save(); Changed?.Invoke(null, EventArgs.Empty);
+        TargetOnly = value; Version++; Save(); Changed?.Invoke(null, EventArgs.Empty);
     }
 
     /// <summary>按名称或编号查找目录（不分大小写）；收藏的排在前面，至多 <paramref name="limit"/> 项。</summary>

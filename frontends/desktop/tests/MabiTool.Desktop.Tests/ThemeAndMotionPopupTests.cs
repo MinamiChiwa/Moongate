@@ -61,9 +61,9 @@ public sealed class ThemeAndMotionPopupTests
         var brush = Assert.IsType<SolidColorBrush>(resource);
         Assert.Equal(255, brush.Color.A);
         var origin = popup.TranslatePoint(default, window)!.Value;
-        // 弹出层自己的区域里，避开所有有内容的控件（文字、按钮、内嵌块、图形），剩下的就是纯底色。
+        // 弹出层自己的区域里，避开所有有内容的控件（文字、按钮、内嵌块、图形、自绘的说明问号），剩下的就是纯底色。
         var occupied = popup.GetVisualDescendants().OfType<Control>()
-            .Where(control => control.IsEffectivelyVisible && control is TextBlock or Button or Border or Avalonia.Controls.Shapes.Shape or TextBox)
+            .Where(control => control.IsEffectivelyVisible && control is TextBlock or Button or Border or Avalonia.Controls.Shapes.Shape or TextBox or HelpTip)
             .Select(control => new Rect(control.TranslatePoint(default, window)!.Value, control.Bounds.Size).Inflate(1))
             .ToList();
         var points = new List<Point>();

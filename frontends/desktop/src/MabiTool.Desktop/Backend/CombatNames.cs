@@ -20,6 +20,8 @@ public static class CombatNames
 {
     public const string Resolved = "resolved";
     public const string LoadingReason = "combat.nameCatalogLoading";
+    /// <summary>没有名称表的实体（AI 同伴）：显示按种类给出的固定文案。</summary>
+    public const string Generic = "generic";
 
     /// <summary>名称缺失：为空，或是后端沿用的纯数字原始编号。</summary>
     public static bool Missing(string? name) => string.IsNullOrWhiteSpace(name) || name.All(char.IsAsciiDigit);
@@ -48,6 +50,8 @@ public static class CombatNames
         if (resolved is { } value)
         {
             if (value.State == Resolved && !string.IsNullOrWhiteSpace(value.Text)) return new(value.Text, value.Text);
+            // 通用名称是一类实体的固定文案，不是缺失；同类可能有多个，同样带编号区分。
+            if (value.State == Generic) return new(Numbered(GenericName(value.Kind), number), GenericName(value.Kind));
             var label = value.Reason == LoadingReason ? Loading : Unknown(kind);
             var sheet = value.SheetId.ToString();
             return new(Numbered(label, number ?? (value.SheetId.Value == 0 ? null : sheet)), Tip(label, sheet, ReasonText(value.Reason)));
@@ -57,6 +61,13 @@ public static class CombatNames
         var raw = string.IsNullOrWhiteSpace(name) ? id : name;
         return new(Numbered(unknown, number ?? Readable(raw)), Tip(unknown, raw, null));
     }
+
+    /// <summary>没有名称表的实体种类的固定文案；目前只有 AI 同伴，其他种类按未知目标显示。</summary>
+    public static string GenericName(string? kind) => kind switch
+    {
+        "ai-companion" => Pick("AI 同伴", "AI 同伴"),
+        _ => UnknownTarget
+    };
 
     /// <summary>“未知技能 #20101”；没有编号时只写名称。</summary>
     public static string Numbered(string label, string? number) => string.IsNullOrEmpty(number) ? label : $"{label} #{number}";
@@ -73,6 +84,8 @@ public static class CombatNames
         LoadingReason => Pick("正在读取客户端名称表", "正在讀取用戶端名稱表"),
         "combat.nameCatalogUnavailable" => Pick("无法读取客户端名称表", "無法讀取用戶端名稱表"),
         "combat.nameLayoutUnsupported" => Pick("客户端名称表结构与已核对的不符", "用戶端名稱表結構與已核對的不符"),
+        "combat.nameEmpty" => Pick("客户端名称为空", "用戶端名稱為空"),
+        "combat.nameGeneric" => Pick("没有名称表，显示通用名称", "沒有名稱表，顯示通用名稱"),
         "game.bindingRequired" => Pick("尚未绑定游戏窗口，无法读取名称表", "尚未綁定遊戲視窗，無法讀取名稱表"),
         var other => other
     };

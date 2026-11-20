@@ -16,6 +16,10 @@ public sealed class ObservationCaptureContext
     public ObservationInventoryProfile? InventoryProfile { get; private set; }
     /// <summary>本次捕获运行的累计诊断计数，随上下文创建而清零。</summary>
     public CaptureDiagnostics Diagnostics { get; } = new();
+    /// <summary>本次捕获实际采用的读取方式（打开设备后确定；旧版 Npcap 为轮询回退）。</summary>
+    internal CaptureReadConfig? ReadConfig { get; set; }
+    /// <summary>宿主随捕获请求下发的实体延续记录（校验后）；只在同一连接的战斗解析上补足一次。</summary>
+    internal CombatEntityCarry? CombatCarry { get; set; }
     private ObservationCaptureInterests current = new(true, null);
     private long nextHandler;
     public ObservationCaptureContext(IReadOnlyList<ObservationCombatProfile> supported,

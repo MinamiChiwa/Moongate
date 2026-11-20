@@ -91,7 +91,9 @@ public sealed class CombatSessionTests
     [Fact]
     public void LiveFinalAndRollingDpsUseTheirActualMonotonicDenominators()
     {
-        var session = Session(rollingWindowMs: 5000); session.Apply(Frame(1, 0, [Damage("first", 0)]));
+        // 本机保持 in-combat：整场不会到期，分段只按空闲阈值结束。
+        var session = Session(rollingWindowMs: 5000);
+        session.Apply(Frame(1, 0, [Damage("first", 0)]) with { CombatStates = [new(CombatLocalState.InCombat, At, 0, null)] });
         var first = session.Capture().Workspace.Encounter!;
         Assert.Null(first.Summary.EncounterDps); Assert.Null(first.Summary.RollingDps); Assert.Equal(0, first.Summary.DpsDurationMs);
         Assert.Contains("insufficientDuration", first.Summary.Reasons); Assert.Equal("observed-damage-v2", first.Summary.CalculationVersion);
@@ -143,7 +145,7 @@ public sealed class CombatSessionTests
         Assert.Equal(manualPaused.Summary.EncounterDps, manualFinal.Summary.EncounterDps);
         Assert.Equal(manualPaused.Summary.RollingDps, manualFinal.Summary.RollingDps);
     }
-    private static CombatFrame StateFrame(ulong sequence, double mono, CombatLocalState state) =>
+    internal static CombatFrame StateFrame(ulong sequence, double mono, CombatLocalState state) =>
         Frame(sequence, mono) with { CombatStates = [new(state, At.AddMilliseconds(mono), mono, null)] };
 
     [Fact]

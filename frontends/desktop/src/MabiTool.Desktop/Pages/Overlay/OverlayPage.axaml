@@ -22,7 +22,7 @@
       <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
       <DockPanel Margin="{DynamicResource TitleReserve}">
         <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource O.Title}" />
-        <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" ClipToBounds="True" />
+        <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" />
       </DockPanel>
       <controls:ReflowPanel MinItemWidth="260" Spacing="12" Margin="0,4,0,0">
         <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><TextBlock Classes="body muted" VerticalAlignment="Center" Text="{DynamicResource O.StatusShort}" /><controls:HelpTip Text="{DynamicResource O.Status}" /></StackPanel>
@@ -120,6 +120,41 @@
             <TextBlock Classes="note" Text="{DynamicResource O.NoSelection}" IsVisible="{Binding NoSelection}" />
             <StackPanel Spacing="12" IsVisible="{Binding HasSelection}">
               <ItemsControl controls:StableItems.Source="{Binding SelectedDetails}" />
+              <!-- 含属性图标的元件：图标与名称的对照。浮窗上锁时鼠标穿透、看不到提示，解锁或编辑位置时悬停图标可看名称。 -->
+              <StackPanel x:Name="IconLegend" Spacing="6" IsVisible="{Binding HasSelectedIcons}">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Classes="muted" Text="{DynamicResource O.IconLegend}" />
+                  <controls:HelpTip Text="{DynamicResource O.IconLegendHint}" />
+                </StackPanel>
+                <ItemsControl controls:StableItems.Source="{Binding SelectedIcons}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="page:IconLegendItem">
+                      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+                        <controls:ClientIconSlot Icon="{Binding Icon}" Label="{Binding Name}" VerticalAlignment="Center" />
+                        <TextBlock VerticalAlignment="Center" Text="{Binding Name}" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+              <!-- DPS 元件的怪物血量区块：显示或隐藏，立即保存；问号说明写用途。 -->
+              <controls:PairRow IsVisible="{Binding HasHealthSetting}">
+                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                  <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding HealthLabel}" />
+                  <controls:HelpTip Text="{Binding HealthHint}" />
+                </StackPanel>
+                <controls:SelectionBorder x:Name="HealthSwitch" Classes="segmented" HorizontalAlignment="Right">
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="HealthShowButton" Classes="segment" Classes.active="{Binding HealthShown}" Content="{Binding ShowLabel}"
+                            Command="{Binding HealthCommand}" CommandParameter="show" />
+                    <Button x:Name="HealthHideButton" Classes="segment" Classes.active="{Binding HealthHidden}" Content="{Binding HideLabel}"
+                            Command="{Binding HealthCommand}" CommandParameter="hide" />
+                  </StackPanel>
+                </controls:SelectionBorder>
+              </controls:PairRow>
               <!-- 所选元件移到另一块显示器：比例位置不变，立即保存；只有一块显示器时不显示。 -->
               <controls:PairRow IsVisible="{Binding HasMonitorChoice}">
                 <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding MoveToLabel}" />
@@ -155,11 +190,19 @@
                 </StackPanel>
               </controls:PairRow>
               <controls:PairRow>
-                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource O.Opacity}" />
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource O.BackgroundOpacity}" />
                 <StackPanel Orientation="Horizontal" Spacing="6">
-                  <Button x:Name="OpacityDown" Classes="chip" Width="34" Padding="0" Content="−" Command="{Binding OpacityCommand}" CommandParameter="-" />
-                  <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding OpacityText}" />
-                  <Button x:Name="OpacityUp" Classes="chip" Width="34" Padding="0" Content="+" Command="{Binding OpacityCommand}" CommandParameter="+" />
+                  <Button x:Name="BackgroundOpacityDown" Classes="chip" Width="34" Padding="0" Content="−" Command="{Binding BackgroundOpacityCommand}" CommandParameter="-" />
+                  <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding BackgroundOpacityText}" />
+                  <Button x:Name="BackgroundOpacityUp" Classes="chip" Width="34" Padding="0" Content="+" Command="{Binding BackgroundOpacityCommand}" CommandParameter="+" />
+                </StackPanel>
+              </controls:PairRow>
+              <controls:PairRow>
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource O.ContentOpacity}" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Button x:Name="ContentOpacityDown" Classes="chip" Width="34" Padding="0" Content="−" Command="{Binding ContentOpacityCommand}" CommandParameter="-" />
+                  <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding ContentOpacityText}" />
+                  <Button x:Name="ContentOpacityUp" Classes="chip" Width="34" Padding="0" Content="+" Command="{Binding ContentOpacityCommand}" CommandParameter="+" />
                 </StackPanel>
               </controls:PairRow>
               <TextBlock Classes="muted" Text="{DynamicResource O.Skin}" />

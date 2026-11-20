@@ -80,4 +80,27 @@ public sealed class TwBuildVerificationTests
         return new(new string('a', 64), new string('b', 64), protocols, schema,
             interfaces.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<InventoryProtocolMethod>)pair.Value, StringComparer.Ordinal));
     }
+
+    [Fact]
+    public void VerdictCacheKeepsOnlyTheMostRecentlyUsedBuilds()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mabitool-build-verdict-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            TwClientHashes Hashes(int index) => new(index.ToString("x2").PadRight(64, 'a'), index.ToString("x2").PadRight(64, 'b'), new string('c', 64));
+            for (var index = 0; index < TwBuildVerdictCache.MaximumEntries + 2; index++)
+            {
+                var hashes = Hashes(index);
+                TwBuildVerdictCache.Write(root, hashes, TwBuildVerdict.Failed(TwClientFingerprint.AdaptiveBuild(hashes.AssemblySha256, hashes.MetadataSha256), "gameBuild.verifyFailed"));
+                foreach (var file in Directory.GetFiles(root)) File.SetLastWriteTimeUtc(file, File.GetLastWriteTimeUtc(file).AddSeconds(-1));
+                // 第 0 个构建一直在用：每次读取都刷新时间，不被淘汰。
+                Assert.NotNull(TwBuildVerdictCache.Read(root, Hashes(0)));
+            }
+            Assert.Equal(TwBuildVerdictCache.MaximumEntries, Directory.GetFiles(root, "tw-*.json").Length);
+            Assert.NotNull(TwBuildVerdictCache.Read(root, Hashes(0)));
+            Assert.Null(TwBuildVerdictCache.Read(root, Hashes(1)));
+            Assert.NotNull(TwBuildVerdictCache.Read(root, Hashes(TwBuildVerdictCache.MaximumEntries + 1)));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
 }

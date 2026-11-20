@@ -112,6 +112,8 @@ sealed class FixtureSource(string root, string mode) : IObservationCaptureSource
                 publish(Report(mode == "generation" && sequence >= 3));
                 if (mode == "silent") await Task.Delay(Timeout.InfiniteTimeSpan, ct);
                 if (mode == "exit") { await Task.Delay(300); Environment.Exit(12); }
+                // 运行一段时间后捕获循环抛出未归类异常（Worker 归为 observation.captureFailed 并给出细分原因）。
+                if (mode == "fault-after-run" && sequence >= 5) throw new InvalidOperationException();
                 await Task.Delay(100, mode == "stall" ? CancellationToken.None : ct);
             }
         }

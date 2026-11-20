@@ -124,6 +124,10 @@
   <sys:String x:Key="C.ChartTargets">目標傷害排行</sys:String>
   <sys:String x:Key="C.ChartElements">屬性構成</sys:String>
   <sys:String x:Key="C.OpenDetail">在視窗中開啟</sys:String>
+  <sys:String x:Key="C.RecordDetailTitle">紀錄明細</sys:String>
+  <sys:String x:Key="C.OpenRecordDetail">明細</sys:String>
+  <sys:String x:Key="C.OpenRecordDetailTip">開啟這筆紀錄的明細視窗</sys:String>
+  <sys:String x:Key="C.DataIncomplete">資料不完整</sys:String>
   <sys:String x:Key="C.TargetDetail">目標</sys:String>
   <sys:String x:Key="C.MyContribution">我對它的傷害</sys:String>
   <sys:String x:Key="C.BreakTitle">破防期間</sys:String>
@@ -294,6 +298,10 @@
   <sys:String x:Key="O.NoSelection">在元件庫裡點選一個元件</sys:String>
   <sys:String x:Key="O.Scale">縮放</sys:String>
   <sys:String x:Key="O.Opacity">不透明度</sys:String>
+  <sys:String x:Key="O.BackgroundOpacity">背景不透明度</sys:String>
+  <sys:String x:Key="O.ContentOpacity">內容不透明度</sys:String>
+  <sys:String x:Key="O.BackgroundOpacityTip">背景不透明度：點按降低，滾輪微調</sys:String>
+  <sys:String x:Key="O.ContentOpacityTip">文字與圖示不透明度：點按降低，滾輪微調</sys:String>
   <sys:String x:Key="O.Skin">外觀</sys:String>
   <sys:String x:Key="O.FrameImage">外框圖像</sys:String>
   <sys:String x:Key="O.FrameImageHint">PNG、WebP 或 JPEG，鋪滿元件外框。</sys:String>
@@ -301,6 +309,8 @@
   <sys:String x:Key="O.PickImage">選擇圖片</sys:String>
   <sys:String x:Key="O.RemoveWidget">從版面移除</sys:String>
   <sys:String x:Key="O.SettingsHint">元件由各模組（含擴充模組）提供，這裡的設定對每套版面分別保存。</sys:String>
+  <sys:String x:Key="O.IconLegend">圖示對照</sys:String>
+  <sys:String x:Key="O.IconLegendHint">浮窗上鎖時滑鼠穿透，看不到提示；解鎖或編輯位置時懸停圖示可看名稱。圖示從本機遊戲用戶端讀取，讀到之前顯示文字。</sys:String>
   <sys:String x:Key="O.NowPlaying">演奏中</sys:String>
   <sys:String x:Key="O.Next">下一首</sys:String>
   <sys:String x:Key="O.Dps">整場 DPS</sys:String>
@@ -314,7 +324,6 @@
   <sys:String x:Key="T.Motion">動效</sys:String>
   <sys:String x:Key="T.MotionOn">開啟</sys:String>
   <sys:String x:Key="T.MotionOff">減弱</sys:String>
-  <sys:String x:Key="T.MotionHint">減弱後按鈕、頁面切換和圖示不再播放動畫，狀態立即切換。</sys:String>
   <sys:String x:Key="T.DownloadUpdate">下載更新</sys:String>
   <sys:String x:Key="T.InstallUpdate">安裝並重新啟動</sys:String>
   <sys:String x:Key="T.ChangeShortcut">修改</sys:String>
@@ -524,5 +533,5 @@
   <sys:String x:Key="O.HideWithGame">遊戲最小化時隱藏</sys:String>
   <sys:String x:Key="O.HideWithGameHint">關閉時浮窗始終顯示，與遊戲視窗無關</sys:String>
   <sys:String x:Key="O.StatusShort">在螢幕上擺放元件</sys:String>
-  <sys:String x:Key="C.TraitsHelp">暴擊以可暴擊次數為分母，強擊、連擊、追擊以直接傷害次數為分母，其餘以全部已歸屬傷害次數為分母。持續傷害（Dot）不計入；間接傷害只計入暴擊。</sys:String>
+  <sys:String x:Key="C.TraitsHelp">暴擊以可暴擊次數為分母，強擊、連擊、追擊以直接傷害次數為分母，其餘以全部已歸屬傷害次數為分母。持續傷害（Dot）不計入；間接傷害只計入暴擊。懸停圖示可看名稱。</sys:String>
 </ResourceDictionary>

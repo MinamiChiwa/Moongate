@@ -62,7 +62,7 @@ public sealed class LiveBackendTests
 
             // 能力表随页面状态读取：未实现的能力给出说明，可用或能力表没有的编号没有说明。
             await Until(() => backend.GetCapabilityNotice(CapabilityIds.PerformancePlay) is not null, "读取后端能力表");
-            Assert.Equal("台服暂不支持在游戏内选曲演奏", backend.GetCapabilityNotice(CapabilityIds.PerformancePlay));
+            Assert.Equal("台服暂不支持游戏内选曲演奏", backend.GetCapabilityNotice(CapabilityIds.PerformancePlay));
             Assert.Equal("后端未实现，暂不可用", backend.GetCapabilityNotice(CapabilityIds.RoomsCoordinate));
             Assert.StartsWith("暂不可用：", backend.GetCapabilityNotice(CapabilityIds.ColorSearch));
             Assert.Null(backend.GetCapabilityNotice("system.inspect"));
@@ -72,7 +72,7 @@ public sealed class LiveBackendTests
             using (var music = new Pages.Music.MusicPageModel(backend))
             {
                 Assert.True(music.HasCapabilityNotice);
-                Assert.Equal("台服暂不支持在游戏内选曲演奏", music.CapabilityNotice);
+                Assert.Equal("台服暂不支持游戏内选曲演奏", music.CapabilityNotice);
                 Assert.False(music.CanStart);
                 Assert.False(music.CanNext);
             }
@@ -150,6 +150,8 @@ public sealed class LiveBackendTests
             // 背包随全局常驻抓包自动同步，没有开始按钮；模拟宿主没有运行中的抓包，状态写明未读取及抓包原因。
             Assert.StartsWith("未读取 · ", backend.GetInventory().Status);
             window.Close();
+            // 窗口关闭后测试直接读取战斗数据：战斗数据只为可见的使用者读取，这里以 DPS检测页可见的身份声明使用者（与页面模型同一入口）。
+            backend.SetCombatPageVisible(true);
 
             // 手动拆段：后端受理后给出说明；新分段要等下一笔伤害，状态行先显示等待，随后显示拆段后开始的分段。
             Assert.True(backend.GetCombat().Actions.CanSplit);
@@ -159,7 +161,8 @@ public sealed class LiveBackendTests
                 && (status.Contains("已拆段，等待下一次伤害") || status.Contains("手动拆段后开始")), "拆段后状态行显示等待或新分段");
 
             await backend.RequestEmergencyStopAsync(TestContext.Current.CancellationToken);
-            Assert.Contains("已请求紧急停止", backend.GetActivity().Detail);
+            // 紧急停止的后续写明来源与结果（合奏规格“紧急停止之后”：“已紧急停止（按钮）：……”）。
+            Assert.StartsWith("已紧急停止（按钮）：", backend.GetActivity().Detail);
 
             if (backend.GetCombat().Actions.CanStop)
             {
@@ -225,7 +228,8 @@ public sealed class LiveBackendTests
             await Until(() => backend.GetRooms().Server.LocalEndpoint is { Length: > 0 } || Notice().Contains("请求未完成"), "本机房间服务给出地址");
             Assert.DoesNotContain("请求未完成", Notice());
             await backend.SendIntentAsync("rooms.create", $"manual\n琉特\n{backend.GetRooms().Server.LocalEndpoint}\nensemble", token);
-            await Until(() => backend.GetRooms().InRoom || Notice().Contains("请求未完成"), "建房");
+            // 建房分两步（先建房，再按界面选择设模式）：只等进入房间会读到设模式之前的默认模式，要等模式也设好。
+            await Until(() => backend.GetRooms().Room?.Mode == "ensemble" || Notice().Contains("请求未完成"), "建房并设为合奏模式");
             Assert.True(backend.GetRooms().InRoom, Notice());
             Assert.Equal("ensemble", backend.GetRooms().Room!.Mode);
             Assert.Equal("琉特", backend.GetRooms().Self!.Nickname);
@@ -257,15 +261,15 @@ public sealed class LiveBackendTests
             Assert.True((await backend.DeleteColorProfileAsync(profileId, token)).Ok);
             await Until(() => backend.GetColor().Profiles.All(profile => profile.Name != "聯調方案"), "方案已删除");
 
-            // 模拟宿主没有配置桌面截图源：错误码原样交回界面。
+            // 模拟宿主没有配置桌面截图源：错误码经共用映射换成中文短句交回界面。
             var capture = await backend.CaptureScreenAsync(token);
             Assert.Null(capture.Capture);
-            Assert.Contains("capability.unavailable", capture.Message);
+            Assert.Equal("请求未完成：功能不可用", capture.Message);
 
             // 快捷键：设置保存成功；模拟宿主没有系统快捷键来源，注册状态如实显示为不可用。
             var shortcut = await backend.ChangeShortcutAsync("emergency-stop", new("F8", true, false, false, false), token);
             Assert.False(shortcut.Ok);
-            Assert.Contains("shortcut.sourceUnavailable", shortcut.Message);
+            Assert.Equal("已保存 Ctrl + F8，快捷键服务不可用", shortcut.Message);
             await Until(() => backend.GetSettings().Shortcuts.Any(row => row.Id == "emergency-stop" && row.Chord.Contains("F8")), "快捷键读回新组合");
 
             await backend.SendIntentAsync("rooms.leave", null, token);
@@ -306,8 +310,8 @@ public sealed class LiveBackendTests
             Assert.Empty(list.Windows);
             var select = await backend.SelectGameWindowAsync("missing-candidate", token);
             Assert.False(select.Ok);
-            Assert.Contains("resource.notFound", select.Message);
-            Assert.Contains("resource.notFound", backend.GetActivity().Detail);
+            Assert.Equal("请求未完成：找不到所选内容", select.Message);
+            Assert.Equal("请求未完成：找不到所选内容", backend.GetActivity().Detail);
             Assert.True(backend.GetGameBinding().Confirmed);
 
             // 弹出层在真实后端下显示没有找到游戏窗口。
@@ -334,7 +338,7 @@ public sealed class LiveBackendTests
             // 超出后端范围的值被拒绝，策略保持后端当前值。
             var rejected = await backend.SaveUpdatePolicyAsync(policy with { CheckIntervalHours = 500 }, token);
             Assert.False(rejected.Ok);
-            Assert.Contains("request.invalid", rejected.Message);
+            Assert.Equal("请求未完成：请求内容无效", rejected.Message);
             Assert.Equal(24, backend.GetSettings().Policy!.CheckIntervalHours);
         }
         finally { await StopHostAsync(host, root); }
@@ -373,15 +377,15 @@ public sealed class LiveBackendTests
             // 保存后合奏页的数据随例行刷新读回新修订。
             await Until(() => backend.GetRooms().Preferences?.Revision.Value == reread.Revision.Value, "合奏页读回本机设置");
 
-            // 旧修订与越界值被后端拒绝，错误码显示在活动胶囊。
+            // 旧修订与越界值被后端拒绝，错误码换成中文短句显示在活动胶囊。
             var stale = await backend.SaveRoomPreferencesAsync(edited, loaded.ETag, token);
             Assert.False(stale.Ok);
-            Assert.Contains("revision.stale", stale.Message);
+            Assert.Equal("请求未完成：数据已变化，请刷新", stale.Message);
             var current = await backend.LoadRoomPreferencesAsync(token);
             var invalid = await backend.SaveRoomPreferencesAsync(current.Value! with { TimingOffsetMs = 2001 }, current.ETag, token);
             Assert.False(invalid.Ok);
-            Assert.Contains("request.invalid", invalid.Message);
-            Assert.Contains("request.invalid", Notice());
+            Assert.Equal("请求未完成：请求内容无效", invalid.Message);
+            Assert.Equal("请求未完成：请求内容无效", Notice());
 
             // 染色历史：模拟宿主没有完成过寻色，第一页为空，没有分页标记。
             var history = await RetryStorage(() => backend.QueryColorHistoryAsync(null, token), reply => reply.Message);
@@ -415,13 +419,16 @@ public sealed class LiveBackendTests
         finally { await StopHostAsync(host, root); }
     }
 
+    // 存储尚未就绪的回应：错误码经共用映射显示为“存储不可用”。
+    private static bool StorageBusy(string message) => message.Contains("存储不可用") || message.Contains("storage.");
+
     // 模拟宿主刚启动时存储可能尚未就绪，写操作返回 storage.unavailable；等一会儿再发。
     private static async Task<T> RetryStorage<T>(Func<Task<T>> send, Func<T, string> message)
     {
         for (var attempt = 0; ; attempt++)
         {
             var reply = await send();
-            if (!message(reply).Contains("storage.") || attempt >= 30) return reply;
+            if (!StorageBusy(message(reply)) || attempt >= 30) return reply;
             await Task.Delay(500, TestContext.Current.CancellationToken);
         }
     }
@@ -431,17 +438,18 @@ public sealed class LiveBackendTests
         for (var attempt = 0; ; attempt++)
         {
             await backend.SendIntentAsync(intent, argument, TestContext.Current.CancellationToken);
-            if (!notice().Contains("storage.") || attempt >= 30) return;
+            if (!StorageBusy(notice()) || attempt >= 30) return;
             await Task.Delay(500, TestContext.Current.CancellationToken);
         }
     }
 
     // 机器繁忙时模拟宿主的数据初始化偶尔超出后端自己的事务预算而退出；这与被测的前端无关，重启宿主即可。
-    private static async Task<(Process Host, string Root)> StartHostAsync(string hostDll)
+    /// <param name="existingRoot">在已有的数据根上重新启动（模拟宿主重启）；为空时新建一个。</param>
+    private static async Task<(Process Host, string Root)> StartHostAsync(string hostDll, string? existingRoot = null)
     {
         for (var attempt = 1; ; attempt++)
         {
-            var root = Path.Combine(Path.GetTempPath(), "moongate-desktop-test-" + Guid.NewGuid().ToString("N"));
+            var root = existingRoot ?? Path.Combine(Path.GetTempPath(), "moongate-desktop-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
             var host = Process.Start(new ProcessStartInfo("dotnet")
             {
@@ -616,6 +624,45 @@ public sealed class LiveBackendTests
         finally { await StopHostAsync(host, root); }
     }
 
+    // 宿主重启后前端重新握手并全部重读：事件驱动与按修订沿用的缓存在新连接上作废，不沿用旧连接的结果，也不等例行间隔。
+    [AvaloniaFact]
+    public async Task ReconnectsAfterTheHostRestartsAndReadsEverythingAgain()
+    {
+        var hostDll = FindHostDll();
+        Assert.SkipWhen(hostDll is null, "未找到已构建的 MabiTool.Host.dll");
+        var (host, root) = await StartHostAsync(hostDll!);
+        var token = TestContext.Current.CancellationToken;
+        try
+        {
+            var log = new System.Collections.Concurrent.ConcurrentQueue<(int Status, string Path)>();
+            await using var backend = new LiveBackend(Path.Combine(root, "runtime", "instance.json"),
+                action => Avalonia.Threading.Dispatcher.UIThread.Post(action)) { Handler = () => new RecordingHandler(log) };
+            backend.Start();
+            await Until(() => backend.GetCombat().Actions.CanStart, "连接模拟宿主并取得游戏绑定");
+            await backend.SendCombatIntentAsync(CombatIntent.StartObservation, null, token);
+            await Until(() => backend.GetCombat().Skills.Count > 0, "开始观测后出现技能统计");
+            await Until(() => backend.GetModules().Modules.Count > 0, "读取模块清单");
+
+            // 宿主进程结束（保留数据根）：前端标为未连接并保留最后结果。
+            host.Kill(entireProcessTree: true);
+            await host.WaitForExitAsync(token);
+            host.Dispose();
+            await Until(() => !backend.GetGameBinding().Connected, "宿主停止后标为未连接");
+            Assert.True(backend.GetCombat().Skills.Count > 0, "断线后保留最后的战斗结果");
+
+            // 在同一数据根上重新启动：重新握手后快照、战斗记录、页面状态全部重读。
+            File.Delete(Path.Combine(root, "runtime", "instance.json"));
+            (host, _) = await StartHostAsync(hostDll!, root);
+            var before = log.Count;
+            await Until(() => backend.GetGameBinding().Connected && backend.GetCombat().Actions.CanStart, "重新连接模拟宿主");
+            await Until(() => log.Skip(before).Any(item => item.Path == "/api/v1/combat/snapshot")
+                && log.Skip(before).Any(item => item.Path == "/api/v1/combat/encounters")
+                && log.Skip(before).Any(item => item.Path == "/api/v1/modules"), "重连后重读战斗与页面状态");
+            Assert.True(backend.GetModules().Modules.Count > 0);
+        }
+        finally { await StopHostAsync(host, root); }
+    }
+
     [AvaloniaFact]
     public async Task StoppingTheMockHostRemovesItsDataRoot()
     {
@@ -625,6 +672,37 @@ public sealed class LiveBackendTests
         Assert.True(File.Exists(Path.Combine(root, "runtime", "instance.json")));
         await StopHostAsync(host, root);
         Assert.False(Directory.Exists(root));
+    }
+
+    [AvaloniaFact]
+    public async Task MockHostCurrentTargetHealthReachesTheDpsData()
+    {
+        var hostDll = FindHostDll();
+        Assert.SkipWhen(hostDll is null, "未找到已构建的 MabiTool.Host.dll");
+        var (host, root) = await StartHostAsync(hostDll!);
+        using var hostProcess = host;
+        var token = TestContext.Current.CancellationToken;
+        try
+        {
+            await using var backend = new LiveBackend(Path.Combine(root, "runtime", "instance.json"),
+                action => Avalonia.Threading.Dispatcher.UIThread.Post(action));
+            backend.Start();
+            await Until(() => backend.GetCombat().Actions.CanStart, "连接模拟宿主并取得游戏绑定");
+            backend.SetCombatPageVisible(true);
+            // 战斗能力表里的怪物血量随页面状态读取：模拟宿主可用，没有停用说明。
+            await Until(() => backend.GetCapabilityLevel(CapabilityIds.MonsterHealth) == CapabilityLevel.Available, "读取战斗能力表");
+            Assert.Null(backend.GetCapabilityNotice(CapabilityIds.MonsterHealth));
+            await backend.SendCombatIntentAsync(CombatIntent.StartObservation, null, token);
+            // 模拟宿主的回放：本机主目标是首领标志为真、按伤害掉血的怪物，最大值 1,000,000。
+            await Until(() => backend.GetCombat().Health is { IsTarget: true, Empty: false }, "读到当前攻击目标与血量");
+            var health = backend.GetCombat().Health!;
+            Assert.True(health.Boss);
+            Assert.Equal("同名怪物", health.Name);
+            Assert.EndsWith(" / 1,000,000", health.Value);
+            Assert.Matches(@"^\d{1,3}\.\d%$", health.Percent);
+            Assert.InRange(health.Fill, 0, 1);
+        }
+        finally { await StopHostAsync(host, root); }
     }
 
     private static async Task Until(Func<bool> condition, string what)

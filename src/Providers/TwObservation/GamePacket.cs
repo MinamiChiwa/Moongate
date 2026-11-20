@@ -44,7 +44,18 @@ public static class GamePacket
         if (raw.Length - at < 20 || raw[at] >> 4 != 4 || raw[at + 9] != 6) return null;
         var ipLength = (raw[at] & 15) * 4; var total = BinaryPrimitives.ReadUInt16BigEndian(raw[(at + 2)..]);
         if (ipLength < 20 || total < ipLength + 20 || total > raw.Length - at || (BinaryPrimitives.ReadUInt16BigEndian(raw[(at + 6)..]) & 0x3fff) != 0) return null;
-        return Tcp(raw, new IPAddress(raw.Slice(at + 12, 4)).ToString(), new IPAddress(raw.Slice(at + 16, 4)).ToString(), at + ipLength, at + total);
+        return Tcp(raw, Ipv4(raw.Slice(at + 12, 4)), Ipv4(raw.Slice(at + 16, 4)), at + ipLength, at + total);
+    }
+
+    /// <summary>IPv4 地址文本按地址值缓存（至多 4,096 个），同一地址返回同一字符串实例；文本与 IPAddress.ToString 相同。</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, string> Ipv4Text = new();
+    private static string Ipv4(ReadOnlySpan<byte> address)
+    {
+        var key = BinaryPrimitives.ReadUInt32BigEndian(address);
+        if (Ipv4Text.TryGetValue(key, out var text)) return text;
+        text = new IPAddress(address).ToString();
+        if (Ipv4Text.Count < 4096) Ipv4Text.TryAdd(key, text);
+        return text;
     }
 
     /// <summary>IPv6：固定头之后按逐跳、路由、目的选项、AH 扩展头跳到 TCP；分片头只接受未分片的原子分片。</summary>

@@ -104,6 +104,20 @@ public sealed partial class SampleBackend : IDesktopBackend
     /// <summary>测试用：后端没有治疗块（来源不支持治疗或旧记录），治疗行只显示“未提供治疗数据”。</summary>
     internal bool NoHealingData { get; set; }
 
+    /// <summary>
+    /// 测试用：客户端属性图标的替身（测试里用代码生成的纯色位图）。样本不带任何游戏图片，为空时图标一律不可用、界面显示文字。
+    /// 改动后调用 <see cref="RaiseClientIconsChanged"/>。
+    /// </summary>
+    internal Dictionary<string, ClientIconImage>? ClientIcons { get; set; }
+
+    /// <summary>测试用：界面此刻是否登记了使用图标。</summary>
+    internal bool ClientIconsInUse { get; private set; }
+
+    public ClientIconImage? GetClientIcon(string key) => ClientIcons?.GetValueOrDefault(key);
+    public void SetClientIconsInUse(bool inUse) => ClientIconsInUse = inUse;
+    public event EventHandler? ClientIconsChanged;
+    internal void RaiseClientIconsChanged() => ClientIconsChanged?.Invoke(this, EventArgs.Empty);
+
     /// <summary>Buff 收藏筛选与真实后端一样在这里统一套用。</summary>
     public CombatPageData GetCombat() => CombatEffectFavorites.Apply(SampleData());
 
@@ -179,10 +193,10 @@ public sealed partial class SampleBackend : IDesktopBackend
                 new(Pick("命中次数", "命中次數"), "412", false)
             ],
             [
-                new(Pick("暴击", "暴擊"), "32%", 0.32, $"133 / 412 {times}"),
-                new(Pick("强击", "強擊"), "18%", 0.18, $"61 / 338 {times}"),
-                new(Pick("连击", "連擊"), "41%", 0.41, $"139 / 338 {times}"),
-                new(Pick("追击", "追擊"), "9%", 0.09, $"30 / 338 {times}")
+                new(Pick("暴击", "暴擊"), "32%", 0.32, $"133 / 412 {times}", ClientIconNames.Critical),
+                new(Pick("强击", "強擊"), "18%", 0.18, $"61 / 338 {times}", ClientIconNames.PowerfulHit),
+                new(Pick("连击", "連擊"), "41%", 0.41, $"139 / 338 {times}", ClientIconNames.RapidHit),
+                new(Pick("追击", "追擊"), "9%", 0.09, $"30 / 338 {times}", ClientIconNames.DoubleHit)
             ],
             [
                 new(Pick("本人 86%", "本人 86%"), 86, "#B23A1C", true),
@@ -248,16 +262,16 @@ public sealed partial class SampleBackend : IDesktopBackend
             ],
             new(false, true, true, true, true, true),
             [
-                new(Pick("无防备", "無防備"), "21%", 0.21, $"87 / 412 {times}"),
-                new(Pick("破防", "破防"), "5%", 0.05, $"19 / 412 {times}"),
+                new(Pick("无防备", "無防備"), "21%", 0.21, $"87 / 412 {times}", ClientIconNames.BreakedHit),
+                new(Pick("破防", "破防"), "5%", 0.05, $"19 / 412 {times}", ClientIconNames.BreakOccurred),
                 new(Pick("普通攻击", "普通攻擊"), "25%", 0.25, $"101 / 412 {times}"),
-                new(Pick("多重打击", "多重打擊"), "26%", 0.26, $"108 / 412 {times}")
+                new(Pick("多重打击", "多重打擊"), "26%", 0.26, $"108 / 412 {times}", ClientIconNames.MultiHit)
             ],
             new([
-                new($"{Element("火焰", "火焰")} 25%", 103, "#E0661A"),
-                new($"{Element("出血", "出血")} 18%", 74, "#D0344A"),
-                new($"{Element("冰冻", "冰凍")} 3%", 14, "#2E95C8"),
-                new($"{Element("触电", "觸電")} 1%", 4, "#5C70F0")
+                new($"{Element("火焰", "火焰")} 25%", 103, "#E0661A", Element("火焰", "火焰"), "25%", ClientIconNames.Element("fire")),
+                new($"{Element("出血", "出血")} 18%", 74, "#D0344A", Element("出血", "出血"), "18%", ClientIconNames.Element("bleed")),
+                new($"{Element("冰冻", "冰凍")} 3%", 14, "#2E95C8", Element("冰冻", "冰凍"), "3%", ClientIconNames.Element("ice")),
+                new($"{Element("触电", "觸電")} 1%", 4, "#5C70F0", Element("触电", "觸電"), "1%", ClientIconNames.Element("lightning"))
             ]),
             true,
             new FirstAttackRow("重擊", "21,480", "巨魔首領"),

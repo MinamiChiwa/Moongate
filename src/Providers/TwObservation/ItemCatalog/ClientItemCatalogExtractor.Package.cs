@@ -86,6 +86,39 @@ internal sealed class ClientResourcePackage
         return new DecodedResource(offset, packed.Length, packed, Decode(offset, packed, cancellationToken));
     }
 
+    /// <summary>
+    /// 原样读出条目在 blob 中的字节，不经异或与 deflate 解码；用于 AssetPackages 中未加密的 UnityFS 包。
+    /// 条目超过 <paramref name="maximumBytes"/> 时拒绝读取。
+    /// </summary>
+    public byte[] ReadRaw(PackageEntry entry, StableFileStamp expectedBlobStamp, int maximumBytes, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!expectedBlobStamp.Equals(StableFileStamp.Capture(entry.BlobPath))) throw Changed();
+        if (expectedBlobStamp.Length > MaxBlobBytes) throw new InvalidDataException("客户端资源文件超过大小预算");
+        byte[] raw;
+        using (var stream = new FileStream(entry.BlobPath, FileMode.Open, FileAccess.Read,
+                   FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.RandomAccess))
+        {
+            if (stream.Length != expectedBlobStamp.Length) throw Changed();
+            Span<byte> header = stackalloc byte[8];
+            stream.ReadExactly(header);
+            if (BinaryPrimitives.ReadUInt32LittleEndian(header) != BlobMagic) throw new InvalidDataException("客户端资源文件头无效");
+            var start = BinaryPrimitives.ReadUInt32LittleEndian(header[4..]);
+            var itemIndex = checked(entry.PackageKey >> 16);
+            var offset = itemIndex == 0 ? start : ReadUInt32At(stream, CheckedPosition(4, itemIndex));
+            var end = ReadUInt32At(stream, CheckedPosition(8, itemIndex));
+            if (offset < 8 || end < offset || end > stream.Length) throw new InvalidDataException("客户端资源块截断或越界");
+            var length = (long)end - offset;
+            if (length > maximumBytes) throw new InvalidDataException("客户端资源条目超过大小预算");
+            raw = new byte[checked((int)length)];
+            stream.Position = offset;
+            stream.ReadExactly(raw);
+        }
+        expectedBlobStamp.EnsureUnchanged(entry.BlobPath);
+        cancellationToken.ThrowIfCancellationRequested();
+        return raw;
+    }
+
     public void EnsureUnchanged() => indexStamp.EnsureUnchanged(Path.Combine(directory, "index"));
 
     private static PackageEntry[] ParseIndex(string directory, byte[] bytes, CancellationToken cancellationToken)

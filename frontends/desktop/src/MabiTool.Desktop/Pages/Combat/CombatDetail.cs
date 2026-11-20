@@ -32,8 +32,11 @@ public sealed record CombatTimelineView(IReadOnlyList<double> Dps, double Bucket
         $"{TimeOf(0)} – {TimeOf(SpanSeconds)}，每點 {BucketSeconds:0.#} 秒");
 }
 
-/// <summary>图表里的一条排行：名称、数值文字、占比（0–1）与是否高亮（与表格选中的同一项）。</summary>
-public sealed record BarItem(string Label, string Value, double Ratio, bool Highlighted = false, string Tip = "")
+/// <summary>
+/// 图表里的一条排行：名称、数值文字、占比（0–1）与是否高亮（与表格选中的同一项）。
+/// 标签占比的项带客户端属性图标的键（<see cref="Icon"/>），图标可用时名称换成图标、名称进悬浮提示。
+/// </summary>
+public sealed record BarItem(string Label, string Value, double Ratio, bool Highlighted = false, string Tip = "", string? Icon = null)
 {
     public string Hint => Tip.Length > 0 ? Tip : Label;
 }
@@ -63,12 +66,50 @@ public sealed partial class CombatPageModel
     /// <summary>DPS 明细窗口用的模型：同一后端，范围与目标是窗口自己的选择（与主页面互不影响）。</summary>
     public CombatPageModel Companion() => new(backend, page: false, detail: true);
 
-    /// <summary>窗口打开期间为真：后端适配层读取时间线分桶。</summary>
+    /// <summary>记录明细窗口用的模型：同一后端，范围固定为 <paramref name="record"/> 这条战斗记录。</summary>
+    public CombatPageModel Companion(string record) => new(backend, page: false, record: record);
+
+    /// <summary>窗口打开期间为真：后端适配层读取时间线分桶（记录明细读取这条记录的范围汇总与分桶）。</summary>
     public void SetDetailOpen(bool open)
     {
         detailOpen = open;
-        backend.SetCombatDetailOpen(open);
+        if (recordId is { } id) backend.SetCombatRecordOpen(id, open);
+        else backend.SetCombatDetailOpen(open);
         RefreshDetail();
+    }
+
+    // ---- 记录明细窗口：标题、不完整标记与只有摘要时的说明 ----
+
+    public bool IsRecord => recordId is not null;
+    public bool IsLive => recordId is null;
+    public string RecordLabel => Data.RecordInfo?.Name ?? string.Empty;
+    public string RecordWhen => Data.RecordInfo?.When ?? string.Empty;
+    public bool HasRecordWhen => RecordWhen.Length > 0;
+    public bool RecordIncomplete => Data.RecordInfo?.DataIncomplete == true;
+    public string RecordNote => Data.RecordInfo?.Note ?? string.Empty;
+    public bool HasRecordNote => Data.RecordInfo?.HasNote == true;
+    public string RecordGapNote => Data.RecordInfo?.GapNote ?? string.Empty;
+    public bool HasRecordGapNote => RecordGapNote.Length > 0;
+    /// <summary>图表、排行与总表是否显示：实时明细总显示；只有摘要的记录不显示，不以空图代替。</summary>
+    public bool ShowDetailContent => Data.RecordInfo is not { SummaryOnly: true };
+    public bool HasBreakLine => IsRecord && ShowDetailContent && Data.Break is not null;
+    /// <summary>窗口标题栏（任务栏）文字：“记录名称 · 记录明细”。</summary>
+    public string RecordWindowTitle => RecordLabel.Length > 0
+        ? UiText.Pick($"{RecordLabel} · 记录明细", $"{RecordLabel} · 紀錄明細") : UiText.Pick("记录明细", "紀錄明細");
+
+    // ---- 战斗记录卡片打开记录明细：开满时的说明 ----
+
+    private string recordWindowNote = string.Empty;
+    public string RecordWindowNote => recordWindowNote;
+    public bool HasRecordWindowNote => recordWindowNote.Length > 0;
+
+    /// <summary>打开记录明细的结果：开满时写明上限，打开成功时清除说明。</summary>
+    public void SetRecordWindowLimit(bool reached, int maximum)
+    {
+        var text = reached ? UiText.Pick($"最多同时打开 {maximum} 个记录明细", $"最多同時開啟 {maximum} 個紀錄明細") : string.Empty;
+        if (text == recordWindowNote) return;
+        recordWindowNote = text;
+        Raise(nameof(RecordWindowNote)); Raise(nameof(HasRecordWindowNote));
     }
 
     public CombatTimelineView Timeline { get; private set; } = CombatTimelineView.Pending;
@@ -106,12 +147,13 @@ public sealed partial class CombatPageModel
             .Select(row => new BarItem(row.Name, $"{row.Damage} · {row.Share}", row.ShareRatio, row.Name == highlight, row.Tip)).ToList();
         SkillBars.Sync(Rank(Data.Skills, highlighted));
         TargetBars.Sync(Rank(Data.Targets, highlighted));
-        TagBars.Sync([.. Data.Coverage.Concat(Data.Traits ?? []).Select(tile => new BarItem(tile.Name, tile.Percent, tile.Ratio, false, tile.Note))]);
+        TagBars.Sync([.. Data.Coverage.Concat(Data.Traits ?? []).Select(tile => new BarItem(tile.Name, tile.Percent, tile.Ratio, false, tile.Note, tile.Icon))]);
     }
 
     private void RefreshDetail()
     {
-        Timeline = detailOpen ? backend.GetCombatTimeline() ?? CombatTimelineView.Pending : CombatTimelineView.Pending;
+        Timeline = !detailOpen ? CombatTimelineView.Pending
+            : (recordId is { } id ? backend.GetCombatRecordTimeline(id) : backend.GetCombatTimeline()) ?? CombatTimelineView.Pending;
         SyncBars();
     }
 }

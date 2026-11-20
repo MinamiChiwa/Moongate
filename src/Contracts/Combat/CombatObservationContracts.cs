@@ -17,15 +17,55 @@ public enum CombatEffectChangeKind { Apply, Refresh, StackChanged, Remove }
 public sealed record CombatResolvedName(string Kind, UInt64String SheetId, string? Text, string State, string? Reason = null);
 public sealed record CombatBreakGauge(double? Current, UInt64String? Maximum, DateTimeOffset ObservedAt,
     OpenEnum<ObservationQuality> Quality, bool Stale = false, string? Reason = null);
+/// <summary>
+/// 实体 HP。Current、Maximum 为十进制整数字符串；State：read（当前值已读）、unread（当前值未读取）、shared（服务器不下发该实体的血量，
+/// 由同场首领体现）。Reason：combat.healthUnread（缺出现帧或解码信息）、combat.healthUndecryptable（解密失败）、
+/// combat.healthMaximumUnknown（最大值未知）、combat.healthShared。Encrypted 为来源使用加密形态；Updated 为出现后收到过 HP 更新；
+/// Stale 为观测缺口后尚未重新取得的值；这三项与实体的 IsBoss、Dead 只在为真时出现。解密所需的密钥与 IV 不出现在任何公开字段中。
+/// </summary>
+public sealed record CombatEntityHealth(UInt64String? Current, UInt64String? Maximum, DateTimeOffset? ObservedAt, string State,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Reason = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Encrypted = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Updated = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Stale = null);
+/// <summary>
+/// 实体快照。Health、IsBoss、Dead、ActorType、SheetId 为自动体（非玩家）的可选字段：ActorType 为 monster、npc、npc-companion、pet、
+/// summoned-automaton、gimmick、ai-companion、memorial-saga-minion；SheetId 为对应客户端表的 ID（十进制）。旧来源与旧历史为空。
+/// </summary>
 public sealed record CombatEntity(string Id, EntityKey Key, string RawName, string DisplayName,
     OpenEnum<CombatEntityRole> Role, EntityKey? OwnerKey, bool OwnerConfirmed, bool InScope,
     DateTimeOffset LastObservedAt, OpenEnum<ObservationQuality> Quality,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatBreakGauge? BreakGauge = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatResolvedName? ResolvedName = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatResolvedName? ResolvedName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatEntityHealth? Health = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsBoss = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Dead = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ActorType = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UInt64String? SheetId = null);
 public sealed record CombatEntityObservation(EntityKey Key, string RawName, string DisplayName,
     OpenEnum<CombatEntityRole> Role, EntityKey? OwnerKey, bool OwnerConfirmed, bool InScope,
     OpenEnum<ObservationQuality> Quality,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatBreakGauge? BreakGauge = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatBreakGauge? BreakGauge = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatEntityHealth? Health = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsBoss = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Dead = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ActorType = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UInt64String? SheetId = null);
+/// <summary>本机主目标（170739）：Target 为空表示没有目标（线上为 -1）。</summary>
+public sealed record CombatMainTarget(EntityKey? Target, DateTimeOffset ObservedAt, double MonotonicMs);
+/// <summary>
+/// 后端选定的当前攻击目标。Basis：main-target、recent-damage、fallback-main-target、fallback-previous、fallback-boss。
+/// RedirectedFrom 为原目标的实体 ID：原目标的血量由同场首领体现（health.state=shared）时，投影改指该首领。
+/// SelectedAt 为切换到该目标的时刻，ObservedAt 为本次评估的观测时刻。
+/// </summary>
+public sealed record CombatCurrentTarget(string EntityId, EntityKey Key, string DisplayName, string Basis,
+    DateTimeOffset SelectedAt, DateTimeOffset ObservedAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatEntityHealth? Health = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsBoss = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Dead = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatResolvedName? ResolvedName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RedirectedFrom = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ActorType = null);
 /// <summary>
 /// 单条伤害事件。BreakedHit 为游戏内的“无防备”（命中处于破防状态的目标），BreakOccurred 为“破防”（本击造成破防），
 /// MultiHit 为“多重打擊”，AdditionalHit 为“追加打擊”（HitFlags 0x800）。
@@ -79,7 +119,8 @@ public sealed record CombatFrame(int SchemaVersion, ObservationSource Source, st
     IReadOnlyList<CombatEffectObservation> Effects, IReadOnlyList<CombatEffectReconciliation> Reconciliations,
     IReadOnlyList<CombatGapInput> Gaps, bool ObservationResumed = false, bool EncounterEnded = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CombatHealEvent>? Healing = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CombatStateChange>? CombatStates = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CombatStateChange>? CombatStates = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatMainTarget? MainTarget = null);
 
 public sealed record CombatObservationRequest(string GameSessionId, bool DamageEnabled = true,
     bool SelfEffectsEnabled = true, bool MonsterEffectsEnabled = true, bool IncludeOwnedEntities = true,
@@ -168,8 +209,12 @@ public sealed record CombatEncounter(string Id, string Owner, string Observation
 /// <summary>
 /// 不是自动分段的历史记录：<c>timed-measurement</c> 为定时测量的结果，<c>saved-range</c> 为“保存记录”按范围存下的副本。
 /// 自动分段与旧历史为空。Name 为用户起的名称；Source 记录保存时的来源范围。
+/// SavedAt 为“保存记录”的保存时刻；DataIncomplete 为真表示保存时来源在所选范围内带缺口（或来源已标为数据不完整），否则为空。
+/// 两项在旧记录与定时测量的自动结果中为空；这些记录是否不完整看文档的 Gaps。
 /// </summary>
-public sealed record CombatRecordInfo(string Kind, string? Name, CombatMeasurementResult? Measurement, CombatRangeSource? Source);
+public sealed record CombatRecordInfo(string Kind, string? Name, CombatMeasurementResult? Measurement, CombatRangeSource? Source,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? SavedAt = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? DataIncomplete = null);
 /// <summary>保存记录的来源：一个或多个战斗记录及其中的时间范围（相对各记录开始的毫秒）。</summary>
 public sealed record CombatRangeSource(string Scope, IReadOnlyList<string> EncounterIds, double? FromMs, double? ToMs);
 /// <summary>
@@ -199,7 +244,8 @@ public sealed record CombatStorageSummary(int Encounters, UInt64String Bytes, in
     UInt64String ProtectedBytes, bool OverBudget, int RemovedEncounters, UInt64String RemovedBytes);
 public sealed record CombatWorkspace(CombatObservationStatus Observation, CombatEncounter? Encounter,
     IReadOnlyList<CombatEntity> Entities, CombatEntityEffects? SelfEffects, UInt64String Revision,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UInt64String? BoundaryRevision = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UInt64String? BoundaryRevision = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatCurrentTarget? CurrentTarget = null);
 public sealed record CombatSnapshot(string BackendEpoch, string EventCursor, UInt64String ResourceRevision,
     CombatWorkspace? Data, CombatStorageSummary Storage);
 public sealed record CombatEncounterQuery(int PageSize = 25, string? Cursor = null,

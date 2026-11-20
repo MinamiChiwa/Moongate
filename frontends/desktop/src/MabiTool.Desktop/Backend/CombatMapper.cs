@@ -13,13 +13,22 @@ namespace MabiTool.Desktop.Backend;
 /// <param name="Range">后端按范围与目标重新统计的结果；当前分段且不选目标时不查询，直接用分段摘要。</param>
 /// <param name="RangeProblem">范围查询被拒绝时的错误码。</param>
 /// <param name="Measurement">定时测量状态；<paramref name="MeasurementAt"/> 是读取时的 Stopwatch 时刻。</param>
+/// <param name="TargetEffectsAt">读取怪物效果的本机 Stopwatch 时刻；怪物效果与快照分开读取，剩余时间各按自己的读取时刻递减。为 0 时沿用 <paramref name="EffectsAt"/>。</param>
 /// <param name="TargetEffects">怪物效果区当前效果目标（<see cref="CombatMapper.EffectTargetId"/>）的效果；没有或读取失败时为空。</param>
 /// <param name="EffectProblem">读取效果目标的效果被拒绝时的错误码（例如 combat.entityOutOfScope）。</param>
+/// <param name="HealthUnavailable">能力 combat.health.monster 不可用时的说明（“暂不可用：原因”）；可用或未知时为空。</param>
 public sealed record CombatBackendState(bool Connected, bool Bound, CombatWorkspace? Workspace,
     IReadOnlyList<CombatEncounter> History, CombatEntityEffects? TargetEffects, string? EffectProblem,
     IReadOnlyList<CombatEffectCoverage> Coverage, IReadOnlyList<CombatDamageEvent>? FirstAttacks = null,
     string Scope = "segment", string? RangeTarget = null, CombatRangeSummary? Range = null, string? RangeProblem = null,
-    CombatMeasurementState? Measurement = null, long MeasurementAt = 0, long EffectsAt = 0);
+    CombatMeasurementState? Measurement = null, long MeasurementAt = 0, long EffectsAt = 0, long TargetEffectsAt = 0,
+    string? HealthUnavailable = null);
+
+/// <summary>记录明细窗口的后端状态：记录文档、窗口里的目标筛选、按该记录读取的范围汇总及读取失败的错误码。</summary>
+/// <param name="Loaded">这条记录已读取过一次（成功或得到错误码）。</param>
+/// <param name="Unsupported">后端不提供记录明细。</param>
+public sealed record CombatRecordState(bool Connected, string Id, CombatEncounter? Record, string? Target, CombatRangeSummary? Range,
+    string? Problem, bool Loaded = true, bool Unsupported = false);
 
 /// <summary>
 /// 把后端战斗契约排成页面数据。数值、比率分母和可用性都取自契约字段；
@@ -84,7 +93,7 @@ public static class CombatMapper
             Effects(workspace?.SelfEffects, entities, local, state.Coverage, EffectsAt(state), "self"),
             EffectChips(ordered, monsters, effectTarget),
             Effects(selected is not null && state.TargetEffects?.Snapshot.EntityKey == selected.Key ? state.TargetEffects : null,
-                entities, local, state.Coverage, EffectsAt(state), selected?.Id ?? string.Empty),
+                entities, local, state.Coverage, state.TargetEffectsAt != 0 ? state.TargetEffectsAt : EffectsAt(state), selected?.Id ?? string.Empty),
             state.History.Select(History).ToList(),
             new(state.Connected && state.Bound && !observing, observing, observing && encounter is { Summary.Final: false },
                 observing && encounter is { Summary.Final: false }, observing && encounter is not null, state.Connected),
@@ -107,8 +116,118 @@ public static class CombatMapper
             DefaultRecordName(scope, shown))
         {
             TargetEffectsNote = EffectNote(state, ordered, effectTarget, selected),
-            TagIds = ShownTagIds(groups)
+            TagIds = ShownTagIds(groups),
+            Health = observing ? Health(workspace!.CurrentTarget, state.HealthUnavailable) : null,
+            HealthIdle = observing && state.HealthUnavailable is null && workspace!.CurrentTarget is null
         };
+    }
+
+    /// <summary>
+    /// 当前攻击目标的血量：目标、切换与清空都取后端 currentTarget，这里只排版。能力停用时只给停用说明；没有当前目标时为空。
+    /// 百分比与槽的比例按 BigInteger 计算（Int64 范围不经 double 除法）：百分比为 当前×1000/最大 四舍五入到千分位，写成一位小数；
+    /// 未读取、最大值未知与血量由首领体现时不给比例，不写 0。
+    /// </summary>
+    public static TargetHealthView? Health(CombatCurrentTarget? target, string? unavailable)
+    {
+        if (unavailable is not null)
+            return TargetHealthView.Unavailable(Localization.CodeText.Capability(CapabilityIds.MonsterHealth) + unavailable);
+        if (target is null) return null;
+        var name = CombatNames.Of(target.ResolvedName, CombatNameKind.Target, target.DisplayName, target.EntityId,
+            target.Key.RawInstanceId.ToString());
+        var health = target.Health;
+        var dead = target.Dead == true;
+        BigInteger? current = health?.Current?.Value, maximum = health?.Maximum is { Value: > 0 } max ? max.Value : null;
+        TargetHealthView View(string percent, string value, double fill, HealthTone tone, string tip = "") =>
+            new(target.EntityId, name.Text, name.Tip, percent, value, fill, tone)
+            {
+                Boss = target.IsBoss == true, Redirected = target.RedirectedFrom is not null, Stale = health?.Stale == true, Tip = tip
+            };
+        var reason = health?.Reason is { Length: > 0 } code ? HealthReason(code) : string.Empty;
+        if (dead && maximum is { } top) return View(PercentTenths(0), $"0 / {Number(top)}", 0, HealthTone.Low, reason);
+        if (dead) return View(PercentTenths(0), "0", 0, HealthTone.Low, reason);
+        if (health is { State: "shared" })
+            return View(Dash, Pick("血量由首领体现", "血量由首領體現"), 0, HealthTone.Empty, HealthReason("combat.healthShared"));
+        if (health is not { State: "read" } || current is not { } now)
+            return View(Dash, Pick("未读取", "未讀取"), 0, HealthTone.Empty, reason.Length > 0 ? reason : HealthReason("combat.healthUnread"));
+        if (maximum is not { } whole)
+            return View(Pick("最大值未知", "最大值未知"), Number(now), 0, HealthTone.Empty, HealthReason("combat.healthMaximumUnknown"));
+        var left = BigInteger.Clamp(now, BigInteger.Zero, whole);
+        var tenths = (int)((left * 2000 + whole) / (whole * 2));
+        var fill = (double)(left * 1_000_000 / whole) / 1_000_000;
+        // 警示色按精确比例判断（剩余不超过 30%），不受百分比的舍入影响。
+        return View(PercentTenths(tenths), $"{Number(left)} / {Number(whole)}", fill, left * 10 <= whole * 3 ? HealthTone.Low : HealthTone.Normal, reason);
+    }
+
+    // 千分位整数写成一位小数的百分比：“10.0%”。
+    private static string PercentTenths(int tenths) => $"{tenths / 10}.{tenths % 10}%";
+
+    /// <summary>血量原因码的悬停说明。</summary>
+    public static string HealthReason(string code) => code switch
+    {
+        "combat.healthUnread" => Pick("未读取到血量：需要重新进入怪物视野", "未讀取到血量：需要重新進入怪物視野"),
+        "combat.healthUndecryptable" => Pick("最近的血量数据无法解开", "最近的血量資料無法解開"),
+        "combat.healthMaximumUnknown" => Pick("最大血量未知：怪物出现时没有观测到", "最大血量未知：怪物出現時沒有觀測到"),
+        "combat.healthShared" => Pick("这个目标不单独下发血量，由同场首领体现", "這個目標不單獨下發血量，由同場首領體現"),
+        var other => Localization.CodeText.Reason(other)
+    };
+
+    /// <summary>只有摘要、没有技能分组的记录（有伤害合计却没有分组）：没有可显示的明细。</summary>
+    public static bool SummaryOnly(CombatEncounter record) => record.Skills.Count == 0 && !record.Summary.AttributedDamage.Value.IsZero;
+
+    /// <summary>
+    /// 记录明细窗口的数据：范围固定为这条记录（与查看定时测量结果同一套映射，取按记录读取的范围汇总），不显示范围切换与范围标题；
+    /// 只有摘要的记录只给出主数据并写明没有明细；还没读到或读取失败时写明原因，不给出数值。
+    /// </summary>
+    public static CombatPageData MapRecord(CombatRecordState state)
+    {
+        var record = state.Record ?? state.Range?.Result;
+        var summaryOnly = state.Record is { } stored && SummaryOnly(stored);
+        var scope = "measurement:" + state.Id;
+        var data = Map(new(state.Connected, false, null, [], null, null, [], null, scope, summaryOnly ? null : state.Target,
+            summaryOnly ? null : state.Range, summaryOnly ? null : state.Problem));
+        var problem = summaryOnly ? string.Empty
+            : state.Unsupported ? Pick("后端不提供记录明细", "後端不提供紀錄明細")
+            : !state.Connected && state.Range is null ? Pick("未连接后端", "未連接後端")
+            : !state.Loaded ? Pick("正在读取记录…", "正在讀取紀錄…")
+            : data.Scope?.Problem ?? string.Empty;
+        if (summaryOnly) data = data with { Kpis = Kpis(null, state.Record, false, state.Record!.Record?.Measurement, null, false) };
+        return data with
+        {
+            Scope = (data.Scope ?? new(CombatScopeKind.Measurement, string.Empty, [], string.Empty, string.Empty)) with
+                { Title = string.Empty, TitleTip = string.Empty, Measurements = [], Problem = problem },
+            SelectedScope = scope, SelectedTarget = summaryOnly ? null : state.Target,
+            // 刚换目标、新目标的结果还没到：窗口保留上一次的数值，只移动选中标记。
+            Pending = !summaryOnly && state.Range is { } shown && shown.TargetId != state.Target,
+            RecordInfo = RecordHeaderOf(record, summaryOnly)
+        };
+    }
+
+    private static RecordHeader RecordHeaderOf(CombatEncounter? value, bool summaryOnly)
+    {
+        if (value is null) return new(string.Empty, string.Empty, false, false, string.Empty);
+        static string Time(DateTimeOffset at) => at.ToLocalTime().ToString("MM/dd HH:mm", CultureInfo.InvariantCulture);
+        var name = value.Record is not null ? RecordLabel(value)
+            : SegmentText(value.Segment, value.Summary) is { Length: > 0 } segment ? segment : Time(value.StartedAt);
+        var when = value.Record?.SavedAt is { } saved ? Pick($"保存于 {Time(saved)}", $"儲存於 {Time(saved)}")
+            : Pick($"开始于 {Time(value.StartedAt)}", $"開始於 {Time(value.StartedAt)}");
+        var incomplete = DataIncomplete(value);
+        return new(name, when, incomplete, summaryOnly,
+            summaryOnly ? Pick("这条记录保存于旧版本，没有明细", "這筆紀錄儲存於舊版本，沒有明細") : string.Empty)
+            { GapNote = incomplete ? GapNote(value.Gaps) : string.Empty };
+    }
+
+    /// <summary>记录是否数据不完整：保存时标为不完整，或文档里带缺口（自动分段与定时测量看缺口）。</summary>
+    public static bool DataIncomplete(CombatEncounter value) => value.Record?.DataIncomplete == true || value.Gaps.Count > 0;
+
+    // 缺口的影响与时段（相对记录开始，至多列 3 段）；曲线控件不画缺口，时段写在这句里。
+    private static string GapNote(IReadOnlyList<CombatGap> gaps)
+    {
+        var spans = gaps.Select(gap => (gap.FromMs, gap.ToMs)).Distinct().OrderBy(span => span.FromMs).ToList();
+        var parts = spans.Take(3).Select(span => span.ToMs is { } to && to > span.FromMs
+            ? $"{Clock(span.FromMs)}–{Clock(to)}" : Pick($"{Clock(span.FromMs)} 起", $"{Clock(span.FromMs)} 起")).ToList();
+        var more = spans.Count > 3 ? Pick($" 等 {spans.Count} 处", $" 等 {spans.Count} 處") : string.Empty;
+        var where = parts.Count == 0 ? string.Empty : Pick($"（{string.Join("、", parts)}{more}）", $"（{string.Join("、", parts)}{more}）");
+        return Pick("抓包期间有数据缺失，数值可能偏低", "抓包期間有資料缺失，數值可能偏低") + where;
     }
 
     /// <summary>
@@ -119,6 +238,19 @@ public static class CombatMapper
         Func<CombatDamageGroup, UInt64String?> Eligible, Func<CombatDamageGroup, DamageAmountString?> Damage)
     {
         public string Name => Pick(Hans, Hant);
+
+        /// <summary>客户端属性图标的键；首击、普攻、追加打击没有图标，为空。</summary>
+        public string? Icon => Id switch
+        {
+            "critical" => ClientIconNames.Critical,
+            "powerful" => ClientIconNames.PowerfulHit,
+            "rapid" => ClientIconNames.RapidHit,
+            "double" => ClientIconNames.DoubleHit,
+            "breaked" => ClientIconNames.BreakedHit,
+            "break" => ClientIconNames.BreakOccurred,
+            "multi" => ClientIconNames.MultiHit,
+            _ => Kind == 2 ? ClientIconNames.Element(Id) : null
+        };
     }
 
     private static UInt64String? Element(CombatDamageGroup group, Func<CombatDamageElementCounts, UInt64String> pick) =>
@@ -699,24 +831,24 @@ public static class CombatMapper
                 || group.DefaultAttackCount is not null || group.MultiHitCount is not null || group.AdditionalHitCount is not null))
             return [];
 
-        CoverageTile Tile(string name, Func<CombatDamageGroup, UInt64String?> count)
+        CoverageTile Tile(string name, Func<CombatDamageGroup, UInt64String?> count, string? icon = null)
         {
             var rows = skills.Where(group => count(group) is not null).ToList();
-            if (rows.Count == 0) return new(name, Dash, 0, NotApplicable());
+            if (rows.Count == 0) return new(name, Dash, 0, NotApplicable(), icon);
             var hit = rows.Aggregate(0UL, (total, group) => total + count(group)!.Value.Value);
             var all = rows.Aggregate(0UL, (total, group) => total + group.EventCount.Value);
-            if (all == 0) return new(name, Dash, 0, NotApplicable());
+            if (all == 0) return new(name, Dash, 0, NotApplicable(), icon);
             var ratio = (double)hit / all;
-            return new(name, Percent(ratio), ratio, $"{Number(hit)} / {Number(all)} {Pick("次", "次")}");
+            return new(name, Percent(ratio), ratio, $"{Number(hit)} / {Number(all)} {Pick("次", "次")}", icon);
         }
 
         return
         [
-            Tile(Pick("无防备", "無防備"), group => group.BreakedHitCount),
-            Tile(Pick("破防", "破防"), group => group.BreakOccurredCount),
+            Tile(ClientIconNames.Name(ClientIconNames.BreakedHit), group => group.BreakedHitCount, ClientIconNames.BreakedHit),
+            Tile(ClientIconNames.Name(ClientIconNames.BreakOccurred), group => group.BreakOccurredCount, ClientIconNames.BreakOccurred),
 
             Tile(Pick("普通攻击", "普通攻擊"), group => group.DefaultAttackCount),
-            Tile(Pick("多重打击", "多重打擊"), group => group.MultiHitCount),
+            Tile(ClientIconNames.Name(ClientIconNames.MultiHit), group => group.MultiHitCount, ClientIconNames.MultiHit),
             Tile(Pick("追加打击", "追加打擊"), group => group.AdditionalHitCount)
         ];
     }
@@ -734,7 +866,7 @@ public static class CombatMapper
             .ToList();
         if (all == 0 || totals.Count == 0) return new([]);
         return new(totals.Select(item => new ElementPart($"{ElementName(item.Key)} {Percent((double)item.Count / all)}",
-            item.Count, ElementColor(item.Key))).ToList());
+            item.Count, ElementColor(item.Key), ElementName(item.Key), Percent((double)item.Count / all), ClientIconNames.Element(item.Key))).ToList());
     }
 
     private static string Status(CombatBackendState state, bool observing)
@@ -828,23 +960,24 @@ public static class CombatMapper
     private static IReadOnlyList<CoverageTile> Coverage(IReadOnlyList<CombatDamageGroup> skills)
     {
         // 分母使用后端给出的可计入次数：暴击用 criticalEligibleCount，其余三项用 mainHitEligibleCount。
-        CoverageTile Tile(string name, Func<CombatDamageGroup, UInt64String?> count,
+        CoverageTile Tile(string icon, Func<CombatDamageGroup, UInt64String?> count,
             Func<CombatDamageGroup, UInt64String?> eligible)
         {
+            var name = ClientIconNames.Name(icon);
             var rows = skills.Where(group => count(group) is not null && (eligible(group) ?? group.HitCount) is not null).ToList();
-            if (rows.Count == 0) return new(name, Dash, 0, Pick("不适用", "不適用"));
+            if (rows.Count == 0) return new(name, Dash, 0, Pick("不适用", "不適用"), icon);
             var hit = rows.Aggregate(0UL, (total, group) => total + count(group)!.Value.Value);
             var all = rows.Aggregate(0UL, (total, group) => total + (eligible(group) ?? group.HitCount)!.Value.Value);
             var ratio = all == 0 ? 0 : (double)hit / all;
-            return new(name, all == 0 ? Dash : Percent(ratio), ratio, $"{Number(hit)} / {Number(all)} {Pick("次", "次")}");
+            return new(name, all == 0 ? Dash : Percent(ratio), ratio, $"{Number(hit)} / {Number(all)} {Pick("次", "次")}", icon);
         }
 
         return
         [
-            Tile(Pick("暴击", "暴擊"), group => group.CriticalCount, group => group.CriticalEligibleCount),
-            Tile(Pick("强击", "強擊"), group => group.PowerfulHitCount, group => group.MainHitEligibleCount),
-            Tile(Pick("连击", "連擊"), group => group.RapidHitCount, group => group.MainHitEligibleCount),
-            Tile(Pick("追击", "追擊"), group => group.DoubleHitCount, group => group.MainHitEligibleCount)
+            Tile(ClientIconNames.Critical, group => group.CriticalCount, group => group.CriticalEligibleCount),
+            Tile(ClientIconNames.PowerfulHit, group => group.PowerfulHitCount, group => group.MainHitEligibleCount),
+            Tile(ClientIconNames.RapidHit, group => group.RapidHitCount, group => group.MainHitEligibleCount),
+            Tile(ClientIconNames.DoubleHit, group => group.DoubleHitCount, group => group.MainHitEligibleCount)
         ];
     }
 
@@ -1014,7 +1147,7 @@ public static class CombatMapper
             Clock(encounter.Summary.DurationMs),
             (encounter.Record?.Measurement?.Dps ?? encounter.Summary.EncounterDps) is { } dps ? $"DPS {Number(dps)}" : Pick("DPS 未知", "DPS 未知"),
             Quality(encounter.Summary.Quality, encounter.Summary.Reasons), encounter.Favorite, SegmentText(encounter.Segment, encounter.Summary),
-            encounter.Record is null ? string.Empty : RecordLabel(encounter));
+            encounter.Record is null ? string.Empty : RecordLabel(encounter), DataIncomplete(encounter));
     }
 
     // 旧记录没有分段，返回空串，页面不显示这一项。

@@ -210,6 +210,7 @@ pwsh -NoProfile -File .\scripts\build\publish-backend.ps1 -Version 0.1.0 -Channe
   python scripts/maintenance/clean-artifacts.py --apply  # 回收，跳过 2 小时内的写入
   ```
 
+- **游戏客户端美术不进仓库**：战斗属性图标等游戏美术属于游戏的版权资源，仓库、测试夹具、文档与发行包都不包含从客户端导出的图片或其字节。工具在运行时从用户本机已安装的客户端读取图标、解码为 PNG，缓存在工具根的数据根 `cache/game-access/client-icons` 内；测试用代码合成的最小资源包与纹理块。公开导出的自检会阻断未登记的图片与 Unity 资源文件，以及路径带客户端资源目录或图标命名的文件。
 - `scripts/maintenance/source-baselines.json` 登记移植来源的固定提交、文件哈希与功能映射，`python scripts/maintenance/check-source-baselines.py` 检查其结构；带 `--source <ID>=<检出目录>` 时核对对应上游仓库的固定 Git 对象。
 
 ## 10. 来源与许可

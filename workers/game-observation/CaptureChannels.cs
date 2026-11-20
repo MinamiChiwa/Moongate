@@ -153,9 +153,9 @@ internal static partial class CaptureChannels
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] private static extern int pcap_init(uint options, StringBuilder error);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] private static extern int pcap_findalldevs(out nint head, StringBuilder error);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] private static extern void pcap_freealldevs(nint head);
-    private static nint OpenConfigured(string name, StringBuilder error, int bufferBytes = NativeCaptureBoundary.BufferBytes) => NativeCaptureBoundary.OpenConfigured(
-        () => pcap_create(name, error), pcap_set_snaplen, pcap_set_buffer_size, pcap_set_promisc,
-        pcap_set_timeout, pcap_activate, pcap_close, bufferBytes: bufferBytes);
+    private static nint OpenConfigured(string name, StringBuilder error, int bufferBytes = NativeCaptureBoundary.BufferBytes, Func<nint, int>? immediate = null) =>
+        NativeCaptureBoundary.OpenConfigured(() => pcap_create(name, error), pcap_set_snaplen, pcap_set_buffer_size, pcap_set_promisc,
+            pcap_set_timeout, pcap_activate, pcap_close, bufferBytes: bufferBytes, immediate: immediate);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] private static extern nint pcap_create([MarshalAs(UnmanagedType.LPUTF8Str)] string name, StringBuilder error);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] private static extern int pcap_set_snaplen(nint handle, int value);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] private static extern int pcap_set_buffer_size(nint handle, int value);

@@ -759,7 +759,7 @@ public sealed class DyeingTests
         Assert.False(GameWindowActivation.Unbound.Missed);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void StartBlockerNamesTheFirstMissingPrecondition()
     {
         CapabilitySnapshot Capability(CapabilityStatus status, string reason) => new("color.search", "color", status, null, null, null, null,
@@ -786,7 +786,8 @@ public sealed class DyeingTests
         Assert.False(CaptureExclusion.Overlaps(new(0, 0, 1920, 1080), game));      // 主屏上的主窗口
     }
 
-    [Fact]
+    // 文案随界面语言变化：断言界面文字的用例放在界面线程上，与切换语言的用例依次执行，不在线程池上并行读到别的语言。
+    [AvaloniaFact]
     public void RunStatusNamesEveryStageAndExplainsEachEnding()
     {
         var session = new GameSession("s", "TW", 1, DateTimeOffset.UnixEpoch, new(500), new(1), null);
