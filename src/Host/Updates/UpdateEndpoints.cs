@@ -26,20 +26,25 @@ internal sealed class UpdateApiService(PortableInstallation? installation, IUpda
             catch (Exception error) when (error is OperationException or UpdatePackageException or IOException) { }
         }
         var resumable = plan is null ? null : UpdateRetention.ResumableBytes(installation!.ToolRoot, plan);
-        // 下载方式与大小：后台比对的结果优先；还没算出且计划能分段时两者都为空，界面不写大小。
+        var lastDownload = plan is null ? null : operations.LatestUpdate("update.download");
+        var actualDownload = lastDownload is { Result: { ValueKind: JsonValueKind.Object } payload } &&
+            lastDownload.ResourceRefs.Any(item => item.Id == plan!.PlanId) &&
+            payload.Deserialize<UpdateDownloadStatus>(ContractJson.Options) is { DownloadKind: "incremental" or "full" } actual ? actual : null;
+        // 实际下载结果优先于后台估算；下载尚未开始且未算出时不写方式与大小。
         var estimate = plan is null ? null : UpdatePlanStore.ReadEstimate(installation!.ToolRoot, plan.PlanId);
-        var kind = estimate?.DownloadKind ?? (plan?.Ranges is null ? result?.DownloadKind ?? "full" : null);
-        var downloadBytes = estimate?.DownloadBytes ?? (plan?.Ranges is null ? result?.DownloadBytes ?? plan?.AssetLength : null);
+        var kind = actualDownload?.DownloadKind ?? estimate?.DownloadKind ?? (plan?.Ranges is null ? result?.DownloadKind ?? "full" : null);
+        var estimatedBytes = estimate?.DownloadBytes ?? (plan?.Ranges is null ? result?.DownloadBytes ?? plan?.AssetLength : null);
+        UInt64String? downloadBytes = actualDownload is not null ? actualDownload.TotalBytes ?? actualDownload.RequiredDownloadBytes
+            : estimatedBytes is { } bytes ? new((ulong)bytes) : null;
         var available = plan is not null
             ? new UpdateAvailable(result!.ReleaseId, result.ManifestSha256, result.PlanId, result.PlanExpiresAt, result.Source,
                 result.SizeBytes is { } size ? new((ulong)size) : null, kind,
-                downloadBytes is { } download ? new((ulong)download) : null, resumable is { } part ? new((ulong)part) : null) : null;
+                downloadBytes, resumable is { } part ? new((ulong)part) : null, actualDownload?.FallbackReason) : null;
         var last = installation is null ? null : UpdateResult.Read(installation.ToolRoot);
         var lastInstall = last is null ? null : new UpdateInstallResult(last.TransactionId, last.TransactionId, last.ToVersion, last.Outcome,
             null, last.Reason, last.FromVersion, new DateTimeOffset(DateTime.SpecifyKind(last.At, DateTimeKind.Utc)));
         var running = operation is not null && !SqliteStore.IsTerminal(operation.State.KnownValue);
         // 下载完成且计划仍可用时为 ready（可安装）：取这份计划最近一次下载的结果，之后的检查沿用同一计划时不受影响。
-        var lastDownload = available is null ? null : operations.LatestUpdate("update.download");
         var staged = lastDownload is { Phase: "staged" } && lastDownload.ResourceRefs.Any(item => item.Id == available!.PlanId);
         var phase = running ? operation!.Phase : staged ? "ready" :
             operation?.Phase == "handedOff" && last?.OperationId != operation.Id ? "handedOff" : available is not null ? "available" : "idle";

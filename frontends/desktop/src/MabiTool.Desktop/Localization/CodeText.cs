@@ -616,6 +616,7 @@ public static class CodeText
         ("update.manifestInvalid", "文件清单无效", "檔案清單無效"),
         ("update.deltaInvalid", "增量包无效", "增量包無效"),
         ("update.deltaIncomplete", "增量包缺少文件", "增量包缺少檔案"),
+        ("update.rangeUnsupported", "服务器不支持分段下载", "伺服器不支援分段下載"),
         ("update.targetTreeMismatch", "更新文件校验失败", "更新檔案校驗失敗"),
         ("update.releaseAssetMissing", "缺少更新包", "缺少更新包"),
         ("update.sourceUnavailable", "更新来源不可用", "更新來源不可用"),

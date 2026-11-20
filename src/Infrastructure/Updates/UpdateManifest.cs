@@ -172,11 +172,14 @@ public static class DeltaUpdate
                 token.ThrowIfCancellationRequested();
                 var output = UpdatePaths.Local(target, file.Path);
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-                if (sources.TryGetValue(file.Sha256, out var source) && await CopyVerifiedAsync(source, output, file, budget, token).ConfigureAwait(false))
-                    continue;
-                await using var input = content(file) ?? throw new UpdatePackageException("update.deltaIncomplete", file.Path);
-                if (!await WriteVerifiedAsync(input, output, file, budget, token).ConfigureAwait(false))
-                    throw new UpdatePackageException("update.assetHashMismatch", file.Path);
+                if (!sources.TryGetValue(file.Sha256, out var source) || !await CopyVerifiedAsync(source, output, file, budget, token).ConfigureAwait(false))
+                {
+                    await using var input = content(file) ?? throw new UpdatePackageException("update.deltaIncomplete", file.Path);
+                    if (!await WriteVerifiedAsync(input, output, file, budget, token).ConfigureAwait(false))
+                        throw new UpdatePackageException("update.assetHashMismatch", file.Path);
+                }
+                // 区间按内容去重；已校验的目标可供其他路径上的相同内容复用。
+                sources[file.Sha256] = output;
             }
             await VerifyTreeAsync(target, manifest, budget, token).ConfigureAwait(false);
             ReleaseIdentity? identity;

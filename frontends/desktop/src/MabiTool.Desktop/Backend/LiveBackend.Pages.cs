@@ -322,6 +322,8 @@ public sealed partial class LiveBackend
                 _ => ""
             })
             : update.Configured ? Pick("没有", "沒有") : notApplicable;
+        if (update.Available?.FallbackReason is { } fallback)
+            available += Pick(" · 增量失败：", " · 增量失敗：") + Localization.CodeText.Reason(fallback);
         var progress = notApplicable;
         if (update.Operation is { Kind: "update.download", Result: { ValueKind: System.Text.Json.JsonValueKind.Object } result } &&
             result.TryGetProperty("verifiedBytes", out var verified) && ulong.TryParse(verified.GetString(), out var done) &&

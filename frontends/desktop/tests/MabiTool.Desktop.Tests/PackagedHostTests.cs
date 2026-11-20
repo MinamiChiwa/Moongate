@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia.Headless.XUnit;
 using MabiTool.Desktop.Infrastructure;
 using MabiTool.ModuleSdk;
@@ -87,6 +88,68 @@ public sealed class PackagedHostTests
         var second = PackagedHost.AfterExit(-1, TimeSpan.FromMinutes(5), relaunched: true);
         Assert.False(second.Relaunch);
         Assert.Contains("Moongate", second.Problem);
+    }
+
+    [AvaloniaFact]
+    public async Task HostExitDuringUpdateDoesNotWaitForAnInheritedErrorPipe()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"))
+        {
+            UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
+            RedirectStandardInput = true, RedirectStandardError = true
+        };
+        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-Command" }) start.ArgumentList.Add(argument);
+        start.ArgumentList.Add("""
+            $childStart = [System.Diagnostics.ProcessStartInfo]::new($env:ComSpec)
+            $childStart.Arguments = '/d /c "ping -n 30 127.0.0.1 >nul"'
+            $childStart.UseShellExecute = $false
+            $childStart.CreateNoWindow = $true
+            $childStart.WindowStyle = 'Hidden'
+            $child = [System.Diagnostics.Process]::Start($childStart)
+            [Console]::Error.WriteLine('child:' + $child.Id)
+            [Console]::In.ReadLine() | Out-Null
+            """);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ready = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var parent = new Process { StartInfo = start };
+        parent.ErrorDataReceived += (_, line) =>
+        {
+            if (line.Data is { } text && text.StartsWith("child:", StringComparison.Ordinal) && int.TryParse(text[6..], out var id)) ready.TrySetResult(id);
+        };
+        Process? holder = null;
+        var started = false;
+        try
+        {
+            started = parent.Start();
+            Assert.True(started);
+            parent.BeginErrorReadLine();
+            holder = Process.GetProcessById(await ready.Task.WaitAsync(stop.Token));
+            using (var cancelled = new CancellationTokenSource())
+            {
+                var waiting = PackagedHost.WaitForHostExitAsync(parent, () => true, cancelled.Token);
+                cancelled.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+            }
+            var updating = PackagedHost.WaitForHostExitAsync(parent, () => true, stop.Token);
+            var ordinary = PackagedHost.WaitForHostExitAsync(parent, () => false, stop.Token);
+            await parent.StandardInput.WriteLineAsync("exit");
+            await parent.StandardInput.FlushAsync();
+            await updating.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(parent.HasExited);
+            Assert.False(holder.HasExited);
+            Assert.False(ordinary.IsCompleted);
+            holder.Kill(entireProcessTree: true);
+            await holder.WaitForExitAsync(stop.Token);
+            await ordinary.WaitAsync(stop.Token);
+        }
+        finally
+        {
+            stop.Cancel();
+            if (holder is { HasExited: false }) { holder.Kill(entireProcessTree: true); await holder.WaitForExitAsync(); }
+            if (started && !parent.HasExited) { parent.Kill(entireProcessTree: true); await parent.WaitForExitAsync(); }
+            holder?.Dispose();
+        }
     }
 
     [AvaloniaFact]

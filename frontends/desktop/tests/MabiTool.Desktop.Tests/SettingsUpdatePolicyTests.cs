@@ -388,4 +388,28 @@ public sealed class SettingsUpdatePolicyTests
         var failed = never with { LastCheck = new(DateTimeOffset.UtcNow, "failed", "update.githubUnreachable") };
         Assert.Equal(UiText.Pick("检查失败：连不上 GitHub", "檢查失敗：連不上 GitHub"), State(failed));
     }
+
+    [AvaloniaFact]
+    public void UpdateCardShowsActualFullDownloadAndFallbackReason()
+    {
+        var policy = new UpdatePolicySnapshot(new UpdatePolicy(), new UInt64String(0));
+        var available = new UpdateAvailable("0.1.6", new string('a', 64), "plan", DateTimeOffset.UtcNow.AddDays(7), UpdateSourceKind.GithubDirect,
+            DownloadKind: "full", DownloadBytes: new UInt64String(170UL * Megabyte), FallbackReason: "update.rangeUnsupported");
+        var update = new UpdateStateSnapshot(true, "ready", "0.1.5", policy, null, available);
+        var language = UiText.Language;
+        try
+        {
+            foreach (var selected in Enum.GetValues<UiLanguage>())
+            {
+                UiText.Apply(Application.Current!, selected);
+                var rows = LiveBackend.UpdateRows(update);
+                Assert.Equal(6, rows.Count);
+                Assert.Equal(selected == UiLanguage.SimplifiedChinese
+                        ? "0.1.6（完整下载 170.0 MB） · 增量失败：服务器不支持分段下载"
+                        : "0.1.6（完整下載 170.0 MB） · 增量失敗：伺服器不支援分段下載",
+                    rows.Single(row => row.Label == UiText.Pick("可用更新", "可用更新")).Value);
+            }
+        }
+        finally { UiText.Apply(Application.Current!, language); }
+    }
 }

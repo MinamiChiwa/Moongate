@@ -138,6 +138,8 @@ public sealed class PortableUpdateTests : IDisposable
         // 下载只对完整包发单区间 Range 请求，请求的区间正是合并后的区间，按策略的并发（出厂 2）同时请求，下载字节等于区间之和；相同文件取自本机。
         var status = await service.DownloadAsync(plan, (_, _, _) => Task.CompletedTask);
         Assert.Equal((2, missing.Length), (status.ReusedFiles, status.DownloadedFiles));
+        Assert.Equal("incremental", status.DownloadKind);
+        Assert.Null(status.FallbackReason);
         Assert.All(release.DownloadRequests, request => Assert.NotNull(request.Headers.Range));
         Assert.Equal(segments.Select(segment => (segment.Start, segment.End - 1)).Order(),
             release.DownloadRequests.Select(request => (request.Headers.Range!.Ranges.Single().From!.Value, request.Headers.Range.Ranges.Single().To!.Value)).Order());
@@ -146,6 +148,9 @@ public sealed class PortableUpdateTests : IDisposable
         Assert.True(release.ServedBytes < release.Full.Length * DeltaUpdate.FullPackageShare);
         var staged = UpdateLayout.StagedPackage(installation.ToolRoot, plan.PlanId);
         Assert.Equal("added", File.ReadAllText(Path.Combine(staged, "components", "core", "added.dll")));
+        Assert.Equal("added", File.ReadAllText(Path.Combine(staged, "components", "core", "z-added-copy.dll")));
+        var duplicate = manifest.Files.Single(file => file.Path == "components/core/z-added-copy.dll");
+        Assert.DoesNotContain(segments, segment => duplicate.DataOffset >= segment.Start && duplicate.DataOffset + duplicate.CompressedSize <= segment.End);
         Assert.False(File.Exists(Path.Combine(staged, "components", "core", "stale.dll")));
         Assert.Null(ReleaseIdentity.Read(staged)!.Verify(staged));
         Assert.Empty(Directory.EnumerateFiles(UpdateLayout.Downloads(installation.ToolRoot)));
@@ -174,6 +179,7 @@ public sealed class PortableUpdateTests : IDisposable
             Assert.NotNull(plan.Ranges);
             var status = await service.DownloadAsync(plan, (_, _, _) => Task.CompletedTask);
             Assert.Equal((ulong)ignored.Full.Length, status.TotalBytes!.Value.Value);
+            Assert.Equal(("full", "update.rangeUnsupported"), (status.DownloadKind, status.FallbackReason));
             Assert.Contains(ignored.DownloadRequests, request => request.Headers.Range is null);
             Assert.Equal("0.1.2", ReleaseIdentity.Read(UpdateLayout.StagedPackage(installation.ToolRoot, plan.PlanId))!.DisplayVersion);
         }
@@ -210,6 +216,66 @@ public sealed class PortableUpdateTests : IDisposable
         installation = new PortableInstallation(legacy.Installed, ToolRoot(legacy.Installed), ReleaseIdentity.Read(legacy.Installed)!);
         using (var source = new GitHubReleaseSource(legacy.Handler(), retryCount: 0))
             Assert.Equal("full", (await Service(installation, source, legacy.Handler).CheckAsync(CancellationToken.None)).DownloadKind);
+    }
+
+    [Fact]
+    public async Task FullDownloadFallbackOverridesEstimatesAndSurvivesCheckAndStageReuse()
+    {
+        var release = DeltaRelease(rangeIgnored: true);
+        var installation = new PortableInstallation(release.Installed, ToolRoot(release.Installed), ReleaseIdentity.Read(release.Installed)!);
+        var storage = new StorageOptions(Path.Combine(installation.ToolRoot, "bootstrap"), true, DataRoot: Path.Combine(installation.ToolRoot, "data"));
+        var clock = new ManualClock();
+        using var lease = DataRootLease.Open(storage);
+        await using var database = SqliteStore.Open(lease, UpdatePolicyStore.Migrations);
+        var operations = new OperationStore(database, clock);
+        var policy = new UpdatePolicyStore(database, clock);
+        using var source = new GitHubReleaseSource(release.Handler(), retryCount: 0);
+        var service = Service(installation, source, release.Handler, operations: operations);
+        var api = new UpdateApiService(installation, service, operations, policy, clock);
+
+        async Task Check(string key)
+        {
+            clock.Now += TimeSpan.FromSeconds(1);
+            var admission = await operations.AdmitUpdateAsync("owner", UpdateAction.Check, null, key);
+            await operations.BeginUpdateAsync(admission.Snapshot.Id);
+            await operations.FinishUpdateAsync(admission.Snapshot.Id, JsonSerializer.SerializeToElement(await service.CheckAsync(CancellationToken.None), ContractJson.Options));
+        }
+        await Check("first-check");
+        var plan = await service.ReadPlanAsync(api.State().Available!.PlanId!);
+        await service.EstimateAsync(CancellationToken.None);
+        var estimate = UpdatePlanStore.ReadEstimate(installation.ToolRoot, plan.PlanId)!;
+        Assert.Equal("incremental", api.State().Available!.DownloadKind);
+
+        async Task<UpdateDownloadStatus> Download(string key)
+        {
+            clock.Now += TimeSpan.FromSeconds(1);
+            var admission = await operations.AdmitUpdateAsync("owner", UpdateAction.Download, plan, key, OperationStore.UpdatePlanETag(plan));
+            await operations.BeginUpdateAsync(admission.Snapshot.Id);
+            var result = await service.DownloadAsync(plan, async (phase, progress, token) =>
+            {
+                await operations.ReportUpdateDownloadAsync(admission.Snapshot.Id, phase, JsonSerializer.SerializeToElement(progress, ContractJson.Options), token);
+                Assert.Equal((progress.DownloadKind, progress.FallbackReason), (api.State().Available!.DownloadKind, api.State().Available!.FallbackReason));
+                Assert.Equal(progress.RequiredDownloadBytes, api.State().Available!.DownloadBytes);
+            });
+            await operations.FinishUpdateAsync(admission.Snapshot.Id, JsonSerializer.SerializeToElement(result, ContractJson.Options));
+            return result;
+        }
+        var downloaded = await Download("first-download");
+        Assert.Equal("ready", api.State().State);
+        Assert.Equal(("full", "update.rangeUnsupported", (ulong)release.Full.Length),
+            (api.State().Available!.DownloadKind, api.State().Available!.FallbackReason, api.State().Available!.DownloadBytes!.Value.Value));
+
+        // 迟到的后台估算与后续检查均不能盖过实际下载结果。
+        await UpdatePlanStore.SaveEstimateAsync(installation.ToolRoot, plan.PlanId, estimate);
+        await Check("check-after-download");
+        Assert.Equal("ready", api.State().State);
+        Assert.Equal(("full", "update.rangeUnsupported"), (api.State().Available!.DownloadKind, api.State().Available!.FallbackReason));
+        var requests = release.DownloadRequests.Count;
+        var reused = await Download("reuse-stage");
+        Assert.True(reused.ReusedStage);
+        Assert.Equal((downloaded.DownloadKind, downloaded.FallbackReason, downloaded.TotalBytes), (reused.DownloadKind, reused.FallbackReason, reused.TotalBytes));
+        Assert.Equal(requests, release.DownloadRequests.Count);
+        Assert.Equal(("full", "update.rangeUnsupported"), (api.State().Available!.DownloadKind, api.State().Available!.FallbackReason));
     }
 
     [Fact]
@@ -514,7 +580,7 @@ public sealed class PortableUpdateTests : IDisposable
             new Dictionary<string, string> { ["shared.dll"] = shared, ["zz-shared.dll"] = other, ["stale.dll"] = "old-only" });
         var source = Path.Combine(root, "release-" + Guid.NewGuid().ToString("N"), "Moongate");
         Package(source, "0.1.2", "new", new Dictionary<string, string>
-            { ["shared.dll"] = shared, ["zz-shared.dll"] = other, ["added.dll"] = "added", ["t-added.dll"] = "added-between" });
+            { ["shared.dll"] = shared, ["zz-shared.dll"] = other, ["added.dll"] = "added", ["t-added.dll"] = "added-between", ["z-added-copy.dll"] = "added" });
         var full = Path.Combine(Path.GetDirectoryName(source)!, "Moongate-v0.1.2-Windows-x64.zip");
         ZipFile.CreateFromDirectory(source, full, CompressionLevel.Fastest, includeBaseDirectory: true);
         var fullBytes = File.ReadAllBytes(full);
@@ -680,8 +746,8 @@ public sealed class PortableUpdateTests : IDisposable
     }
 
     private static PortableUpdateService Service(PortableInstallation installation, GitHubReleaseSource source, Func<HttpMessageHandler>? handler = null,
-        ActivityBarrier? barrier = null) =>
-        new(installation, source, null!, null!, () => new UpdatePolicy(), barrier ?? new ActivityBarrier(), null!, null!, TimeProvider.System,
+        ActivityBarrier? barrier = null, OperationStore? operations = null) =>
+        new(installation, source, null!, operations!, () => new UpdatePolicy(), barrier ?? new ActivityBarrier(), null!, null!, TimeProvider.System,
             createHandler: handler, freeSpace: _ => long.MaxValue);
 
     private static ReplacerTimeouts Fast() => new() { Health = TimeSpan.FromSeconds(5), ProcessExit = TimeSpan.FromSeconds(5) };

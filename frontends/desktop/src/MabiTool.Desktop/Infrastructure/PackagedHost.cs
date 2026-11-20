@@ -206,7 +206,7 @@ internal static class PackagedHost
                 using (process)
                 {
                     var running = Stopwatch.StartNew();
-                    var exited = process.WaitForExitAsync(token);
+                    var exited = WaitForHostExitAsync(process, () => UpdateRestarting(DesktopFiles.Root), token);
                     if (await Task.WhenAny(exited, Task.Delay(StartupWatch, token)).ConfigureAwait(false) != exited) { Problem = null; Failure = null; }
                     await exited.ConfigureAwait(false);
                     record.Finish(process.ExitCode, running.Elapsed, null);
@@ -226,6 +226,23 @@ internal static class PackagedHost
 
     /// <summary>宿主已把安装交给替换器：前端随宿主退出，让替换器能改名程序文件。</summary>
     internal static bool UpdateRestarting(string toolRoot) => File.Exists(Path.Combine(toolRoot, "update", "restarting"));
+
+    /// <summary>安装交接按真实进程退出继续；普通退出读完错误流，保留完整的启动失败记录。</summary>
+    internal static async Task WaitForHostExitAsync(Process process, Func<bool> updateRestarting, CancellationToken token)
+    {
+        var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler handler = (_, _) => exited.TrySetResult();
+        process.Exited += handler;
+        try
+        {
+            try { process.EnableRaisingEvents = true; }
+            catch (InvalidOperationException) when (process.HasExited) { }
+            if (process.HasExited) exited.TrySetResult();
+            await exited.Task.WaitAsync(token).ConfigureAwait(false);
+        }
+        finally { process.Exited -= handler; }
+        if (!updateRestarting()) await process.WaitForExitAsync(token).ConfigureAwait(false);
+    }
 
     private static void RequestExit() => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.Shutdown());
