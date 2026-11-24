@@ -42,7 +42,10 @@ public static class BuiltInModules
                 new("combat.self-effects", new("自身效果列", "自身效果列"), ["scale", "skin", "iconPack", "maxItems"]),
                 new("combat.target-effects", new("怪物效果列", "怪物效果列"), ["scale", "skin", "iconPack", "maxItems"]),
                 new("combat.measurement", new("定时测量", "定時測量"), ["scale", "skin"]),
-                new("combat.healing", new("治疗", "治療"), ["scale", "skin"])
+                new("combat.healing", new("治疗", "治療"), ["scale", "skin"]),
+                new(FavoriteBoard.First, new("收藏浮窗 1", "收藏浮窗 1"), ["scale", "skin", "favorites"]),
+                new(FavoriteBoard.Second, new("收藏浮窗 2", "收藏浮窗 2"), ["scale", "skin", "favorites"]),
+                new(AwakeningBoard.Id, new("觉醒监控", "覺醒監控"), ["scale", "skin", "awakening"])
             ]));
         catalog.Register(new ModuleDescriptor("rooms", "合奏", "奏", Color.Parse("#6F51E0"), ModuleOrigin.BuiltIn,
             () => new RoomsPage { DataContext = new RoomsPageModel(backend) },

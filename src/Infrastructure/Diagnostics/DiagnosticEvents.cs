@@ -67,6 +67,12 @@ public static class DiagnosticEvents
     /// <summary>战斗领域按固定分支拒绝的帧（受限频率）：count 为本条覆盖的新增次数，total 为本次观察累计。</summary>
     public static readonly DiagnosticEventDefinition CombatFrameRejected = new("combat.frame.rejected", Combat, "combat.session", DiagnosticLevel.Warning,
         ["branch", "count", "total"]);
+    /// <summary>
+    /// 前端报告的战斗数据显示延迟（同一客户端至多每 10 秒一条）：samples 为最近窗口样本数，totalSamples 为该连接累计样本数，
+    /// medianMs、p95Ms、maximumMs 为最近窗口的统计（毫秒，保留一位小数）。不含实体、名称与数值内容。
+    /// </summary>
+    public static readonly DiagnosticEventDefinition CombatDisplayLatency = new("combat.display.latency", Combat, "combat.display", DiagnosticLevel.Info,
+        ["samples", "totalSamples", "medianMs", "p95Ms", "maximumMs"]);
     /// <summary>宿主日志的 warning/error：category 为日志类别，eventId 为日志事件号；未登记错误码的日志据此定位来源。</summary>
     public static readonly DiagnosticEventDefinition HostLog = new("host.log.entry", null, "host.log", DiagnosticLevel.Warning, ["category", "eventId"]);
     public static readonly DiagnosticEventDefinition ColorRunStarted = new("color.run.started", "color", "color.run", DiagnosticLevel.Info, []);
@@ -101,7 +107,7 @@ public static class DiagnosticEvents
         ["exitCode", "terminatedByHost"]);
 
     public static IReadOnlyList<DiagnosticEventDefinition> All { get; } = [BindingChanged, GameBuildChecked, AutomationChanged, ChannelSelected, CaptureSummary, CaptureParse, CaptureReassembly, CaptureDevice, WorkerStarted, WorkerStopped, WorkerFaulted, CaptureStarted,
-        CaptureEnded, InventorySynced, InventoryFrameState, InventoryFrameRejected, SegmentStarted, SegmentEnded, CombatFrameRejected, HostLog, ColorRunStarted, ColorRunEnded, RoomConnection, DebugCaptureStarted, DebugCaptureEnded, LegacyDataImported, HostPortFallback,
+        CaptureEnded, InventorySynced, InventoryFrameState, InventoryFrameRejected, SegmentStarted, SegmentEnded, CombatFrameRejected, CombatDisplayLatency, HostLog, ColorRunStarted, ColorRunEnded, RoomConnection, DebugCaptureStarted, DebugCaptureEnded, LegacyDataImported, HostPortFallback,
         FrameRejected, CaptureGap, InterestsChanged, SubscriptionChanged, ConnectionChanged, InventoryFrame,
         ChannelConnected, ChannelRequest, ChannelFault, ChannelClosed];
     private static readonly Dictionary<string, DiagnosticEventDefinition> ByCode = All.ToDictionary(x => x.Code, StringComparer.Ordinal);

@@ -18,18 +18,33 @@ using Microsoft.Extensions.DependencyInjection;
 /// 实采样本驱动的宿主负载：按 tw-20261110 协议把 packets.jsonl 解析成战斗帧，以 Worker 相同的 100 ms 合并规则、按样本原时点送入
 /// 进程内 mock 宿主的战斗观察；可选模拟桌面前端（SSE 唤醒 + 每秒例行刷新，与 LiveBackend 的读取组合相同）。
 /// 报告宿主进程 CPU、写事务按回调分类的次数与耗时、outbox 事件数、进程 IO 计数与 HTTP 请求数。
+/// --speed 按倍率压缩样本时间（加压）；--merge-ms 为 Worker 合批窗口（默认 100 ms）；--serve 连接文件：帧时点对齐本机单调时钟
+/// （抓包时点即本机 QPC 毫秒，与实时抓包相同），把宿主地址与令牌写入连接文件，等到“连接文件.ready”出现（桌面
+/// <c>DesktopRefreshBenchmark.MeasuresLiveHostLatency</c> 连上后写出）再解析样本、开始观察与回放，结束后删除连接文件。
+/// --history 条数 [--history-kb 正文大小]：观察开始后写入这么多条已结束的观察与战斗记录占位（工作区与记录正文各默认 300 KB，
+/// 相当于用过一段时间的数据库），
+/// 用于量出快照读取的数据库查询随历史规模的开销。
 /// </summary>
 internal static class LiveReplayProbe
 {
     public static async Task RunAsync(string[] args)
     {
         if (args.Length < 3 || !Path.IsPathFullyQualified(args[0]) || !Path.IsPathFullyQualified(args[1]) || !Path.IsPathFullyQualified(args[2]))
-            throw new ArgumentException("参数：repository sampleDirectory report [--client] [--tail 秒] [--limit 秒]，路径须为绝对路径");
+            throw new ArgumentException("参数：repository sampleDirectory report [--client] [--tail 秒] [--limit 秒] [--speed 倍率] [--merge-ms 毫秒] [--serve 连接文件] [--history 条数] [--history-kb 正文 KiB] [--segments 条数 [--segments-same-whole]]，路径须为绝对路径");
         var repository = Path.GetFullPath(args[0]); var sample = Path.GetFullPath(args[1]); var report = Path.GetFullPath(args[2]);
         if (!report.StartsWith(Path.Combine(repository, "artifacts", "reports") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("报告须位于 artifacts/reports");
         var client = args.Contains("--client");
-        var tail = Option(args, "--tail", 30); var limit = Option(args, "--limit", 600);
+        var tail = Option(args, "--tail", 30); var limit = Option(args, "--limit", 600); var merge = Option(args, "--merge-ms", 100);
+        var history = Option(args, "--history", 0); var historyKiB = Option(args, "--history-kb", 300); var segments = Option(args, "--segments", 0); var sameWhole = args.Contains("--segments-same-whole");
+        if (history > 100) throw new ArgumentException("--history 至多 100（战斗记录上限）");
+        var speedAt = Array.IndexOf(args, "--speed");
+        var speed = speedAt < 0 ? 1d : double.Parse(args[speedAt + 1], System.Globalization.CultureInfo.InvariantCulture);
+        if (speed is < 0.1 or > 20 || merge is < 1 or > 100) throw new ArgumentException("--speed 超出 0.1–20 或 --merge-ms 超出 1–100");
+        var serveAt = Array.IndexOf(args, "--serve");
+        var serve = serveAt < 0 ? null : Path.GetFullPath(args[serveAt + 1]);
+        if (serve is not null && !serve.StartsWith(Path.Combine(repository, "artifacts", "tmp") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("连接文件须位于 artifacts/tmp");
         var packets = Path.Combine(sample, "packets.jsonl");
         if (!File.Exists(packets) || new FileInfo(packets).Length > 64 * 1024 * 1024) throw new ArgumentException("样本缺少 packets.jsonl 或超过 64 MiB");
         Directory.CreateDirectory(Path.GetDirectoryName(report)!);
@@ -38,7 +53,7 @@ internal static class LiveReplayProbe
         try
         {
             var secret = LocalAuthService.NewSecret();
-            var source = new SampleSource(packets, limit);
+            var source = new SampleSource(packets, limit, speed, merge, serve is not null);
             await using var app = BackendApplication.Build(new(0, secret, new HashSet<string>()),
                 storage: new(Path.Combine(temporary, "bootstrap"), true, PortableRoot: temporary), mock: true, combatSource: _ => source);
             await app.StartAsync();
@@ -56,14 +71,27 @@ internal static class LiveReplayProbe
             using var http = new HttpClient { BaseAddress = new(address) };
             http.DefaultRequestHeaders.Authorization = new("Bearer", secret);
             var binding = (await http.GetFromJsonAsync<GameBindingSnapshot>(ApiContract.GameBinding.Path, ContractJson.Options))!;
+            if (serve is not null)
+            {
+                await File.WriteAllTextAsync(serve, JsonSerializer.Serialize(new { address, secret }));
+                var ready = Stopwatch.StartNew();
+                while (!File.Exists(serve + ".ready"))
+                {
+                    if (ready.Elapsed > TimeSpan.FromSeconds(180)) throw new TimeoutException("桌面未连接");
+                    await Task.Delay(200);
+                }
+            }
             source.Prepare(binding.Binding!.Session.Id);
             using var start = new HttpRequestMessage(HttpMethod.Post, ApiContract.StartCombatObservation.Path)
             { Content = JsonContent.Create(new CombatObservationRequest(binding.Binding.Session.Id), options: ContractJson.Options) };
             start.Headers.Add("Idempotency-Key", "live-replay-start");
             (await http.SendAsync(start)).EnsureSuccessStatusCode();
             await source.Started.Task.WaitAsync(TimeSpan.FromSeconds(60));
+            // 历史占位在本次观察写入之后加入（更新时刻更早，快照仍选本次观察）。
+            if (history > 0) await SeedHistoryAsync(store, history, historyKiB);
+            if (segments > 0) await SeedSegmentsAsync(store, segments, sameWhole);
             using var stop = new CancellationTokenSource();
-            var emulator = client ? new DesktopEmulator(http) : null;
+            var emulator = client && serve is null ? new DesktopEmulator(http) : null;
             var clientTask = emulator?.RunAsync(stop.Token) ?? Task.CompletedTask;
             var outboxBefore = MaxSequence(store);
             using var process = Process.GetCurrentProcess();
@@ -98,7 +126,7 @@ internal static class LiveReplayProbe
                     configuration = "Release",
 #endif
                 },
-                sample = new { directory = Path.GetFileName(sample), source.InputPackets, source.ParsedFrames, source.Batches, source.Damage, source.Effects, source.Reconciliations,
+                sample = new { directory = Path.GetFileName(sample), speed, mergeMs = merge, source.InputPackets, source.ParsedFrames, source.Batches, source.Damage, source.Effects, source.Reconciliations,
                     source.EntityObservations, source.SampleSpanMs, parseMs = source.ParseMs },
                 protocol = new
                 {
@@ -112,6 +140,7 @@ internal static class LiveReplayProbe
             };
             await File.WriteAllTextAsync(report, JsonSerializer.Serialize(output, new JsonSerializerOptions(ContractJson.Options) { WriteIndented = true }));
             Console.WriteLine(report);
+            if (serve is not null) { File.Delete(serve); File.Delete(serve + ".ready"); }
             await app.StopAsync();
         }
         finally
@@ -121,6 +150,63 @@ internal static class LiveReplayProbe
                 for (var attempt = 0; attempt < 5 && Directory.Exists(temporary); attempt++)
                     try { Directory.Delete(temporary, true); } catch (IOException) { await Task.Delay(200); }
         }
+    }
+
+    /// <summary>
+    /// 写入 <paramref name="count"/> 条已结束的观察（terminal=1，更新时刻早于本次观察）与各自引用它的进行中战斗记录占位（closed=0，
+    /// 历史分页与清理不读取），工作区与记录正文各约 300 KB 的合法 JSON：只用于让快照读取的观察选择与存储统计面对真实规模的表。
+    /// </summary>
+    private static async Task SeedHistoryAsync(SqliteStore store, int count, int kib)
+    {
+        var padding = "{\"pad\":\"" + new string('x', kib * 1024) + "\"}";
+        await store.WriteAsync(tx =>
+        {
+            for (var i = 0; i < count; i++)
+            {
+                tx.Execute("INSERT INTO combat_observations(id,owner,game_session,revision,workspace,terminal,updated_at,encounter_id) VALUES($id,'owner','seed','1',$w,1,$at,$e)",
+                    ("$id", $"seed-observation-{i}"), ("$w", padding), ("$at", 1_000_000L + i), ("$e", $"seed-encounter-{i}"));
+                tx.Execute("INSERT INTO combat_encounters(id,owner,observation_id,revision,closed,quality,favorite,started_at,document,bytes,timeline_bytes) VALUES($id,'owner',$o,'1',0,'confirmed',0,$at,$d,$b,0)",
+                    ("$id", $"seed-encounter-{i}"), ("$o", $"seed-observation-{i}"), ("$at", 1_000_000L + i), ("$d", padding), ("$b", (long)padding.Length));
+            }
+            return 0;
+        });
+    }
+
+    /// <summary>
+    /// 本次观察里再加 <paramref name="count"/> 段已结束的分段：等本次观察的第一段写入后按它复制（新 ID、整场序号 9999、已结束），
+    /// 相当于同一次观测里此前打过的许多段（整场范围查询要读出本次观察的全部分段再按整场筛选）。<paramref name="sameWhole"/> 为真时
+    /// 复制的分段保留原整场序号并连同时间线页一起复制，即同一整场里此前打过的许多段（整场范围与首击要读它们的时间线）。
+    /// </summary>
+    private static async Task SeedSegmentsAsync(SqliteStore store, int count, bool sameWhole)
+    {
+        var wait = Stopwatch.StartNew(); string? source = null;
+        while (wait.Elapsed < TimeSpan.FromSeconds(120) && (source = store.ReadScalar(
+            "SELECT e.id FROM combat_encounters e JOIN combat_observations o ON o.id=e.observation_id WHERE o.terminal=0 AND e.id NOT LIKE 'seed-%' LIMIT 1") as string) is null)
+            await Task.Delay(200);
+        if (source is null) throw new TimeoutException("本次观察没有写入分段");
+        // 等第一段写入若干时间线页再复制。
+        while (sameWhole && wait.Elapsed < TimeSpan.FromSeconds(120) &&
+            Convert.ToInt64(store.ReadScalar("SELECT count(*) FROM combat_timeline_pages WHERE encounter_id=$id", ("$id", source))) < 4)
+            await Task.Delay(500);
+        await store.WriteAsync(tx =>
+        {
+            for (var i = 0; i < count; i++)
+            {
+                if (sameWhole)
+                {
+                    tx.Execute("INSERT INTO combat_encounters(id,owner,observation_id,revision,closed,quality,favorite,started_at,document,bytes,timeline_bytes) " +
+                        "SELECT $id,owner,observation_id,revision,1,quality,0,started_at-1000000+$i,json_set(document,'$.id',$id,'$.summary.encounterId',$id,'$.summary.final',json('true'),'$.startedMonotonicMs',-1000000+$i),bytes,timeline_bytes FROM combat_encounters WHERE id=$source",
+                        ("$id", $"seed-segment-{i}"), ("$i", (long)i), ("$source", source));
+                    tx.Execute("INSERT INTO combat_timeline_pages(encounter_id,first_index,last_index,document,bytes) SELECT $id,first_index,last_index,document,bytes FROM combat_timeline_pages WHERE encounter_id=$source",
+                        ("$id", $"seed-segment-{i}"), ("$source", source));
+                    continue;
+                }
+                tx.Execute("INSERT INTO combat_encounters(id,owner,observation_id,revision,closed,quality,favorite,started_at,document,bytes,timeline_bytes) " +
+                    "SELECT $id,owner,observation_id,revision,1,quality,0,started_at-1000000+$i,json_set(document,'$.id',$id,'$.summary.encounterId',$id,'$.segment.whole',9999,'$.summary.final',json('true')),bytes,0 FROM combat_encounters WHERE id=$source",
+                    ("$id", $"seed-segment-{i}"), ("$i", (long)i), ("$source", source));
+            }
+            return 0;
+        });
     }
 
     private static int Option(string[] args, string name, int fallback)
@@ -168,7 +254,7 @@ internal static class LiveReplayProbe
     }
 
     /// <summary>样本帧来源：按 Worker 规则（同代次、相距 100 ms 内、至多 256 条）合并成批，按样本时点送出一次后结束。</summary>
-    private sealed class SampleSource(string packets, int limitSeconds) : ICombatObservationSource
+    private sealed class SampleSource(string packets, int limitSeconds, double speed, int mergeMs, bool aligned) : ICombatObservationSource
     {
         private List<CombatFrame> batches = [];
         private CombatEntityObservation? local;
@@ -178,12 +264,17 @@ internal static class LiveReplayProbe
         public int Batches => batches.Count;
         public double SampleSpanMs, ParseMs;
         private DateTimeOffset origin;
+        /// <summary>帧时点的零点：对齐本机单调时钟时为 Prepare 时的 QPC 毫秒加 15 秒（与 <see cref="origin"/> 同一时刻），否则为 0。</summary>
+        private double zero;
+        private static double QpcMs => Stopwatch.GetTimestamp() * (1000d / Stopwatch.Frequency);
+        private bool Aligned => aligned;
 
         public void Prepare(string gameSession)
         {
             var timer = Stopwatch.StartNew();
             origin = DateTimeOffset.UtcNow.AddSeconds(15);
-            var frames = new List<CombatFrame>();
+            zero = aligned ? QpcMs + 15_000 : 0;
+            var frames = new List<CombatFrame>(); var owners = new List<string>();
             ulong generation = 0;
             var streams = new Dictionary<string, (TwCombatObserver Observer, GameTcpStream Stream, double[] Now, uint?[] End)>(StringComparer.Ordinal);
             foreach (var line in File.ReadLines(packets))
@@ -192,19 +283,20 @@ internal static class LiveReplayProbe
                 using var document = JsonDocument.Parse(line);
                 var row = document.RootElement;
                 var id = row.GetProperty("connectionId").GetString()!;
-                var now = row.GetProperty("monotonicMs").GetDouble();
-                if (now > limitSeconds * 1000d) break;
+                var sampleNow = row.GetProperty("monotonicMs").GetDouble();
+                if (sampleNow > limitSeconds * 1000d) break;
+                var now = zero + sampleNow / speed;
                 if (!streams.TryGetValue(id, out var connection))
                 {
                     if (streams.Count >= 64) continue;
-                    var observer = new TwCombatObserver(gameSession, Tw20261110CombatProtocol.CombatProfile.Source, frames.Add, () => ++generation);
-                    observer.Configure(new(true, true, true, true, true));
+                    var observer = new TwCombatObserver(gameSession, Tw20261110CombatProtocol.CombatProfile.Source, frame => { frames.Add(frame); owners.Add(id); }, () => ++generation);
+                    observer.Configure(new(true, true, true, true, true, true));
                     var clock = new double[1]; GameTcpStream? stream = null;
                     stream = new((code, body) =>
                     {
-                        if (Tw20261110CombatProtocol.ProtocolsV3.Contains(code))
-                            observer.Accept(code, body, stream!.FrameStreamOffset, stream.FrameWireLength, clock[0], origin.AddMilliseconds(clock[0]), stream.FrameEncoding);
-                    }, reason => observer.Reset("combat.streamGap", clock[0], origin.AddMilliseconds(clock[0])), Tw20261110CombatProtocol.StreamProfile);
+                        if (Tw20261110CombatProtocol.ProtocolsV4.Contains(code))
+                            observer.Accept(code, body, stream!.FrameStreamOffset, stream.FrameWireLength, clock[0], origin.AddMilliseconds(clock[0] - zero), stream.FrameEncoding);
+                    }, reason => observer.Reset("combat.streamGap", clock[0], origin.AddMilliseconds(clock[0] - zero)), Tw20261110CombatProtocol.StreamProfile);
                     streams[id] = connection = (observer, stream, clock, new uint?[1]);
                 }
                 if (now < connection.Now[0]) now = connection.Now[0];
@@ -218,13 +310,15 @@ internal static class LiveReplayProbe
                 if (connection.End[0] is null || unchecked((int)(next - connection.End[0]!.Value)) > 0) connection.End[0] = next;
                 for (var offset = 0; offset < bytes.Length; offset += 65536)
                     connection.Stream.Feed(unchecked(sequence + (uint)offset), bytes.AsSpan(offset, Math.Min(65536, bytes.Length - offset)), now, now);
-                connection.Observer.Tick(now, origin.AddMilliseconds(now));
+                connection.Observer.Tick(now, origin.AddMilliseconds(now - zero));
                 if ((flags & 5) != 0) connection.Stream.Restart("tcp.closed");
             }
-            foreach (var connection in streams.Values) connection.Observer.Finish(connection.Now[0] + 1501, origin.AddMilliseconds(connection.Now[0] + 1501));
+            foreach (var connection in streams.Values) connection.Observer.Finish(connection.Now[0] + 1501, origin.AddMilliseconds(connection.Now[0] + 1501 - zero));
             ParsedFrames = frames.Count;
-            // 与宿主相同只跟随不降低的代次；从第一份含已确认本机身份的帧开始送出。
-            var ordered = frames.OrderBy(x => x.MonotonicMs).ToList();
+            // 与 Worker 相同只送战斗主连接（伤害最多的连接）的帧；与宿主相同只跟随不降低的代次；从第一份含已确认本机身份的帧开始送出。
+            var primary = frames.Select((frame, index) => (frame, owner: owners[index])).GroupBy(x => x.owner)
+                .MaxBy(group => group.Sum(x => x.frame.Damage.Count))?.Key;
+            var ordered = frames.Where((_, index) => owners[index] == primary).OrderBy(x => x.MonotonicMs).ToList();
             var first = ordered.FindIndex(x => x.Entities.Any(e => e.Role.KnownValue == CombatEntityRole.LocalPlayer && e.Quality.KnownValue == ObservationQuality.Confirmed));
             if (first < 0) throw new InvalidDataException("样本中没有已确认的本机身份");
             local = ordered[first].Entities.First(e => e.Role.KnownValue == CombatEntityRole.LocalPlayer && e.Quality.KnownValue == ObservationQuality.Confirmed);
@@ -235,7 +329,7 @@ internal static class LiveReplayProbe
                 current = frame.Generation.Value;
                 Damage += frame.Damage.Count; Effects += frame.Effects.Count; Reconciliations += frame.Reconciliations.Count; EntityObservations += frame.Entities.Count;
                 if (batches.Count > 0 && batches[^1] is var previous && previous.Generation == frame.Generation && frame.Sequence.Value > previous.Sequence.Value &&
-                    frame.MonotonicMs - batchStart <= 100 && Records(previous) + Records(frame) <= 256)
+                    frame.MonotonicMs - batchStart <= mergeMs && Records(previous) + Records(frame) <= 256)
                 {
                     batches[^1] = frame with
                     {
@@ -254,7 +348,7 @@ internal static class LiveReplayProbe
         private static int Records(CombatFrame value) => Math.Max(1, value.Entities.Count + value.Damage.Count + value.Effects.Count + value.Gaps.Count +
             (value.Healing?.Count ?? 0) + (value.CombatStates?.Count ?? 0) + value.Reconciliations.Sum(x => Math.Max(1, x.Effects.Count)));
 
-        public CombatCapabilities Capabilities(string? session) => new(true,
+        public CombatCapabilities Capabilities(string? session) => new(!aligned,
             new[] { "combat.damage.local", "combat.effects.self", "combat.effects.monster" }.Select(id =>
                 new CombatCapability(id, CapabilityStatus.Available, Tw20261110CombatProtocol.CombatProfile.Source, null, null, null)).ToArray());
         public ValueTask<ICombatObservationSubscription> OpenAsync(string id, CombatObservationRequest request, CancellationToken ct) =>
@@ -268,7 +362,8 @@ internal static class LiveReplayProbe
             public bool HealingSupported => true;
             public async IAsyncEnumerable<CombatFrame> ReadAsync([EnumeratorCancellation] CancellationToken ct)
             {
-                var wait = owner.origin.AddMilliseconds(owner.batches[0].MonotonicMs) - DateTimeOffset.UtcNow;
+                var wait = owner.Aligned ? TimeSpan.FromMilliseconds(owner.batches[0].MonotonicMs - QpcMs)
+                    : owner.origin.AddMilliseconds(owner.batches[0].MonotonicMs) - DateTimeOffset.UtcNow;
                 if (wait > TimeSpan.Zero) await Task.Delay(wait, ct);
                 owner.Started.TrySetResult();
                 var clock = Stopwatch.StartNew(); var first = owner.batches[0].MonotonicMs;

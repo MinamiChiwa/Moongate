@@ -93,6 +93,27 @@ public sealed class WidgetPlacement
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool HideMonsterHealth { get; set; }
 
+    /// <summary>
+    /// 这个元件对底板与文字两组配色的覆盖（键见 <see cref="OverlayColors.WidgetKeys"/>，值为 #RRGGBB）；没有的项跟随整体配色。
+    /// 只在有覆盖时写出，旧版面文件没有这个字段即全部跟随整体。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? Colors { get; set; }
+
+    /// <summary>
+    /// 收藏浮窗勾选的项与顺序（键见 <see cref="FavoriteBoard"/>）。为空表示没有保存过：“收藏浮窗 1”按默认包含全部收藏，“收藏浮窗 2”为空。
+    /// 只在有内容时写出（“收藏浮窗 1”全部取消勾选时写出空列表，与“没有保存过”区分），旧版面文件没有这个字段。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? FavoriteItems { get; set; }
+
+    /// <summary>
+    /// 收藏浮窗与觉醒监控浮窗横排（从左到右、放不下换行）；默认竖排。只在横排时写出。
+    /// 早期版本收藏浮窗的 <c>AwakeningMonitor</c> 字段与 <c>awakening:badge</c>、<c>awakening:class</c> 两个键读取时忽略，保存时不再写出；觉醒监控改为独立元件。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Horizontal { get; set; }
+
     public void Normalize()
     {
         X = double.IsFinite(X) ? Math.Clamp(X, 0, 1) : 0;
@@ -104,6 +125,13 @@ public sealed class WidgetPlacement
         Width = Width is { } width && double.IsFinite(width) && width > 0 ? Math.Min(width, MaximumSide) : null;
         Height = Height is { } height && double.IsFinite(height) && height > 0 ? Math.Min(height, MaximumSide) : null;
         if (Skin is not ("glass" or "solid" or "image")) Skin = "glass";
+        Colors = OverlayColors.Normalize(Colors, OverlayColors.WidgetKeys);
+        if (!FavoriteBoard.IsBoard(WidgetId)) { FavoriteItems = null; Horizontal &= WidgetId == AwakeningBoard.Id; }
+        else if (FavoriteItems is { } items)
+        {
+            FavoriteItems = items.Where(FavoriteBoard.IsValidKey).Distinct(StringComparer.Ordinal).Take(FavoriteBoard.MaximumItems).ToList();
+            if (FavoriteItems.Count == 0 && WidgetId == FavoriteBoard.Second) FavoriteItems = null;
+        }
     }
 }
 
@@ -129,6 +157,12 @@ public sealed class OverlayLayoutStore
         public List<OverlayLayout> Layouts { get; set; } = [];
         public bool HideFromCapture { get; set; }
         public bool HideWhenGameMinimized { get; set; }
+        /// <summary>整体配色里改过的项；全部为默认值时不写出。</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Dictionary<string, string>? Colors { get; set; }
+        /// <summary>觉醒提示设置；全部为默认值时不写出。</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public AwakeningSettings? Awakening { get; set; }
     }
 
     /// <param name="path">保存位置；为空时只保存在内存里。</param>
@@ -141,6 +175,9 @@ public sealed class OverlayLayoutStore
         Active = Layouts.FirstOrDefault(layout => layout.Id == document.ActiveId) ?? Layouts[0];
         HideFromCapture = document.HideFromCapture;
         HideWhenGameMinimized = document.HideWhenGameMinimized;
+        Colors = OverlayColors.Normalize(document.Colors) ?? [];
+        Awakening = document.Awakening ?? new();
+        Awakening.Normalize();
     }
 
     public static string DefaultPath => Infrastructure.DesktopFiles.File("overlay-layouts.json");
@@ -164,6 +201,96 @@ public sealed class OverlayLayoutStore
     public bool HideFromCapture { get; set; }
     /// <summary>游戏窗口最小化时隐藏浮窗；缺省关闭，浮窗始终显示，与游戏窗口无关。</summary>
     public bool HideWhenGameMinimized { get; set; }
+
+    /// <summary>整个浮窗共用的配色：只含改过的项（键见 <see cref="OverlayColors.Items"/>，值为 #RRGGBB），没有的项为原配色。各套版面共用。</summary>
+    public Dictionary<string, string> Colors { get; private set; }
+
+    /// <summary>“徽章觉醒”“职业觉醒”的提示设置，两个收藏浮窗共用。改动后调用 <see cref="Commit"/>。</summary>
+    public AwakeningSettings Awakening { get; }
+
+    /// <summary>
+    /// 收藏变化：新收藏按默认归属追加到各套版面里“收藏浮窗 1”的末尾（没有保存过选择的按默认已包含）；取消收藏时从两个收藏浮窗移除。
+    /// </summary>
+    public void FavoriteToggled(string effectId, bool added)
+    {
+        var changed = false;
+        var keys = new[] { FavoriteBoard.SelfPrefix + effectId, FavoriteBoard.TargetPrefix + effectId };
+        foreach (var placement in Layouts.SelectMany(layout => layout.Widgets).Where(widget => FavoriteBoard.IsBoard(widget.WidgetId)))
+        {
+            if (placement.FavoriteItems is not { } items) continue;
+            if (!added) changed |= items.RemoveAll(keys.Contains) > 0;
+            else if (placement.WidgetId == FavoriteBoard.First && !items.Any(keys.Contains))
+            {
+                items.AddRange(FavoriteBoard.Defaults(effectId));
+                changed = true;
+            }
+        }
+        if (changed) Commit();
+    }
+
+    /// <summary>收藏浮窗勾选或取消一项并保存；勾选的项排到末尾。</summary>
+    public void SetFavoriteItem(WidgetPlacement placement, string key, bool on)
+    {
+        if (!FavoriteBoard.IsBoard(placement.WidgetId) || !FavoriteBoard.IsValidKey(key)) return;
+        var items = FavoriteBoard.Effective(placement);
+        if (on == items.Contains(key)) return;
+        if (on) items.Add(key); else items.Remove(key);
+        placement.FavoriteItems = items;
+        Commit();
+    }
+
+    /// <summary>收藏浮窗上拖动排序：把一项移到 <paramref name="index"/>（按实际显示的顺序）并保存。</summary>
+    public void MoveFavoriteItem(WidgetPlacement placement, string key, int index)
+    {
+        var items = FavoriteBoard.Effective(placement);
+        var from = items.IndexOf(key);
+        if (from < 0) return;
+        index = Math.Clamp(index, 0, items.Count - 1);
+        if (from == index) return;
+        items.RemoveAt(from);
+        items.Insert(index, key);
+        placement.FavoriteItems = items;
+        Commit();
+    }
+
+    /// <summary>整体配色的一项改为 <paramref name="hex"/>（不是六位 HEX 时不改）并保存；等于默认值时去掉该项。</summary>
+    public void SetColor(string key, string hex)
+    {
+        if (OverlayColors.Find(key) is null || Controls.ColorMath.NormalizeHex(hex) is not { } value) return;
+        Colors[key] = value;
+        Commit();
+    }
+
+    /// <summary>整体配色的一组恢复原配色并保存。</summary>
+    public void ResetColors(OverlayColorGroup group)
+    {
+        foreach (var item in OverlayColors.Items.Where(item => item.Group == group)) Colors.Remove(item.Key);
+        Commit();
+    }
+
+    /// <summary>元件对底板或文字配色的一项覆盖为 <paramref name="hex"/> 并保存。</summary>
+    public void SetWidgetColor(WidgetPlacement placement, string key, string hex)
+    {
+        if (!OverlayColors.WidgetKeys.Contains(key) || Controls.ColorMath.NormalizeHex(hex) is not { } value) return;
+        (placement.Colors ??= [])[key] = value;
+        Commit();
+    }
+
+    /// <summary>元件的一组覆盖去掉（跟随整体配色）并保存。</summary>
+    public void ResetWidgetColors(WidgetPlacement placement, OverlayColorGroup group)
+    {
+        if (placement.Colors is { } colors)
+            foreach (var item in OverlayColors.Items.Where(item => item.Group == group)) colors.Remove(item.Key);
+        Commit();
+    }
+
+    /// <summary>把元件的底板与文字配色（含跟随整体的项）应用到当前版面的全部元件并保存。</summary>
+    public void ApplyWidgetColorsToAll(WidgetPlacement source)
+    {
+        foreach (var widget in Active.Widgets.Where(widget => widget != source))
+            widget.Colors = source.Colors is { Count: > 0 } colors ? new Dictionary<string, string>(colors, StringComparer.Ordinal) : null;
+        Commit();
+    }
 
     public void Select(string id)
     {
@@ -199,7 +326,8 @@ public sealed class OverlayLayoutStore
             if (existing.Closed) Reopen(existing);
             return existing;
         }
-        var placement = new WidgetPlacement { WidgetId = widgetId, X = 0.5, Y = 0.5 };
+        // 新放进版面的元件默认解锁，放上去就能直接拖动、调整；属性缺省的“已上锁”只用于旧版面文件缺字段的情形。
+        var placement = new WidgetPlacement { WidgetId = widgetId, X = 0.5, Y = 0.5, Locked = false };
         Active.Widgets.Add(placement);
         Commit();
         return placement;
@@ -293,6 +421,8 @@ public sealed class OverlayLayoutStore
     /// <summary>摆放或设置改动之后调用：保存并通知画布与浮窗重排。</summary>
     public void Commit()
     {
+        Colors = OverlayColors.Normalize(Colors) ?? [];
+        Awakening.Normalize();
         foreach (var widget in Active.Widgets) widget.Normalize();
         Save();
         Changed?.Invoke(this, EventArgs.Empty);
@@ -334,7 +464,8 @@ public sealed class OverlayLayoutStore
         if (path is null) return;
         LayoutFileWriter.For(path).Enqueue(JsonSerializer.SerializeToUtf8Bytes(new Document
         {
-            ActiveId = Active.Id, Layouts = Layouts, HideFromCapture = HideFromCapture, HideWhenGameMinimized = HideWhenGameMinimized
+            ActiveId = Active.Id, Layouts = Layouts, HideFromCapture = HideFromCapture, HideWhenGameMinimized = HideWhenGameMinimized,
+            Colors = Colors.Count > 0 ? Colors : null, Awakening = Awakening.IsDefault ? null : Awakening
         }, Json));
     }
 

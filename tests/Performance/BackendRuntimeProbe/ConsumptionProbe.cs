@@ -51,6 +51,9 @@ internal static class ConsumptionProbe
         var bossCost = Calibrate(process, () => WorkerSide(calibration.Encode(calibration.Next(boss: true))), calibrationFrames);
         calibration.DamagePerFrame = 150;
         var burstCost = Calibrate(process, () => WorkerSide(calibration.Encode(calibration.Next(boss: true))), calibrationFrames);
+        calibration.DamagePerFrame = 1; calibration.Crowd = true;
+        var crowdCost = Calibrate(process, () => WorkerSide(calibration.Encode(calibration.Next(boss: true))), calibrationFrames);
+        calibration.Crowd = false;
 
         var temporary = Path.Combine(repository, "artifacts", "tmp", "consumption-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temporary);
@@ -119,6 +122,17 @@ internal static class ConsumptionProbe
             phases.Add(await MeasureAsync("boss", bossSeconds, rate, boss: true, feeder, tracker, process, store, writes, bossCost, events));
             feeder.Generator.DamagePerFrame = 150;
             phases.Add(await MeasureAsync("burst", Math.Min(10, bossSeconds), rate, boss: true, feeder, tracker, process, store, writes, burstCost, events));
+            // 千人同屏量级：每秒 80 份报告（Worker 战斗写出的速率上限），每份 128 个实体、112 条效果、1 条本机伤害与 1 条治疗。
+            feeder.Generator.DamagePerFrame = 1; feeder.Generator.Crowd = true;
+            phases.Add(await MeasureAsync("crowd", Math.Max(10, bossSeconds), 80, boss: true, feeder, tracker, process, store, writes, crowdCost, events));
+            feeder.Generator.Crowd = false;
+            // 零星单发：每秒 2 份报告、每份 1 条本机伤害（停顿间的单次命中），报告到唤醒事件的延迟不受密集合并影响。
+            feeder.Generator.DamagePerFrame = 1;
+            phases.Add(await MeasureAsync("sparse", Math.Min(10, bossSeconds), 2, boss: true, feeder, tracker, process, store, writes, bossCost, events));
+            // 只有血量变化：主目标为首领、每份报告首领 HP 下降，没有伤害（他人攻击首领时本机看到的情形）。
+            feeder.Generator.HealthOnly = true;
+            phases.Add(await MeasureAsync("health-only", Math.Min(10, bossSeconds), 5, boss: false, feeder, tracker, process, store, writes, idleCost, events));
+            feeder.Generator.HealthOnly = false;
             phases.Add(await MeasureAsync("tail", tailSeconds, 0, boss: false, feeder, tracker, process, store, writes, default, events));
             await stop.CancelAsync();
             try { await listening; } catch (Exception) when (stop.IsCancellationRequested) { }
@@ -147,11 +161,16 @@ internal static class ConsumptionProbe
                     bossFrame = "40 个实体，每帧 30 条伤害（本机 20、队友 10）、6 条效果、1 条治疗；10 帧/秒即 300 条伤害/秒",
                     burstFrame = "同上但每帧 150 条伤害（本机 100、队友 50），约 1,500 条伤害/秒，10 秒",
                     heartbeat = "每 500 ms 一次观察快照变化通知（模拟 Worker 状态心跳）",
-                    events = "boss 与 tail 阶段有一个 SSE 订阅（战斗主题），traffic-idle 阶段没有订阅者",
+                    events = "boss、burst、sparse、health-only 与 tail 阶段有一个 SSE 订阅（战斗主题，宿主提供时另含 combat.live.changed），traffic-idle 阶段没有订阅者",
+                    sparseFrame = "每秒 2 份报告、每份 1 条本机伤害，10 秒",
+                    crowdFrame = "千人同屏量级：每秒 80 份报告（Worker 战斗写出速率上限），每份 128 个实体、112 条效果、1 条本机伤害、1 条治疗，即每秒约 9,000 条效果",
+                    healthOnlyFrame = "每秒 5 份报告、没有伤害，首领为本机主目标且每份报告 HP 下降，10 秒",
+                    liveEvents = EventListener.LiveEvents,
                     cpu = "进程 CPU 减去校准得到的探针生成与编码报告开销（每帧 idle/boss 分别校准）",
                     calibration = new { idleFrameCpuMs = idleCost.CpuMs, idleFrameAllocatedBytes = idleCost.Allocated, idleFrameBytes = idleCost.Bytes,
                         bossFrameCpuMs = bossCost.CpuMs, bossFrameAllocatedBytes = bossCost.Allocated, bossFrameBytes = bossCost.Bytes,
-                        burstFrameCpuMs = burstCost.CpuMs, burstFrameAllocatedBytes = burstCost.Allocated, burstFrameBytes = burstCost.Bytes }
+                        burstFrameCpuMs = burstCost.CpuMs, burstFrameAllocatedBytes = burstCost.Allocated, burstFrameBytes = burstCost.Bytes,
+                        crowdFrameCpuMs = crowdCost.CpuMs, crowdFrameAllocatedBytes = crowdCost.Allocated, crowdFrameBytes = crowdCost.Bytes }
                 },
                 phases
             };
@@ -331,7 +350,7 @@ internal static class ConsumptionProbe
             hostCpuMsPerReport = frames == 0 ? (double?)null : cpuMs / frames,
             allocatedBytes = allocatedDelta, allocatedBytesPerReport = frames == 0 ? (double?)null : allocatedDelta / frames,
             gc = new { gen0 = GC.CollectionCount(0) - gen0, gen1 = GC.CollectionCount(1) - gen1, gen2 = GC.CollectionCount(2) - gen2 },
-            latency = new { reportToSnapshotMs = tracker.Snapshot(), events = events?.Latencies() },
+            latency = new { reportToSnapshotMs = tracker.Snapshot(), reportToSnapshotByWindowMs = tracker.Windows(), events = events?.Latencies() },
             transactionsPerSecond = snapshot.Values.Sum(value => value.Count) / perSecond,
             transactions = snapshot.OrderByDescending(value => value.Value.Count).Select(value => new
                 { callback = value.Key, count = value.Value.Count, perSecond = value.Value.Count / perSecond,
@@ -425,6 +444,12 @@ internal static class ConsumptionProbe
     {
         /// <summary>首领战每帧伤害条数；三分之二来自本机，其余来自队友。</summary>
         public int DamagePerFrame { get; set; } = 150;
+        /// <summary>只有血量变化的帧：首领为本机主目标，每帧首领 HP 下降，没有伤害。</summary>
+        public bool HealthOnly { get; set; }
+        /// <summary>千人同屏量级的帧：128 个实体（本机、2 名队友、125 个怪物），112 条效果轮流施加与刷新，1 条治疗。</summary>
+        public bool Crowd { get; set; }
+        private readonly List<ulong> crowd = Enumerable.Range(0, 125).Select(index => (ulong)(5000 + index)).ToList();
+        private ulong bossHealth = 10_000_000;
         private static readonly ObservationSource Source = Tw20261110CombatProtocol.CombatProfile.Source;
         private ulong sequence, stream = 1000, effectCount;
         private int frame;
@@ -436,14 +461,32 @@ internal static class ConsumptionProbe
         {
             frame++;
             var mono = Stopwatch.GetTimestamp() * (1000d / Stopwatch.Frequency); var at = DateTimeOffset.UtcNow;
-            if (!boss && frame % 20 == 0) { monsters.RemoveAt(0); monsters.Add(nextMonster++); }
+            if (!boss && !HealthOnly && frame % 20 == 0) { monsters.RemoveAt(0); monsters.Add(nextMonster++); }
             var entities = new List<CombatEntityObservation> { Local,
                 new(Key(2), "隊友甲", "隊友甲", CombatEntityRole.Player, null, false, true, ObservationQuality.Confirmed),
                 new(Key(3), "隊友乙", "隊友乙", CombatEntityRole.Player, null, false, true, ObservationQuality.Confirmed) };
             var count = boss ? 37 : 61;
+            if (Crowd)
+            {
+                entities.AddRange(crowd.Select(raw => new CombatEntityObservation(Key(raw), "怪物" + raw, "怪物" + raw, CombatEntityRole.Monster, null, false, true, ObservationQuality.Confirmed)));
+                var crowdDamage = Enumerable.Range(0, DamagePerFrame).Select(i => new CombatDamageEvent($"d{frame}-{i}", Source, Key(1), Key(crowd[0]),
+                    new(20000), new((ulong)(1000 + i * 7)), CombatDamageKind.ActualHp, at, mono - 80 + i * 0.5, new(stream += 64), 0, false, true,
+                    ObservationQuality.Confirmed, SkillCasterKey: Key(1), SkillResolved: true)).ToList();
+                var crowdEffects = Enumerable.Range(0, 112).Select(_ =>
+                {
+                    var slot = effectCount++ % 500; var first = effectCount <= 500;
+                    return new CombatEffectObservation(first ? CombatEffectChangeKind.Apply : CombatEffectChangeKind.Refresh, Key(crowd[(int)(slot % 125)]),
+                        new(300 + slot / 125), new(slot + 1), Key(slot % 3 == 0 ? 1UL : 2UL), EffectDurationKind.Finite, 10000, 1, null, false, at, mono - 10, ObservationQuality.Confirmed);
+                }).ToList();
+                var crowdHealing = new List<CombatHealEvent> { new($"h{frame}", CombatHealDirection.Cast, Key(2), new(0), new(500), null, null, false, at, mono - 5,
+                    new(stream += 64), ObservationQuality.Confirmed) };
+                return new(1, interest, Local, new(1, Source, session, new(1), new(++sequence), at, mono, entities, crowdDamage, crowdEffects, [], [], Healing: crowdHealing));
+            }
+            if (HealthOnly) bossHealth -= 1234;
             entities.AddRange(monsters.Take(count).Select((raw, index) => new CombatEntityObservation(Key(raw), "怪物" + raw, "怪物" + raw,
                 CombatEntityRole.Monster, null, false, true, ObservationQuality.Confirmed,
-                index == 0 ? new CombatBreakGauge(50, new(100), at, ObservationQuality.Confirmed) : null)));
+                index == 0 ? new CombatBreakGauge(50, new(100), at, ObservationQuality.Confirmed) : null,
+                index == 0 ? new CombatEntityHealth(new(bossHealth), new(10_000_000), at, "read") : null, index == 0 ? true : null)));
             var damage = new List<CombatDamageEvent>();
             if (boss)
                 for (var i = 0; i < DamagePerFrame; i++)
@@ -462,44 +505,96 @@ internal static class ConsumptionProbe
             }).ToList();
             var healing = boss ? new List<CombatHealEvent> { new($"h{frame}", CombatHealDirection.Cast, Key(2), new(0), new(500), null, null, false, at, mono - 5,
                 new(stream += 64), ObservationQuality.Confirmed) } : null;
-            return new(1, interest, Local, new(1, Source, session, new(1), new(++sequence), at, mono, entities, damage, effects, [], [], Healing: healing));
+            return new(1, interest, Local, new(1, Source, session, new(1), new(++sequence), at, mono, entities, damage, effects, [], [], Healing: healing,
+                MainTarget: HealthOnly ? new CombatMainTarget(Key(monsters[0]), at, mono) : null));
         }
         public byte[] Encode(CombatCaptureReport report) => JsonSerializer.SerializeToUtf8Bytes(new { combat = report }, ContractJson.Options);
     }
 
-    /// <summary>帧送出时点与发布时点配对：发布回调给出已应用的最后一帧单调时点，之前送出的帧都已可查询。</summary>
+    /// <summary>
+    /// 帧送出时点与发布时点配对：发布回调给出已应用的最后一帧单调时点，之前送出的帧都已可查询。
+    /// 唤醒事件（摘要事件，以及宿主提供时的最新捕获事件）按事件所指的工作区修订找到发布时已应用的帧，记录送出到送达的延迟；
+    /// 送出后 2.5 秒仍没有任何唤醒事件的帧记为未通知（桌面只能等兜底读取）。
+    /// </summary>
     private sealed class LatencyTracker
     {
+        public const double NotifyLimitMs = 2500;
         private readonly object gate = new();
-        private readonly Queue<(double Mono, long Sent)> pending = new(), eventPending = new();
-        private readonly List<double> published = [], delivered = [];
+        private readonly Queue<(double Mono, long Sent)> pending = new();
+        private readonly Dictionary<string, Queue<(double Mono, long Sent)>> waiting = new(StringComparer.Ordinal) { ["summary"] = new(), ["live"] = new(), ["wake"] = new() };
+        private readonly Dictionary<string, List<double>> delivered = new(StringComparer.Ordinal) { ["summary"] = [], ["live"] = [], ["wake"] = [] };
+        private readonly Dictionary<string, long> unnotified = new(StringComparer.Ordinal) { ["summary"] = 0, ["live"] = 0, ["wake"] = 0 };
+        private readonly List<double> published = [];
+        private readonly List<long> publishedAt = [];
         private readonly Dictionary<ulong, (double Mono, long At)> revisions = [];
-        public void Reset() { lock (gate) { pending.Clear(); published.Clear(); eventPending.Clear(); delivered.Clear(); unresolved.Clear(); } }
-        public void Sent(double mono) { lock (gate) { var now = Stopwatch.GetTimestamp(); pending.Enqueue((mono, now)); eventPending.Enqueue((mono, now)); } }
-        /// <summary>摘要事件送达：该修订发布时已应用的帧，按送出到送达记录延迟。</summary>
-        /// <summary>摘要事件先于最新捕获发布送达时（检查点先保存后发布），等该修订发布登记后再配对。</summary>
-        private readonly Dictionary<ulong, long> unresolved = [];
-        public void Delivered(ulong revision, long now)
+        /// <summary>唤醒事件先于最新捕获发布送达时（检查点先保存后发布），等该修订发布登记后再配对。</summary>
+        private readonly Dictionary<(string Kind, ulong Revision), long> unresolved = [];
+        public void Reset()
         {
             lock (gate)
             {
-                if (!revisions.TryGetValue(revision, out var value)) { if (unresolved.Count < 4096) unresolved[revision] = now; return; }
-                Pair(value.Mono, now);
+                pending.Clear(); published.Clear(); publishedAt.Clear(); unresolved.Clear();
+                foreach (var key in waiting.Keys) { waiting[key].Clear(); delivered[key].Clear(); unnotified[key] = 0; }
             }
         }
-        private void Pair(double mono, long now)
+        public void Sent(double mono)
         {
-            while (eventPending.TryPeek(out var item) && item.Mono <= mono) { eventPending.Dequeue(); delivered.Add(Stopwatch.GetElapsedTime(item.Sent, now).TotalMilliseconds); }
+            lock (gate)
+            {
+                var now = Stopwatch.GetTimestamp(); pending.Enqueue((mono, now));
+                foreach (var queue in waiting.Values) queue.Enqueue((mono, now));
+            }
         }
-        public object? EventSnapshot() { lock (gate) return Distribution(delivered); }
+        /// <summary>唤醒事件送达：kind 为 summary 或 live；同一帧的唤醒以先到的为准。</summary>
+        public void Delivered(string kind, ulong revision, long now)
+        {
+            lock (gate)
+            {
+                if (!revisions.TryGetValue(revision, out var value)) { if (unresolved.Count < 4096) unresolved[(kind, revision)] = now; return; }
+                Pair(kind, value.Mono, now);
+            }
+        }
+        private void Pair(string kind, double mono, long now)
+        {
+            foreach (var name in new[] { kind, "wake" })
+            {
+                var queue = waiting[name];
+                while (queue.TryPeek(out var item) && item.Mono <= mono)
+                {
+                    queue.Dequeue();
+                    var elapsed = Stopwatch.GetElapsedTime(item.Sent, now).TotalMilliseconds;
+                    if (elapsed > NotifyLimitMs) unnotified[name]++; else delivered[name].Add(elapsed);
+                }
+            }
+        }
+        private void Expire()
+        {
+            var now = Stopwatch.GetTimestamp();
+            foreach (var (name, queue) in waiting)
+                while (queue.TryPeek(out var item) && Stopwatch.GetElapsedTime(item.Sent, now).TotalMilliseconds > NotifyLimitMs) { queue.Dequeue(); unnotified[name]++; }
+        }
+        public object EventSnapshot()
+        {
+            lock (gate)
+            {
+                Expire();
+                return new
+                {
+                    reportToSummaryEventMs = Distribution(delivered["summary"]), reportToLiveEventMs = Distribution(delivered["live"]),
+                    reportToWakeEventMs = Distribution(delivered["wake"]),
+                    unnotifiedReports = new { summary = unnotified["summary"], live = unnotified["live"], wake = unnotified["wake"] }
+                };
+            }
+        }
         public void Published(UInt64String revision, double mono)
         {
             var now = Stopwatch.GetTimestamp();
             lock (gate)
             {
-                while (pending.TryPeek(out var item) && item.Mono <= mono) { pending.Dequeue(); published.Add(Stopwatch.GetElapsedTime(item.Sent, now).TotalMilliseconds); }
+                while (pending.TryPeek(out var item) && item.Mono <= mono) { pending.Dequeue(); published.Add(Stopwatch.GetElapsedTime(item.Sent, now).TotalMilliseconds); publishedAt.Add(now); }
                 revisions[revision.Value] = (mono, now);
-                if (unresolved.Remove(revision.Value, out var arrived)) Pair(mono, arrived);
+                foreach (var key in unresolved.Keys.Where(key => key.Revision == revision.Value).ToArray())
+                { Pair(key.Kind, mono, unresolved[key]); unresolved.Remove(key); }
                 if (revisions.Count > 4096) foreach (var key in revisions.Keys.Order().Take(2048).ToArray()) revisions.Remove(key);
             }
         }
@@ -509,6 +604,17 @@ internal static class ConsumptionProbe
             lock (gate) return revisions.TryGetValue(revision, out var value) ? value.At : null;
         }
         public object? Snapshot() { lock (gate) return Distribution(published); }
+        /// <summary>按 10 秒窗口的报告到快照可查询延迟（检查延迟是否随时间累积）。</summary>
+        public object Windows()
+        {
+            lock (gate)
+            {
+                if (publishedAt.Count == 0) return Array.Empty<object>();
+                var origin = publishedAt[0];
+                return published.Select((value, index) => (Window: (int)(Stopwatch.GetElapsedTime(origin, publishedAt[index]).TotalSeconds / 10), Value: value))
+                    .GroupBy(item => item.Window).Select(group => new { fromSecond = group.Key * 10, latency = Distribution(group.Select(item => item.Value).ToList()) }).ToArray();
+            }
+        }
     }
 
     internal static object? Distribution(List<double> values)
@@ -519,19 +625,29 @@ internal static class ConsumptionProbe
         return new { count = sorted.Length, p50 = At(0.5), p95 = At(0.95), p99 = At(0.99), maximum = sorted[^1] };
     }
 
-    /// <summary>SSE 订阅战斗主题；战斗摘要事件按修订找到对应的最新捕获发布时点，记录发布到送达的延迟与送达总数。</summary>
+    /// <summary>
+    /// SSE 订阅战斗主题；摘要事件按修订、最新捕获事件（宿主提供 combat.live.changed 时）按负载里的工作区修订找到对应的最新捕获发布时点，
+    /// 记录发布到送达的延迟与送达总数。
+    /// </summary>
     private sealed class EventListener(HttpClient http, LatencyTracker tracker)
     {
+        /// <summary>宿主契约是否登记了最新捕获事件（改动前的宿主没有）。</summary>
+        public static readonly bool LiveEvents = ContractEvents.Definitions.Any(definition => definition.Type == "combat.live.changed");
         private readonly object gate = new();
-        private readonly List<double> latencies = [];
-        private long delivered;
+        private readonly List<double> latencies = [], liveLatencies = [];
+        private long delivered, live;
         public TaskCompletionSource Connected { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public void Reset() { lock (gate) { latencies.Clear(); delivered = 0; } }
-        public object Latencies() { lock (gate) return new { deliveredEvents = delivered, snapshotToSummaryEventMs = Distribution(latencies), reportToSummaryEventMs = tracker.EventSnapshot() }; }
+        public void Reset() { lock (gate) { latencies.Clear(); liveLatencies.Clear(); delivered = 0; live = 0; } }
+        public object Latencies()
+        {
+            lock (gate) return new { deliveredEvents = delivered, liveEvents = live, snapshotToSummaryEventMs = Distribution(latencies),
+                snapshotToLiveEventMs = Distribution(liveLatencies), reports = tracker.EventSnapshot() };
+        }
         public async Task RunAsync(CancellationToken ct)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, ApiContract.Events.Path);
-            request.Headers.Add("X-Event-Topics", "combat.summary.changed,combat.effects.changed,combat.encounter.closed,combat.observation.degraded,combat.measurement.changed");
+            request.Headers.Add("X-Event-Topics", "combat.summary.changed,combat.effects.changed,combat.encounter.closed,combat.observation.degraded,combat.measurement.changed" +
+                (LiveEvents ? ",combat.live.changed" : ""));
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             Connected.TrySetResult();
@@ -544,13 +660,19 @@ internal static class ConsumptionProbe
                 {
                     var now = Stopwatch.GetTimestamp();
                     lock (gate) delivered++;
-                    if (type == "combat.summary.changed")
+                    if (type is "combat.summary.changed" or "combat.live.changed")
                     {
                         using var document = JsonDocument.Parse(line[6..]);
-                        if (document.RootElement.TryGetProperty("resourceRevision", out var value) && ulong.TryParse(value.GetString(), out var revision))
+                        var root = document.RootElement;
+                        var live = type == "combat.live.changed";
+                        var revisionText = live ? root.GetProperty("data").GetProperty("workspaceRevision").GetString()
+                            : root.TryGetProperty("resourceRevision", out var value) ? value.GetString() : null;
+                        if (ulong.TryParse(revisionText, out var revision))
                         {
-                            if (tracker.PublishedAt(revision) is { } at) lock (gate) latencies.Add(Stopwatch.GetElapsedTime(at, now).TotalMilliseconds);
-                            tracker.Delivered(revision, now);
+                            if (tracker.PublishedAt(revision) is { } at)
+                                lock (gate) (live ? liveLatencies : latencies).Add(Stopwatch.GetElapsedTime(at, now).TotalMilliseconds);
+                            if (live) lock (gate) this.live++;
+                            tracker.Delivered(live ? "live" : "summary", revision, now);
                         }
                     }
                 }

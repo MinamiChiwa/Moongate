@@ -466,11 +466,15 @@ public sealed class CombatSession
         effects.Gap(); foreach (var key in entities.Keys) MarkEffect(key);
         StaleGauges(reason);
     }
+    /// <summary>
+    /// 伤害按攻击者归属：本机为 local；所有者已确认为本机的所属实体为 owned，所有者已确认为其他实体的为 other；
+    /// 玩家与怪物为 other，其余为 unknown。技能表现的施放者不改变归属（连携只影响技能分组）。
+    /// </summary>
     private string Attribution(EntityKey key)
     {
         if (key == local) return "local";
         if (!entities.TryGetValue(key, out var entity)) return "unknown";
-        if (entity.OwnerConfirmed && entity.OwnerKey == local && entity.Role.KnownValue == CombatEntityRole.Owned) return "owned";
+        if (entity.OwnerConfirmed && entity.OwnerKey is { } owner && entity.Role.KnownValue == CombatEntityRole.Owned) return owner == local ? "owned" : "other";
         return entity.Role.KnownValue is CombatEntityRole.Player or CombatEntityRole.Monster ? "other" : "unknown";
     }
     private void Damage(CombatDamageEvent value)
@@ -492,7 +496,7 @@ public sealed class CombatSession
         if (deduplication.Count >= limits.MaximumDeduplicationEntries || OtherCacheBytes() + effects.Bytes + 768 > limits.MaximumCacheBytes)
         { MarkGap("deduplication-capacity", value.MonotonicMs, mono, 1); return; }
         deduplication.Add(key, (content, mono)); deduplicationOrder.Enqueue((key, mono));
-        var attribution = value.Chain == true ? "chain" : Attribution(value.SourceEntity);
+        var attribution = Attribution(value.SourceEntity);
         if (measurementPending is { } waiting && value.Amount.Value > 0 && value.MonotonicMs >= waiting.RequestedMs &&
             (attribution == "local" || attribution == "owned" && settings.IncludeOwnedEntities))
             StartMeasurementWindow(waiting.Id, value.ObservedAt, value.MonotonicMs);

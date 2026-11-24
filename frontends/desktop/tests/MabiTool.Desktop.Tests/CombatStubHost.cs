@@ -74,6 +74,15 @@ internal sealed partial class CombatStubHost : HttpMessageHandler
 
     public int Count(string route) => Requests.GetValueOrDefault(route);
 
+    /// <summary>接下来这么多次对当前分段的范围查询回 404（真实宿主的检查点尚未写入，快照已随最新捕获显示新分段）。</summary>
+    public int RangeMissingReplies { get { lock (gate) return rangeMissing; } set { lock (gate) rangeMissing = value; } }
+    private int rangeMissing;
+
+    /// <summary>时间线查询的回应延迟（数据多时宿主按时间线分页查询的耗时）；<see cref="TimelineInFlight"/> 为正在等待回应的查询数。</summary>
+    public TimeSpan TimelineDelay { get; set; }
+    public int TimelineInFlight => Volatile.Read(ref timelineInFlight);
+    private int timelineInFlight;
+
     // ---- 战斗推进 ----
 
     /// <summary>一个检查点：有伤害时推送摘要事件，<paramref name="effects"/> 中的实体推送一条效果事件；修订只加一次。</summary>
@@ -102,6 +111,37 @@ internal sealed partial class CombatStubHost : HttpMessageHandler
             var notification = Effects(LocalId).Snapshot with { Complete = false, Effects = [], SnapshotRequired = true, ChangedEntityIds = effects };
             Push("combat.effects.changed", ObservationId, revision, notification);
         }
+    }
+
+    private ulong liveRevision;
+
+    /// <summary>
+    /// 一次命中：工作区修订加一、伤害增长。<paramref name="live"/> 为真时按改动后的宿主推送最新捕获事件（combat.live.changed，
+    /// 负载带工作区修订与抓包时点），否则按改动前的宿主推送摘要事件。返回新的工作区修订。
+    /// </summary>
+    public ulong Hit(bool live, double? capturedMonotonicMs = null)
+    {
+        CombatSummary summary;
+        ulong revision, sequence;
+        lock (gate)
+        {
+            workspaceRevision++;
+            revision = workspaceRevision;
+            if (encounterId is null) { encounterNumber++; ordinal++; encounterId = $"enc-{encounterNumber}"; damage = 0; durationMs = 0; encounterRevision = 1; }
+            damage += 3_500 + (long)(revision % 7) * 400;
+            durationMs += 20;
+            encounterRevision++;
+            summary = Current()!.Summary;
+            sequence = ++liveRevision;
+        }
+        if (!live) { Push("combat.summary.changed", ObservationId, revision, summary); return revision; }
+        Push("combat.live.changed", "combat-live", sequence, new
+        {
+            owner = "owner", observationId = ObservationId, workspaceRevision = new UInt64String(revision),
+            capturedMonotonicMs = capturedMonotonicMs ?? System.Diagnostics.Stopwatch.GetTimestamp() * (1000d / System.Diagnostics.Stopwatch.Frequency),
+            capturedAt = DateTimeOffset.UtcNow
+        });
+        return revision;
     }
 
     /// <summary>
@@ -192,6 +232,7 @@ internal sealed partial class CombatStubHost : HttpMessageHandler
             response.Content.Headers.ContentType = new("text/event-stream");
             return Task.FromResult(response);
         }
+        if (TimelineDelay > TimeSpan.Zero && path.EndsWith("/timeline/query", StringComparison.Ordinal)) return DelayedAsync(request, path, cancellationToken);
         var before = GC.GetAllocatedBytesForCurrentThread();
         try { return Task.FromResult(Respond(request.Method.Method, path, request.Content)); }
         finally { Interlocked.Add(ref stubBytes, GC.GetAllocatedBytesForCurrentThread() - before); }
@@ -216,6 +257,7 @@ internal sealed partial class CombatStubHost : HttpMessageHandler
                 case ("POST", "/api/v1/combat/ranges/query"):
                 {
                     var query = JsonSerializer.Deserialize<CombatRangeQuery>(content!.ReadAsStream(), ContractJson.Options)!;
+                    if (rangeMissing > 0 && query.EncounterId == encounterId) { rangeMissing--; return NotFound(); }
                     var source = query.EncounterId is { } id ? Find(id) : Current() ?? history.FirstOrDefault();
                     return source is null ? NotFound() : Json(Range(source, query));
                 }
@@ -238,6 +280,13 @@ internal sealed partial class CombatStubHost : HttpMessageHandler
                 return Find(timeline) is { } source ? Json(Timeline(source)) : NotFound();
             return NotFound();
         }
+    }
+
+    private async Task<HttpResponseMessage> DelayedAsync(HttpRequestMessage request, string path, CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref timelineInFlight);
+        try { await Task.Delay(TimelineDelay, cancellationToken); return Respond(request.Method.Method, path, request.Content); }
+        finally { Interlocked.Decrement(ref timelineInFlight); }
     }
 
     // 进行中的定时测量按当前分段的累计给出范围结果（真实宿主在第一个检查点之后即可查询）。

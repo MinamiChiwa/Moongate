@@ -232,6 +232,8 @@ public static class ApiContract
     public static EndpointDefinition FavoriteCombatEncounter { get; } = new("/api/v1/combat/encounters/{id}/favorite", "favoriteCombatEncounter", typeof(CombatEncounter), Method: "POST", RequestType: typeof(CombatFavoriteRequest),
         Permission: ApiPermissions.CombatControl, Idempotent: true, Conditional: true, ETag: true);
     public static EndpointDefinition CombatEntityEffects { get; } = new("/api/v1/combat/entities/{id}/effects", "getCombatEntityEffects", typeof(CombatEntityEffects), ETag: true);
+    /// <summary>当前客户端 Buff 表里全部可显示的效果（编号、名称、极性、描述）；名称表不可用时返回状态与原因。</summary>
+    public static EndpointDefinition CombatClientBuffs { get; } = new("/api/v1/combat/client-buffs", "getCombatClientBuffs", typeof(CombatClientBuffCatalog), ETag: true);
     public static EndpointDefinition CombatTimeline { get; } = new("/api/v1/combat/encounters/{id}/timeline", "getCombatTimeline", typeof(CombatTimelinePage));
     public static EndpointDefinition QueryCombatTimeline { get; } = new("/api/v1/combat/encounters/{id}/timeline/query", "queryCombatTimeline", typeof(CombatTimelinePage), Method: "POST", RequestType: typeof(CombatTimelineQuery));
     public static EndpointDefinition QueryCombatRange { get; } = new("/api/v1/combat/ranges/query", "queryCombatRange", typeof(CombatRangeSummary), Method: "POST", RequestType: typeof(CombatRangeQuery));
@@ -247,6 +249,9 @@ public static class ApiContract
     public static EndpointDefinition CombatAutoObservation { get; } = new("/api/v1/combat/auto-observation", "getCombatAutoObservation", typeof(CombatAutoObservationState), ETag: true);
     public static EndpointDefinition SetCombatAutoObservation { get; } = new("/api/v1/combat/auto-observation", "setCombatAutoObservation", typeof(CombatAutoObservationState), Method: "POST",
         RequestType: typeof(CombatAutoObservationRequest), Permission: ApiPermissions.CombatControl, Idempotent: true, Conditional: true, ETag: true);
+    /// <summary>前端报告战斗数据的显示延迟（最近窗口的中位数、p95 与最大值），宿主写入诊断事件 combat.display.latency。</summary>
+    public static EndpointDefinition ReportCombatDisplayLatency { get; } = new("/api/v1/combat/display-latency", "reportCombatDisplayLatency", typeof(CombatDisplayLatencyReceipt),
+        Method: "POST", RequestType: typeof(CombatDisplayLatencyReport), Permission: ApiPermissions.CombatControl, MaximumRequestBytes: 1024);
     public static EndpointDefinition CleanupCombatHistory { get; } = new("/api/v1/combat/history/cleanup", "cleanupCombatHistory", typeof(CombatStorageSummary), Method: "POST", Permission: ApiPermissions.CombatControl, Idempotent: true);
     public static EndpointDefinition MusicLibrary { get; } = new("/api/v1/music/library", "getMusicLibrary", typeof(MusicLibraryInfo), ETag: true);
     public static EndpointDefinition QueryMusicLibrary { get; } = new("/api/v1/music/library/query", "queryMusicLibrary", typeof(MusicLibraryPage),
@@ -366,8 +371,8 @@ public static class ApiContract
         ModuleConfiguration, ConfigureModule, Extensions, PreviewExtensionInstall, InstallExtension, SetExtensionEnabled, UninstallExtension,
         SetExtensionPermissions, RestartExtension, ExtensionLogs, SetExtensionDevelopmentMode, LoadDevelopmentExtension, ExtensionSurfaces, SendExtensionUiEvent, SaveExtensionSettings, AnswerExtensionFileRequest, Operation, CancelOperation, EventSnapshot, Events, ReplayCatalog, MusicInstruments, QueryOwnedMusicInstruments, QueryOwnedMusicScores, StartReplay,
         CombatCapabilities, StartCombatObservation, CombatObservation, StopCombatObservation, CombatSnapshot, CombatEncounters, QueryCombatEncounters, CombatEncounter,
-        StartCombatEncounter, CloseCombatEncounter, SplitCombatEncounter, ResetCombatEncounter, FavoriteCombatEncounter, CombatEntityEffects, CombatTimeline, QueryCombatTimeline, CleanupCombatHistory,
-        QueryCombatRange, SaveCombatRange, CombatMeasurement, StartCombatMeasurement, CancelCombatMeasurement, SaveCombatMeasurementSettings, CombatAutoObservation, SetCombatAutoObservation,
+        StartCombatEncounter, CloseCombatEncounter, SplitCombatEncounter, ResetCombatEncounter, FavoriteCombatEncounter, CombatEntityEffects, CombatClientBuffs, CombatTimeline, QueryCombatTimeline, CleanupCombatHistory,
+        QueryCombatRange, SaveCombatRange, CombatMeasurement, StartCombatMeasurement, CancelCombatMeasurement, SaveCombatMeasurementSettings, CombatAutoObservation, SetCombatAutoObservation, ReportCombatDisplayLatency,
         MusicLibrary, QueryMusicLibrary, EditMusicLibrary, MusicPlaybackHistory, ImportMusicPlaybackHistory, MusicTimeline,
         PreviewMusicImport, MusicImport, CommitMusicImport, MusicPreferences,
         PreviewRoomImport, RoomImport, CommitRoomImport, RoomPreferences, EditRoomPreferences,

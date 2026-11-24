@@ -251,11 +251,11 @@ public sealed class CombatMapSegmentStreamTests
 
     /// <summary>
     /// 沿用身份的实体来自连接 A；新捕获接入连接 B（另一张图），B 上另一个角色恰好用了同一个实体 ID 并造成伤害：只沿用角色 ID，
-    /// 本机实体保持未知，伤害不归属本机、身份待确认；受疗 20645 与首尾相接的 SetHealth 170205 给出本机实体后才归属。
-    /// 同一连接 A 上沿用的实体与受疗配对不符时改绑。
+    /// 本机实体保持未知，伤害不归属本机、身份待确认。受疗与紧邻的 SetHealth 170205 不足以确认（组队时紧邻的可以是队友的 HP）；
+    /// 本机自疗（施放 20644 与 400 字节内同旗标、同数值的受疗 20645）给出施放目标后才归属。同一连接 A 上沿用的实体与自疗目标不符时改绑。
     /// </summary>
     [Fact]
-    public void CarriedEntityIsUsedOnlyOnItsOwnConnectionAndOtherConnectionsWaitForAPairedHeal()
+    public void CarriedEntityIsUsedOnlyOnItsOwnConnectionAndOtherConnectionsWaitForASelfHeal()
     {
         List<CombatCaptureReport> reports = [];
         var profile = new ObservationCombatProfile(Tw20261110CombatProtocol.Profile,
@@ -274,23 +274,34 @@ public sealed class CombatMapSegmentStreamTests
         var known = identities.Last!;
         // 伤害帧的攻击者恰为沿用的实体 ID：在连接 B 上它是另一个角色。
         Assert.Equal(0xabcdef0100000457UL, known.ActorId);
-        var health = new byte[21]; BinaryPrimitives.WriteUInt64LittleEndian(health, 0x5C48CE);
-        BinaryPrimitives.WriteUInt32LittleEndian(health.AsSpan(8), 8); BinaryPrimitives.WriteInt64LittleEndian(health.AsSpan(12), 900);
+        // 队友的 HP 更新与本机受疗首尾相接（combat-evidence-20261110-confirmed-02 的形态）。
+        var teammateHealth = new byte[21]; BinaryPrimitives.WriteUInt64LittleEndian(teammateHealth, 0x5C4900);
+        BinaryPrimitives.WriteUInt32LittleEndian(teammateHealth.AsSpan(8), 8); BinaryPrimitives.WriteInt64LittleEndian(teammateHealth.AsSpan(12), 900);
+        var teammateHeal = new byte[16]; BinaryPrimitives.WriteUInt64LittleEndian(teammateHeal, 0x2000); BinaryPrimitives.WriteInt64LittleEndian(teammateHeal.AsSpan(8), 60);
+        var adjacentOnly = Frame(170205, teammateHealth).Concat(Frame(20645, teammateHeal)).ToArray();
+        // 本机自疗：受疗之后紧接施放，施放目标 0x5C48CE。
         var heal = new byte[16]; BinaryPrimitives.WriteUInt64LittleEndian(heal, 0x2000); BinaryPrimitives.WriteInt64LittleEndian(heal.AsSpan(8), 50);
-        var paired = Frame(170205, health).Concat(Frame(20645, heal)).ToArray();
+        var cast = new byte[24]; BinaryPrimitives.WriteUInt64LittleEndian(cast, 0x5C48CE); BinaryPrimitives.WriteUInt64LittleEndian(cast.AsSpan(8), 0x2000);
+        BinaryPrimitives.WriteInt64LittleEndian(cast.AsSpan(16), 50);
+        var selfHeal = Frame(20645, heal).Concat(Frame(20644, cast)).ToArray();
 
         reports.Clear();
         var carried = new LocalIdentityMemory(known, ObservedA);
         using var otherMap = Open(carried, ConnectionB);
-        otherMap.Feed(1000, hits, 10000, 10000, at.AddMilliseconds(10000)); otherMap.Tick(10400, at.AddMilliseconds(10400));
+        uint sequence = 1000;
+        void Feed(SharedGameStream stream, byte[] bytes, double ms) { stream.Feed(sequence, bytes, ms, ms, at.AddMilliseconds(ms)); sequence += (uint)bytes.Length; }
+        Feed(otherMap, hits, 10000); otherMap.Tick(10400, at.AddMilliseconds(10400));
         Assert.Null(otherMap.LocalEntity); Assert.True(carried.Carried);
         Assert.Null(SharedGameStream.ReportIdentity(otherMap.Music.Current, [otherMap], carried).Identity);
+        // 只有受疗与紧邻的 HP：证据不足，保持未确认。
+        Feed(otherMap, adjacentOnly.Concat(hits).ToArray(), 10450); otherMap.Tick(10480, at.AddMilliseconds(10480));
+        Assert.Null(otherMap.LocalEntity);
         Assert.DoesNotContain(reports, report => report.LocalEntity is not null);
-        // 受疗配对确认本机实体（0x5C48CE），之后本机的伤害才归属本机。
+        // 本机自疗确认本机实体（0x5C48CE），之后本机的伤害才归属本机。
         var mine = new byte[53];
         BinaryPrimitives.WriteUInt64LittleEndian(mine, 0x5C48CE); BinaryPrimitives.WriteUInt64LittleEndian(mine.AsSpan(8), 0xabcdef0100000458);
         BinaryPrimitives.WriteInt64LittleEndian(mine.AsSpan(16), 77);
-        otherMap.Feed((uint)(1000 + hits.Length), paired.Concat(hits).Concat(Frame(21196, mine)).Concat(Frame(21196, mine)).ToArray(), 10500, 10500, at.AddMilliseconds(10500));
+        Feed(otherMap, selfHeal.Concat(hits).Concat(Frame(21196, mine)).Concat(Frame(21196, mine)).ToArray(), 10500);
         otherMap.Tick(10900, at.AddMilliseconds(10900));
         Assert.Equal(0x5C48CEUL, otherMap.LocalEntity?.Key.RawInstanceId.Value);
         Validate(reports, profile);
@@ -299,11 +310,14 @@ public sealed class CombatMapSegmentStreamTests
         session.Stop("observation-stopped", at.AddMilliseconds(12000), 12000);
         Assert.Equal("154", session.Capture().Encounters.Single().Summary.AttributedDamage.ToString());
 
-        // 同一连接 A、沿用实体与受疗配对不符：改绑到配对给出的实体。
+        // 同一连接 A、沿用实体与自疗目标不符：紧邻的 HP 不改绑，本机自疗改绑到施放目标。
         using var sameConnection = Open(new LocalIdentityMemory(known with { ActorId = 77 }, ObservedA), ConnectionA);
-        sameConnection.Feed(1000, hits, 20000, 20000, at.AddMilliseconds(20000));
+        sequence = 1000;
+        Feed(sameConnection, hits, 20000);
         Assert.Equal(77UL, sameConnection.LocalEntity?.Key.RawInstanceId.Value);
-        sameConnection.Feed((uint)(1000 + hits.Length), paired.Concat(hits).ToArray(), 20100, 20100, at.AddMilliseconds(20100));
+        Feed(sameConnection, adjacentOnly.Concat(hits).ToArray(), 20050);
+        Assert.Equal(77UL, sameConnection.LocalEntity?.Key.RawInstanceId.Value);
+        Feed(sameConnection, selfHeal.Concat(hits).ToArray(), 20100);
         Assert.Equal(0x5C48CEUL, sameConnection.LocalEntity?.Key.RawInstanceId.Value);
     }
 

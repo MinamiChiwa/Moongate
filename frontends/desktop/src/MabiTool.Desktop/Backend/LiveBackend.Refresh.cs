@@ -5,16 +5,23 @@ using MabiTool.Desktop.Pages.Combat;
 
 namespace MabiTool.Desktop.Backend;
 
-// 刷新调度：每类数据有自己的读取时机（事件、用户操作、可见性变化或各自的例行间隔），主循环每轮只读到期的部分。
-// 战斗事件按主题标记要读的对象，同一主题的密集事件尾随合并；用户操作不等合并间隔。
+// 刷新调度：每类数据有自己的读取时机（事件、用户操作、可见性变化或各自的例行间隔）。战斗数据由独立的战斗循环读取，
+// 其余数据由主循环读取，两者互不等待：图标、合奏、曲长等慢读取不挡住战斗读取。
+// 战斗事件按主题标记要读的对象，到达即读，两轮之间至少隔一帧（约 16 ms），间隔内的变化并入下一轮；用户操作不等间隔。
 // 界面各处（主窗口、迷你窗、浮窗元件、背包页）报告自己是否可见，没有可见的使用者时不为它拉数据，重新可见时立即补读一次。
 public sealed partial class LiveBackend
 {
     /// <summary>
-    /// 战斗事件的合并窗口：宿主在同一检查点依次写出摘要、效果与缺口事件（检查点约 200 ms 一次），
-    /// 第一条到达后等这么久再读，同一检查点的几条事件只引发一轮读取。
+    /// 两轮事件驱动的战斗读取的最小间隔（每秒至多 60 轮）：事件到达即读，读取进行中或间隔内到达的事件并入下一轮，不丢变化。
+    /// 下一轮的时刻由高精度计时器唤醒。
     /// </summary>
-    internal static readonly TimeSpan CoalesceWindow = TimeSpan.FromMilliseconds(150);
+    internal static readonly TimeSpan FrameInterval = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60);
+
+    /// <summary>
+    /// 只有工作区修订推进时，整场或所选目标的范围汇总、明细窗口的范围与首击时间线的最短重读间隔：它们在宿主上按时间线重新统计，
+    /// 不随每一帧重读；间隔内的变化安排一轮补读。
+    /// </summary>
+    internal static readonly TimeSpan SecondaryInterval = TimeSpan.FromMilliseconds(250);
 
     /// <summary>绑定与输入占用的例行间隔：浮窗跟随游戏窗口位置、活动胶囊的占用状态都依赖它，没有对应事件。</summary>
     internal static readonly TimeSpan StatusInterval = TimeSpan.FromSeconds(1);
@@ -67,13 +74,15 @@ public sealed partial class LiveBackend
     }
 
     private Due due = Due.All;
-    private long pendingSince, lastCombatRound, lastSnapshotRead, lastStatusRead, lastCaptureRead, lastRoomRead, lastColorRunRead,
+    private long lastCombatRound, lastSecondaryRead, lastSnapshotRead, lastStatusRead, lastCaptureRead, lastRoomRead, lastColorRunRead,
         lastSurfacesRead, followUpAt;
     private bool urgent = true;
     private CombatEncounterPage? historyPage;
     private (string Key, CombatRangeSummary? Range, string? Problem)? rangeRead;
     private (string EncounterId, string Revision, long At, IReadOnlyList<CombatEffectCoverage> Coverage)? coverageRead;
     private (string? Id, CombatEntityEffects? Effects, string? Problem, long At) targetRead;
+    /// <summary>当前攻击目标（快照 currentTarget）的效果，收藏浮窗的目标项用；与效果目标相同时沿用 <see cref="targetRead"/>。</summary>
+    private (string? Id, CombatEntityEffects? Effects, string? Problem, long At) aimRead;
     private CombatMeasurementState? measurementState;
     private long measurementAt;
 
@@ -81,20 +90,29 @@ public sealed partial class LiveBackend
     private static long Span(TimeSpan value) => (long)(value.TotalSeconds * Stopwatch.Frequency);
     private static bool Elapsed(long since, TimeSpan interval) => since == 0 || Now - since >= Span(interval);
 
-    /// <summary>标记要读取的部分并唤醒主循环；<paramref name="immediate"/> 为真（用户操作、可见性变化）时不等合并窗口。</summary>
+    /// <summary>
+    /// 标记要读取的部分并唤醒对应的循环（战斗部分唤醒战斗循环，其余唤醒主循环）；<paramref name="immediate"/> 为真（用户操作、可见性变化）时
+    /// 不等帧间隔。
+    /// </summary>
     private void MarkDue(Due flags, bool immediate)
     {
         lock (gate)
         {
             due |= flags;
             if (immediate) urgent = true;
-            else if (pendingSince == 0) pendingSince = Now;
         }
-        Signal();
+        if ((flags & Due.Combat) != 0) SignalCombat();
+        if ((flags & ~Due.Combat) != 0) Signal();
     }
 
     /// <summary>测试用：界面当前取用的战斗工作区修订。</summary>
     internal ulong? ShownWorkspaceRevision => Read().State.Workspace?.Revision.Value;
+
+    /// <summary>测试用：界面当前取用的范围结果（是否有结果、问题码与所针对的选择键）。</summary>
+    internal (bool HasRange, string? Problem, string? Key) ShownRange
+    {
+        get { var shown = Read().State; return (shown.Range is not null, shown.RangeProblem, shown.RangeKey); }
+    }
 
     /// <summary>测试用：主循环已经开始的战斗读取轮数。</summary>
     internal int CombatRounds => Volatile.Read(ref combatRounds);
@@ -143,12 +161,6 @@ public sealed partial class LiveBackend
             var now = Now;
             var next = long.MaxValue;
             void At(long when) => next = Math.Min(next, when);
-            if (CombatWanted)
-            {
-                if ((due & Due.Combat) != 0) At(CombatReadyAt());
-                At(lastSnapshotRead + Span(SnapshotInterval));
-                if (followUpAt != 0) At(followUpAt);
-            }
             if ((due & Due.Status) != 0) At(now);
             At(lastStatusRead + Span(AnySurface ? StatusInterval : HiddenStatusInterval));
             if (startingObservation is not null) At(lastStatusRead + Span(StatusInterval));
@@ -168,16 +180,53 @@ public sealed partial class LiveBackend
         }
     }
 
-    // 调用方持有 gate。用户操作立即执行；事件等合并窗口结束，且与上一轮至少隔 MinimumRefreshInterval。
-    private long CombatReadyAt() => urgent ? Now
-        : Math.Max(pendingSince == 0 ? Now : pendingSince + Span(CoalesceWindow), lastCombatRound + Span(MinimumRefreshInterval));
+    // 调用方持有 gate。用户操作立即执行；事件与上一轮至少隔一帧（FrameInterval）。
+    private long CombatReadyAt() => urgent ? Now : Math.Max(Now, lastCombatRound + Span(FrameInterval));
+
+    /// <summary>距下一项到期的战斗读取的时间；为零表示现在就读。没有战斗视图可见时不读。</summary>
+    private TimeSpan NextCombatWork()
+    {
+        lock (gate)
+        {
+            if (!CombatWanted) return TimeSpan.FromSeconds(5);
+            var now = Now;
+            var next = long.MaxValue;
+            void At(long when) => next = Math.Min(next, when);
+            if ((due & Due.Combat) != 0) At(CombatReadyAt());
+            At(lastSnapshotRead + Span(SnapshotInterval));
+            if (followUpAt != 0) At(followUpAt);
+            var wait = next - now;
+            return wait <= 0 ? TimeSpan.Zero : TimeSpan.FromSeconds(Math.Min(wait, Span(TimeSpan.FromSeconds(5))) / (double)Stopwatch.Frequency);
+        }
+    }
 
     private async Task WaitForWorkAsync(CancellationToken token)
     {
         while (NextWork() is { } wait && wait > TimeSpan.Zero) await wake.WaitAsync(wait, token);
     }
 
+    /// <summary>
+    /// 战斗循环的等待：帧间隔以内的等待由高精度计时器按截止时间唤醒（期间到达的事件并入这一轮），更长的等待（兜底读取、补读）可被事件提前唤醒。
+    /// </summary>
+    private async Task WaitForCombatAsync(Task events, CancellationToken token)
+    {
+        while (!events.IsCompleted && NextCombatWork() is var wait && wait > TimeSpan.Zero)
+        {
+            if (wait <= FrameInterval + FrameInterval) await combatTimer.DelayAsync(wait, token);
+            else await combatWake.WaitAsync(wait, token);
+        }
+    }
+
     // ---- 事件 ----
+
+    /// <summary>十进制字符串或数字形式的修订；无法解析时为空。</summary>
+    private static ulong? RevisionOf(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String when ulong.TryParse(value.GetString(), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var parsed) => parsed,
+        JsonValueKind.Number when value.TryGetUInt64(out var number) => number,
+        _ => null
+    };
 
     /// <summary>事件信封的资源修订；没有或无法解析时为空。</summary>
     internal static (string? Resource, ulong? Revision) EventVersion(JsonElement envelope)
@@ -201,11 +250,22 @@ public sealed partial class LiveBackend
     {
         var (resource, revision) = EventVersion(message.Data);
         CombatWorkspace? workspace;
-        string? target;
-        lock (gate) { workspace = state.Workspace; target = targetRead.Id; }
+        string? target, aim;
+        lock (gate) { workspace = state.Workspace; target = targetRead.Id; aim = aimRead.Id; }
         var known = workspace is { } current && resource == current.Observation.Id && revision is { } seen && seen <= current.Revision.Value;
         switch (message.Event)
         {
+            case "combat.live.changed":
+            {
+                // 资源修订是宿主内的通知序号；所指的观察与工作区修订在负载里。
+                if (!message.Data.TryGetProperty("data", out var data) || !data.TryGetProperty("observationId", out var id) || id.ValueKind != JsonValueKind.String ||
+                    !data.TryGetProperty("workspaceRevision", out var value) || RevisionOf(value) is not { } live)
+                { MarkDue(Due.Snapshot, immediate: false); break; }
+                double? captured = data.TryGetProperty("capturedMonotonicMs", out var mono) && mono.ValueKind == JsonValueKind.Number ? mono.GetDouble() : null;
+                RememberLive(id.GetString()!, live, captured);
+                if (!(workspace is { } shown && shown.Observation.Id == id.GetString() && live <= shown.Revision.Value)) MarkDue(Due.Snapshot, immediate: false);
+                break;
+            }
             case "combat.summary.changed" or "combat.observation.degraded":
                 if (!known) MarkDue(Due.Snapshot, immediate: false);
                 break;
@@ -222,7 +282,7 @@ public sealed partial class LiveBackend
                 var self = workspace?.SelfEffects?.Id;
                 var flags = Due.None;
                 if (!known && (changed is null || self is null || changed.Contains(self))) flags |= Due.Snapshot;
-                if (changed is null || target is not null && changed.Contains(target)) flags |= Due.TargetEffects;
+                if (changed is null || target is not null && changed.Contains(target) || aim is not null && changed.Contains(aim)) flags |= Due.TargetEffects;
                 if (flags != Due.None) MarkDue(flags, immediate: false);
                 break;
             }

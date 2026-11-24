@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using MabiTool.Desktop.Localization;
 
 namespace MabiTool.Desktop.Pages.Combat;
@@ -20,37 +21,55 @@ public sealed class EffectLine : Control
     public const double WarningMs = 5000;
     private const double StarLeft = 20, StarWidth = 16, NameLeft = 38, TimeWidth = 46;
 
+    // 浮窗原配色（不随主题变化）：白字在填充色上对比 4.8–5.2，在轨道上不低于 11；填充与轨道亮度差明显。轨道可在浮窗配色里改 RGB，透明度固定 #E6。
+    internal static readonly Color OverlayTrackColor = Color.Parse("#E6141826");
+    internal static readonly Color OverlayPositiveColor = Color.Parse("#2563EB"), OverlayNegativeColor = Color.Parse("#DC2626"),
+        OverlayOtherColor = Color.Parse("#6B7280"), OverlayWarningColor = Color.Parse("#B45309");
+    // 静态字段按书写顺序初始化：这些颜色要在下面的属性缺省值之前。
+
     public static readonly StyledProperty<EffectRow?> RowProperty = AvaloniaProperty.Register<EffectLine, EffectRow?>(nameof(Row));
     public static readonly StyledProperty<bool> CompactProperty = AvaloniaProperty.Register<EffectLine, bool>(nameof(Compact));
-    /// <summary>浮窗配色：叠在游戏画面与深色半透明外框上，用不透明的深色轨道、饱和的极性色填充与带阴影的白字。</summary>
+    /// <summary>浮窗配色：叠在游戏画面与深色半透明外框上，用不透明的深色轨道、不透明的极性色填充与带阴影的条目文字。</summary>
     public static readonly StyledProperty<bool> OverlayProperty = AvaloniaProperty.Register<EffectLine, bool>(nameof(Overlay));
+
+    // 浮窗配色的四种填充与两种文字色：缺省为原配色，浮窗元件以样式取浮窗配色“效果条目”组的资源；主窗口的条目不用这些属性。
+    public static readonly StyledProperty<IBrush> OverlayPositiveProperty = AvaloniaProperty.Register<EffectLine, IBrush>(nameof(OverlayPositive), new ImmutableSolidColorBrush(OverlayPositiveColor));
+    public static readonly StyledProperty<IBrush> OverlayNegativeProperty = AvaloniaProperty.Register<EffectLine, IBrush>(nameof(OverlayNegative), new ImmutableSolidColorBrush(OverlayNegativeColor));
+    public static readonly StyledProperty<IBrush> OverlayOtherProperty = AvaloniaProperty.Register<EffectLine, IBrush>(nameof(OverlayOther), new ImmutableSolidColorBrush(OverlayOtherColor));
+    public static readonly StyledProperty<IBrush> OverlayWarningProperty = AvaloniaProperty.Register<EffectLine, IBrush>(nameof(OverlayWarning), new ImmutableSolidColorBrush(OverlayWarningColor));
+    public static readonly StyledProperty<IBrush> OverlayTextProperty = AvaloniaProperty.Register<EffectLine, IBrush>(nameof(OverlayText), Brushes.White);
+    public static readonly StyledProperty<IBrush> OverlayMutedProperty = AvaloniaProperty.Register<EffectLine, IBrush>(nameof(OverlayMuted), new ImmutableSolidColorBrush(Color.Parse("#E5E9F2")));
+    public static readonly StyledProperty<IBrush> OverlayTrackBrushProperty = AvaloniaProperty.Register<EffectLine, IBrush>(nameof(OverlayTrackBrush), new ImmutableSolidColorBrush(OverlayTrackColor));
 
     private static readonly IBrush PositiveTint = new SolidColorBrush(Color.Parse("#402F6FD6"));
     private static readonly IBrush NegativeTint = new SolidColorBrush(Color.Parse("#40D2393B"));
     private static readonly IBrush OtherTint = new SolidColorBrush(Color.Parse("#357D8597"));
     private static readonly IBrush WarningTint = new SolidColorBrush(Color.Parse("#55E0A100"));
     private static readonly IBrush Track = new SolidColorBrush(Color.Parse("#14808080"));
-    // 浮窗配色（不随主题变化）：白字在填充色上对比 4.8–5.2，在轨道上不低于 11；填充与轨道亮度差明显。
-    internal static readonly Color OverlayTrackColor = Color.Parse("#E6141826");
-    internal static readonly Color OverlayPositiveColor = Color.Parse("#2563EB"), OverlayNegativeColor = Color.Parse("#DC2626"),
-        OverlayOtherColor = Color.Parse("#6B7280"), OverlayWarningColor = Color.Parse("#B45309");
-    private static readonly IBrush OverlayTrack = new SolidColorBrush(OverlayTrackColor);
-    private static readonly IBrush OverlayText = Brushes.White;
-    private static readonly IBrush OverlayMuted = new SolidColorBrush(Color.Parse("#E5E9F2"));
     private static readonly IBrush OverlayShadow = new SolidColorBrush(Color.Parse("#E6000000"));
     private static readonly IBrush StarBrush = new SolidColorBrush(Color.Parse("#D99A00"));
     private static readonly Geometry Pentagon = Geometry.Parse("M5,0 L10,3 L9,11 L1,11 L0,3 Z");
 
-    static EffectLine() => AffectsRender<EffectLine>(RowProperty, CompactProperty, OverlayProperty);
+    static EffectLine() => AffectsRender<EffectLine>(RowProperty, CompactProperty, OverlayProperty, OverlayPositiveProperty, OverlayNegativeProperty,
+        OverlayOtherProperty, OverlayWarningProperty, OverlayTextProperty, OverlayMutedProperty, OverlayTrackBrushProperty);
 
     public EffectRow? Row { get => GetValue(RowProperty); set => SetValue(RowProperty, value); }
     public bool Compact { get => GetValue(CompactProperty); set => SetValue(CompactProperty, value); }
     public bool Overlay { get => GetValue(OverlayProperty); set => SetValue(OverlayProperty, value); }
 
-    /// <summary>这一行的填充色：浮窗用饱和的不透明极性色，主窗口用低饱和半透明色；少于 5 秒为警示色。</summary>
-    internal static IBrush FillOf(EffectRow row, bool warning, bool overlay) => overlay
-        ? new SolidColorBrush(warning ? OverlayWarningColor : row.Polarity switch
-            { EffectPolarity.Positive => OverlayPositiveColor, EffectPolarity.Negative => OverlayNegativeColor, _ => OverlayOtherColor })
+    public IBrush OverlayPositive { get => GetValue(OverlayPositiveProperty); set => SetValue(OverlayPositiveProperty, value); }
+    public IBrush OverlayNegative { get => GetValue(OverlayNegativeProperty); set => SetValue(OverlayNegativeProperty, value); }
+    public IBrush OverlayOther { get => GetValue(OverlayOtherProperty); set => SetValue(OverlayOtherProperty, value); }
+    public IBrush OverlayWarning { get => GetValue(OverlayWarningProperty); set => SetValue(OverlayWarningProperty, value); }
+    public IBrush OverlayText { get => GetValue(OverlayTextProperty); set => SetValue(OverlayTextProperty, value); }
+    public IBrush OverlayMuted { get => GetValue(OverlayMutedProperty); set => SetValue(OverlayMutedProperty, value); }
+    /// <summary>浮窗条目的轨道：缺省为原配色，浮窗元件以样式取浮窗配色“效果条目”组的条目轨道。</summary>
+    public IBrush OverlayTrackBrush { get => GetValue(OverlayTrackBrushProperty); set => SetValue(OverlayTrackBrushProperty, value); }
+
+    /// <summary>这一行的填充色：浮窗用浮窗配色的不透明极性色，主窗口用低饱和半透明色；少于 5 秒为警示色。</summary>
+    private IBrush FillOf(EffectRow row, bool warning) => Overlay
+        ? warning ? OverlayWarning : row.Polarity switch
+            { EffectPolarity.Positive => OverlayPositive, EffectPolarity.Negative => OverlayNegative, _ => OverlayOther }
         : warning ? WarningTint : row.Polarity switch
             { EffectPolarity.Positive => PositiveTint, EffectPolarity.Negative => NegativeTint, _ => OtherTint };
 
@@ -116,11 +135,11 @@ public sealed class EffectLine : Control
         var bounds = new Rect(Bounds.Size).Deflate(new Thickness(0, 1));
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
         var (name, stacks, remaining, progress, warning) = Describe(row, Clock());
-        var tint = FillOf(row, warning, Overlay);
+        var tint = FillOf(row, warning);
         const double radius = 4;
         // 底色：常驻为淡色整行，有进度时为轨道加按比例填充，未知只有轨道。
-        context.DrawRectangle(Overlay ? OverlayTrack : Track, null, bounds, radius, radius);
-        if (row.Infinite) context.DrawRectangle(new SolidColorBrush(((ISolidColorBrush)tint).Color, 0.45), null, bounds, radius, radius);
+        context.DrawRectangle(Overlay ? OverlayTrackBrush : Track, null, bounds, radius, radius);
+        if (row.Infinite) context.DrawRectangle(new SolidColorBrush(tint is ISolidColorBrush solid ? solid.Color : Colors.Gray, 0.45), null, bounds, radius, radius);
         else if (progress is { } ratio and > 0) context.DrawRectangle(tint, null, bounds.WithWidth(bounds.Width * ratio), radius, radius);
 
         var middle = bounds.Y + bounds.Height / 2;
@@ -137,7 +156,7 @@ public sealed class EffectLine : Control
         if (row.Favorite || IsPointerOver)
             Draw(context, row.Favorite ? "★" : "☆", StarLeft, middle, StarWidth, row.Favorite ? StarBrush : muted, size + 1, family, FontWeight.Normal, shadow: shadow);
         var right = bounds.Right - 6;
-        // 浮窗的警示由填充色表达，文字保持白色以保证对比。
+        // 浮窗的警示由填充色表达，文字保持条目文字色。
         var timeBrush = warning && !Overlay ? Brush("UnknownBrush", Brushes.DarkOrange) : ink;
         // 剩余时间占固定宽度、右对齐，数字变化不挤动名称；层数紧挨其左。
         Draw(context, remaining, right - TimeWidth, middle, TimeWidth, timeBrush, size, family, FontWeight.Bold, TextAlignment.Right, shadow);

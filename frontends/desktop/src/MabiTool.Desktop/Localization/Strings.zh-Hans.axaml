@@ -92,10 +92,9 @@
   <sys:String x:Key="C.EffectFavoritesOnly">只显示收藏</sys:String>
   <sys:String x:Key="C.EffectFavoritesOnlyTip">只显示已收藏的效果；主页面与浮窗同时生效</sys:String>
   <sys:String x:Key="C.ManageFavorites">收藏…</sys:String>
-  <sys:String x:Key="C.ManageFavoritesTip">按名称或编号搜索已提取到的效果并收藏</sys:String>
+  <sys:String x:Key="C.ManageFavoritesTip">按名称或编号搜索客户端 Buff 表与已提取到的效果并收藏</sys:String>
   <sys:String x:Key="C.FavoritesTitle">效果收藏</sys:String>
   <sys:String x:Key="C.FavoritesSearch">按名称或编号搜索</sys:String>
-  <sys:String x:Key="C.FavoritesEmptyCatalog">还没有提取到效果</sys:String>
   <sys:String x:Key="C.NoFavoriteEffects">没有收藏的效果正在生效</sys:String>
   <sys:String x:Key="C.EffectsNone">无</sys:String>
   <sys:String x:Key="C.AllEffects">这一行的全部效果</sys:String>
@@ -294,7 +293,7 @@
   <sys:String x:Key="O.Monitors">显示器</sys:String>
   <sys:String x:Key="O.ResetPosition">恢复默认位置</sys:String>
   <sys:String x:Key="O.Library">元件库</sys:String>
-  <sys:String x:Key="O.LibraryHint">点一下加入当前版面；已在版面上的元件再点一次选取，选取后再点移除。</sys:String>
+  <sys:String x:Key="O.LibraryHint">点元件块选取并在右侧卡片里设置；块右侧的开关决定是否显示在浮窗上，关闭时保留位置与设置。</sys:String>
   <sys:String x:Key="O.NoSelection">在元件库里点选一个元件</sys:String>
   <sys:String x:Key="O.Scale">缩放</sys:String>
   <sys:String x:Key="O.Opacity">不透明度</sys:String>
@@ -533,5 +532,10 @@
   <sys:String x:Key="O.HideWithGame">游戏最小化时隐藏</sys:String>
   <sys:String x:Key="O.HideWithGameHint">关闭时浮窗始终显示，与游戏窗口无关</sys:String>
   <sys:String x:Key="O.StatusShort">在屏幕上摆放元件</sys:String>
+  <sys:String x:Key="O.ColorsTitle">配色</sys:String>
+  <sys:String x:Key="O.ColorsHint">整个浮窗共用的颜色，改动立即显示在游戏浮窗上；单个元件的底板与文字可以在所选元件的卡片里另设。</sys:String>
+  <sys:String x:Key="O.ColorsPreview">示意</sys:String>
+  <sys:String x:Key="O.WidgetColors">配色</sys:String>
+  <sys:String x:Key="O.WidgetColorsHint">只改这个元件的底板与文字；“跟随整体”的项用“配色”卡片里的颜色。</sys:String>
   <sys:String x:Key="C.TraitsHelp">暴击以可暴击次数为分母，强击、连击、追击以直接伤害次数为分母，其余以全部已归属伤害次数为分母。持续伤害（Dot）不计入；间接伤害只计入暴击。悬停图标可看名称。</sys:String>
 </ResourceDictionary>

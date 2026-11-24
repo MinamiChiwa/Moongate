@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using MabiTool.Desktop.Infrastructure;
 using MabiTool.Desktop.Localization;
+using MabiTool.Desktop.Controls;
 
 namespace MabiTool.Desktop.Pages.Dyeing;
 

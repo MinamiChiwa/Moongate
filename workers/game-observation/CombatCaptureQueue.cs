@@ -93,6 +93,8 @@ public sealed class CombatCaptureQueue
         dataBudget = maximumBytes - maximumLosses * MaximumLossBytes;
     }
     public int Count { get { lock (gate) return queue.Count; } }
+    /// <summary>队尾批次（仍可并入新报告）首份报告的帧时点距 <paramref name="nowMs"/> 的毫秒数；没有数据批次时为空。</summary>
+    internal double? TailAgeMs(double nowMs) { lock (gate) return queue.Count == 0 ? null : nowMs - queue[^1].FirstMono; }
     public int PendingCount { get { lock (gate) return queue.Count + losses.Count; } }
     public int Bytes { get { lock (gate) return bytes + lossBytes; } }
     /// <summary>不含实体快照的记录数（伤害、效果、缺口、治疗、战斗状态与效果校准）；批次记录数为它们之和加最后一份的实体数。</summary>

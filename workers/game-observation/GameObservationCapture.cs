@@ -37,8 +37,11 @@ internal static partial class CaptureChannels
     }
     /// <summary>常驻捕获同时打开的设备上限；超出的设备记为 limit。</summary>
     internal const int MaximumDevices = 32;
-    /// <summary>有已确认游戏流时推进解析（技能关联、保活帧、缺口超时）的间隔。</summary>
-    internal const double TickMs = 20;
+    /// <summary>
+    /// 有已确认游戏流时推进解析的上限间隔：解析器给出下一个到期时点（技能关联等待到期、血量与保活帧、离场移除，见
+    /// <see cref="CapturePipeline.NextDueMs"/>）时按它由高精度计时器唤醒，没有到期时点时至多隔这么久推进一次（流缺口超时与库存推进的检查粒度）。
+    /// </summary>
+    internal const double TickMs = 100;
     /// <summary>连接表读取、过滤器更新、驱动丢包检查与状态报告的间隔。</summary>
     internal const double HousekeepingMs = 500;
     /// <summary>
@@ -156,13 +159,15 @@ internal static partial class CaptureChannels
 
     /// <summary>
     /// 读取循环。事件方式：等待任一设备的读事件（或取消），被唤醒后读空已触发的设备；持续有包时（距上次唤醒不足合批间隔）先等合批间隔再读，
-    /// 空闲时只按连接表读取与状态报告的间隔醒来。有已确认游戏流时每 <see cref="TickMs"/> 推进一次解析。轮询方式（旧版 Npcap）：每轮读全部设备、
-    /// 推进解析后等待轮询间隔。
+    /// 空闲时只按连接表读取与状态报告的间隔醒来。有已确认游戏流时按解析器的下一个到期时点推进解析（至多隔 <see cref="TickMs"/>），
+    /// 到期推进与合批等待由只作用于本进程的高精度计时器（<see cref="MabiTool.ModuleSdk.PreciseTimer"/>）唤醒，不改变整机计时器精度；
+    /// 高精度计时器不可用时到期时点并入等待超时（系统计时器精度）。轮询方式（旧版 Npcap）：每轮读全部设备、推进解析后等待轮询间隔。
     /// </summary>
     internal static void ReadLoop(DeviceTap[] taps, CaptureReadConfig config, Stopwatch timer, CancellationToken token,
         Action<double> housekeeping, Func<int, DeviceTap, int> read, CapturePipeline pipeline)
     {
-        var events = new nint[taps.Length + 1]; var owners = new int[taps.Length];
+        using var precise = new MabiTool.ModuleSdk.PreciseTimer();
+        var events = new nint[taps.Length + 2]; var owners = new int[taps.Length];
         var cancel = token.WaitHandle;
         double lastHousekeeping = double.NegativeInfinity, lastReport = double.NegativeInfinity, lastTick = double.NegativeInfinity, lastWake = double.NegativeInfinity;
         while (!token.IsCancellationRequested)
@@ -173,17 +178,26 @@ internal static partial class CaptureChannels
             if (config.Mode == CaptureReadMode.Poll)
                 for (var index = 0; index < taps.Length; index++) { var count = read(index, taps[index]); saturated |= count == 200; packets |= count > 0; }
             now = timer.Elapsed.TotalMilliseconds;
-            if (config.Mode == CaptureReadMode.Poll || pipeline.Router.ConfirmedCount > 0 && now - lastTick >= TickMs) { pipeline.Tick(); lastTick = now; }
+            var confirmed = pipeline.Router.ConfirmedCount > 0;
+            if (config.Mode == CaptureReadMode.Poll || confirmed && now >= TickDue(pipeline, lastTick, now)) { pipeline.Tick(); lastTick = now; }
             if (now - lastReport >= HousekeepingMs) { pipeline.Report(); lastReport = now; }
             if (config.Mode == CaptureReadMode.Poll) { cancel.WaitOne(config.TimeoutMs); continue; }
             var due = Math.Min(lastHousekeeping, lastReport) + HousekeepingMs;
-            if (pipeline.Router.ConfirmedCount > 0) due = Math.Min(due, lastTick + TickMs);
             var waiting = 0;
             for (var index = 0; index < taps.Length; index++)
                 if (taps[index].Open && taps[index].Event != 0) { owners[waiting] = index; events[waiting++] = taps[index].Event; }
-            events[waiting] = cancel.SafeWaitHandle.DangerousGetHandle();
-            var signaled = CaptureChannels.WaitAny(events, waiting + 1, (int)Math.Ceiling(Math.Max(0, due - timer.Elapsed.TotalMilliseconds)));
-            if (signaled == waiting) break;
+            var handles = waiting; var timerIndex = -1;
+            now = timer.Elapsed.TotalMilliseconds;
+            if (confirmed && TickDue(pipeline, lastTick, now) is var tick && tick < due)
+            {
+                if (precise.Arm(TimeSpan.FromMilliseconds(Math.Max(0, tick - now)))) { timerIndex = handles; events[handles++] = precise.Handle; }
+                else due = tick;
+            }
+            events[handles] = cancel.SafeWaitHandle.DangerousGetHandle();
+            var signaled = CaptureChannels.WaitAny(events, handles + 1, (int)Math.Ceiling(Math.Max(0, due - timer.Elapsed.TotalMilliseconds)));
+            if (signaled == handles) break;
+            if (signaled == timerIndex) continue;
+            if (timerIndex >= 0) precise.Cancel();
             // 读空已触发的设备：读完一张后以零超时再查，直到没有设备触发。
             for (var guard = 0; signaled >= 0 && guard <= taps.Length; guard++)
             {
@@ -192,10 +206,18 @@ internal static partial class CaptureChannels
             }
             var wake = timer.Elapsed.TotalMilliseconds;
             // 持续有包：距上次唤醒不足合批间隔时先等合批间隔，让高流量下成批读取而不是逐包唤醒。
-            if (packets && !saturated && wake - lastWake < config.CoalesceMs) cancel.WaitOne(config.CoalesceMs);
+            if (packets && !saturated && wake - lastWake < config.CoalesceMs) precise.Wait(TimeSpan.FromMilliseconds(config.CoalesceMs), cancel);
             if (packets) lastWake = wake;
         }
         token.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>下一次推进的时点（读取循环计时的毫秒）：解析器的下一个到期时点，至多为上次推进后 <see cref="TickMs"/>。</summary>
+    private static double TickDue(CapturePipeline pipeline, double lastTick, double now)
+    {
+        var due = lastTick + TickMs;
+        if (pipeline.NextDueMs is { } next) due = Math.Min(due, now + (next - pipeline.Now));
+        return due;
     }
 
     /// <summary>打开一张设备：按读取方式设置内核缓冲与读事件、先设不放行任何包的过滤器、非阻塞；失败只记原因码（open、link:值、filter），不抛出。</summary>

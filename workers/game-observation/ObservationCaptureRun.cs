@@ -163,34 +163,57 @@ internal sealed class ObservationCaptureRun(IObservationPeer peer, IObservationC
         }
         finally { writes.Release(); }
     }
-    /// <summary>有数据入队后等待该间隔再写出，使同一时刻前后的报告合并成批。</summary>
-    internal static readonly TimeSpan WriteCoalesce = TimeSpan.FromMilliseconds(15);
     /// <summary>战斗批次的写出速率上限（每 100 ms 至多 8 批，可积攒 8 批的突发）：宿主每秒至多受理 256 条 Worker 消息。</summary>
     internal const int CombatBatchBurst = 8;
     internal const double CombatBatchesPerMs = 0.08;
     /// <summary>
-    /// 音乐摘要、战斗与诊断的写出循环：有数据入队即唤醒，等待合批间隔后写出；仍有积压时按速率上限继续。没有数据时只为诊断计数按间隔醒来
-    /// （未启用诊断时不醒来）。捕获结束且队列已空时返回。
+    /// 音乐摘要、战斗与诊断的写出循环，按负载自适应：有数据入队即唤醒。令牌桶满（近期没有写出、数据少）时立即写出，来一条发一条；
+    /// 令牌已被近期的写出消耗（有负载）时，队尾批次（仍可并入新报告）要满一个合批窗口才写出，窗口随令牌减少而加长
+    /// （<see cref="CoalesceWindowMs"/>），期间到达的报告并入队尾（数据多时自动合批，同一轮读到的一串报告不拆成多条消息）；
+    /// 更早的批次按令牌写出，令牌不足一批时等到下一批可写出的时刻。等待由高精度计时器按截止时间唤醒。
+    /// 没有数据时只为诊断计数按间隔醒来（未启用诊断时不醒来）。捕获结束且队列已空时返回。
     /// </summary>
     private async Task WriteAsync(CancellationToken ct)
     {
+        using var precise = new MabiTool.ModuleSdk.PreciseTimer();
         var tokens = (double)CombatBatchBurst; var refilled = System.Diagnostics.Stopwatch.GetTimestamp();
         while (true)
         {
-            if (await combatReady.WaitAsync(reportDiagnostics ? DiagnosticsInterval : Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false))
-                await Task.Delay(WriteCoalesce, ct).ConfigureAwait(false);
-            var now = System.Diagnostics.Stopwatch.GetTimestamp();
-            tokens = Math.Min(CombatBatchBurst, tokens + System.Diagnostics.Stopwatch.GetElapsedTime(refilled, now).TotalMilliseconds * CombatBatchesPerMs);
-            refilled = now;
-            var (done, sent) = await WriteRoundAsync(ct, Math.Max(0, (int)tokens)).ConfigureAwait(false);
-            if (done) return;
-            tokens -= sent;
-            if (combat.PendingCount == 0) continue;
-            // 积压：按速率上限等到下一批可写出时再写。
-            if (tokens < 1) await Task.Delay(TimeSpan.FromMilliseconds((1 - tokens) / CombatBatchesPerMs), ct).ConfigureAwait(false);
-            combatReady.Set();
+            await combatReady.WaitAsync(reportDiagnostics ? DiagnosticsInterval : Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
+            while (true)
+            {
+                var now = System.Diagnostics.Stopwatch.GetTimestamp();
+                tokens = Math.Min(CombatBatchBurst, tokens + System.Diagnostics.Stopwatch.GetElapsedTime(refilled, now).TotalMilliseconds * CombatBatchesPerMs);
+                refilled = now;
+                var maximum = Math.Max(0, (int)tokens);
+                if (combat.PendingCount > 0)
+                {
+                    var wait = 0d;
+                    if (tokens < 1) wait = (1 - tokens) / CombatBatchesPerMs;
+                    else if (tokens < CombatBatchBurst - 0.5 && combat.TailAgeMs(Now()) is { } age && age < CoalesceWindowMs(tokens))
+                    {
+                        // 有负载：队尾批次未满合批窗口，先写更早的批次；只剩队尾时等它满窗口。
+                        if (combat.Count > 1) maximum = Math.Min(maximum, combat.Count - 1);
+                        else wait = CoalesceWindowMs(tokens) - age;
+                    }
+                    if (wait > 0)
+                    {
+                        await precise.DelayAsync(TimeSpan.FromMilliseconds(wait), ct).ConfigureAwait(false);
+                        continue;
+                    }
+                }
+                var (done, sent) = await WriteRoundAsync(ct, maximum).ConfigureAwait(false);
+                if (done) return;
+                tokens -= sent;
+                if (combat.PendingCount == 0) break;
+            }
         }
     }
+    /// <summary>
+    /// 有负载时队尾批次的合批窗口：令牌每少一批，窗口加一批的令牌周期（12.5 ms），至多 100 ms（批内时间跨度上限）。
+    /// 写出越接近速率上限，每批合并的报告越多，积压时批次逐渐装满而不是以半满的批次耗尽每秒的批数。
+    /// </summary>
+    internal static double CoalesceWindowMs(double tokens) => Math.Min(100, (CombatBatchBurst - tokens) / CombatBatchesPerMs);
     /// <summary>写出循环的一轮：音乐摘要、至多 8 批战斗与诊断计数；捕获已结束且队列已空时返回真。</summary>
     internal async Task<bool> WriteOnceAsync(CancellationToken ct) => (await WriteRoundAsync(ct, CombatBatchBurst).ConfigureAwait(false)).Done;
     private async Task<(bool Done, int Sent)> WriteRoundAsync(CancellationToken ct, int maximum)

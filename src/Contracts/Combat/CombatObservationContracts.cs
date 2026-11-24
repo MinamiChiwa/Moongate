@@ -164,7 +164,8 @@ public sealed record CombatDamageGroup(string Key, string Name, CombatDamageTota
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? FirstDamageAt = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? LastDamageAt = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatDamageTagAmounts? TagDamage = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UInt64String? AdditionalHitCount = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UInt64String? AdditionalHitCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Teammate = null);
 /// <summary>
 /// 带各标签的伤害合计（与对应次数同一口径：暴击只计直接与间接伤害，强击、连击、追击只计直接伤害，其余计全部已归属伤害）。
 /// 一条伤害可同时带多个标签，各项独立累计、可重叠，不改变总伤害；任一事件该标记未知时对应金额为空。旧记录没有该块。
@@ -233,11 +234,13 @@ public sealed record CombatSegment(int Ordinal, string StartReason,
 /// <summary>
 /// 实体的一个当前效果。Polarity 为客户端 Buff 表 AffectType 给出的极性：buff（增益）、debuff（减益）、none（表里标为无）；
 /// 名称表未读取、表里没有该效果或列结构不符时为空，前端单列为“未分类”，不推测。
+/// Awakening 为 Season01 符文觉醒相关效果的标记（badge、badge-cooldown、class、class-cooldown），按 Buff Id 判定；其他效果为空。
 /// </summary>
 public sealed record CombatEffectView(EffectInstance Instance, double? RemainingMs,
     DateTimeOffset LastObservedAt, bool Aggregated, bool Stale,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CombatResolvedName? ResolvedName = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Polarity = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Polarity = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Awakening = null);
 public sealed record CombatEntityEffects(string Id, string Owner, string ObservationId, UInt64String Revision,
     EffectsSnapshot Snapshot, IReadOnlyList<CombatEffectView> Views);
 public sealed record CombatStorageSummary(int Encounters, UInt64String Bytes, int Favorites,
@@ -270,6 +273,21 @@ public sealed record CombatEncounterClosed(string Owner, string ObservationId, s
     UInt64String Revision, CombatSummary Summary, string BoundaryReason, bool Deleted = false);
 public sealed record CombatObservationDegraded(string Owner, string ObservationId, string GameSessionId,
     UInt64String Generation, UInt64String Revision, IReadOnlyList<CombatGap> Gaps, UInt64String DroppedEvents, bool SnapshotRequired = false);
+/// <summary>
+/// 最新捕获的即时通知（<c>combat.live.changed</c>）：发布最新捕获后、界面可见的战斗数据有变化时立即推送，不携带统计内容，客户端按通知读取快照。
+/// WorkspaceRevision 为该捕获的工作区修订；CapturedMonotonicMs 与 CapturedAt 为本次变化所含数据中最新一条的抓包时点
+/// （观察单调时点，与 <see cref="CombatObservationStatus.MonotonicMs"/> 同一时间轴；没有可归属的记录时为空）。
+/// </summary>
+public sealed record CombatLiveChanged(string Owner, string ObservationId, UInt64String WorkspaceRevision,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? CapturedMonotonicMs = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? CapturedAt = null);
+/// <summary>
+/// 前端报告的战斗数据显示延迟：界面显示战斗数据时距该数据抓包时刻的时长。Samples 为最近窗口的样本数（1–4096），TotalSamples 为本次连接累计的样本数，
+/// 中位数、p95 与最大值为最近窗口的统计（0–60000 ms）。
+/// </summary>
+public sealed record CombatDisplayLatencyReport(int Samples, int TotalSamples, double MedianMs, double P95Ms, double MaximumMs);
+/// <summary>显示延迟报告的回执：Recorded 为是否写入诊断（同一客户端至多每 10 秒一次）。</summary>
+public sealed record CombatDisplayLatencyReceipt(bool Recorded);
 
 /// <summary>
 /// 按“时间范围 × 目标”重新统计的查询。Scope 为 <c>encounter</c>（一个战斗记录，含定时测量与保存的记录）或

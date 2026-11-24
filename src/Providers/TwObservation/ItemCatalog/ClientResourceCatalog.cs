@@ -167,17 +167,18 @@ public sealed record ClientResourceCatalog(IReadOnlyDictionary<string, string> N
 /// 银币、魔族貢品的补充上限规则（台服 2026-11 客户端表）。
 /// <para>
 /// 基础上限是 <c>CurrencySupplyConstants.MaxCount</c>（100、10）。会员加成是 <c>MembershipParameter</c> 的 <c>SilverCoinRefillCapacity_Bonus</c>、
-/// <c>PassDeepRefillCapacity_Bonus</c>（+50、+5）；表里没有“哪种会员带这项加成”的列，客户端商品说明只在全方位会员（<c>MembershipSheetId_.Combination</c>）
-/// 下列出“銀幣持有上限追加50”“魔族貢品持有上限追加5”。会员编号是成员名 UTF-8 的 MD5 前 4 字节（小端），<c>Combination</c> 即 0x3D92AC47。
+/// <c>PassDeepRefillCapacity_Bonus</c>（+50、+5）。会员编号是成员名 UTF-8 的 MD5 前 4 字节（小端），<c>Combination</c> 即 0x3D92AC47。
+/// 全方位会员（<c>Combination</c>）在登录数据的 <c>ActivatedMemberships</c> 里是单独一项，与其余三项（冒險家、地下城先驅、生活）并列，
+/// 四项的开始与到期时刻相同（台服 2026-11-24 会员角色登录数据）。客户端商品说明（<c>MembershipGoods</c>）里“銀幣持有上限追加50”“魔族貢品持有上限追加5”
+/// 只列在全方位会员下，<c>MembershipParameter</c> 里这两项也与背包重量、保管箱重量、交易所栏位、好的预感、金币加成等全方位专属项同组，
+/// 因此加成按全方位这一项判定。
 /// </para>
-/// 留存实采只有没有会员的角色，其中一个角色停在银币 100、魔族貢品 10 且补充计时不再前进，与基础上限一致。
-/// 会员生效时的登录数据没有样本（全方位在 <c>ActivatedMemberships</c> 里是单独一项还是由其余三项构成未知），
-/// 只判定没有会员的状态：登录数据明确没有生效会员时为基础上限；有任何生效会员、
-/// 会员数据没有读到或有到期时刻读不出的会员时为空（未知）。会员加成与会员表编号保留为资料，不参与判定；150／15 待有会员的样本核实后启用。
+/// 判定（<see cref="For"/>）：到期时刻不晚于登录数据时刻的项不生效；没有生效项为基础上限；全方位生效且其余生效项都是会员表里的编号时为基础上限加会员加成；
+/// 会员数据没有读到、有到期时刻读不出的项、有生效项不在会员表里、或只有其余三项生效而没有全方位项（没有样本）时为空（未知）。
 /// </summary>
 /// <param name="Base">MoneyType 名称 → 基础上限。</param>
-/// <param name="MemberBonus">MoneyType 名称 → 全方位会员的上限加成（资料，当前不参与判定）。</param>
-/// <param name="Memberships"><c>Membership</c> 表的全部会员编号（资料）；会员表读不出时为空。</param>
+/// <param name="MemberBonus">MoneyType 名称 → 全方位会员的上限加成；会员表读不出时为空。</param>
+/// <param name="Memberships"><c>Membership</c> 表的全部会员编号；会员表读不出时为空。</param>
 public sealed record ClientRefillCaps(IReadOnlyDictionary<string, int> Base, IReadOnlyDictionary<string, int> MemberBonus, IReadOnlySet<uint>? Memberships)
 {
     public const int MaximumCap = 1_000_000;
@@ -185,10 +186,21 @@ public sealed record ClientRefillCaps(IReadOnlyDictionary<string, int> Base, IRe
     public static uint Combination { get; } = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
         System.Security.Cryptography.MD5.HashData("Combination"u8));
 
-    /// <summary>该角色此刻的补充上限：没有生效会员时为基础上限，其余为空。<paramref name="memberships"/> 是登录数据里的会员（空表示没有读到）。</summary>
+    /// <summary>
+    /// 该角色此刻的补充上限（规则见类型说明）；无法确定时为空。
+    /// <paramref name="memberships"/> 是登录数据里的会员（空表示没有读到），<paramref name="now"/> 是登录数据的时刻。
+    /// </summary>
     public int? For(string moneyType, IReadOnlyList<Inventory.LoginMembership>? memberships, DateTimeOffset now)
     {
-        if (!Base.TryGetValue(moneyType, out var cap) || memberships is null || memberships.Any(m => m.ExpiresAt is null)) return null;
-        return memberships.Any(m => m.ExpiresAt > now) ? null : cap;
+        if (!Base.TryGetValue(moneyType, out var cap) || memberships is null) return null;
+        var active = new List<uint>();
+        foreach (var membership in memberships)
+        {
+            if (membership.ExpiresAt is not { } expires) return null;
+            if (expires > now) active.Add(membership.SheetId);
+        }
+        if (active.Count == 0) return cap;
+        if (!active.Contains(Combination) || Memberships is null || !active.All(Memberships.Contains)) return null;
+        return MemberBonus.TryGetValue(moneyType, out var bonus) && cap + bonus is var total and <= MaximumCap ? total : null;
     }
 }

@@ -598,15 +598,29 @@
   </Style>
   <!-- 底板：深色半透明底，玻璃感只做在边缘——上亮下淡的渐变细边、上沿内侧高光与下沿内侧暗线、轻投影，没有实色边线。 -->
   <Style Selector="Border.overlayplate">
-    <Setter Property="Background" Value="#A3121624" />
+    <Setter Property="Background" Value="{DynamicResource OverlayGlassBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource OverlayPlateEdgeBrush}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="18" />
     <Setter Property="BoxShadow" Value="inset 0 1 0 0 #40FFFFFF, inset 0 -1 0 0 #33000000, 0 8 24 0 #2E000000" />
   </Style>
   <Style Selector="Border.overlayplate.solid">
-    <Setter Property="Background" Value="#F2121624" />
+    <Setter Property="Background" Value="{DynamicResource OverlaySolidBrush}" />
     <Setter Property="BoxShadow" Value="0 8 24 0 #2E000000" />
+  </Style>
+  <!--
+    元件内容的默认文字色取浮窗配色（内建元件另在 OverlayWidgetView 里设置）：扩展元件的文字与说明沿用主窗口的 body／note／muted 类，
+    在这里换成浮窗的主文字与次要文字色，内嵌块换成浅色半透明底，深色底板上不出现深色文字。
+  -->
+  <Style Selector="Border.overlayframe">
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource OverlayTextBrush}" />
+  </Style>
+  <Style Selector="Border.overlayframe TextBlock.note, Border.overlayframe TextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource OverlayMutedBrush}" />
+  </Style>
+  <Style Selector="Border.overlayframe Border.inset">
+    <Setter Property="Background" Value="{DynamicResource OverlayInsetBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource OverlayInsetEdgeBrush}" />
   </Style>
   <!-- 编辑状态的高亮边：不随背景与内容不透明度变化，背景为 0 时也看得出元件范围。 -->
   <Style Selector="Border.overlayoutline">

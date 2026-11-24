@@ -46,10 +46,19 @@ public sealed class OverlayTests
 
         Button Library(string id) => page.GetVisualDescendants().OfType<Button>()
             .Single(button => button.CommandParameter as string == id && button.Classes.Contains("tile"));
+        ToggleButton Switch(string id) => page.GetVisualDescendants().OfType<ToggleButton>()
+            .Single(toggle => toggle.CommandParameter as string == id && toggle.Classes.Contains("librarytoggle"));
+        // 块右侧的开关放进版面，不改变选中；点块只选中。
+        Click(window, Switch("combat.dps"));
+        Assert.Contains("combat.dps", Placed());
+        Assert.Null(model.SelectedWidgetId);
+        Assert.True(Switch("combat.dps").IsChecked);
+        Click(window, Library("combat.dps"));
+        Assert.Equal("combat.dps", model.SelectedWidgetId);
+        Assert.True(model.HasSelection);
         Click(window, Library("combat.dps"));
         Assert.Contains("combat.dps", Placed());
         Assert.Equal("combat.dps", model.SelectedWidgetId);
-        Assert.True(model.HasSelection);
 
         Click(window, page.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "ScaleUp"));
         Click(window, page.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "ScaleUp"));
@@ -65,6 +74,86 @@ public sealed class OverlayTests
         Assert.True(model.NoSelection);
         Assert.Empty(LayoutProbe.FindTextOverflow(window));
         window.Close();
+    }
+
+    [AvaloniaFact]
+    public void LibrarySwitchShowsAndClosesWidgetsWhileClickingABlockOnlySelectsIt()
+    {
+        var catalog = BuiltInModules.CreateCatalog(new SampleBackend());
+        var store = catalog.Overlay!.Store;
+        using var model = new OverlayPageModel(catalog, catalog.Overlay!);
+        LibraryItem Item(string id) => model.Library.Single(item => item.WidgetId == id);
+
+        // 点一个没放进版面的元件块：只选中，卡片写明未启用，没有摆放数据所以设置停用。
+        model.SelectWidgetCommand.Execute("combat.dps");
+        Assert.DoesNotContain(store.Active.Widgets, widget => widget.WidgetId == "combat.dps");
+        Assert.Equal((true, true, true, false), (model.HasSelection, model.SelectedInactive, model.SelectedUnplaced, model.HasPlacement));
+        Assert.Equal("每秒伤害", model.SelectedTitle);
+        Assert.Equal("未启用，打开开关后显示在浮窗上", model.InactiveText);
+        Assert.Equal((false, true), (Item("combat.dps").Enabled, Item("combat.dps").Selected));
+
+        // 打开开关：放进版面，选中不变。
+        model.EnableWidgetCommand.Execute("combat.dps");
+        var dps = store.Active.Widgets.Single(widget => widget.WidgetId == "combat.dps");
+        Assert.Equal(("combat.dps", false, true), (model.SelectedWidgetId, model.SelectedInactive, Item("combat.dps").Enabled));
+
+        // 选中另一个元件后关闭 combat.dps 的开关：等同浮窗上的关闭，摆放数据保留，选中不变。
+        dps.Scale = 1.3;
+        model.SelectWidgetCommand.Execute("rooms.readiness");
+        model.EnableWidgetCommand.Execute("combat.dps");
+        Assert.True(dps.Closed);
+        Assert.Contains(dps, store.Active.Widgets);
+        Assert.Equal(1.3, dps.Scale, 3);
+        Assert.Equal("rooms.readiness", model.SelectedWidgetId);
+        Assert.Equal((false, false), (Item("combat.dps").Enabled, Item("combat.dps").Selected));
+
+        // 在浮窗上关闭的元件：开关为关；选中它时卡片写明未启用，设置照常可调。
+        var readiness = store.Active.Widgets.Single(widget => widget.WidgetId == "rooms.readiness");
+        store.Close(readiness);
+        Assert.False(Item("rooms.readiness").Enabled);
+        Assert.Equal((true, false, true), (model.SelectedInactive, model.SelectedUnplaced, model.HasPlacement));
+
+        // 再打开开关重新显示；反复点块不移出版面。
+        model.EnableWidgetCommand.Execute("rooms.readiness");
+        model.SelectWidgetCommand.Execute("rooms.readiness");
+        model.SelectWidgetCommand.Execute("rooms.readiness");
+        Assert.False(readiness.Closed);
+        Assert.Contains(readiness, store.Active.Widgets);
+        Assert.Equal((true, false), (Item("rooms.readiness").Enabled, model.SelectedInactive));
+    }
+
+    [AvaloniaFact]
+    public void NewPlacementsStartUnlockedWhileOldFilesDefaultsAndReopenKeepTheirLock()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"moongate-layout-{Guid.NewGuid():N}.json");
+        try
+        {
+            // 内建默认版面（首次运行）里的元件仍为已上锁。
+            Assert.All(new OverlayLayoutStore().Layouts.SelectMany(layout => layout.Widgets), widget => Assert.True(widget.Locked));
+            // 旧版面文件没有 Locked 字段：读取为已上锁。
+            File.WriteAllText(path, """
+                { "ActiveId": "a", "Layouts": [ { "Id": "a", "Name": "A", "Widgets": [
+                    { "WidgetId": "combat.dps", "X": 1, "Y": 0, "Scale": 1, "Skin": "glass" } ] } ] }
+                """);
+            var store = new OverlayLayoutStore(path);
+            var dps = store.Active.Widgets.Single();
+            Assert.True(dps.Locked);
+
+            // 新放进版面的元件默认解锁，保存后仍为解锁。
+            var skills = store.Place("combat.skills");
+            Assert.False(skills.Locked);
+            store.Flush();
+            Assert.False(new OverlayLayoutStore(path).Active.Widgets.Single(widget => widget.WidgetId == "combat.skills").Locked);
+
+            // 在浮窗上关闭后重新打开保持关闭前的锁状态。
+            store.Close(dps);
+            Assert.Same(dps, store.Place("combat.dps"));
+            Assert.Equal((false, true), (dps.Closed, dps.Locked));
+            store.Close(skills);
+            store.Reopen(skills);
+            Assert.Equal((false, false), (skills.Closed, skills.Locked));
+        }
+        finally { DeleteLayoutFile(path); }
     }
 
     [AvaloniaFact]
@@ -149,7 +238,7 @@ public sealed class OverlayTests
         var model = new OverlayPageModel(catalog, catalog.Overlay!);
         Assert.Contains(model.Library, item => item.WidgetId == "fishing.timer" && item.Group == "釣魚計時（範例）");
 
-        model.ToggleWidgetCommand.Execute("fishing.timer");
+        model.EnableWidgetCommand.Execute("fishing.timer");
         var window = new OverlayWindow(catalog.Overlay!.Store, catalog, backend) { Width = 960, Height = 540 };
         window.Show();
         LayoutProbe.Settle();
@@ -897,6 +986,8 @@ public sealed class OverlayTests
             // 恢复默认位置回到内建版面里的位置；全部移回主显示器清掉记住的显示器。
             model.SelectedWidgetId = "rooms.readiness";
             placement.Screen = UserScreens[1].Key;
+            // 选中后设置区才显示，先排版再点：按钮在含配色区的设置卡片底部、落在窗口下沿之外，点按前的滚入要作用在排好的位置上。
+            LayoutProbe.Render(window);
             Click(window, Named<Button>(page, "ResetPositionButton"));
             Assert.Equal((1d, 0d, (string?)null), (placement.X, placement.Y, placement.Screen));
             placement.Screen = UserScreens[1].Key;
@@ -966,6 +1057,9 @@ public sealed class OverlayTests
             })]));
         var store = catalog.Overlay!.Store;
         var placement = store.Place("actions.widget");
+        // 新放进版面的元件默认解锁；这里从已上锁开始。
+        Assert.False(placement.Locked);
+        store.ToggleLock(placement);
         var window = new OverlayWindow(store, catalog, backend) { Width = 960, Height = 540 };
         window.Show();
         LayoutProbe.Render(window);
@@ -994,7 +1088,7 @@ public sealed class OverlayTests
             Assert.False(canvas.FrameOf("actions.widget")!.IsVisible);
             Assert.Contains(store.Active.Widgets, widget => widget.WidgetId == "actions.widget");
 
-            // 版面编辑页的元件库再点一次（Place）重新显示在浮窗上。
+            // 版面编辑页元件库里打开它的开关（Place 对关闭过的元件即重新显示）重新显示在浮窗上。
             store.Place("actions.widget");
             LayoutProbe.Render(window);
             Assert.False(placement.Closed);
@@ -1192,12 +1286,18 @@ public sealed class OverlayTests
             Assert.Equal(0, lockIcon.Opacity);
             Assert.True(OverlayHitRegion.Accepts(window.InteractiveRegion,
                 new PixelPoint((int)lockIcon.Bounds.Center.X, (int)lockIcon.Bounds.Center.Y)));
+            // 关闭按钮同样隐藏，仍在接收鼠标的区域里。
+            var closeButton = canvas.CloseOf("probe.widget")!;
+            Assert.Equal(0, closeButton.Opacity);
+            Assert.True(OverlayHitRegion.Accepts(window.InteractiveRegion,
+                new PixelPoint((int)closeButton.Bounds.Center.X, (int)closeButton.Bounds.Center.Y)));
 
             // 光标进入上锁的元件（按位置判断，元件本身鼠标穿透）：锁显示，点锁可以解锁。
             canvas.HoverAt(frame.Center);
             Assert.Equal("probe.widget", canvas.HoveredWidgetId);
             Assert.True(canvas.ControlsShown("probe.widget"));
             Assert.Equal(1, lockIcon.Opacity);
+            Assert.Equal(1, closeButton.Opacity);
             PressAt(window, Center(lockIcon, window));
             Assert.False(probe.Locked);
             LayoutProbe.Render(window);
@@ -1262,6 +1362,9 @@ public sealed class OverlayTests
         var catalog = CatalogWithProbe(backend);
         var store = catalog.Overlay!.Store;
         var probe = store.Place("probe.widget");
+        // 新放进版面的元件默认解锁；这些用例从已上锁的探针开始。
+        Assert.False(probe.Locked);
+        store.ToggleLock(probe);
         var window = new OverlayWindow(store, catalog, backend) { Width = 960, Height = 540 };
         window.Show();
         LayoutProbe.Render(window);
@@ -1524,7 +1627,10 @@ public sealed class OverlayTests
         : null;
 
     private static Button NearbyTile(Visual page) => Named<ItemsControl>(page, "GameDataList").GetVisualDescendants().OfType<Button>()
-        .Single(button => button.CommandParameter as string == "performance.nearby");
+        .Single(button => button.CommandParameter as string == "performance.nearby" && button.Classes.Contains("tile"));
+
+    private static ToggleButton NearbySwitch(Visual page) => Named<ItemsControl>(page, "GameDataList").GetVisualDescendants().OfType<ToggleButton>()
+        .Single(toggle => toggle.CommandParameter as string == "performance.nearby" && toggle.Classes.Contains("librarytoggle"));
 
     private static OverlayWidgetView WidgetView(Visual root, string widgetId) =>
         root.GetVisualDescendants().OfType<OverlayWidgetView>().Single(view => ((OverlayWidgetModel)view.DataContext!).WidgetId == widgetId);
@@ -1588,9 +1694,10 @@ public sealed class OverlayTests
             Assert.Equal("performance.nearby", tile.CommandParameter);
             Assert.Contains(Unsupported(language), VisibleTexts(tile));
 
-            // 仍可从层内加入版面：详情写明标注，编辑状态下浮窗上显示元件名称加标注，选取、缩放照常。
-            Click(window, tile);
+            // 仍可从层内加入版面（打开开关），点块选取：详情写明标注，编辑状态下浮窗上显示元件名称加标注，选取、缩放照常。
+            Click(window, NearbySwitch(page));
             Assert.Contains(model.Store.Active.Widgets, widget => widget.WidgetId == "performance.nearby");
+            Click(window, NearbyTile(page));
             Assert.Equal("performance.nearby", model.SelectedWidgetId);
             Assert.Contains(model.SelectedDetails, row => row.Value == Unsupported(language));
             model.Store.BeginEdit();
@@ -1899,4 +2006,169 @@ public sealed class OverlayTests
         }
         finally { DeleteLayoutFile(path); }
     }
+
+    [Fact]
+    public void OverlayColorsAreSavedOnlyWhenChangedAndOldFilesKeepTheOriginalColors()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"moongate-layout-{Guid.NewGuid():N}.json");
+        try
+        {
+            // 旧版面没有配色字段：每一项都是原配色，保存时不写出配色。
+            File.WriteAllText(path, """
+                { "ActiveId": "a", "Layouts": [ { "Id": "a", "Name": "A", "Widgets": [
+                    { "WidgetId": "combat.dps", "X": 1, "Y": 0, "Scale": 1, "Skin": "glass" },
+                    { "WidgetId": "combat.skills", "X": 0, "Y": 1, "Scale": 1, "Skin": "solid" } ] } ] }
+                """);
+            var store = new OverlayLayoutStore(path);
+            Assert.Empty(store.Colors);
+            Assert.All(OverlayColors.Items, item =>
+                Assert.Equal(item.Default, OverlayColors.Resolve(item.Key, store.Colors, store.Active.Widgets[0].Colors)));
+            store.Commit();
+            store.Flush();
+            Assert.DoesNotContain("\"Colors\"", File.ReadAllText(path));
+
+            // 整体配色改主文字；DPS 元件覆盖底板，并把主文字覆盖回原色（整体改过时它仍用白色）；不合法的 HEX 不改。
+            var (dps, skills) = (store.Active.Widgets[0], store.Active.Widgets[1]);
+            store.SetColor(OverlayColors.Text, "ffd700");
+            store.SetWidgetColor(dps, OverlayColors.Plate, "#5a1010");
+            store.SetWidgetColor(dps, OverlayColors.Text, "#FFFFFF");
+            store.SetColor(OverlayColors.Accent, "#FFD70");
+            store.Flush();
+            var reloaded = new OverlayLayoutStore(path);
+            var (dps2, skills2) = (reloaded.Active.Widgets[0], reloaded.Active.Widgets[1]);
+            Assert.Equal(new Dictionary<string, string> { [OverlayColors.Text] = "#FFD700" }, reloaded.Colors);
+            Assert.Equal("#FFFFFF", OverlayColors.Resolve(OverlayColors.Text, reloaded.Colors, dps2.Colors));
+            Assert.Equal("#5A1010", OverlayColors.Resolve(OverlayColors.Plate, reloaded.Colors, dps2.Colors));
+            Assert.Equal("#FFD700", OverlayColors.Resolve(OverlayColors.Text, reloaded.Colors, skills2.Colors));
+            Assert.Null(skills2.Colors);
+
+            // 文件里 HEX 不合法、键不认识，或元件覆盖了底板与文字以外的项：读取时去掉，按整体配色或原配色显示。
+            File.WriteAllText(path, File.ReadAllText(path)
+                .Replace("\"#FFD700\"", "\"#FFD7\"")
+                .Replace("\"#5A1010\"", "\"#5A1010\", \"accent\": \"#00FF00\", \"unknown\": \"#123456\""));
+            var damaged = new OverlayLayoutStore(path);
+            Assert.Empty(damaged.Colors);
+            Assert.Equal(new Dictionary<string, string> { [OverlayColors.Plate] = "#5A1010", [OverlayColors.Text] = "#FFFFFF" },
+                damaged.Active.Widgets[0].Colors);
+
+            // 应用到全部元件：其他元件的底板与文字与 DPS 元件相同；随后一组恢复原配色或跟随整体只去掉那一组。
+            reloaded.ApplyWidgetColorsToAll(dps2);
+            Assert.Equal(dps2.Colors, skills2.Colors);
+            Assert.NotSame(dps2.Colors, skills2.Colors);
+            reloaded.ResetWidgetColors(skills2, OverlayColorGroup.Plate);
+            Assert.Equal(new Dictionary<string, string> { [OverlayColors.Text] = "#FFFFFF" }, skills2.Colors);
+            reloaded.ResetColors(OverlayColorGroup.Text);
+            Assert.Empty(reloaded.Colors);
+            reloaded.Flush();
+            Assert.DoesNotContain("\"#FFD700\"", File.ReadAllText(path));
+        }
+        finally { DeleteLayoutFile(path); }
+    }
+
+    [AvaloniaFact]
+    public void ColorChangesApplyToTheOverlayAtOnceWithoutRebuildingWidgets()
+    {
+        var backend = new SampleBackend();
+        var (window, store, probe) = OpenProbeOverlay(backend);
+        try
+        {
+            var canvas = window.Canvas;
+            var plate = (Border)canvas.PlateOf("probe.widget")!;
+            var content = (Border)canvas.ContentOf("probe.widget")!;
+            Color Resource(string key) => canvas.ContentOf("probe.widget")!.TryFindResource(key, out var value) && value is ISolidColorBrush brush ? brush.Color : default;
+            // 原配色：玻璃底色 #A3121624、主文字白色，浮窗上的图标没有着色覆盖。
+            Assert.Equal(Color.Parse("#A3121624"), ((ISolidColorBrush)plate.Background!).Color);
+            Assert.Equal(Colors.White, Resource("OverlayTextBrush"));
+            Assert.Null(ClientIconSlot.GetTints(content));
+
+            // 整体配色改底板、主文字与无防备图标：同一个底板与内容层就地换色，底板透明度不变。
+            store.SetColor(OverlayColors.Plate, "#203040");
+            store.SetColor(OverlayColors.Text, "#FFD700");
+            store.SetColor(OverlayColors.IconExposed, "#00FF00");
+            LayoutProbe.Render(window);
+            Assert.Same(plate, canvas.PlateOf("probe.widget"));
+            Assert.Same(content, canvas.ContentOf("probe.widget"));
+            Assert.Equal(Color.Parse("#A3203040"), ((ISolidColorBrush)plate.Background!).Color);
+            Assert.Equal(Color.Parse("#FFD700"), Resource("OverlayTextBrush"));
+            Assert.Equal(Color.Parse("#00FF00"), ClientIconSlot.GetTints(content)!.For(ClientIconNames.BreakedHit));
+            Assert.Null(ClientIconSlot.GetTints(content)!.For(ClientIconNames.Critical));
+
+            // 元件覆盖底板：只有这个元件变；纯色外观的透明度为 #F2。
+            store.SetWidgetColor(probe, OverlayColors.Plate, "#5A1010");
+            probe.Skin = "solid";
+            store.Commit();
+            LayoutProbe.Render(window);
+            var solid = (Border)canvas.PlateOf("probe.widget")!;
+            Assert.Equal(Color.Parse("#F25A1010"), ((ISolidColorBrush)solid.Background!).Color);
+            Assert.Equal(Color.Parse("#FFD700"), Resource("OverlayTextBrush"));
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void ColorCardPickerWritesHexAndImageWidgetsDisableTheirBackgroundColor()
+    {
+        var backend = new SampleBackend();
+        var catalog = BuiltInModules.CreateCatalog(backend);
+        var store = catalog.Overlay!.Store;
+        store.Place("combat.dps");
+        using var page = new OverlayPageModel(catalog, catalog.Overlay!) { SelectedWidgetId = "combat.dps" };
+
+        // 整体配色的主文字：HEX 输入只认六位，合法时立即写进版面；关闭时改过的颜色记进浮窗配色自己的最近颜色。
+        var text = page.ColorGroups.SelectMany(group => group.Items).Single(entry => entry.Key == OverlayColors.Text);
+        var picker = page.OpenColorPicker(text)!;
+        Assert.True(page.IsPickerOpen);
+        picker.HexInput = "ffaa00";
+        Assert.Equal("#FFAA00", store.Colors[OverlayColors.Text]);
+        picker.HexInput = "#FFAA0";
+        Assert.True(picker.HexInvalid);
+        Assert.Equal("#FFAA00", store.Colors[OverlayColors.Text]);
+        page.ClosePickerCommand.Execute(null);
+        Assert.False(page.IsPickerOpen);
+        Assert.Equal("#FFAA00", OverlayPageModel.RecentColors.Items[0]);
+        Assert.DoesNotContain("#FFAA00", ColorRecent.Items);
+
+        // 所选元件改为自定图像：它的背景色项停用并写明原因，文字仍可调整；“跟随整体”的项显示整体配色。
+        page.SkinCommand.Execute("image");
+        var own = page.WidgetColorGroups.SelectMany(group => group.Items).ToList();
+        var plate = own.Single(entry => entry.Key == OverlayColors.Plate);
+        Assert.False(plate.Enabled);
+        Assert.True(plate.HasNote);
+        Assert.Null(page.OpenColorPicker(plate));
+        Assert.True(own.Single(entry => entry.Key == OverlayColors.Text) is { Enabled: true, Hex: "#FFAA00" });
+    }
+
+    [AvaloniaFact]
+    public void ExtensionWidgetTextFollowsTheOverlayTextColors()
+    {
+        UiMotion.Enabled = false;
+        var backend = new SampleBackend();
+        var catalog = BuiltInModules.CreateCatalog(backend);
+        // 扩展元件沿用主窗口的文字类（不设前景、note 类），在浅色主题的浮窗窗口里原本是深色文字。
+        catalog.Register(new ModuleDescriptor("sample.text", "文字元件", "文", Color.Parse("#4B5563"),
+            ModuleOrigin.Extension, () => new TextBlock(),
+            [new("text.widget", "文字元件", [], _ => new StackPanel
+            {
+                Width = 200,
+                Children = { new TextBlock { Name = "PlainText", Text = "正文" }, new TextBlock { Name = "NoteText", Text = "说明", Classes = { "note" } } }
+            })]));
+        var store = catalog.Overlay!.Store;
+        store.Place("text.widget");
+        var window = new OverlayWindow(store, catalog, backend) { Width = 960, Height = 540 };
+        window.Show();
+        LayoutProbe.Render(window);
+        try
+        {
+            Color Foreground(string name) => ((ISolidColorBrush)Named<TextBlock>(window, name).Foreground!).Color;
+            Assert.Equal(Colors.White, Foreground("PlainText"));
+            Assert.Equal(Color.Parse("#D5DAE8"), Foreground("NoteText"));
+            store.SetColor(OverlayColors.Text, "#FFD700");
+            store.SetColor(OverlayColors.Muted, "#A0A0A0");
+            LayoutProbe.Render(window);
+            Assert.Equal(Color.Parse("#FFD700"), Foreground("PlainText"));
+            Assert.Equal(Color.Parse("#A0A0A0"), Foreground("NoteText"));
+        }
+        finally { window.Close(); }
+    }
 }
+

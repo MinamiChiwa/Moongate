@@ -3,6 +3,7 @@ using System.Windows.Input;
 using MabiTool.Desktop.Backend;
 using MabiTool.Desktop.Infrastructure;
 using MabiTool.Desktop.Localization;
+using MabiTool.Desktop.Controls;
 
 namespace MabiTool.Desktop.Pages.Dyeing;
 

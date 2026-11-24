@@ -32,8 +32,8 @@ public sealed record InventoryFrame(int SchemaVersion, ObservationSource Source,
 /// 深渊副本货币为 <c>abyssRaid:</c> 加 AbyssRaidMoneyType 名称。<see cref="Value"/> 是登录数据或变化消息给出的当前值；
 /// <see cref="Increase"/>／<see cref="Decrease"/> 来自增减通知；<see cref="RefilledAt"/> 是上次补充时间；
 /// <see cref="RefillNotified"/> 表示收到了补充通知。名称、说明与补充间隔取自客户端表，读不到时为空。
-/// <see cref="RefillCap"/> 只随完整同步帧给出：银币、魔族貢品的补充上限，登录数据明确没有生效会员时为客户端表的基础上限；
-/// 有生效会员、会员数据没有读到或无法判定时为空。持有量可以超过上限，达到或超过上限时游戏不再补充。
+/// <see cref="RefillCap"/> 只随完整同步帧给出：银币、魔族貢品的补充上限，登录数据没有生效会员时为客户端表的基础上限，全方位会员生效时再加会员加成；
+/// 会员数据没有读到或无法判定时为空。持有量可以超过上限，达到或超过上限时游戏不再补充。
 /// </summary>
 public sealed record InventoryResourceChange(string Key, string MoneyType, UInt64String? Value = null, UInt64String? Increase = null,
     UInt64String? Decrease = null, DateTimeOffset? RefilledAt = null, bool RefillNotified = false, string? RawName = null,

@@ -5,7 +5,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 
-namespace MabiTool.Desktop.Pages.Dyeing;
+namespace MabiTool.Desktop.Controls;
 
 /// <summary>
 /// 选色浮层的色相环与饱和度／明度方块（类似 SAI 的选色器），自绘。色相 0° 红色在正上方、顺时针增加；

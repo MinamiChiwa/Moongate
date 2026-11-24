@@ -18,7 +18,8 @@ namespace MabiTool.Desktop.Controls;
 /// 属性标签的位置：<see cref="Icon"/> 对应的客户端图标可用时画出着色后的图标，<see cref="Label"/> 进悬浮提示与无障碍名称，
 /// 子元素（原来的文字）变为透明；图标不可用（未绑定游戏、目录读取中、读取失败、该键不可用）时显示子元素。
 /// 占位取图标与子元素两者的较大尺寸，图标出现或消失时整行不重排。图标边长默认为字号的 1.25 倍（随字号与所在元件的缩放变化）。
-/// 着色：目录给出的颜色，没有时按 <see cref="ClientIconNames.DefaultTint"/>，再没有时用前景色；浅色主题（或 <see cref="Outline"/> 为真）
+/// 着色：所在位置继承的 <see cref="TintsProperty"/>（浮窗配色里改过的图标颜色）优先，其次目录给出的颜色，
+/// 没有时按 <see cref="ClientIconNames.DefaultTint"/>，再没有时用前景色；浅色主题（或 <see cref="Outline"/> 为真）
 /// 时字形外加一圈深色描边，在浅色底上也看得清。挂上可见窗口时向 <see cref="ClientIconHub"/> 登记使用，有登记时后端才下载图标。
 /// </summary>
 public sealed class ClientIconSlot : Decorator
@@ -44,13 +45,22 @@ public sealed class ClientIconSlot : Decorator
     public static readonly StyledProperty<IBrush?> ForegroundProperty =
         TextElement.ForegroundProperty.AddOwner<ClientIconSlot>();
 
+    /// <summary>
+    /// 着色覆盖，按视觉树继承：浮窗给每个元件设上浮窗配色里改过的图标颜色，其余位置（主窗口、明细窗口）没有，图标保持原来的颜色。
+    /// </summary>
+    public static readonly AttachedProperty<ClientIconTints?> TintsProperty =
+        AvaloniaProperty.RegisterAttached<ClientIconSlot, Control, ClientIconTints?>("Tints", inherits: true);
+
+    public static ClientIconTints? GetTints(Control control) => control.GetValue(TintsProperty);
+    public static void SetTints(Control control, ClientIconTints? value) => control.SetValue(TintsProperty, value);
+
     private ClientIconImage? image;
     private bool registered;
 
     static ClientIconSlot()
     {
         AffectsMeasure<ClientIconSlot>(IconSizeProperty, FontSizeProperty);
-        AffectsRender<ClientIconSlot>(IconAlignmentProperty, OutlineProperty, ForegroundProperty);
+        AffectsRender<ClientIconSlot>(IconAlignmentProperty, OutlineProperty, ForegroundProperty, TintsProperty);
     }
 
     /// <summary>图标键（例如 critical、element.fire）；为空时只显示子元素。</summary>
@@ -175,7 +185,7 @@ public sealed class ClientIconSlot : Decorator
         // 透明底让整个占位接收悬停（悬浮提示），图标外的空白处同样显示名称。
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
         var outline = Outline ?? ActualThemeVariant != ThemeVariant.Dark;
-        var tint = Tint(image, Foreground);
+        var tint = GetTints(this)?.For(image.Key) ?? Tint(image, Foreground);
         var glyph = ClientIconArt.Compose(image.Bitmap, tint, outline);
         var target = IconRect;
         if (outline)
@@ -207,6 +217,25 @@ public sealed class ClientIconSlot : Decorator
             if (root.TranslatePoint(point, slot) is { } local && new Rect(slot.Bounds.Size).Contains(local)) return slot.DisplayLabel;
         }
         return null;
+    }
+}
+
+/// <summary>
+/// 图标的着色覆盖：键为图标键（元素为 <c>element.</c> 加元素名，无防备为 <c>breakedHit</c>）或 <see cref="AttributeKey"/>
+/// （其余属性图标：暴击、强击、连击、追击、破防、多重打击），值为颜色；没有的键沿用原来的颜色。
+/// </summary>
+public sealed class ClientIconTints(IReadOnlyDictionary<string, Color> colors)
+{
+    /// <summary>属性图标（元素与无防备以外）共用的键。</summary>
+    public const string AttributeKey = "iconAttribute";
+    /// <summary>无防备的键（浮窗配色里的项名）。</summary>
+    public const string ExposedKey = "iconExposed";
+
+    public Color? For(string iconKey)
+    {
+        var key = iconKey.StartsWith("element.", StringComparison.Ordinal) ? iconKey
+            : iconKey == ClientIconNames.BreakedHit ? ExposedKey : AttributeKey;
+        return colors.TryGetValue(key, out var color) ? color : null;
     }
 }
 

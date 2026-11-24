@@ -97,6 +97,12 @@ public sealed record EffectRow(string Glyph, string Name, string Meta, string Re
     /// <summary>首次出现的顺序号（越小越早）。</summary>
     public long Order { get; init; }
     public bool Favorite { get; init; }
+    /// <summary>后端给出的觉醒效果标记（badge、badge-cooldown、class、class-cooldown），其他效果为空。</summary>
+    public string? Awakening { get; init; }
+    /// <summary>各实例中最晚的施加时刻（appliedAt）：新的施加说明又收到了一次添加。</summary>
+    public DateTimeOffset? AppliedAt { get; init; }
+    /// <summary>各实例中最晚的观测时刻（lastObservedAt）。</summary>
+    public DateTimeOffset? SeenAt { get; init; }
     private static readonly IBrush PositiveFill = new SolidColorBrush(Color.Parse("#2F6FD6"));
     private static readonly IBrush NegativeFill = new SolidColorBrush(Color.Parse("#D2393B"));
     private static readonly IBrush OtherFill = new SolidColorBrush(Color.Parse("#7D8597"));
@@ -339,6 +345,16 @@ public sealed record CombatPageData(string Status, IReadOnlyList<KpiTile> Kpis, 
     /// <summary>记录明细窗口的记录标题；DPS检测页与实时明细窗口为空。</summary>
     public RecordHeader? RecordInfo { get; init; }
 
+    /// <summary>
+    /// 收藏浮窗的数据来源，不受“只显示收藏”影响：全部自身效果（已排好倒计时总时长）、当前攻击目标（与 DPS 浮窗血量区块同一个）的全部效果、
+    /// 当前攻击目标的实体 ID、自身已确认移除（收到到期）的效果编号及最晚的移除观测时刻，以及是否在观测中。
+    /// </summary>
+    public IReadOnlyList<EffectRow> AllSelfEffects { get; init; } = [];
+    public IReadOnlyList<EffectRow> AimEffects { get; init; } = [];
+    public string? AimId { get; init; }
+    public IReadOnlyDictionary<string, DateTimeOffset> SelfRemoved { get; init; } = new Dictionary<string, DateTimeOffset>();
+    public bool Observing { get; init; }
+
     /// <summary>自身与怪物效果卡片“只显示收藏”时没有可显示的收藏效果；整体没有效果时为假。</summary>
     public bool SelfFavoritesEmpty { get; init; }
     public bool TargetFavoritesEmpty { get; init; }
@@ -464,6 +480,7 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
             if (detail) backend.CombatDetailChanged += OnBackendChanged;
             CombatEffectFavorites.Changed += OnFavoritesChanged;
             CombatEffectFavorites.CatalogChanged += OnCatalogChanged;
+            backend.ClientBuffsChanged += OnClientBuffsChanged;
         }
         else
         {
@@ -471,6 +488,7 @@ public sealed partial class CombatPageModel : ObservableObject, IDisposable, IPa
             if (detail) backend.CombatDetailChanged -= OnBackendChanged;
             CombatEffectFavorites.Changed -= OnFavoritesChanged;
             CombatEffectFavorites.CatalogChanged -= OnCatalogChanged;
+            backend.ClientBuffsChanged -= OnClientBuffsChanged;
         }
     }
 

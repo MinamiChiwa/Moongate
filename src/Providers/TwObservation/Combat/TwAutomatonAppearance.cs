@@ -10,11 +10,13 @@ namespace MabiTool.Providers.TwObservation.Combat;
 /// SheetId 为按类型取的客户端表 ID（AICompanion 没有表，为 0）；HealthMax 为 ActorParameter.HealthMax（非正值为空）；
 /// HealthKeyId 为 ActorStatus.ChannelObjectId（HP 解密密钥的来源）；HealthEncrypted 为 IsSetHealthEncrypted；
 /// HealthPayload 为 HP 初值（明文时 8 字节 Int64，加密时为密文）；HealthIv 为 16 字节 IV，长度不符时为空。
+/// OwnerPlayerId 为身份块首字段 AutomatonIdentity.OwnerPlayerId（ChannelObjectId，所有者玩家的实体 ID），没有所有者时为 0。
 /// </remarks>
 public sealed record TwAutomatonIdentity(ulong EntityId, bool IsMonster, string? MonsterTypeCode,
     double? BreakPoint = null, long? BreakPointMax = null)
 {
     public int ActorType { get; init; }
+    public ulong OwnerPlayerId { get; init; }
     public uint SheetId { get; init; }
     public bool IsBoss { get; init; }
     public long? HealthMax { get; init; }
@@ -68,7 +70,8 @@ public static class TwAutomatonAppearance
             return new(id, type == 3, type == 3 ? Convert.ToHexString(code) : null,
                 float.IsFinite(current) && current >= 0 ? current : null, maximum >= 0 ? maximum : null)
             {
-                ActorType = type, SheetId = sheet, IsBoss = Convert.ToBoolean(identity["IsBossMonster"], CultureInfo.InvariantCulture),
+                ActorType = type, SheetId = sheet,
+                OwnerPlayerId = Convert.ToUInt64(identity["OwnerPlayerId"], CultureInfo.InvariantCulture), IsBoss = Convert.ToBoolean(identity["IsBossMonster"], CultureInfo.InvariantCulture),
                 HealthMax = health > 0 ? health : null, HealthKeyId = Convert.ToUInt64(status["ChannelObjectId"], CultureInfo.InvariantCulture),
                 HealthEncrypted = Convert.ToBoolean(status["IsSetHealthEncrypted"], CultureInfo.InvariantCulture),
                 HealthPayload = Bytes(status["Payload"]), HealthIv = iv.Length == 16 ? iv : null

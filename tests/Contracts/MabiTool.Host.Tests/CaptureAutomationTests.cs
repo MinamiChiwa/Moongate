@@ -247,6 +247,23 @@ public sealed class CaptureAutomationTests
     }
 
     [Fact]
+    public void EveryDefinedDiagnosticEventKeepsItsNameAndFieldsInTheRecord()
+    {
+        // 每个声明的诊断事件写入记录后保留事件名与登记的字段；漏登记的事件在记录里 event 与 fields 都为空（combat.display.latency 曾如此）。
+        var definitions = typeof(DiagnosticEvents).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(field => field.FieldType == typeof(DiagnosticEventDefinition)).Select(field => (DiagnosticEventDefinition)field.GetValue(null)!).ToArray();
+        Assert.NotEmpty(definitions);
+        foreach (var definition in definitions)
+        {
+            var fields = definition.Fields.ToDictionary(key => key, _ => "1", StringComparer.Ordinal);
+            var record = DiagnosticSanitizer.Create(DateTimeOffset.UnixEpoch, "info", definition.Module ?? "core", component: definition.Component,
+                @event: definition.Code, fields: fields);
+            Assert.True(record.Event == definition.Code, definition.Code);
+            Assert.Equal(definition.Fields.Count, record.Fields?.Count ?? 0);
+        }
+    }
+
+    [Fact]
     public void DeviceSummariesAreWrittenOnlyOnChangeAndTheReadModeReachesTheRecord()
     {
         var records = new List<DiagnosticRecord>();

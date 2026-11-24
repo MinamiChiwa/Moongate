@@ -33,6 +33,43 @@ public sealed class CombatHistoryTests
     }
 
     [Fact]
+    public async Task SnapshotReadsDoNotSlowDownWithAFullHistory()
+    {
+        // 快照读取的两条查询（选当前观察、存储统计）不随历史规模变慢：写入 100 条已结束观察与战斗记录（正文各约 300 KB）前后各读 20 轮，
+        // 耗时相当。漏建索引时每次读取要走完全部正文的溢出页，本机 20 轮由约 0.4 s 变为约 5.8 s。
+        await using var area = new Area();
+        await area.Start();
+        long Rounds()
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            for (var i = 0; i < 20; i++)
+            {
+                Assert.NotNull(area.History.Workspace("client-a", true)); Assert.NotNull(area.History.Workspace("client-a", false));
+                area.History.Storage("client-a", true); area.History.Storage("client-a", false);
+            }
+            return clock.ElapsedMilliseconds;
+        }
+        Rounds();
+        var empty = Rounds();
+        var padding = "{\"pad\":\"" + new string('x', 300 * 1024) + "\"}";
+        await area.Database.WriteAsync(tx =>
+        {
+            for (var i = 0; i < 100; i++)
+            {
+                tx.Execute("INSERT INTO combat_observations(id,owner,game_session,revision,workspace,terminal,updated_at,encounter_id) VALUES($id,'client-a','seed','1',$w,1,$at,$e)",
+                    ("$id", $"seed-observation-{i}"), ("$w", padding), ("$at", 1_000L + i), ("$e", $"seed-encounter-{i}"));
+                tx.Execute("INSERT INTO combat_encounters(id,owner,observation_id,revision,closed,quality,favorite,started_at,document,bytes,timeline_bytes) VALUES($id,'client-a',$o,'1',1,'confirmed',0,$at,$d,$b,0)",
+                    ("$id", $"seed-encounter-{i}"), ("$o", $"seed-observation-{i}"), ("$at", 1_000L + i), ("$d", padding), ("$b", (long)padding.Length));
+            }
+            return 0;
+        });
+        Assert.DoesNotContain("seed", area.History.Workspace("client-a", true)!.Observation.Id, StringComparison.Ordinal);
+        Assert.Equal(100, area.History.Storage("client-a", false).Encounters);
+        var full = Rounds();
+        Assert.True(full < empty * 3 + 200, $"20 轮快照读取查询：空历史 {empty} ms，满额历史 {full} ms");
+    }
+
+    [Fact]
     public async Task PersistedHitFlagTraitsRoundTripAndLegacyDocumentsReadThemAsUnknown()
     {
         await using var area = new Area(); var session = await area.Start();
@@ -282,11 +319,13 @@ public sealed class CombatHistoryTests
             Assert.Equal("enc-active", upgraded.ReadScalar("SELECT encounter_id FROM combat_observations WHERE id='obs-active'"));
             Assert.Equal("enc-old", upgraded.ReadScalar("SELECT encounter_id FROM combat_observations WHERE id='obs-old'"));
             Assert.Null(upgraded.ReadScalar("SELECT encounter_id FROM combat_observations WHERE id='obs-empty'"));
-            // 版本 3、4 新增偏好表与配置修订。
-            Assert.Equal(4L, upgraded.ReadScalar("SELECT max(version) FROM core_migrations WHERE module_id='combat-observation'"));
+            // 版本 3、4 新增偏好表与配置修订；版本 5 为快照读取的两条查询补建索引，已有数据原样保留。
+            Assert.Equal(5L, upgraded.ReadScalar("SELECT max(version) FROM core_migrations WHERE module_id='combat-observation'"));
+            Assert.Equal(2L, upgraded.ReadScalar("SELECT count(*) FROM sqlite_master WHERE type='index' AND name IN ('combat_observations_recent','combat_encounters_storage')"));
             var history = new CombatHistoryStore(upgraded, new OperationStore(upgraded), "epoch");
             var storage = history.Storage("client-a", false);
             Assert.Equal(2, storage.Encounters); Assert.Equal(100UL, storage.ProtectedBytes.Value);
+            Assert.Equal("obs-active", upgraded.ReadScalar("SELECT id FROM combat_observations ORDER BY updated_at DESC,id DESC LIMIT 1"));
         }
         finally { Directory.Delete(root, true); }
     }

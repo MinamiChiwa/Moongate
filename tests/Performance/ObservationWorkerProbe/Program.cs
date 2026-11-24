@@ -18,6 +18,64 @@ if (args is ["--prepare", var client, var cacheRoot, var prepareReport])
     Console.WriteLine(prepareReport);
     return;
 }
+if (args is ["--timers", var timerReport, ..])
+{
+    // 短等待的实际时长（系统计时器与高精度计时器）：--timers 报告路径
+    var timers = new JsonObject
+    {
+        ["schemaVersion"] = 1, ["evidenceKind"] = "timer-precision", ["measuredAtUtc"] = DateTimeOffset.UtcNow.ToString("O"),
+        ["os"] = RuntimeInformation.OSDescription, ["precision"] = await TimerPrecision.RunAsync(200)
+    };
+    Directory.CreateDirectory(Path.GetDirectoryName(timerReport)!);
+    File.WriteAllText(timerReport, timers.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+    Console.WriteLine(timerReport);
+    return;
+}
+if (args is ["--capture-latency", var captureReport, "--samples", var captureSamples, ..])
+{
+    // 抓包到写出队列的延迟（样本时间、虚拟时钟，按版本重现读取循环）：--capture-latency 报告路径 --samples 目录1;目录2 [--label 名称]
+    var labelAt = Array.IndexOf(args, "--label");
+    var captured = new JsonObject
+    {
+        ["schemaVersion"] = 1, ["evidenceKind"] = "observation-worker-capture-latency", ["label"] = labelAt > 0 ? args[labelAt + 1] : "run",
+        ["measuredAtUtc"] = DateTimeOffset.UtcNow.ToString("O"),
+        ["latency"] = CaptureLatency.Run(captureSamples.Split(';', StringSplitOptions.RemoveEmptyEntries))
+    };
+    Directory.CreateDirectory(Path.GetDirectoryName(captureReport)!);
+    File.WriteAllText(captureReport, captured.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+    Console.WriteLine(captureReport);
+    return;
+}
+if (args is ["--write-latency", var writeReport, ..])
+{
+    // 战斗写出的延迟与高流量压力（合成报告、真实时间）：--write-latency 报告路径 [--label 名称] [--scenarios single,boss,crowd,overload]
+    if (!Path.IsPathFullyQualified(writeReport)) throw new ArgumentException("报告路径须为绝对路径");
+    var labelAt = Array.IndexOf(args, "--label"); var scenariosAt = Array.IndexOf(args, "--scenarios");
+    var selected = scenariosAt > 0 ? args[scenariosAt + 1].Split(',') : WriteLatency.Default.Select(item => item.Name).ToArray();
+    var written = new JsonObject
+    {
+        ["schemaVersion"] = 1, ["evidenceKind"] = "observation-worker-write-latency", ["label"] = labelAt > 0 ? args[labelAt + 1] : "run",
+        ["measuredAtUtc"] = DateTimeOffset.UtcNow.ToString("O"),
+        ["environment"] = JsonSerializer.SerializeToNode(new
+        {
+            os = RuntimeInformation.OSDescription, runtime = RuntimeInformation.FrameworkDescription, logicalProcessors = Environment.ProcessorCount,
+            processor = OperatingSystem.IsWindows() ? Microsoft.Win32.Registry.GetValue(@"HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString", null)?.ToString() : null,
+#if DEBUG
+            configuration = "Debug",
+#else
+            configuration = "Release",
+#endif
+        }),
+        ["protocol"] = "合成战斗报告按真实时间经捕获上下文送入 ObservationCaptureRun（与解析器发布报告同一入口），写出队列、合批与速率上限为生产代码；" +
+            "写出目标按宿主 WorkerSession 的规则核对每个 1 秒窗口至多 256 条消息。延迟为每份报告入队到所在批次写出。",
+        ["scenarios"] = await WriteLatency.RunAsync(WriteLatency.Default.Where(item => selected.Contains(item.Name))
+            .Select(item => Array.IndexOf(args, "--seconds") is var at and > 0 ? item with { Seconds = int.Parse(args[at + 1], System.Globalization.CultureInfo.InvariantCulture) } : item).ToArray())
+    };
+    Directory.CreateDirectory(Path.GetDirectoryName(writeReport)!);
+    File.WriteAllText(writeReport, written.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+    Console.WriteLine(writeReport);
+    return;
+}
 var options = Args.Parse(args);
 if (options.LoopSeconds is { } loopSeconds)
 {

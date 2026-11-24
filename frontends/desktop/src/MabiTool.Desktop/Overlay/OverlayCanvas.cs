@@ -15,7 +15,7 @@ namespace MabiTool.Desktop.Overlay;
 /// 游戏浮窗里按版面摆放元件的画布，每块显示器的浮窗一个。
 /// 每个元件的右上角有一把锁：已上锁的元件只有锁图标与关闭按钮接收鼠标；已解锁的元件可以直接拖动、拖右下角把手改变尺寸、
 /// 按锁左侧的“－／＋”缩放、按“－／＋”左侧的背景与内容两个不透明度按钮分别调整底板与内容的不透明度，元件内的控件也接收输入。
-/// 锁、不透明度按钮、“－／＋”与尺寸手柄只在光标位于元件上时显示（<see cref="HoverAt"/>，由浮窗按光标位置调用），
+/// 锁、关闭按钮、不透明度按钮、“－／＋”与尺寸手柄只在光标位于元件上时显示（<see cref="HoverAt"/>，由浮窗按光标位置调用），
 /// 不论元件是否上锁；隐藏的锁仍在原处接收鼠标，光标移到元件上即显示，可以解锁。
 /// 编辑状态（<see cref="OverlayLayoutStore.IsEditing"/>，版面页的“编辑位置”）下全部元件显示并可拖动、改尺寸与缩放，不受锁状态限制，
 /// 元件内容不接收输入；显示器顶部有编辑提示条与“完成编辑”。
@@ -23,6 +23,7 @@ namespace MabiTool.Desktop.Overlay;
 /// 内容按新的尺寸重新排版；缩放倍率只由“－／＋”与版面页的缩放控件改变。拖动按光标位置跨显示器（<see cref="DragTo"/>）。
 /// 元件的内容由模块声明的 <see cref="WidgetDescriptor.CreateView"/> 提供。
 /// 外框分三层：底板（底色或自定图像、玻璃边缘与投影，按背景不透明度显示）、内容（按内容不透明度显示，内边距不变）、编辑高亮边。
+/// 浮窗配色（整体配色与元件对底板、文字的覆盖）写进外框的资源字典（<see cref="OverlayColors.Apply"/>），改色时就地替换画刷，不重建元件。
 /// </summary>
 public sealed class OverlayCanvas : Panel
 {
@@ -65,8 +66,12 @@ public sealed class OverlayCanvas : Panel
     /// <summary>一个元件在画布上的几个部件：外框（含缩放）、锁图标、“－／＋”、尺寸手柄，以及元件声明的默认与最小尺寸。</summary>
     private sealed class Slot(WidgetPlacement placement, LayoutTransformControl frame, Border plate, Border skin, Border outline,
         LayoutTransformControl lockHost, Border lockFace, LayoutTransformControl handle, OverlayWidgetModel? model,
-        LayoutTransformControl zoom, Size? defaultSize, Size minimumSize, LayoutTransformControl close, LayoutTransformControl next)
+        LayoutTransformControl zoom, Size? defaultSize, Size minimumSize, LayoutTransformControl close, LayoutTransformControl next, Panel body)
     {
+        /// <summary>三层所在的格：浮窗配色的资源与图标着色放在这里，底板与内容都在它下面。</summary>
+        public Panel Body { get; } = body;
+        /// <summary>上一次写进资源字典的配色（整体配色与元件覆盖的内容）；没变时不再写。</summary>
+        public string? Colors { get; set; }
         public Border Plate { get; } = plate;
         public Border Outline { get; } = outline;
         public LayoutTransformControl Next { get; } = next;
@@ -551,7 +556,8 @@ public sealed class OverlayCanvas : Panel
             // 自定外框图片读得到才覆盖样式里的底色。
             if (Skin(placement) is { } brush) plate.Background = brush;
             var outline = new Border { IsHitTestVisible = false, IsVisible = false, Classes = { "overlayoutline" } };
-            var frame = new LayoutTransformControl { Child = new Panel { Children = { plate, skin, outline } } };
+            var body = new Panel { Children = { plate, skin, outline } };
+            var frame = new LayoutTransformControl { Child = body };
             var face = new Border
             {
                 Classes = { "overlaylock" }, Width = LockSize, Height = LockSize, CornerRadius = new CornerRadius(LockSize / 2),
@@ -617,7 +623,7 @@ public sealed class OverlayCanvas : Panel
             next.PointerPressed += OnNextPressed;
             next.PointerReleased += OnNextReleased;
             var slot = new Slot(placement, frame, plate, skin, outline, lockHost, face, handle, model, zoom,
-                OverlayWidgetSizes.DefaultOf(descriptor), OverlayWidgetSizes.MinimumOf(descriptor), close, next);
+                OverlayWidgetSizes.DefaultOf(descriptor), OverlayWidgetSizes.MinimumOf(descriptor), close, next, body);
             // 依赖的展示主题缺失时元件在游戏浮窗里隐藏；状态随后端刷新变化。
             if (model is not null) model.PropertyChanged += (_, _) => UpdateStates();
             frame.PointerPressed += OnFramePressed;
@@ -682,6 +688,8 @@ public sealed class OverlayCanvas : Panel
             {
                 model.Editing = editing;
                 model.ShowHealth = !slot.Placement.HideMonsterHealth;
+                if (store is not null && (FavoriteBoard.IsBoard(slot.Placement.WidgetId) || slot.Placement.WidgetId == AwakeningBoard.Id))
+                    model.SetFavoriteSource(slot.Placement, store);
             }
             // 在浮窗上关闭的元件只在编辑状态下留着（变淡），其余时候不显示。
             var closed = slot.Placement.Closed;
@@ -704,10 +712,25 @@ public sealed class OverlayCanvas : Panel
             slot.Next.IsVisible = visible && editing && OverlayArea.Next(monitors, MonitorOf(slot.Placement)?.Key) is not null;
             slot.Frame.Opacity = editing && closed ? 0.4 : 1;
             ApplyOpacity(slot);
+            ApplyColors(slot);
         }
         banner.IsVisible = editing;
         UpdateControls();
         InvalidateArrange();
+    }
+
+    // 浮窗配色：整体配色与元件的覆盖写进外框的资源字典，图标着色挂在同一格上（按视觉树继承）；内容没变时不写，免得每次状态刷新都替换画刷。
+    private void ApplyColors(Slot slot)
+    {
+        var palette = store?.Colors;
+        var own = slot.Placement.Colors;
+        static string Join(IReadOnlyDictionary<string, string>? colors) =>
+            colors is null ? string.Empty : string.Join(";", colors.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Key + "=" + pair.Value));
+        var signature = Join(palette) + "|" + Join(own);
+        if (signature == slot.Colors) return;
+        slot.Colors = signature;
+        OverlayColors.Apply(slot.Body.Resources, palette, own);
+        Controls.ClientIconSlot.SetTints(slot.Body, OverlayColors.IconTints(palette));
     }
 
     // 两项不透明度分别作用于底板与内容层；背景较低时内容加投影，不低时去掉（免去离屏绘制）。
@@ -721,8 +744,8 @@ public sealed class OverlayCanvas : Panel
     }
 
     /// <summary>
-    /// 锁、不透明度按钮、“－／＋”与尺寸手柄只在光标位于元件上（或正在拖动该元件、或处于编辑状态）时显示，其余时候完全透明；
-    /// 只改不透明度，接收鼠标的范围不变，隐藏的锁照样可以点。
+    /// 锁、关闭按钮、不透明度按钮、“－／＋”与尺寸手柄只在光标位于元件上（或正在拖动该元件、或处于编辑状态）时显示，其余时候完全透明；
+    /// 只改不透明度（Window.motion 下 120 ms 过渡），接收鼠标的范围不变，隐藏的锁与关闭按钮照样可以点。
     /// </summary>
     private void UpdateControls()
     {
@@ -730,8 +753,8 @@ public sealed class OverlayCanvas : Panel
         {
             var opacity = ControlsShown(slot) ? 1 : 0;
             slot.Lock.Opacity = opacity;
-            // 关闭入口常驻（18.14）：不随锁状态或悬停隐藏。
-            slot.Close.Opacity = 1;
+            // 关闭按钮与锁一样随光标显示，隐藏时仍在原处接收鼠标。
+            slot.Close.Opacity = opacity;
             slot.Zoom.Opacity = opacity;
             slot.Next.Opacity = opacity;
             slot.Handle.Opacity = opacity;

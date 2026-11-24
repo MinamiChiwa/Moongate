@@ -352,7 +352,7 @@ public sealed class WindowCounter
             Frames++; DamageEvents += frame.Damage.Count;
             var local = frame.Entities.FirstOrDefault(entity => entity.Role.KnownValue == CombatEntityRole.LocalPlayer)?.Key;
             var monsters = frame.Entities.Where(entity => entity.Role.KnownValue == CombatEntityRole.Monster).Select(entity => entity.Key).ToHashSet();
-            LocalDamageEvents += frame.Damage.Count(value => local is not null && value.SourceEntity == local && value.Chain != true);
+            LocalDamageEvents += frame.Damage.Count(value => local is not null && value.SourceEntity == local);
             SelfEffects += frame.Effects.Count(effect => local is not null && effect.EntityKey == local);
             MonsterEffects += frame.Effects.Count(effect => monsters.Contains(effect.EntityKey));
             foreach (var gap in frame.Gaps) AddGapCore(gap.Reason, gap.DroppedEvents.Value);

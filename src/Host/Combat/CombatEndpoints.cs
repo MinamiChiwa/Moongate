@@ -93,6 +93,13 @@ public static class CombatEndpoints
             var session = LocalApiMiddleware.Session(context); var value = Required<CombatHistoryStore>(context).EntityEffects(id, session.ClientId, session.Owner);
             context.Response.Headers.ETag = "\"combat-effects-" + id + "-" + value.Revision + "\""; return Results.Ok(CombatNameProjection.Project(value, Names(context)));
         }).WithMetadata(ApiContract.CombatEntityEffects);
+        app.MapGet(ApiContract.CombatClientBuffs.Path, (HttpContext context) =>
+        {
+            var catalog = context.RequestServices.GetService<CombatNameCatalog>()?.ClientBuffs()
+                ?? new CombatClientBuffCatalog(CombatClientBuffCatalogState.Unavailable, "combat.nameCatalogUnavailable", null, []);
+            context.Response.Headers.ETag = CombatNameCatalog.ClientBuffsETag(catalog);
+            return Results.Ok(catalog);
+        }).WithMetadata(ApiContract.CombatClientBuffs);
         app.MapGet(ApiContract.CombatTimeline.Path, (string id, HttpContext context) =>
         {
             var session = LocalApiMiddleware.Session(context);
@@ -164,6 +171,9 @@ public static class CombatEndpoints
             return Results.Ok(await Required<CombatHistoryStore>(context).CleanAsync(session.ClientId, Header(context, "Idempotency-Key"), ct, session.Owner));
         })
             .WithMetadata(ApiContract.CleanupCombatHistory);
+        app.MapPost(ApiContract.ReportCombatDisplayLatency.Path, (CombatDisplayLatencyReport report, HttpContext context) =>
+            Results.Ok(Required<CombatOperations>(context).ReportDisplayLatency(LocalApiMiddleware.Session(context).ClientId, report)))
+            .WithMetadata(ApiContract.ReportCombatDisplayLatency);
     }
     private static void MapBoundary(WebApplication app, EndpointDefinition endpoint, string route) => app.MapPost(endpoint.Path,
         async (string id, CombatBoundaryRequest request, HttpContext context, CancellationToken ct) =>

@@ -40,7 +40,11 @@ public sealed class App : Application
             var args = desktop.Args ?? [];
             LoadAssetPack(args);
             var backend = CreateBackend(args);
-            desktop.MainWindow = CreateMainWindow(backend, new OverlayLayoutStore(OverlayLayoutStore.DefaultPath));
+            var layouts = new OverlayLayoutStore(OverlayLayoutStore.DefaultPath);
+            // 收藏变化同步到收藏浮窗（新收藏追加到“收藏浮窗 1”，取消的从两个收藏浮窗移除）；觉醒触发时按设置播放提示音。
+            Pages.Combat.CombatEffectFavorites.Toggled += layouts.FavoriteToggled;
+            FavoriteEffectTracker.Triggered += kind => AwakeningSound.Notify(kind, layouts);
+            desktop.MainWindow = CreateMainWindow(backend, layouts);
             UiMotion.FollowSystem(desktop.MainWindow);
             var shown = desktop.MainWindow;
             shown.Opened += (_, _) => _ = UiRendering.DetectAsync(shown);

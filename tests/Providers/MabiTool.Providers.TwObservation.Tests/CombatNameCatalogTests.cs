@@ -93,6 +93,42 @@ public sealed class CombatNameCatalogTests
         Assert.Empty(unsupported.Skills); Assert.Equal(2, unsupported.Monsters.Count);
     }
 
+    [Fact]
+    public void BuffDescriptionsComeFromTheThirdColumnAndPlaceholderNamesAreRecognized()
+    {
+        var sheets = new Sheets();
+        sheets.Table("Buff", [835644119, 1401824925, 7], [
+            Row(0, sheets.Text("集中攻擊"), sheets.Text("<color=#FFD200>破防成功時</color>，攻擊力增加 150\r\n持續  10 秒")),
+            Row(0, sheets.Text("集中"), sheets.Text("暴擊機率 $#MagicEffect@개발명(A)!액션 인자{0}[%]$、部分技能強化")),
+            Row(0, sheets.Text("減速"), sheets.Text(" "))]);
+        sheets.Table("Monster", [1], [Row(sheets.Text("x"))]);
+        sheets.Table("Skill", [1], [SkillRow(sheets.Text("x"))]);
+        var fields = new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["Monster"] = ["Id", "DisplayName"], ["Buff"] = ["Id", "DisplayBuffTypeText", "DisplayName", "DescriptionText"], ["Skill"] = ClientCombatNameCatalog.SkillColumns
+        };
+        ActorTables(sheets, fields);
+        var (meta, text, data) = sheets.Build();
+
+        var names = ClientCombatNameCatalog.Decode(meta, text, data, fields, "fixture");
+        // 描述去掉颜色标记、保留换行并合并多余空白；客户端运行时代入的数值写作“？%”；空描述不记。
+        Assert.Equal("破防成功時，攻擊力增加 150\n持續 10 秒", names.EffectDescriptions![835644119]);
+        Assert.Equal("暴擊機率 ？%、部分技能強化", names.EffectDescriptions[1401824925]);
+        Assert.False(names.EffectDescriptions.ContainsKey(7));
+        Assert.Equal("減速", names.Effects[7]);
+
+        // 描述列不在已核对的位置时只有描述为空，名称照常。
+        var moved = new Dictionary<string, IReadOnlyList<string>>(fields) { ["Buff"] = ["Id", "DisplayBuffTypeText", "DisplayName", "BuffScrollDisplayName"] };
+        var withoutDescriptions = ClientCombatNameCatalog.Decode(meta, text, data, moved, "fixture");
+        Assert.Empty(withoutDescriptions.EffectDescriptions!);
+        Assert.Equal(3, withoutDescriptions.Effects.Count);
+        Assert.False(withoutDescriptions.Unsupported.ContainsKey("effect-description"));
+
+        Assert.All(["不顯示", "不顯示_昏厥", "假人_增益(顯示X)", "集中_視覺專用", "測試", "拍攝用", "未標記", "(임시) 레이드 버프", "—"],
+            name => Assert.True(ClientCombatNameCatalog.IsPlaceholderName(name), name));
+        Assert.All(["集中", "集中攻擊", "透明", "풍미 가득 스테이크", "KillNear"], name => Assert.False(ClientCombatNameCatalog.IsPlaceholderName(name), name));
+    }
+
     /// <summary>怪物以外的自动体名称表（第 1 列 DisplayName）、GimmickActor → GimmickActorState 的出生状态名称。</summary>
     private static void ActorTables(Sheets sheets, Dictionary<string, IReadOnlyList<string>> fields)
     {

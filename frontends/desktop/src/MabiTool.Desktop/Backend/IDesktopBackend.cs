@@ -138,6 +138,17 @@ public partial interface IDesktopBackend
     event EventHandler? ClientIconsChanged { add { } remove { } }
 
     /// <summary>
+    /// 客户端 Buff 表里全部可显示的效果（收藏层的可选范围之一）；尚未读取、读取中或读不到时 <see cref="ClientBuffList.Entries"/> 为空并写明原因。
+    /// </summary>
+    ClientBuffList GetClientBuffs() => ClientBuffList.Unsupported;
+
+    /// <summary>收藏层打开时调用：尚未读到或游戏换了进程（名称表随之可能变化）时在后台读取，结果到达时触发 <see cref="ClientBuffsChanged"/>。</summary>
+    void RequestClientBuffs() { }
+
+    /// <summary>客户端 Buff 表的读取结果或状态变化时触发，在界面线程上。</summary>
+    event EventHandler? ClientBuffsChanged { add { } remove { } }
+
+    /// <summary>
     /// 后端能力表里该能力不可用时的本地化说明，页面显示在对应主操作旁；
     /// 能力可用、状态未知或能力表没有该编号时为空。
     /// </summary>

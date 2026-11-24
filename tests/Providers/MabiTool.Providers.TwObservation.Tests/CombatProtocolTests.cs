@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using System.IO.Compression;
 using System.Text.Json;
 using MabiTool.Contracts;
@@ -149,18 +150,77 @@ public sealed class CombatProtocolTests
         Assert.True(replay.Observer.Usage.Entities <= 128); Assert.True(replay.Observer.Usage.PendingRecords <= 512);
     }
 
+    /// <summary>
+    /// 本机伤害配到队友施放的技能表现（连携）时照常计入本机，技能分组单列为队友技能；攻击者不是本机的伤害即使配到本机的表现也不计入。
+    /// </summary>
     [Fact]
-    public void CorrelatedChainStaysInTimelineAndDoesNotIncreaseLocalStatistics()
+    public void TeammateSkillOnLocalDamageCountsForTheAttackerAndOnlyLabelsTheSkill()
     {
-        var replay = new Replay(); replay.Feed(0, Join(Identity(), Skill(), Damage(), Skill(caster: 9999), Damage(amount: 50)), 0);
+        var other = new byte[8]; other[0] = 0x80;
+        var replay = new Replay(); replay.Feed(0, Join(Identity(), Skill(), Damage(), Skill(caster: 9999), Damage(amount: 50),
+            Skill(flags: other), Damage(attacker: 8888, amount: 30, flags: other)), 0);
         replay.Observer.Tick(250, At(250));
         var local = replay.Observer.LocalEntity!;
         var session = new CombatSession("owner", "observation", Tw20261110CombatProtocol.CombatProfile.Source, local,
             new("fixture-game"), At(0));
         foreach (var frame in replay.Frames) session.Apply(frame);
         var result = session.Capture();
-        Assert.Equal("100", result.Workspace.Encounter!.Summary.AttributedDamage.ToString());
-        Assert.Contains(result.Timeline, item => item.Item.Attribution == "chain" && item.Item.Damage!.SkillCasterKey!.RawInstanceId.Value == 9999);
+        var encounter = result.Workspace.Encounter!;
+        Assert.Equal("150", encounter.Summary.AttributedDamage.ToString());
+        Assert.Equal("150", DamageAccumulatorTotal(encounter.LocalDamage));
+        Assert.Equal("30", DamageAccumulatorTotal(encounter.UnknownDamage));
+        var own = Assert.Single(encounter.Skills, group => group.Teammate is null);
+        var teammate = Assert.Single(encounter.Skills, group => group.Teammate == true);
+        Assert.Equal(("305419896", "100"), (own.Key, own.AttributedDamage.ToString()));
+        Assert.Equal(("305419896:teammate", "305419896", "50"), (teammate.Key, teammate.Name, teammate.AttributedDamage.ToString()));
+        Assert.Contains(result.Timeline, item => item.Item.Attribution == "local" && item.Item.Damage is { Chain: true } damage &&
+            damage.SkillCasterKey!.RawInstanceId.Value == 9999 && damage.Amount.Value == 50);
+        Assert.Contains(result.Timeline, item => item.Item.Attribution == "unknown" && item.Item.Damage is { Chain: true } damage &&
+            damage.SkillCasterKey == local.Key && damage.Amount.Value == 30);
+    }
+
+    private static string DamageAccumulatorTotal(CombatDamageTotals value) =>
+        (value.ActualHp.Value + value.Shield.Value + value.Overkill.Value + value.Unclassified.Value).ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// 出现帧声明所有者的宠物：所有者是本机时为本机所属实体，伤害按 includeOwnedEntities 计入；所有者是其他玩家的宠物归其他实体。
+    /// </summary>
+    [Theory]
+    [InlineData(true, "130")]
+    [InlineData(false, "100")]
+    public void PetWithLocalOwnerCountsByTheIncludeOwnedSetting(bool includeOwned, string attributed)
+    {
+        const ulong pet = 5555, strayPet = 5556, otherPlayer = 7777;
+        var replay = new Replay(); replay.Feed(0, Join(Identity(),
+            Message(Tw20261110CombatProtocol.AppearingAutomaton, TwAutomatonAppearanceTests.Prefix(type: 4, entity: pet, owner: LocalEntityId), 1),
+            Message(Tw20261110CombatProtocol.AppearingAutomaton, TwAutomatonAppearanceTests.Prefix(type: 4, entity: strayPet, owner: otherPlayer), 1),
+            Damage(), Damage(attacker: pet, amount: 30), Damage(attacker: strayPet, amount: 40)), 0);
+        replay.Observer.Tick(250, At(250));
+        var local = replay.Observer.LocalEntity!;
+        var owned = replay.Frames[^1].Entities.Single(entity => entity.Key.RawInstanceId.Value == pet);
+        Assert.Equal((CombatEntityRole.Owned, local.Key, true), (owned.Role.KnownValue, owned.OwnerKey, owned.OwnerConfirmed));
+        var session = new CombatSession("owner", "observation", Tw20261110CombatProtocol.CombatProfile.Source, local,
+            new("fixture-game", IncludeOwnedEntities: includeOwned), At(0));
+        foreach (var frame in replay.Frames) session.Apply(frame);
+        var result = session.Capture();
+        var encounter = result.Workspace.Encounter!;
+        Assert.Equal(attributed, encounter.Summary.AttributedDamage.ToString());
+        Assert.Equal("30", DamageAccumulatorTotal(encounter.OwnedDamage));
+        Assert.Equal("0", DamageAccumulatorTotal(encounter.UnknownDamage));
+        Assert.Contains(result.Timeline, item => item.Item.Attribution == "other" && item.Item.Damage?.SourceEntity.RawInstanceId.Value == strayPet);
+    }
+
+    /// <summary>
+    /// 伤害等待期间流内出现超过 1024 字节的只改状态帧（离场等），下一次技能表现到达时该伤害已越过窗口：先按原技能表发布，技能配对不因清理丢失。
+    /// </summary>
+    [Fact]
+    public void DamagePastItsWindowIsPublishedBeforeOldPresentationsArePurged()
+    {
+        var departures = Enumerable.Range(1, 70).Select(index => Message(Tw20261110CombatProtocol.Disappearing, BitConverter.GetBytes(100000UL + (ulong)index))).ToArray();
+        var replay = new Replay(); replay.Feed(0, Join([Identity(), Skill(skill: 0x0A0B0C0D), Damage(), .. departures, Skill(skill: 0x01020304, target: 3333)]), 0);
+        replay.Observer.Tick(250, At(250));
+        var damage = Assert.Single(replay.Damage);
+        Assert.Equal((0x0A0B0C0DUL, true, false), (damage.SkillId.Value, damage.SkillResolved, damage.Chain));
     }
 
     [Theory]

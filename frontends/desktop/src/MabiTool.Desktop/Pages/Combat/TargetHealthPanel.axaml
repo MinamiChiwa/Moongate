@@ -17,7 +17,7 @@
     <Style Selector="combat|TargetHealthPanel.overlay controls|HealthBar">
       <Setter Property="Fill" Value="{DynamicResource OverlayAccentBrush}" />
       <Setter Property="LowFill" Value="{DynamicResource OverlayWaitingBrush}" />
-      <Setter Property="Track" Value="#40FFFFFF" />
+      <Setter Property="Track" Value="{DynamicResource OverlayBarTrackBrush}" />
     </Style>
     <Style Selector="TextBlock.dim">
       <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />

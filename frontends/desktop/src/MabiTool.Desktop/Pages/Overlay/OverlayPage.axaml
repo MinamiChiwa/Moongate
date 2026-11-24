@@ -15,8 +15,108 @@
       <Setter Property="Foreground" Value="White" />
       <Setter Property="BorderBrush" Value="{StaticResource OverlayBrush}" />
     </Style>
+    <!-- 元件库：选中的元件块用描边标出，与右侧开关表示的启用状态分开。 -->
+    <Style Selector="Button.tile.selected">
+      <Setter Property="BorderBrush" Value="{StaticResource OverlayBrush}" />
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <!-- 元件库块右侧的显示开关：圆角轨道与圆钮，打开时为强调色、圆钮在右；没有文字。 -->
+    <Style Selector="ToggleButton.librarytoggle">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="Track" Width="40" Height="22" CornerRadius="11" Background="{DynamicResource InsetBrush}"
+                  BorderBrush="{DynamicResource MutedBrush}" BorderThickness="1">
+            <Ellipse Name="Knob" Width="14" Height="14" Margin="3,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                     Fill="{DynamicResource MutedBrush}" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="ToggleButton.librarytoggle:checked /template/ Border#Track">
+      <Setter Property="Background" Value="{StaticResource OverlayBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource OverlayBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.librarytoggle:checked /template/ Ellipse#Knob">
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="Fill" Value="White" />
+    </Style>
+    <Style Selector="ToggleButton.librarytoggle:focus-visible /template/ Border#Track">
+      <Setter Property="BorderBrush" Value="{DynamicResource InkBrush}" />
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <!-- 配色项的色块按钮：只有色块本身。 -->
+    <Style Selector="Button.bare">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.bare:pointerover">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.bare:disabled">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
   </UserControl.Styles>
-  <Panel>
+  <UserControl.Resources>
+    <!-- 配色的一项：色块（点按打开选色浮层）、名称与说明、HEX。 -->
+    <DataTemplate x:Key="ColorEntryTemplate" DataType="page:ColorEntry">
+      <DockPanel Margin="0,0,0,6">
+        <Button x:Name="ColorSwatch" DockPanel.Dock="Left" Classes="bare" Width="28" Height="28" Margin="0,0,8,0" Click="OnColorSwatchClick"
+                IsEnabled="{Binding Enabled}" ToolTip.Tip="{Binding Tip}" ToolTip.ShowOnDisabled="True" AutomationProperties.Name="{Binding Label}">
+          <Border CornerRadius="7" Background="{Binding Brush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" />
+        </Button>
+        <TextBlock DockPanel.Dock="Right" Classes="note" Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding Hex}" />
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Classes="name" Text="{Binding Label}" />
+          <TextBlock Classes="note" Text="{Binding Note}" IsVisible="{Binding HasNote}" />
+        </StackPanel>
+      </DockPanel>
+    </DataTemplate>
+    <!-- 元件库的一块：点块选中编辑；右侧开关只管是否显示在浮窗上（Tab 可聚焦、空格切换），两者是并列的两个控件、互不影响。 -->
+    <DataTemplate x:Key="LibraryTile" DataType="page:LibraryItem">
+      <Panel>
+        <Button Classes="tile" Classes.selected="{Binding Selected}" Padding="10,8,64,8" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).SelectWidgetCommand}"
+                CommandParameter="{Binding WidgetId}">
+          <DockPanel>
+            <Border DockPanel.Dock="Left" Width="8" Height="8" CornerRadius="4" Margin="0,0,8,0"
+                    VerticalAlignment="Center" Background="{Binding Accent}" />
+            <StackPanel>
+              <TextBlock Classes="name" FontSize="13" Text="{Binding Title}" />
+              <TextBlock Classes="name muted" FontSize="12" Text="{Binding Group}" />
+              <TextBlock Classes="note unconfirmed" Text="{Binding Notice}" IsVisible="{Binding HasNotice}" />
+            </StackPanel>
+          </DockPanel>
+        </Button>
+        <ToggleButton Classes="librarytoggle" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"
+                      IsChecked="{Binding Enabled, Mode=OneWay}"
+                      Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).EnableWidgetCommand}"
+                      CommandParameter="{Binding WidgetId}" AutomationProperties.Name="{Binding ToggleName}" ToolTip.Tip="{Binding ToggleTip}" />
+      </Panel>
+    </DataTemplate>
+    <!-- 配色的一组：标题（有说明时带问号）、复位按钮（没有改动时停用）与各项。 -->
+    <DataTemplate x:Key="ColorGroupTemplate" DataType="page:ColorGroupView">
+      <StackPanel Spacing="6" Margin="0,0,0,10">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" Content="{Binding ResetLabel}" IsEnabled="{Binding Changed}"
+                  Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).ResetColorsCommand}" CommandParameter="{Binding Id}" />
+          <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+            <TextBlock Classes="strong" VerticalAlignment="Center" Text="{Binding Title}" />
+            <controls:HelpTip Text="{Binding Hint}" IsVisible="{Binding HasHint}" />
+          </StackPanel>
+        </DockPanel>
+        <ItemsControl controls:StableItems.Source="{Binding Items}" ItemTemplate="{StaticResource ColorEntryTemplate}" />
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.Resources>
+  <Panel x:Name="Root">
   <DockPanel>
     <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
       <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
@@ -118,7 +218,10 @@
                        AllowedSizes="HalfByAuto,FullWidth,OneByThree,OneByFour">
           <StackPanel Spacing="12">
             <TextBlock Classes="note" Text="{DynamicResource O.NoSelection}" IsVisible="{Binding NoSelection}" />
-            <StackPanel Spacing="12" IsVisible="{Binding HasSelection}">
+            <!-- 选中的元件未启用：写明打开开关后显示；从未放进版面的没有摆放数据，下面的设置停用。 -->
+            <TextBlock x:Name="InactiveNote" Classes="note unconfirmed" TextWrapping="Wrap" Text="{Binding InactiveText}" IsVisible="{Binding SelectedInactive}" />
+            <TextBlock x:Name="UnplacedNote" Classes="note" TextWrapping="Wrap" Text="{Binding UnplacedText}" IsVisible="{Binding SelectedUnplaced}" />
+            <StackPanel x:Name="SelectedSettings" Spacing="12" IsVisible="{Binding HasSelection}" IsEnabled="{Binding HasPlacement}">
               <ItemsControl controls:StableItems.Source="{Binding SelectedDetails}" />
               <!-- 含属性图标的元件：图标与名称的对照。浮窗上锁时鼠标穿透、看不到提示，解锁或编辑位置时悬停图标可看名称。 -->
               <StackPanel x:Name="IconLegend" Spacing="6" IsVisible="{Binding HasSelectedIcons}">
@@ -155,6 +258,104 @@
                   </StackPanel>
                 </controls:SelectionBorder>
               </controls:PairRow>
+              <!-- 收藏浮窗：勾选要显示的收藏（每个收藏可勾自身与目标，只勾选不排序）；改动立即保存。 -->
+              <StackPanel x:Name="FavoriteSettings" Spacing="8" IsVisible="{Binding HasFavoritesSetting}">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Classes="muted" Text="{Binding FavoritesLabel}" />
+                  <controls:HelpTip Text="{Binding FavoritesHint}" />
+                </StackPanel>
+                <TextBlock Classes="note" Text="{Binding NoFavoritesText}" IsVisible="{Binding NoFavorites}" />
+                <ItemsControl x:Name="FavoriteChoiceList" controls:StableItems.Source="{Binding FavoriteChoices}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="page:FavoriteChoice">
+                      <DockPanel Margin="0,0,0,4">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+                          <Button Classes="chip" Classes.active="{Binding Self}" Content="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).SelfLabel}"
+                                  Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).FavoriteItemCommand}" CommandParameter="{Binding SelfKey}" />
+                          <Button Classes="chip" Classes.active="{Binding Target}" Content="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).TargetLabel}"
+                                  Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).FavoriteItemCommand}" CommandParameter="{Binding TargetKey}" />
+                        </StackPanel>
+                        <Path DockPanel.Dock="Left" Width="10" Height="11" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{Binding Fill}"
+                              Data="M5,0 L10,3 L9,11 L1,11 L0,3 Z" RenderTransformOrigin="50%,50%">
+                          <Path.RenderTransform><RotateTransform Angle="{Binding Angle}" /></Path.RenderTransform>
+                        </Path>
+                        <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" ToolTip.Tip="{Binding Tip}" />
+                      </DockPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+              <!-- 收藏浮窗与觉醒监控浮窗：竖排或横排。 -->
+              <controls:PairRow IsVisible="{Binding HasLayoutSetting}">
+                <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding LayoutLabel}" />
+                <controls:SelectionBorder x:Name="FavoriteLayoutSwitch" Classes="segmented" HorizontalAlignment="Right">
+                  <StackPanel Orientation="Horizontal">
+                    <Button Classes="segment" Classes.active="{Binding FavoritesVertical}" Content="{Binding VerticalLabel}"
+                            Command="{Binding FavoriteLayoutCommand}" CommandParameter="vertical" />
+                    <Button Classes="segment" Classes.active="{Binding FavoritesHorizontal}" Content="{Binding HorizontalLabel}"
+                            Command="{Binding FavoriteLayoutCommand}" CommandParameter="horizontal" />
+                  </StackPanel>
+                </controls:SelectionBorder>
+              </controls:PairRow>
+              <StackPanel x:Name="AwakeningSettings" Spacing="8" IsVisible="{Binding ShowAlerts}">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Classes="muted" Text="{Binding AlertsLabel}" />
+                  <controls:HelpTip Text="{Binding AlertsHint}" />
+                </StackPanel>
+                <!-- 觉醒监控浮窗的提示设置：闪烁的颜色与时长、音效开关、声音（内置合成或本机 wav／mp3）与音量。 -->
+                <ItemsControl x:Name="AlertList" controls:StableItems.Source="{Binding Alerts}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="page:AlertView">
+                      <Border Classes="inset" Margin="0,0,0,8">
+                        <StackPanel Spacing="6">
+                          <TextBlock Classes="strong" Text="{Binding Title}" />
+                          <controls:PairRow>
+                            <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).FlashLabel}" />
+                            <Button Classes="chip" HorizontalAlignment="Right" Classes.active="{Binding Flash}"
+                                    Content="{Binding FlashState}"
+                                    Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertFlashCommand}" CommandParameter="{Binding Kind}" />
+                          </controls:PairRow>
+                          <ContentControl Content="{Binding Color}" ContentTemplate="{StaticResource ColorEntryTemplate}" />
+                          <controls:PairRow>
+                            <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).FlashSecondsLabel}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <Button Classes="chip" Width="34" Padding="0" Content="−"
+                                      Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertSecondsCommand}" CommandParameter="{Binding StepDown}" />
+                              <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding Seconds}" />
+                              <Button Classes="chip" Width="34" Padding="0" Content="+"
+                                      Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertSecondsCommand}" CommandParameter="{Binding StepUp}" />
+                            </StackPanel>
+                          </controls:PairRow>
+                          <controls:PairRow>
+                            <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).SoundLabel}" />
+                            <Button Classes="chip" HorizontalAlignment="Right" Classes.active="{Binding Sound}"
+                                    Content="{Binding SoundState}"
+                                    Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertSoundCommand}" CommandParameter="{Binding Kind}" />
+                          </controls:PairRow>
+                          <TextBlock Classes="note" TextTrimming="CharacterEllipsis" Text="{Binding SoundText}" />
+                          <WrapPanel>
+                            <Button Classes="chip" Margin="0,0,6,6" Tag="{Binding Kind}" Content="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).PickSoundLabel}"
+                                    Click="OnPickSound" />
+                            <Button Classes="chip" Margin="0,0,0,6" IsVisible="{Binding HasFile}"
+                                    Content="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).BuiltinSoundLabel}"
+                                    Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertBuiltinCommand}" CommandParameter="{Binding Kind}" />
+                          </WrapPanel>
+                          <controls:PairRow>
+                            <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).VolumeLabel}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <Button Classes="chip" Width="34" Padding="0" Content="−"
+                                      Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertVolumeCommand}" CommandParameter="{Binding StepDown}" />
+                              <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding Volume}" />
+                              <Button Classes="chip" Width="34" Padding="0" Content="+"
+                                      Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertVolumeCommand}" CommandParameter="{Binding StepUp}" />
+                            </StackPanel>
+                          </controls:PairRow>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
               <!-- 所选元件移到另一块显示器：比例位置不变，立即保存；只有一块显示器时不显示。 -->
               <controls:PairRow IsVisible="{Binding HasMonitorChoice}">
                 <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding MoveToLabel}" />
@@ -228,6 +429,16 @@
                   <Button Classes="chip" HorizontalAlignment="Left" Content="{DynamicResource O.PickImage}" Click="OnPickImage" />
                 </StackPanel>
               </Border>
+              <!-- 这个元件的底板与文字配色：没有覆盖的项跟随整体配色；可以把这个元件的设置应用到全部元件。 -->
+              <StackPanel x:Name="WidgetColors" Spacing="6">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Classes="muted" Text="{DynamicResource O.WidgetColors}" />
+                  <controls:HelpTip Text="{DynamicResource O.WidgetColorsHint}" />
+                </StackPanel>
+                <ItemsControl controls:StableItems.Source="{Binding WidgetColorGroups}" ItemTemplate="{StaticResource ColorGroupTemplate}" />
+                <Button x:Name="ApplyColorsButton" Classes="chip" HorizontalAlignment="Left" Content="{Binding ApplyColorsLabel}"
+                        Command="{Binding ApplyColorsToAllCommand}" />
+              </StackPanel>
               <WrapPanel>
                 <Button x:Name="ResetPositionButton" Margin="0,0,8,6" Content="{DynamicResource O.ResetPosition}"
                         Command="{Binding ResetPositionCommand}" />
@@ -238,33 +449,71 @@
           </StackPanel>
         </controls:Card>
 
+        <!-- 整体配色：示意元件与六组颜色，每组可以恢复原配色；改色立即显示在游戏浮窗上。 -->
+        <controls:Card x:Name="ColorsPanel" CardId="colors" Title="{DynamicResource O.ColorsTitle}" TitleTip="{DynamicResource O.ColorsHint}"
+                       Size="TwoByAuto" AllowedSizes="FullWidth,OneByAuto">
+          <StackPanel Spacing="12">
+            <!-- 示意元件：按整体配色画出的底板、文字、状态色、进度条、效果条目与图标色。 -->
+            <Border x:Name="ColorsPreview" HorizontalAlignment="Left" MaxWidth="320" CornerRadius="18" Padding="14,12"
+                    Background="{Binding Preview.Plate}" BorderBrush="{DynamicResource OverlayPlateEdgeBrush}" BorderThickness="1">
+              <StackPanel Spacing="4">
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Right" FontSize="12" Foreground="{Binding Preview.Muted}" Text="{DynamicResource O.ColorsPreview}" />
+                  <TextBlock FontSize="12" Foreground="{Binding Preview.Muted}" Text="{DynamicResource O.Dps}" />
+                </DockPanel>
+                <TextBlock FontSize="28" FontWeight="Black" Foreground="{Binding Preview.Text}" Text="12,345" />
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                  <TextBlock FontSize="12" FontWeight="Bold" Foreground="{Binding Preview.Accent}" Text="{Binding Preview.Labels[0]}" />
+                  <TextBlock FontSize="12" FontWeight="Bold" Foreground="{Binding Preview.Positive}" Text="{Binding Preview.Labels[1]}" />
+                  <TextBlock FontSize="12" FontWeight="Bold" Foreground="{Binding Preview.Warning}" Text="{Binding Preview.Labels[2]}" />
+                </StackPanel>
+                <controls:MeterBar Value="0.62" Fill="{Binding Preview.BarFill}" Track="{Binding Preview.BarTrack}" />
+                <UniformGrid Columns="2" Margin="0,4,0,0">
+                  <Border Margin="0,0,4,4" Padding="8,2" CornerRadius="4" Background="{Binding Preview.EffectPositive}">
+                    <DockPanel><TextBlock DockPanel.Dock="Right" FontSize="11" Foreground="{Binding Preview.EffectMuted}" Text="×2" />
+                      <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{Binding Preview.EffectText}" Text="{Binding Preview.Labels[3]}" /></DockPanel>
+                  </Border>
+                  <Border Margin="0,0,0,4" Padding="8,2" CornerRadius="4" Background="{Binding Preview.EffectNegative}">
+                    <DockPanel><TextBlock DockPanel.Dock="Right" FontSize="11" Foreground="{Binding Preview.EffectMuted}" Text="×3" />
+                      <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{Binding Preview.EffectText}" Text="{Binding Preview.Labels[4]}" /></DockPanel>
+                  </Border>
+                  <Border Margin="0,0,4,0" Padding="8,2" CornerRadius="4" Background="{Binding Preview.EffectOther}">
+                    <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{Binding Preview.EffectText}" Text="{Binding Preview.Labels[5]}" />
+                  </Border>
+                  <Border Padding="8,2" CornerRadius="4" Background="{Binding Preview.EffectWarning}">
+                    <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{Binding Preview.EffectText}" Text="{Binding Preview.Labels[6]}" />
+                  </Border>
+                </UniformGrid>
+                <ItemsControl ItemsSource="{Binding Preview.Icons}" Margin="0,4,0,0">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="IBrush">
+                      <Ellipse Width="12" Height="12" Fill="{Binding}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+            <ItemsControl x:Name="ColorGroupList" controls:StableItems.Source="{Binding ColorGroups}" ItemTemplate="{StaticResource ColorGroupTemplate}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="240" Spacing="16" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </StackPanel>
+        </controls:Card>
+
           <controls:Card x:Name="LibraryPanel" CardId="library" Title="{DynamicResource O.Library}" TitleTip="{DynamicResource O.LibraryHint}" Padding="16" AllowedSizes="TwoByAuto,HalfByAuto">
             <controls:Card.Actions>
               <Button x:Name="GameDataButton" Content="{DynamicResource O.GameDataEntry}" Command="{Binding OpenGameDataCommand}"
                       ToolTip.Tip="{DynamicResource O.GameDataEntryHint}" />
             </controls:Card.Actions>
             <StackPanel Spacing="10">
-              <ItemsControl controls:StableItems.Source="{Binding Library}">
+              <ItemsControl x:Name="LibraryList" controls:StableItems.Source="{Binding Library}" ItemTemplate="{StaticResource LibraryTile}">
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="190" Spacing="8" /></ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate DataType="page:LibraryItem">
-                    <Button Classes="tile" Classes.active="{Binding Placed}" Padding="10,8" HorizontalAlignment="Stretch"
-                            Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).ToggleWidgetCommand}"
-                            CommandParameter="{Binding WidgetId}">
-                      <DockPanel>
-                        <Border DockPanel.Dock="Left" Width="8" Height="8" CornerRadius="4" Margin="0,0,8,0"
-                                VerticalAlignment="Center" Background="{Binding Accent}" />
-                        <StackPanel>
-                          <TextBlock Classes="name" FontSize="13" Text="{Binding Title}" />
-                          <TextBlock Classes="name muted" FontSize="12" Text="{Binding Group}" />
-                          <TextBlock Classes="note unconfirmed" Text="{Binding Notice}" IsVisible="{Binding HasNotice}" />
-                        </StackPanel>
-                      </DockPanel>
-                    </Button>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
               </ItemsControl>
             </StackPanel>
           </controls:Card>
@@ -285,24 +534,10 @@
           <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="h2" FontSize="17" Text="{DynamicResource O.GameDataTitle}" /><controls:HelpTip Text="{DynamicResource O.GameDataHint}" /></StackPanel>
         </DockPanel>
         <ScrollViewer controls:EdgeFade.IsEnabled="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <ItemsControl x:Name="GameDataList" controls:StableItems.Source="{Binding GameDataLibrary}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate DataType="page:LibraryItem">
-                <Button Classes="tile" Classes.active="{Binding Placed}" Padding="10,8" Margin="0,0,0,8" HorizontalAlignment="Stretch"
-                        Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).ToggleWidgetCommand}"
-                        CommandParameter="{Binding WidgetId}">
-                  <DockPanel>
-                    <Border DockPanel.Dock="Left" Width="8" Height="8" CornerRadius="4" Margin="0,0,8,0"
-                            VerticalAlignment="Center" Background="{Binding Accent}" />
-                    <StackPanel>
-                      <TextBlock Classes="name" FontSize="13" Text="{Binding Title}" />
-                      <TextBlock Classes="name muted" FontSize="12" Text="{Binding Group}" />
-                      <TextBlock Classes="note unconfirmed" Text="{Binding Notice}" IsVisible="{Binding HasNotice}" />
-                    </StackPanel>
-                  </DockPanel>
-                </Button>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
+          <ItemsControl x:Name="GameDataList" controls:StableItems.Source="{Binding GameDataLibrary}" ItemTemplate="{StaticResource LibraryTile}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Spacing="8" Margin="0,0,0,8" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
           </ItemsControl>
         </ScrollViewer>
       </DockPanel>

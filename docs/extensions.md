@@ -200,7 +200,7 @@ my-extension/
 
 | 权限 | 风险 | 能做什么 | 方法 | 事件主题 |
 |---|---|---|---|---|
-| `combat.read` | 普通 | 读取 DPS、效果与分段 | `combat.snapshot` | `combat.summary.changed`、`combat.effects.changed`、`combat.encounter.closed`、`combat.observation.degraded`、`combat.measurement.changed` |
+| `combat.read` | 普通 | 读取 DPS、效果与分段 | `combat.snapshot` | `combat.summary.changed`、`combat.effects.changed`、`combat.encounter.closed`、`combat.observation.degraded`、`combat.measurement.changed`、`combat.live.changed` |
 | `inventory.read` | 普通 | 读取背包与保管箱 | `inventory.accounts`、`inventory.items` | `inventory.snapshot.changed`、`inventory.observation.degraded` |
 | `game.read` | 普通 | 读取游戏绑定、抓包状态、地图与频道 | `game.binding`、`game.observation` | `game.observation.changed`、`game.environment.changed` |
 | `rooms.read` | 普通 | 读取合奏房间的成员与轮次 | `rooms.state` | — |

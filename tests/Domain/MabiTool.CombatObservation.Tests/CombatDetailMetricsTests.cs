@@ -85,7 +85,7 @@ public sealed class CombatDetailMetricsTests
     }
 
     [Fact]
-    public void RangeAndTraitsExcludeZeroUnknownOwnedAndChainDamageByExistingAttributionRules()
+    public void RangeAndTraitsExcludeZeroUnknownAndOwnedDamageAndKeepTeammateSkillsInTheirOwnGroup()
     {
         var session = Session(owned: false);
         var pet = Self with { RawInstanceId = new(42) };
@@ -97,7 +97,9 @@ public sealed class CombatDetailMetricsTests
             Marked("chain", 10000, true, true, true) with { SkillCasterKey = caster, Chain = true }],
             entities: [Entity(Monster, CombatEntityRole.Monster), Entity(pet, CombatEntityRole.Owned, owner: Self, confirmed: true)]));
         var encounter = session.Capture().Workspace.Encounter!;
-        var group = Assert.Single(encounter.Skills);
+        // 本机攻击者配到他人施放的表现（连携）计入本机，单列为队友技能分组；本机自己的技能分组不含它。
+        Assert.Equal("10030", encounter.Summary.AttributedDamage.ToString());
+        var group = Assert.Single(encounter.Skills, item => item.Teammate is null);
         Assert.Equal(1UL, group.EventCount.Value);
         Assert.Equal("30", group.AttributedDamage.ToString());
         Assert.Equal(0UL, group.PowerfulHitCount!.Value.Value);
@@ -105,6 +107,9 @@ public sealed class CombatDetailMetricsTests
         Assert.Equal(0UL, group.DoubleHitCount!.Value.Value);
         Assert.Equal(30UL, group.MinimumDamage!.Value.Value);
         Assert.Equal(30UL, group.MaximumDamage!.Value.Value);
+        var teammate = Assert.Single(encounter.Skills, item => item.Teammate == true);
+        Assert.Equal(("1000:teammate", "1000", 1UL, "10000"), (teammate.Key, teammate.Name, teammate.EventCount.Value, teammate.AttributedDamage.ToString()));
+        Assert.Equal((1UL, 1UL, 1UL), (teammate.PowerfulHitCount!.Value.Value, teammate.RapidHitCount!.Value.Value, teammate.DoubleHitCount!.Value.Value));
     }
 
     [Fact]

@@ -135,9 +135,28 @@
   <SolidColorBrush x:Key="EyedropperCapsuleEdgeBrush" Color="#33FFFFFF" />
   <SolidColorBrush x:Key="EyedropperSwatchEdgeBrush" Color="#59FFFFFF" />
   <SolidColorBrush x:Key="EyedropperTextBrush" Color="#F2F4F8" />
-  <!-- 浮窗元件内的文字层次与状态色：盖在深色外框上，外观固定，不随主题变化。 -->
+  <!--
+    浮窗元件的配色：盖在深色底板上，不随主题变化。这里是原配色（默认值）；用户在浮窗配色里改过的项由 OverlayColors.Apply
+    写进各元件外框的资源字典，覆盖这些同名资源。元件内容一律以 DynamicResource 引用，不写颜色字面量。
+  -->
+  <SolidColorBrush x:Key="OverlayGlassBrush" Color="#A3121624" />
+  <SolidColorBrush x:Key="OverlaySolidBrush" Color="#F2121624" />
+  <SolidColorBrush x:Key="OverlayTextBrush" Color="#FFFFFF" />
   <SolidColorBrush x:Key="OverlayMutedBrush" Color="#D5DAE8" />
   <SolidColorBrush x:Key="OverlayAccentBrush" Color="#FFD08A" />
   <SolidColorBrush x:Key="OverlayReadyBrush" Color="#6EE7B7" />
   <SolidColorBrush x:Key="OverlayWaitingBrush" Color="#FF8A80" />
+  <SolidColorBrush x:Key="OverlayBarFillBrush" Color="#FF9C7F" />
+  <SolidColorBrush x:Key="OverlayBarTrackBrush" Color="#40FFFFFF" />
+  <SolidColorBrush x:Key="OverlayEffectPositiveBrush" Color="#2563EB" />
+  <SolidColorBrush x:Key="OverlayEffectNegativeBrush" Color="#DC2626" />
+  <SolidColorBrush x:Key="OverlayEffectOtherBrush" Color="#6B7280" />
+  <SolidColorBrush x:Key="OverlayEffectWarningBrush" Color="#B45309" />
+  <SolidColorBrush x:Key="OverlayEffectTextBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="OverlayEffectMutedBrush" Color="#E5E9F2" />
+  <SolidColorBrush x:Key="OverlayEffectTrackBrush" Color="#E6141826" />
+  <SolidColorBrush x:Key="OverlayEffectOverflowBrush" Color="#E6141826" />
+  <!-- 扩展元件里的内嵌块（card）在浮窗上的底与边：浅色半透明，叠在底板上。 -->
+  <SolidColorBrush x:Key="OverlayInsetBrush" Color="#1AFFFFFF" />
+  <SolidColorBrush x:Key="OverlayInsetEdgeBrush" Color="#26FFFFFF" />
 </ResourceDictionary>

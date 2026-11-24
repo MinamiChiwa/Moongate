@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using MabiTool.Desktop.Pages.Dyeing;
 using static MabiTool.Desktop.Localization.UiText;
+using MabiTool.Desktop.Controls;
 
 namespace MabiTool.Desktop.Backend;
 

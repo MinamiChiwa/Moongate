@@ -33,6 +33,8 @@ public sealed class SharedGameStream : IDisposable
     public double CombatInitializerAt { get; private set; } = double.NegativeInfinity;
     public double InventoryInitializerAt { get; private set; } = double.NegativeInfinity;
     public CombatEntityObservation? LocalEntity => combat?.LocalEntity;
+    /// <summary>战斗解析的下一个到期时点（单调毫秒，与推进同一时钟）；没有战斗解析或没有待办时为空。</summary>
+    public double? NextDueMs => combat?.NextDueMs;
     public ulong? LocalCharacterId => combat?.LocalCharacterId;
     private readonly LocalIdentityMemory identities;
     private readonly bool identityEnabled, musicEnabled, combatEnabled, healthEnabled;
@@ -201,7 +203,7 @@ public sealed class SharedGameStream : IDisposable
             catch (Exception error) when ((error is InvalidDataException or DecoderFallbackException) && RejectedCombat()) { throw; }
             if (combat.ProtocolRejections != rejections) context.Diagnostics.Rejected("combat");
             if (combat.CarriedContradicted) identities.DiscardCarried();
-            // 只沿用角色 ID 的连接由受疗配对或本机出现帧确认本机实体：以确认时点作初始化时点，成为主连接。
+            // 只沿用角色 ID 的连接由本机自疗或本机出现帧确认本机实体：以确认时点作初始化时点，成为主连接。
             if (!hadLocal && combat.LocalEntity is not null && double.IsNegativeInfinity(CombatInitializerAt)) CombatInitializerAt = Stopwatch.GetTimestamp();
             if (code == Tw20261110CombatProtocol.PersonalData && combat.Generation != before) CombatInitializerAt = Stopwatch.GetTimestamp();
         }
@@ -286,7 +288,7 @@ public sealed class SharedGameStream : IDisposable
     /// <summary>
     /// 捕获中途接入、还没有任何连接确认身份时，按宿主下发的沿用身份补足本连接的战斗起点。实体 ID 由各地图实例按计数器分配，
     /// 只在确认它的那条连接（同一地图实例）内有效：同一连接（本机端口与远端地址、端口相同）沿用角色 ID 与本机实体 ID，
-    /// 其他连接只沿用角色 ID，本机实体待受疗配对或本机出现帧确认。只在本连接出现战斗帧时补足，个人数据随后以新观测替换。
+    /// 其他连接只沿用角色 ID，本机实体待本机自疗（施放与受疗同旗标、同数值）或本机出现帧确认。只在本连接出现战斗帧时补足，个人数据随后以新观测替换。
     /// </summary>
     private void SeedCarriedIdentity()
     {

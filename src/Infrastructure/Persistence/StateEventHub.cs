@@ -158,7 +158,7 @@ public sealed class StateEventHub(SqliteStore? store, string epoch, TimeProvider
 
     public async Task PublishVolatileAsync(StateEvent state, DateTimeOffset occurredAt, CancellationToken ct = default)
     {
-        if (state.EventType is not ("room.session.changed" or "room.score-draft.changed" or "room.server.changed" or "desktop.surface.changed" or "game.nearby.changed" or "game.environment.changed" or "game.observation.changed" or "combat.measurement.changed") ||
+        if (state.EventType is not ("room.session.changed" or "room.score-draft.changed" or "room.server.changed" or "desktop.surface.changed" or "game.nearby.changed" or "game.environment.changed" or "game.observation.changed" or "combat.measurement.changed" or "combat.live.changed") ||
             state.Payload.ValueKind != JsonValueKind.Object || state.EventId.Length is < 1 or > 128 ||
             state.ResourceId.Length is < 1 or > 128 || state.ResourceType.Length is < 1 or > 128 ||
             JsonSerializer.SerializeToUtf8Bytes(state.Payload, ContractJson.Options).Length > SqliteStore.MaximumEventBytes)
@@ -198,7 +198,9 @@ public sealed class StateEventHub(SqliteStore? store, string epoch, TimeProvider
             volatileResources[key] = (resource, bytes);
             volatileBytes = volatileBytes - previous.Bytes + bytes;
             sequence = next;
-            replay.Add(delivery);
+            // 最新捕获的即时通知只发给在线订阅并保留最新一份供快照，不进重连回放：战斗中每秒可达数十条，旧通知对重连方没有用处，
+            // 也不应挤占可靠事件的回放窗口。
+            if (state.EventType != "combat.live.changed") replay.Add(delivery);
             foreach (var subscription in subscriptions)
                 if (subscription.Filter.Matches(delivery.Type, delivery.ResourceId) && Visible(subscription.Session, delivery.Type, delivery.Data))
                     subscription.Enqueue(delivery);
@@ -306,7 +308,7 @@ public sealed class StateEventHub(SqliteStore? store, string epoch, TimeProvider
             storageOwner.ValueKind == JsonValueKind.String && storageOwner.GetString() == session.ClientId) &&
         (type is not ("room.session.changed" or "room.score-draft.changed" or "desktop.surface.changed") ||
             payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("owner", out var subject) && subject.ValueKind == JsonValueKind.String && subject.GetString() == session.ClientId) &&
-        (type is not ("operation.changed" or "performance.state.changed" or "music.playback-history.changed" or "music.import.committed" or "color.run.changed" or "room.import.committed" or "color.import.committed" or "room.preferences.changed" or "color.preferences.changed" or "combat.summary.changed" or "combat.effects.changed" or "combat.encounter.closed" or "combat.observation.degraded") || session.Owner ||
+        (type is not ("operation.changed" or "performance.state.changed" or "music.playback-history.changed" or "music.import.committed" or "color.run.changed" or "room.import.committed" or "color.import.committed" or "room.preferences.changed" or "color.preferences.changed" or "combat.summary.changed" or "combat.effects.changed" or "combat.encounter.closed" or "combat.observation.degraded" or "combat.live.changed") || session.Owner ||
             payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("owner", out var owner) &&
             owner.ValueKind == JsonValueKind.String && (owner.GetString() == session.ClientId ||
                 type == "operation.changed" && payload.TryGetProperty("kind", out var kind) &&

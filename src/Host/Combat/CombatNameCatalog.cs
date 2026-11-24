@@ -18,6 +18,8 @@ public sealed class CombatNameCatalog(GameControlContext controls, TimeProvider 
     internal static readonly TimeSpan RetryInterval = TimeSpan.FromMinutes(1);
     private readonly object gate = new();
     private CombatNameTables? tables;
+    private (CombatNameTables Tables, IReadOnlyDictionary<uint, string> Roles)? awakening;
+    private (CombatNameTables Tables, CombatClientBuffCatalog Catalog)? buffs;
     private (int Pid, DateTimeOffset Started)? source, attempted;
     private Task? loading;
     private string? failure;
@@ -53,6 +55,54 @@ public sealed class CombatNameCatalog(GameControlContext controls, TimeProvider 
 
     public string? EffectPolarity(uint sheetId) =>
         Current(out _) is { EffectPolarities: { } polarities } && polarities.TryGetValue(sheetId, out var polarity) ? polarity : null;
+
+    /// <summary>
+    /// 客户端 Buff 表里全部可显示的效果（按编号排序），去掉名称为空与开发占位的行（<see cref="ClientCombatNameCatalog.IsPlaceholderName"/>）。
+    /// 名称表未就绪时给出 loading、binding-required 或 unavailable 与原因；Buff 表结构不符时为 unavailable。同一份表只整理一次。
+    /// </summary>
+    public CombatClientBuffCatalog ClientBuffs()
+    {
+        var current = Current(out var reason);
+        if (current is null)
+            return new(reason switch
+            {
+                "combat.nameCatalogLoading" => CombatClientBuffCatalogState.Loading,
+                "game.bindingRequired" => CombatClientBuffCatalogState.BindingRequired,
+                _ => CombatClientBuffCatalogState.Unavailable
+            }, reason, null, []);
+        if (current.Unsupported.TryGetValue("effect", out var unsupported)) return new(CombatClientBuffCatalogState.Unavailable, unsupported, current.Id, []);
+        lock (gate)
+        {
+            if (buffs is { } cached && ReferenceEquals(cached.Tables, current)) return cached.Catalog;
+            var list = current.Effects.Where(pair => !ClientCombatNameCatalog.IsPlaceholderName(pair.Value)).OrderBy(pair => pair.Key)
+                .Select(pair => new CombatClientBuff(new(pair.Key), pair.Value, current.EffectPolarities?.GetValueOrDefault(pair.Key),
+                    current.EffectDescriptions?.GetValueOrDefault(pair.Key)))
+                .ToArray();
+            var catalog = new CombatClientBuffCatalog(CombatClientBuffCatalogState.Ready, null, current.Id, list);
+            buffs = (current, catalog);
+            return catalog;
+        }
+    }
+
+    /// <summary>目录的强 ETag：状态、原因与客户端指纹决定内容。</summary>
+    public static string ClientBuffsETag(CombatClientBuffCatalog catalog) =>
+        "\"combat-client-buffs-" + catalog.State.RawValue + "-" + (catalog.Reason ?? "") + "-" + (catalog.ClientId ?? "") + "\"";
+
+    /// <summary>觉醒效果标记：效果表可用时按开发名换算的 Id 核对表（见 <see cref="CombatAwakening.Resolve"/>），不可用时按内置清单。</summary>
+    public string? EffectAwakening(uint sheetId) => Awakening().GetValueOrDefault(sheetId);
+
+    private IReadOnlyDictionary<uint, string> Awakening()
+    {
+        var current = Current(out _);
+        if (current is null || current.Unsupported.ContainsKey("effect")) return CombatAwakening.Builtin;
+        lock (gate)
+        {
+            if (awakening is { } cached && ReferenceEquals(cached.Tables, current)) return cached.Roles;
+            var roles = CombatAwakening.Resolve(current.Effects.ContainsKey);
+            awakening = (current, roles);
+            return roles;
+        }
+    }
 
     private CombatNameTables? Current(out string reason)
     {

@@ -29,6 +29,9 @@ public sealed partial class CombatPage : UserControl
         Model?.SetAttached(false);
     }
 
+    // 收藏层打开：读取客户端 Buff 表（已读到时沿用）并刷新列表。
+    private void OnFavoritesOpened(object? sender, EventArgs e) => Model?.OpenFavorites();
+
     // 明细表的“在窗口中打开”：独立的 DPS 明细窗口（完整总表与图表）。
     private void OnOpenDetailClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {

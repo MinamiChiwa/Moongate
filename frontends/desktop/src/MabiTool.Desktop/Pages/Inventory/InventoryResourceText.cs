@@ -126,8 +126,8 @@ public static class InventoryResourceText
                     $"低於上限時每 {Duration(seconds)} 補充一次；倒數到零後標「待進圖」，遊戲在下次進圖時結算");
             }
             else if (item.LastRefilledAt is not null)
-                yield return UiText.Pick($"每 {Duration(seconds)} 补充一次；倒计时到零后标“待进图”：未满时游戏在下次进图时结算，已满时不再增加（有会员或登录数据未能确定会员时不显示上限）",
-                    $"每 {Duration(seconds)} 補充一次；倒數到零後標「待進圖」：未滿時遊戲在下次進圖時結算，已滿時不再增加（有會員或登入資料未能確定會員時不顯示上限）");
+                yield return UiText.Pick($"每 {Duration(seconds)} 补充一次；倒计时到零后标“待进图”：未满时游戏在下次进图时结算，已满时不再增加（登录数据未能确定会员状态时不显示上限）",
+                    $"每 {Duration(seconds)} 補充一次；倒數到零後標「待進圖」：未滿時遊戲在下次進圖時結算，已滿時不再增加（登入資料未能確定會員狀態時不顯示上限）");
         }
         if (item.Description is { Length: > 0 } text) yield return Simplify(text);
         if (!item.Verified) yield return UiText.Pick("该资源的变化消息未经样本核实", "該資源的變化訊息未經樣本核實");
@@ -171,7 +171,7 @@ public static class InventoryResourceText
 /// 补充倒计时的文字。游戏按“上次补充时间 + n × 补充间隔”补充，但只在进图等时机结算并下发新值（实采：银币上次补充 07:12:49，
 /// 08:42 进图时一次 +2，上次补充时间移到 08:12:49）。所以到零后接着倒数下一次，并标“待进图”；
 /// 结算后后端给出新的上次补充时间，倒计时随之重算。持有量达到或超过补充上限（<see cref="InventoryRefill.Full"/>）时写“已满”，不倒数；
-/// 后端只在没有会员时给出上限（有会员或会员未读取时为空），为空时不判断是否已满。
+/// 后端只在能确定会员状态时给出上限（没有会员为基础上限，全方位会员生效时含会员加成；会员未读取或无法判定时为空），为空时不判断是否已满。
 /// </summary>
 public static class InventoryRefillText
 {

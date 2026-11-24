@@ -99,7 +99,10 @@ public sealed class LiveBackendTests
             }
 
             await backend.SendCombatIntentAsync(CombatIntent.StartObservation, null, TestContext.Current.CancellationToken);
-            await Until(() => backend.GetCombat().Skills.Count > 0, "开始观测后出现技能统计");
+            // DPS 的分母是第一击到最后一击的时长：模拟宿主每 250 ms 送一帧、每帧一次命中，只有第一帧时 DPS 为空（insufficientDuration），
+            // 第二帧到达后才可读。桌面随宿主通知即时读取，等待条件以 DPS 可用为准。
+            await Until(() => backend.GetCombat() is { } snapshot && snapshot.Skills.Count > 0
+                && snapshot.Kpis.Any(tile => tile.Primary && tile.Value != "—"), "开始观测后出现技能统计与可读的 DPS");
             var combat = backend.GetCombat();
             Assert.DoesNotContain(combat.Kpis, tile => tile.Primary && tile.Value == "—");
             Assert.Equal(4, combat.Coverage.Count);
@@ -556,8 +559,8 @@ public sealed class LiveBackendTests
             // 测量从首次伤害开始计时：模拟宿主的回放伤害到达后转入计时，剩余时间按本机时钟递减。
             Assert.True(clocks.Count >= 3, $"计时剩余时间只出现了 {string.Join(",", clocks)}");
             Assert.True(worst < TimeSpan.FromSeconds(1), $"界面线程处理输入最长等待 {worst.TotalMilliseconds:0} ms");
-            // 每轮刷新至少隔 MinimumRefreshInterval（每秒最多 4 轮），另有页面状态的五秒读取等少量通知；修复前约每秒 9–10 次。
-            Assert.True(rate <= 1 / LiveBackend.MinimumRefreshInterval.TotalSeconds + 1, $"状态通知每秒 {rate:0.0} 次");
+            // 每轮战斗读取至少隔一帧（FrameInterval，每秒至多 60 轮），另有页面状态的五秒读取等少量通知。
+            Assert.True(rate <= 1 / LiveBackend.FrameInterval.TotalSeconds + 1, $"状态通知每秒 {rate:0.0} 次");
             Assert.True(backend.QueuedNotifications <= 1);
             model.CancelMeasureCommand.Execute(null);
             await Until(() => model.MeasureIdle, "取消定时测量");

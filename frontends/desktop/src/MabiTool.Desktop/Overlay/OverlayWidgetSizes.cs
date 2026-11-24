@@ -26,7 +26,12 @@ public static class OverlayWidgetSizes
         ["combat.self-effects"] = (new(352, 96), new(112, 96)),
         ["combat.target-effects"] = (new(352, 120), new(136, 120)),
         ["combat.measurement"] = (new(248, 168), new(184, 144)),
-        ["combat.healing"] = (new(240, 128), new(168, 112))
+        ["combat.healing"] = (new(240, 128), new(168, 112)),
+        // 收藏浮窗：默认竖排约 5 项；最小一项加“+N”。
+        [FavoriteBoard.First] = (new(256, 128), new(136, 64)),
+        [FavoriteBoard.Second] = (new(256, 128), new(136, 64)),
+        // 觉醒监控：竖排两项；横排时放宽即并排。
+        [AwakeningBoard.Id] = (new(256, 72), new(136, 64))
     };
 
     /// <summary>元件的默认尺寸；扩展元件没有声明时为空（按内容的自然尺寸显示）。</summary>

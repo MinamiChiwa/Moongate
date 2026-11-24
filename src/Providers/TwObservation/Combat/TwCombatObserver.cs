@@ -39,6 +39,8 @@ public sealed partial class TwCombatObserver
     private ulong? localEntity;
     private readonly Dictionary<ulong, CombatEntityObservation> entities = [];
     private readonly Dictionary<ulong, double> lastSeen = [];
+    /// <summary>出现帧声明的所有者：自动体实体 ID 到所有者玩家实体 ID；随实体移除或新场景清空。</summary>
+    private readonly Dictionary<ulong, ulong> owners = [];
     /// <summary>个人数据到达前出现的角色，按到达顺序暂存解码结果与正文字节数（字节数只用于容量）。</summary>
     private readonly Dictionary<ulong, (TwCharacterIdentity Identity, int Bytes)> unboundCharacters = [];
     private int unboundBytes;
@@ -80,7 +82,7 @@ public sealed partial class TwCombatObserver
 
     /// <summary>
     /// 捕获中途接入另一条连接时只沿用角色 ID：实体 ID 由各地图实例按计数器分配、不同连接间会复用，不沿用。
-    /// 本机实体待受疗配对或本机出现帧确认；确认前不归属任何伤害。
+    /// 本机实体待本机自疗或本机出现帧确认（见 <see cref="ConfirmBySelfHeal"/>）；确认前不归属任何伤害。
     /// </summary>
     public bool SeedCharacter(ulong character, double monotonicMs, DateTimeOffset utc)
     {
@@ -94,15 +96,16 @@ public sealed partial class TwCombatObserver
     }
 
     /// <summary>
-    /// 受疗 20645 只发给本机且不带实体；与它在线上首尾相接的 SetHealth 170205 是本机 HP（实采 297 对全部为本机）。
-    /// 沿用起点尚未由本连接观测确认时，以该实体确认本机：还没有本机实体即采用它，实体不同即改绑到它。
+    /// 本机自疗确认沿用起点：施放 20644 只发给施放者、受疗 20645 只发给受疗者，两者在 400 字节内同旗标、同数值时是本机治疗自己，
+    /// 施放目标即本机实体（实采 299 次自疗的施放目标全部为本机）。受疗与 SetHealth 170205 首尾相接只作旁证：组队时紧邻的 HP 可以是队友的
+    /// （combat-evidence-20261110-confirmed-02 中两名角色各 5 次），紧邻 HP 属于其他实体时不确认。
+    /// 沿用起点尚未由本连接观测确认时，还没有本机实体即采用施放目标，实体不同即改绑到它。
     /// </summary>
-    private void ConfirmByHeal(ulong entity)
+    private void ConfirmBySelfHeal(ulong target, HealReceipt? receipt)
     {
-        healReceiptEnd = null;
-        if (!localCarried || carriedConfirmed || entity == 0 || characterId is null) return;
-        if (localEntity is { } local && local != entity) Observe(local, CombatEntityRole.Unknown, replaceRole: true);
-        localEntity = entity; Observe(entity, CombatEntityRole.LocalPlayer, replaceRole: true);
+        if (!localCarried || carriedConfirmed || target == 0 || characterId is null || receipt?.HealthEntity is { } health && health != target) return;
+        if (localEntity is { } local && local != target) Observe(local, CombatEntityRole.Unknown, replaceRole: true);
+        localEntity = target; Observe(target, CombatEntityRole.LocalPlayer, replaceRole: true);
         carriedConfirmed = true; localCarried = false;
     }
     public CombatProtocolUsage Usage => new(entities.Count, unboundCharacters.Count, unboundBytes, queue.Count, recentSkills.Count, activeBuffs.Count);
@@ -123,7 +126,8 @@ public sealed partial class TwCombatObserver
         {
             ProtocolRejections++; Publish(inputMs, force: true); AddGap("combat.protocolInvalid", 1);
         }
-        // 只改实体状态的帧（HP、死亡、离场、主目标、密钥广播）不单独触发发布：变化随下一次推进或下一帧（至多 200 ms）发布。
+        // 只改实体状态的帧（HP、死亡、离场、主目标、密钥广播）不单独触发发布：变化随下一次推进或下一帧发布
+        // （当前目标候选距上次发布满 16 ms，其余至多 200 ms；读取循环按 NextDueMs 唤醒推进）。
         if (!StateOnly(opcode)) Publish(inputMs);
     }
     private static bool StateOnly(int opcode) => opcode is >= Op.SetHealth2 and <= Op.SetHealth6 or Op.UpdateHealthMax or Op.BroadcastKey or
@@ -147,16 +151,16 @@ public sealed partial class TwCombatObserver
             case Op.BuffExpire when effects: OnBuffExpire(TwCombatWire.BuffExpire(body, encoding)); break;
             case Op.HealReceived when interest.Healing:
                 var receipt = TwCombatWire.HealReceipt(body, encoding);
-                if (lastHealth is { } previous && previous.End == offset) ConfirmByHeal(previous.Entity);
-                else healReceiptEnd = offset + (ulong)wireLength;
-                OnHealReceived(receipt, offset, wireLength); break;
+                ulong? adjacent = lastHealth is { } previous && previous.End == offset ? previous.Entity : null;
+                healReceiptEnd = adjacent is null ? offset + (ulong)wireLength : null;
+                OnHealReceived(receipt, offset, wireLength, adjacent); break;
             case Op.HealCasted when interest.Healing: OnHealCast(TwCombatWire.HealCast(body, encoding), offset, wireLength); break;
             case Op.SetHealth when interest.Healing || interest.Health:
                 var health = TwCombatWire.Health(body, encoding);
                 // 治疗配对只看 170205 与受疗的首尾相接，规则不随实体 HP 解析改变。
                 if (interest.Healing)
                 {
-                    if (healReceiptEnd == offset) ConfirmByHeal(health.Entity);
+                    if (healReceiptEnd == offset) NoteReceiptHealth(offset, health.Entity);
                     lastHealth = (health.Entity, offset + (ulong)wireLength); healReceiptEnd = null;
                     OnHealth(health, offset, wireLength);
                 }
@@ -267,7 +271,7 @@ public sealed partial class TwCombatObserver
     private void StartScene(ulong? character)
     {
         generation = AdvanceGeneration(); sequence = 0; localEntity = null; characterId = character; localCarried = false; carriedConfirmed = false;
-        entities.Clear(); lastSeen.Clear(); unboundCharacters.Clear(); unboundBytes = 0;
+        entities.Clear(); lastSeen.Clear(); owners.Clear(); unboundCharacters.Clear(); unboundBytes = 0;
         recentSkills.Clear(); activeBuffs.Clear(); localHealth = null; healthSteps.Clear();
         ClearActors(keepBroadcast: true);
         // 延续的实体在本机身份重新确认（补足起点或个人数据开始新场景）之前一直补回新代次。
@@ -329,13 +333,24 @@ public sealed partial class TwCombatObserver
         localEntity = character.EntityId; localCarried = false; Observe(character.EntityId, CombatEntityRole.LocalPlayer, replaceRole: true);
     }
 
-    /// <summary>只有 Type=Monster 的自动体登记为怪物并带出现帧的破防值；其他类型撤销先前的怪物角色。</summary>
+    /// <summary>
+    /// 只有 Type=Monster 的自动体登记为怪物并带出现帧的破防值；其他类型撤销先前的怪物角色。
+    /// 非怪物自动体带有效 OwnerPlayerId（非 0、非 -1、不是自身）时登记所有者，实体以 Owned 角色与已确认所有者发布。
+    /// </summary>
     private void OnAutomatonAppeared(ReadOnlySpan<byte> body, byte encoding)
     {
         TwCombatWire.RequireCompressed(encoding);
         var automaton = TwAutomatonAppearance.Decode(body);
         memo.Remove(automaton.EntityId);
-        if (!automaton.IsMonster) { Observe(automaton.EntityId, replaceRole: true, appearance: true); RecordActor(automaton); return; }
+        if (!automaton.IsMonster && automaton.OwnerPlayerId is not (0 or ulong.MaxValue) && automaton.OwnerPlayerId != automaton.EntityId)
+            owners[automaton.EntityId] = automaton.OwnerPlayerId;
+        else owners.Remove(automaton.EntityId);
+        if (!automaton.IsMonster)
+        {
+            Observe(automaton.EntityId, replaceRole: true, appearance: true);
+            if (!entities.ContainsKey(automaton.EntityId)) owners.Remove(automaton.EntityId);
+            RecordActor(automaton); return;
+        }
         var code = automaton.MonsterTypeCode!;
         Observe(automaton.EntityId, CombatEntityRole.Monster, code, monsterNames.GetValueOrDefault(code) ?? code, appearance: true);
         if (!entities.TryGetValue(automaton.EntityId, out var monster)) return;
@@ -402,7 +417,7 @@ public sealed partial class TwCombatObserver
         }
         if (victim is not { } evicted) return false;
         if (entities.Remove(evicted, out var removed)) Remember(evicted, removed);
-        lastSeen.Remove(evicted); actors.Remove(evicted); departed.Remove(evicted);
+        lastSeen.Remove(evicted); actors.Remove(evicted); departed.Remove(evicted); owners.Remove(evicted);
         foreach (var key in activeBuffs.Keys.Where(key => key.Owner == evicted).ToArray()) activeBuffs.Remove(key);
         snapshotDirty = true; carryRevision++;
         return true;

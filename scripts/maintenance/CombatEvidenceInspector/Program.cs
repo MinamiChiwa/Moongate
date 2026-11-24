@@ -67,7 +67,7 @@ void Accept(CombatFrame value, int? opcode)
     var local = value.Entities.FirstOrDefault(x => x.Role.KnownValue == CombatEntityRole.LocalPlayer)?.Key;
     var monsters = value.Entities.Where(x => x.Role.KnownValue == CombatEntityRole.Monster).Select(x => x.Key).ToHashSet();
     observedMonsters.UnionWith(monsters);
-    localDamage += value.Damage.Count(x => x.SourceEntity == local && x.Chain != true);
+    localDamage += value.Damage.Count(x => x.SourceEntity == local);
     selfEffects += value.Effects.Count(x => x.EntityKey == local);
     monsterEffects += value.Effects.Count(x => monsters.Contains(x.EntityKey));
     foreach (var gap in value.Gaps)

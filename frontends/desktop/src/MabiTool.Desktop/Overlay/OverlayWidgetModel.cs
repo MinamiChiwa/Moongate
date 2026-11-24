@@ -109,6 +109,44 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     public bool IsTargetEffects => Live && WidgetId == "combat.target-effects";
     public bool IsMeasurement => Live && WidgetId == "combat.measurement";
     public bool IsHealing => Live && WidgetId == "combat.healing";
+    public bool IsFavorites => Live && FavoriteBoard.IsBoard(WidgetId);
+    public bool IsAwakening => Live && WidgetId == AwakeningBoard.Id;
+
+    // 收藏浮窗：选择、顺序、横竖排与觉醒监控取版面里这个元件的摆放数据（画布按摆放数据写入），内容取同一份战斗数据里不受筛选的部分。
+    private WidgetPlacement? favoritePlacement;
+    private OverlayLayoutStore? favoriteStore;
+    private string favoriteSignature = string.Empty;
+
+    /// <summary>画布写入收藏浮窗或觉醒监控浮窗的摆放数据与版面；选择、顺序或排列变了才通知界面。</summary>
+    public void SetFavoriteSource(WidgetPlacement placement, OverlayLayoutStore store)
+    {
+        favoritePlacement = placement;
+        favoriteStore = store;
+        var signature = string.Join('|', FavoriteBoard.IsBoard(placement.WidgetId) ? string.Join(',', FavoriteBoard.Effective(placement)) : string.Empty,
+            placement.Horizontal);
+        if (signature == favoriteSignature) return;
+        favoriteSignature = signature;
+        foreach (var name in new[] { nameof(FavoriteItems), nameof(FavoritesHorizontal), nameof(AwakeningAlerts), nameof(FavoritesHint), nameof(HasFavoritesHint) })
+            Raise(name);
+    }
+
+    /// <summary>收藏浮窗的各项（没有摆放数据，即单独使用模型时为空）；觉醒监控浮窗为固定的两项。</summary>
+    public IReadOnlyList<FavoriteItem> FavoriteItems => IsAwakening ? AwakeningBoard.Items()
+        : IsFavorites && favoritePlacement is { } placement ? FavoriteBoard.Items(placement, Combat) : [];
+    public bool FavoritesHorizontal => favoritePlacement?.Horizontal == true;
+    public AwakeningSettings? AwakeningAlerts => favoriteStore?.Awakening;
+    /// <summary>没有勾选任何项时的说明。</summary>
+    public string FavoritesHint => CombatEffectFavorites.Favorites.Count == 0
+        ? UiText.Pick("在 DPS 页收藏效果后，到浮窗版面页勾选", "在 DPS 頁收藏效果後，到浮窗版面頁勾選")
+        : UiText.Pick("到浮窗版面页勾选要显示的收藏", "到浮窗版面頁勾選要顯示的收藏");
+    public bool HasFavoritesHint => IsFavorites && favoritePlacement is not null && FavoriteItems.Count == 0;
+
+    /// <summary>浮窗上拖动排序松手：保存新顺序。</summary>
+    public Action<string, int> ReorderFavorite => reorderFavorite ??= (key, index) =>
+    {
+        if (favoritePlacement is { } placement && favoriteStore is { } store) store.MoveFavoriteItem(placement, key, index);
+    };
+    private Action<string, int>? reorderFavorite;
 
     /// <summary>暴击、强击、连击、追击比率（当前统计范围，与 DPS 页同一份）；DPS 元件与定时测量元件在数值下方列出。</summary>
     public IReadOnlyList<CoverageTile> Rates => Combat.Coverage;

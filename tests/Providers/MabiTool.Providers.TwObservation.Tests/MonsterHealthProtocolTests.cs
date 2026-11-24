@@ -205,6 +205,31 @@ public sealed class MonsterHealthProtocolTests
         Assert.NotNull(first.Entities.Single(entity => entity.Key.RawInstanceId.Value == Boss).Health);
     }
 
+    [Fact]
+    public void CandidateHealthIsDueWithinOneFrameWhileOtherAutomatonsWaitForTheRegularInterval()
+    {
+        // 只改实体状态的帧不立即发布：当前目标候选（首领）的血量变化在距上次发布满 16 ms 时到期，推进即带新血量发布；
+        // 非候选怪物的血量变化不提前发布，按保活帧（本机已识别时 100 ms）或 200 ms 的间隔。
+        var replay = new Replay();
+        replay.Appear(Boss, healthMax: 1000, boss: true, encrypted: true, payload: Cipher(Boss, 900));
+        replay.Appear(Monster, healthMax: 1000, payload: Plain(1000));
+        var published = replay.Last.MonotonicMs; var frames = replay.Frames.Count;
+        var at = replay.Now + 5;
+        replay.Observer.Accept(Op.SetHealth2, HealthBody(Boss, Cipher(Boss, 800)), 2_000_000, 40, at, CombatProtocolTests.At(at));
+        Assert.Equal(frames, replay.Frames.Count);
+        Assert.Equal(published + 16, replay.Observer.NextDueMs!.Value, 6);
+        replay.Observer.Tick(published + 16, CombatProtocolTests.At(published + 16));
+        Assert.Equal(frames + 1, replay.Frames.Count);
+        Assert.Equal(800UL, replay.Last.Entities.Single(entity => entity.Key.RawInstanceId.Value == Boss).Health!.Current!.Value.Value);
+
+        published = replay.Last.MonotonicMs; frames = replay.Frames.Count;
+        at = published + 5;
+        replay.Observer.Accept(Op.SetHealth, HealthBody(Monster, PlainValue(900)), 2_001_000, 22, at, CombatProtocolTests.At(at));
+        Assert.Equal(published + 100, replay.Observer.NextDueMs!.Value, 6);
+        replay.Observer.Tick(published + 16, CombatProtocolTests.At(published + 16));
+        Assert.Equal(frames, replay.Frames.Count);
+    }
+
     private static (ulong, ulong, string) Health(Replay replay, ulong id)
     {
         var health = replay.Entity(id).Health!;

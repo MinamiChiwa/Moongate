@@ -94,6 +94,60 @@ public sealed class CombatApiTests
         await sdk.StopCombatObservationAsync(operation.Id); await app.StopAsync();
     }
 
+    [Fact]
+    public async Task LiveNoticesFollowEachCaptureStayOutOfReplayAndDisplayLatencyIsRateLimited()
+    {
+        using var area = new Workspace(); await using var app = Build(area); await app.StartAsync(); using var sdk = Sdk(app);
+        string[] topics = ["combat.live.changed", "combat.encounter.closed"];
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var notices = new List<(ulong Sequence, JsonElement Data)>(); string? cursor = null;
+        var enough = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var listening = Task.Run(async () =>
+        {
+            await foreach (var message in sdk.StreamEventsAsync(new(topics, [], null), timeout.Token))
+            {
+                cursor ??= message.Id;
+                if (message.Event == "combat.live.changed")
+                {
+                    notices.Add((ulong.Parse(message.Data.GetProperty("resourceRevision").GetString()!, System.Globalization.CultureInfo.InvariantCulture),
+                        message.Data.GetProperty("data").Clone()));
+                    if (notices.Count >= 5) enough.TrySetResult();
+                }
+                if (message.Event == "combat.encounter.closed") return;
+            }
+        }, timeout.Token);
+        await Task.Delay(200, timeout.Token);
+        // 持续的模拟场景：每 25 ms 一帧、伤害按三步周期重复，首领血量随之下降。
+        var operation = await sdk.StartCombatObservationAsync(new((await sdk.GetGameBindingAsync()).Binding!.Session.Id,
+            ReplayScenarioId: "live", ReplayIntervalMs: 25), "combat-live-notices");
+        await enough.Task.WaitAsync(timeout.Token);
+        await sdk.StopCombatObservationAsync(operation.Id, timeout.Token);
+        await listening;
+        // 每条通知指向本次观察、工作区修订随捕获递增，通知序号严格递增；伤害带来的变化带抓包时点。
+        Assert.All(notices, notice => Assert.Equal(operation.Id, notice.Data.GetProperty("observationId").GetString()));
+        Assert.True(notices.Zip(notices.Skip(1)).All(pair => pair.First.Sequence < pair.Second.Sequence));
+        var revisions = notices.Select(notice => ulong.Parse(notice.Data.GetProperty("workspaceRevision").GetString()!, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        Assert.True(revisions.Zip(revisions.Skip(1)).All(pair => pair.First < pair.Second));
+        Assert.Contains(notices, notice => notice.Data.TryGetProperty("capturedMonotonicMs", out var value) && value.ValueKind == JsonValueKind.Number);
+        // 带游标重连：重放中有终态事件，没有即时通知。
+        using var resume = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var replayed = new List<string>();
+        await foreach (var message in sdk.StreamEventsAsync(new(topics, [], cursor), resume.Token))
+        {
+            replayed.Add(message.Event);
+            if (message.Event == "combat.encounter.closed") break;
+        }
+        Assert.Contains("combat.encounter.closed", replayed);
+        Assert.DoesNotContain("combat.live.changed", replayed);
+
+        // 显示延迟报告：同一客户端 10 秒内只记录第一次；统计值不合法时拒绝。
+        Assert.True((await sdk.ReportCombatDisplayLatencyAsync(new(12, 40, 21.5, 48, 70))).Recorded);
+        Assert.False((await sdk.ReportCombatDisplayLatencyAsync(new(12, 52, 22, 50, 71))).Recorded);
+        var invalid = await Assert.ThrowsAsync<MabiToolApiException>(() => sdk.ReportCombatDisplayLatencyAsync(new(3, 3, 80, 20, 90)));
+        Assert.Equal("request.invalid", invalid.Problem?.Code);
+        await app.StopAsync();
+    }
+
     private static async Task<List<JsonElement>> ReadEffectNotices(MabiToolClient sdk, EventStreamOptions filter, string encounter)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10)); var notices = new List<JsonElement>();

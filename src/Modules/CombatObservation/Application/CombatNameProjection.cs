@@ -10,6 +10,8 @@ public interface ICombatNameResolver
     CombatResolvedName Resolve(string kind, uint sheetId);
     /// <summary>效果的极性（客户端 Buff 表 AffectType）：buff、debuff、none；名称表未读取、表里没有该效果或列结构不符时为空。</summary>
     string? EffectPolarity(uint sheetId) => null;
+    /// <summary>觉醒效果标记（badge、badge-cooldown、class、class-cooldown），按 Buff Id 判定；名称表不可用时按内置清单（<see cref="CombatAwakening"/>）。</summary>
+    string? EffectAwakening(uint sheetId) => CombatAwakening.Builtin.GetValueOrDefault(sheetId);
 }
 
 /// <summary>
@@ -50,7 +52,8 @@ public static partial class CombatNameProjection
         Views = value.Views.Select(view => view with
         {
             ResolvedName = Effect(view.Instance.EffectId, names),
-            Polarity = view.Instance.EffectId.Value is > 0 and <= uint.MaxValue ? names.EffectPolarity((uint)view.Instance.EffectId.Value) : null
+            Polarity = view.Instance.EffectId.Value is > 0 and <= uint.MaxValue ? names.EffectPolarity((uint)view.Instance.EffectId.Value) : null,
+            Awakening = view.Instance.EffectId.Value is > 0 and <= uint.MaxValue ? names.EffectAwakening((uint)view.Instance.EffectId.Value) : null
         }).ToArray()
     };
     public static CombatTimelinePage Project(CombatTimelinePage value, ICombatNameResolver names) =>
@@ -71,8 +74,13 @@ public static partial class CombatNameProjection
         };
     }
 
-    private static CombatDamageGroup SkillGroup(CombatDamageGroup group, ICombatNameResolver names) =>
-        group with { ResolvedName = ulong.TryParse(group.Key, out var id) ? Skill(new(id), names) : null };
+    /// <summary>技能分组的原文名称；队友技能分组的键带 <see cref="EncounterState.TeammateSuffix"/>，按其前的技能编号取名。</summary>
+    private static CombatDamageGroup SkillGroup(CombatDamageGroup group, ICombatNameResolver names)
+    {
+        var key = group.Teammate == true && group.Key.EndsWith(EncounterState.TeammateSuffix, StringComparison.Ordinal)
+            ? group.Key[..^EncounterState.TeammateSuffix.Length] : group.Key;
+        return group with { ResolvedName = ulong.TryParse(key, out var id) ? Skill(new(id), names) : null };
+    }
     private static CombatDamageGroup TargetGroup(CombatDamageGroup group, ICombatNameResolver names)
     {
         if (group.ResolvedName is { } label && (CombatNames.Resolvable(label) || label.Kind == CombatNames.AiCompanion) && label.SheetId.Value <= uint.MaxValue)

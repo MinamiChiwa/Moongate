@@ -84,7 +84,8 @@ public static class CombatNames
         LoadingReason => Pick("正在读取客户端名称表", "正在讀取用戶端名稱表"),
         "combat.nameCatalogUnavailable" => Pick("无法读取客户端名称表", "無法讀取用戶端名稱表"),
         "combat.nameLayoutUnsupported" => Pick("客户端名称表结构与已核对的不符", "用戶端名稱表結構與已核對的不符"),
-        "combat.nameEmpty" => Pick("客户端名称为空", "用戶端名稱為空"),
+        "combat.nameTableMissing" => Pick("客户端缺少这张名称表", "用戶端缺少這張名稱表"),
+        "combat.nameEmpty" =>Pick("客户端名称为空", "用戶端名稱為空"),
         "combat.nameGeneric" => Pick("没有名称表，显示通用名称", "沒有名稱表，顯示通用名稱"),
         "game.bindingRequired" => Pick("尚未绑定游戏窗口，无法读取名称表", "尚未綁定遊戲視窗，無法讀取名稱表"),
         var other => other

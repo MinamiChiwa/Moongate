@@ -17,12 +17,14 @@ namespace MabiTool.Desktop.Backend;
 /// <param name="TargetEffects">怪物效果区当前效果目标（<see cref="CombatMapper.EffectTargetId"/>）的效果；没有或读取失败时为空。</param>
 /// <param name="EffectProblem">读取效果目标的效果被拒绝时的错误码（例如 combat.entityOutOfScope）。</param>
 /// <param name="HealthUnavailable">能力 combat.health.monster 不可用时的说明（“暂不可用：原因”）；可用或未知时为空。</param>
+/// <param name="AimEffects">当前攻击目标（快照 currentTarget，与 DPS 浮窗血量区块同一个）的效果，供收藏浮窗的目标项；没有或读取失败时为空。</param>
+/// <param name="AimEffectsAt">读取当前攻击目标效果的本机 Stopwatch 时刻；为 0 时沿用 <paramref name="EffectsAt"/>。</param>
 public sealed record CombatBackendState(bool Connected, bool Bound, CombatWorkspace? Workspace,
     IReadOnlyList<CombatEncounter> History, CombatEntityEffects? TargetEffects, string? EffectProblem,
     IReadOnlyList<CombatEffectCoverage> Coverage, IReadOnlyList<CombatDamageEvent>? FirstAttacks = null,
     string Scope = "segment", string? RangeTarget = null, CombatRangeSummary? Range = null, string? RangeProblem = null,
     CombatMeasurementState? Measurement = null, long MeasurementAt = 0, long EffectsAt = 0, long TargetEffectsAt = 0,
-    string? HealthUnavailable = null);
+    string? HealthUnavailable = null, CombatEntityEffects? AimEffects = null, long AimEffectsAt = 0);
 
 /// <summary>记录明细窗口的后端状态：记录文档、窗口里的目标筛选、按该记录读取的范围汇总及读取失败的错误码。</summary>
 /// <param name="Loaded">这条记录已读取过一次（成功或得到错误码）。</param>
@@ -87,7 +89,7 @@ public static class CombatMapper
             Kpis(workspace, shown, direct, measured, state.Range, state.RangeTarget is not null),
             shown is null ? [] : Coverage(shown.Skills),
             shown is null ? [] : Attribution(shown),
-            shown is null ? string.Empty : Pick("连携伤害保留在时间轴，不计入统计", "連攜傷害保留在時間軸，不計入統計"),
+            shown is null ? string.Empty : Pick("本人伤害配到队友技能时照常计入，技能列表标“（队友）”", "本人傷害配到隊友技能時照常計入，技能列表標「（隊友）」"),
             shown is null ? [] : Rows(shown.Skills, shown.Summary.AttributedDamage.Value, targets: false),
             shown is null ? [] : Rows(OrderTargets(shown.Targets, Now(workspace)), shown.Summary.AttributedDamage.Value, targets: true, keepOrder: true),
             Effects(workspace?.SelfEffects, entities, local, state.Coverage, EffectsAt(state), "self"),
@@ -118,7 +120,12 @@ public static class CombatMapper
             TargetEffectsNote = EffectNote(state, ordered, effectTarget, selected),
             TagIds = ShownTagIds(groups),
             Health = observing ? Health(workspace!.CurrentTarget, state.HealthUnavailable) : null,
-            HealthIdle = observing && state.HealthUnavailable is null && workspace!.CurrentTarget is null
+            HealthIdle = observing && state.HealthUnavailable is null && workspace!.CurrentTarget is null,
+            AimId = observing ? workspace!.CurrentTarget?.EntityId : null,
+            AimEffects = observing && workspace!.CurrentTarget is { } aim && state.AimEffects is { } aimEffects && aimEffects.Id == aim.EntityId
+                ? Effects(aimEffects, entities, local, state.Coverage, state.AimEffectsAt != 0 ? state.AimEffectsAt : EffectsAt(state), aim.EntityId) : [],
+            SelfRemoved = Removed(workspace?.SelfEffects),
+            Observing = observing
         };
     }
 
@@ -760,7 +767,9 @@ public static class CombatMapper
         if (events is null || events.Count == 0) return null;
         var item = events.MaxBy(item => item.MonotonicMs)!;
         var skill = item.SkillId.ToString();
-        var group = encounter.Skills.FirstOrDefault(group => group.Key == skill);
+        // 队友施放的技能表现配上的本机伤害在后端单列为“技能编号:teammate”分组。
+        var key = item.Chain == true && item.SkillCasterKey is { } caster && caster != encounter.Summary.LocalEntity ? skill + ":teammate" : skill;
+        var group = encounter.Skills.FirstOrDefault(group => group.Key == key);
         var name = CombatNames.Of(group?.ResolvedName, CombatNameKind.Skill, group?.Name, skill);
         var entity = entities.FirstOrDefault(entity => entity.Key == item.TargetEntity);
         // 目标：选中目标的名称或观测到的实体名称，缺失时为“未知目标”；不知道打中的是谁（实体未观测到）时不写目标。
@@ -1055,10 +1064,11 @@ public static class CombatMapper
             : CombatNames.Of(entity.ResolvedName, CombatNameKind.Target, entity.DisplayName, id, id);
     }
 
-    // 整组都是间接或持续伤害时，在名称后标出类别。
+    // 队友施放的技能表现（连携）配上本机伤害时单列一行，名称后标“（队友）”；整组都是间接或持续伤害时，在名称后标出类别。
     private static string RowName(CombatDamageGroup group, bool target)
     {
         var name = GroupName(group, target);
+        if (!target && group.Teammate == true) name += Pick("（队友）", "（隊友）");
         if (group.ClassificationCounts is not { } counts) return name;
         var (direct, indirect, overTime) = (counts.Direct.Value, counts.Indirect.Value, counts.DamageOverTime.Value);
         if (overTime > 0 && direct == 0 && indirect == 0) return $"{name} (Dot)";
@@ -1109,8 +1119,23 @@ public static class CombatMapper
             // 效果名称取效果视图的 resolvedName（客户端 Buff 表原文）；缺失时为“未知效果”，编号与原因在悬停提示里。
             var name = CombatNames.Of(first.ResolvedName, CombatNameKind.Effect, null, instance.EffectId.ToString());
             return new EffectRow(string.Empty, name.Text, string.Join(Pick("，", "，"), meta), remaining, covered, instance.EffectId.ToString(),
-                name.Tip, Polarity(first.Polarity), stacks, remainingMs, observedAt, infinite, scope);
+                name.Tip, Polarity(first.Polarity), stacks, remainingMs, observedAt, infinite, scope)
+            {
+                Awakening = views.Select(view => view.Awakening).FirstOrDefault(value => value is not null),
+                AppliedAt = views.Max(view => view.Instance.AppliedAt), SeenAt = views.Max(view => view.LastObservedAt)
+            };
         }).ToList();
+    }
+
+    /// <summary>
+    /// 已确认移除（收到到期）而没有仍在生效的实例的效果编号与最晚的移除观测时刻；收藏浮窗据此结束换图后的推算。
+    /// </summary>
+    private static IReadOnlyDictionary<string, DateTimeOffset> Removed(CombatEntityEffects? effects)
+    {
+        if (effects is null) return new Dictionary<string, DateTimeOffset>();
+        return effects.Views.GroupBy(view => view.Instance.EffectId.ToString(), StringComparer.Ordinal)
+            .Where(group => group.All(view => view.Instance.Presence.KnownValue == EffectPresence.ConfirmedRemoved))
+            .ToDictionary(group => group.Key, group => group.Max(view => view.LastObservedAt), StringComparer.Ordinal);
     }
 
     /// <summary>效果的极性：后端按客户端 Buff 表 AffectType 给出 buff、debuff、none，没有时为未知（单列“未分类”，不推测）。</summary>

@@ -11,6 +11,14 @@ namespace MabiTool.Desktop.Pages.Combat;
 /// </summary>
 public sealed class EffectOverflowPanel : Panel
 {
+    /// <summary>“+N”的文字色：缺省白色，浮窗元件以样式取浮窗配色的条目文字色。</summary>
+    public static readonly StyledProperty<IBrush?> IndicatorForegroundProperty =
+        AvaloniaProperty.Register<EffectOverflowPanel, IBrush?>(nameof(IndicatorForeground), Brushes.White);
+
+    /// <summary>“+N”的底色：缺省为条目轨道的原配色，浮窗元件以样式取浮窗配色的溢出底。</summary>
+    public static readonly StyledProperty<IBrush?> IndicatorBackgroundProperty =
+        AvaloniaProperty.Register<EffectOverflowPanel, IBrush?>(nameof(IndicatorBackground), new SolidColorBrush(EffectLine.OverlayTrackColor));
+
     private int shown, hidden;
     private double rowHeight;
     private readonly TextBlock more = new() { Foreground = Brushes.White, FontWeight = FontWeight.Bold, FontSize = 12, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
@@ -21,6 +29,16 @@ public sealed class EffectOverflowPanel : Panel
         indicator = new Border { Background = new SolidColorBrush(EffectLine.OverlayTrackColor), CornerRadius = new CornerRadius(4),
             Padding = new Thickness(10, 0), Child = more, IsVisible = false, IsHitTestVisible = false };
         VisualChildren.Add(indicator);
+    }
+
+    public IBrush? IndicatorForeground { get => GetValue(IndicatorForegroundProperty); set => SetValue(IndicatorForegroundProperty, value); }
+    public IBrush? IndicatorBackground { get => GetValue(IndicatorBackgroundProperty); set => SetValue(IndicatorBackgroundProperty, value); }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == IndicatorForegroundProperty) more.Foreground = IndicatorForeground;
+        if (change.Property == IndicatorBackgroundProperty) indicator.Background = IndicatorBackground;
     }
 
     /// <summary>未显示的效果数；全部放得下时为 0。</summary>

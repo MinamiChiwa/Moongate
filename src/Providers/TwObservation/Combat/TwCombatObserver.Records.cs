@@ -56,6 +56,8 @@ public sealed partial class TwCombatObserver
         public ulong? Overheal { get; private set; }
         public string? Mismatch { get; private set; }
         public bool Settled => Effective is not null || Mismatch is not null;
+        /// <summary>与受疗首尾相接的 SetHealth 170205 的实体（前一条或后一条）；没有紧邻的 HP 更新时为空。</summary>
+        public ulong? HealthEntity { get; set; }
         /// <summary>HP 前后值均已知时判定：上升量在 1 至治疗量之间给出有效量与过量，否则记 hp-mismatch；有一端未知时保持未配对。</summary>
         public void Settle(HealthStep step)
         {
@@ -73,8 +75,13 @@ public sealed partial class TwCombatObserver
 
     // ---- 技能与伤害 ----
 
+    /// <summary>
+    /// 先发布流内已越过关联窗口的伤害，再清理 1024 字节以外的旧表现：清理只作用于不会再被配对的表现。
+    /// 仍在窗口内的伤害与其候选表现相距至多线长加 800 字节，不会被清理。
+    /// </summary>
     private void OnHitPresentation(TwHitPresentation hit, ulong offset)
     {
+        Publish(inputMs);
         recentSkills.RemoveAll(skill => offset > skill.Offset && offset - skill.Offset > SkillRetentionBytes);
         if (recentSkills.Count >= MaximumSkills) { recentSkills.RemoveAt(0); AddGap("combat.skillCapacity", 1); }
         recentSkills.Add(new(offset, hit.Caster, hit.Target, hit.SkillId, hit.HitFlags));
@@ -160,25 +167,36 @@ public sealed partial class TwCombatObserver
 
     // ---- 治疗与本机状态 ----
 
-    /// <summary>本机受疗：先与紧前的本机 HP 更新配对；400 字节内有同旗标、同数值、尚未合并的本机自疗施放时并入该施放。</summary>
-    private void OnHealReceived(TwHealReceipt heal, ulong offset, int wireLength)
+    /// <summary>
+    /// 本机受疗：先与紧前的本机 HP 更新配对；400 字节内有同旗标、同数值、尚未合并的施放时是本机自疗，先以施放目标确认沿用起点，
+    /// 施放目标为本机时并入该施放。
+    /// </summary>
+    private void OnHealReceived(TwHealReceipt heal, ulong offset, int wireLength, ulong? healthEntity)
     {
         if (heal.Amount == 0) return;
         var amount = (ulong)heal.Amount;
-        var receipt = new HealReceipt(offset, wireLength, amount);
+        var receipt = new HealReceipt(offset, wireLength, amount) { HealthEntity = healthEntity };
         if (healthSteps.Count > 0 && healthSteps[^1].End == offset) receipt.Settle(healthSteps[^1]);
+        if (localCarried && !carriedConfirmed && NearestHeal(offset, candidate => candidate.Direction == CombatHealDirection.Cast &&
+            candidate.Receipt is null && candidate.HitFlags == heal.HitFlags && candidate.Amount == amount) is { Target: { } self })
+            ConfirmBySelfHeal(self, receipt);
         if (localEntity is not null && NearestHeal(offset, candidate => candidate.Direction == CombatHealDirection.Cast &&
             candidate.Receipt is null && candidate.Target == localEntity && candidate.HitFlags == heal.HitFlags && candidate.Amount == amount) is { } cast)
         { cast.Receipt = receipt; return; }
         Enqueue(new PendingHeal(offset, wireLength, CombatHealDirection.Received, null, heal.HitFlags, amount, inputMs, clockUtc) { Receipt = receipt });
     }
 
-    /// <summary>本机施放：目标为本机时吸收 400 字节内同旗标、同数值、尚未吸收的受疗，沿用其回执。</summary>
+    /// <summary>
+    /// 本机施放：400 字节内有同旗标、同数值、尚未吸收的受疗时是本机自疗，先以施放目标确认沿用起点；目标为本机时吸收该受疗，沿用其回执。
+    /// </summary>
     private void OnHealCast(TwHealCast heal, ulong offset, int wireLength)
     {
         if (heal.Amount == 0) return;
         var amount = (ulong)heal.Amount;
         Observe(heal.Target);
+        if (localCarried && !carriedConfirmed && NearestHeal(offset, candidate => candidate.Direction == CombatHealDirection.Received &&
+            !candidate.Absorbed && candidate.HitFlags == heal.HitFlags && candidate.Amount == amount) is { } self)
+            ConfirmBySelfHeal(heal.Target, self.Receipt);
         var cast = new PendingHeal(offset, wireLength, CombatHealDirection.Cast, heal.Target, heal.HitFlags, amount, inputMs, clockUtc);
         if (localEntity == heal.Target && NearestHeal(offset, candidate => candidate.Direction == CombatHealDirection.Received &&
             !candidate.Absorbed && candidate.HitFlags == heal.HitFlags && candidate.Amount == amount) is { } received)
@@ -197,6 +215,14 @@ public sealed partial class TwCombatObserver
             best = heal; bestDistance = distance;
         }
         return best;
+    }
+
+    /// <summary>受疗之后紧接的 SetHealth：记下其实体，供自疗确认核对。</summary>
+    private void NoteReceiptHealth(ulong offset, ulong entity)
+    {
+        healReceiptEnd = null;
+        foreach (var record in queue)
+            if (record is PendingHeal { Receipt: { HealthEntity: null } receipt } && receipt.End == offset) receipt.HealthEntity = entity;
     }
 
     /// <summary>
@@ -298,10 +324,35 @@ public sealed partial class TwCombatObserver
     }
 
     /// <summary>
-    /// 没有记录与缺口时的快照帧：队列已空，且实体快照有变化、只有 HP 变化且距上次发布满 200 ms，或本机已识别且距上次发布满 100 ms。
+    /// 没有记录与缺口时的快照帧：队列已空，且实体快照有变化、只有 HP 变化且距上次发布满 200 ms（当前目标候选的变化满 16 ms），
+    /// 或本机已识别且距上次发布满 100 ms。
     /// </summary>
     private bool SnapshotDue(double nowMs) =>
-        queue.Count == 0 && (snapshotDirty || healthDirty && nowMs - publishedMs >= HealthPublishMs || LocalEntity is not null && nowMs - publishedMs >= KeepAliveMs);
+        queue.Count == 0 && (snapshotDirty || healthDirty && nowMs - publishedMs >= (healthUrgent ? HealthUrgentMs : HealthPublishMs) ||
+            LocalEntity is not null && nowMs - publishedMs >= KeepAliveMs);
+
+    /// <summary>
+    /// 下一次推进（<see cref="Tick"/>）会发布内容的最早单调时点：有缺口时为现在；队首记录的关联等待到期（流内窗口已越过时为现在）；
+    /// 队列为空时为实体快照待发、血量变化的发布间隔或保活帧；另有离场实体的移除时点。没有待办时为空。读取循环据此按截止时间唤醒。
+    /// </summary>
+    public double? NextDueMs
+    {
+        get
+        {
+            var due = double.PositiveInfinity;
+            if (gaps.Count > 0) due = inputMs;
+            else if (queue.TryPeek(out var head))
+                due = head is AnchoredRecord anchored && lastStreamOffset < anchored.WindowEnd ? head.Mono + Op.CorrelationWaitMs : inputMs;
+            else
+            {
+                if (snapshotDirty) due = inputMs;
+                if (healthDirty) due = Math.Min(due, publishedMs + (healthUrgent ? HealthUrgentMs : HealthPublishMs));
+                if (LocalEntity is not null) due = Math.Min(due, publishedMs + KeepAliveMs);
+            }
+            if (departed.Count > 0) due = Math.Min(due, nextPurgeMs);
+            return double.IsPositiveInfinity(due) ? null : due;
+        }
+    }
 
     /// <summary>队首记录已超过关联等待期（或强制发布）时继续成批发布。</summary>
     private bool MoreDue(double nowMs, bool force) =>
@@ -322,7 +373,7 @@ public sealed partial class TwCombatObserver
             var batchGaps = gaps.ToArray(); gaps.Clear();
             foreach (var gap in batchGaps) batch.Mono = Math.Max(batch.Mono, gap.ToMs ?? gap.FromMs);
             // 已发布的帧时点是后续输入的下限：保活帧之后才读到的较早包不能落到 Host 的 250 ms 批内窗口之外。
-            publishedMs = batch.Mono; inputMs = Math.Max(inputMs, batch.Mono); snapshotDirty = false; healthDirty = false;
+            publishedMs = batch.Mono; inputMs = Math.Max(inputMs, batch.Mono); snapshotDirty = false; healthDirty = false; healthUrgent = false;
             if (localEntity is not null) reseed = null;
             publish(new(1, source, session, new(generation), new(checked(++sequence)), batch.At, batch.Mono,
                 ReportEntities(batch.Mono), batch.Damage, batch.Effects, [], batchGaps, LocalEntity is not null,

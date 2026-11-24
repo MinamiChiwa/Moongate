@@ -7,9 +7,11 @@
              xmlns:controls="using:MabiTool.Desktop.Controls"
              x:Class="MabiTool.Desktop.Overlay.OverlayWidgetView"
              x:DataType="overlay:OverlayWidgetModel"
-             Foreground="White" FontSize="13" ClipToBounds="False">
+             Foreground="{DynamicResource OverlayTextBrush}" FontSize="13" ClipToBounds="False">
   <!--
     元件内容随外框尺寸重新排版：名称在自己的宽度内截断，列表放不下时在元件内滚动，元件越大显示越多。
+    颜色一律取浮窗配色的资源（OverlayTextBrush、OverlayMutedBrush、状态色、OverlayBarFillBrush／OverlayBarTrackBrush、效果条目色），
+    画布按整体配色与元件的覆盖写进外框的资源字典，改色时就地生效。
     外框的宽高由画布按版面里的尺寸给出，这里不写固定宽度。
     本视图不裁切，由外框的内容层按圆角裁切：贴边的按钮悬停放大时落在外框内边距里，不被切掉。
   -->
@@ -47,6 +49,30 @@
     </Style>
     <Style Selector="TextBlock.state.muted">
       <Setter Property="Foreground" Value="{DynamicResource OverlayMutedBrush}" />
+    </Style>
+    <!-- 效果条目的填充与文字取浮窗配色的“效果条目”组；主窗口的条目不经过这里，保持原样。 -->
+    <Style Selector="combat|EffectLine">
+      <Setter Property="OverlayPositive" Value="{DynamicResource OverlayEffectPositiveBrush}" />
+      <Setter Property="OverlayNegative" Value="{DynamicResource OverlayEffectNegativeBrush}" />
+      <Setter Property="OverlayOther" Value="{DynamicResource OverlayEffectOtherBrush}" />
+      <Setter Property="OverlayWarning" Value="{DynamicResource OverlayEffectWarningBrush}" />
+      <Setter Property="OverlayText" Value="{DynamicResource OverlayEffectTextBrush}" />
+      <Setter Property="OverlayMuted" Value="{DynamicResource OverlayEffectMutedBrush}" />
+      <Setter Property="OverlayTrackBrush" Value="{DynamicResource OverlayEffectTrackBrush}" />
+    </Style>
+    <Style Selector="combat|EffectOverflowPanel">
+      <Setter Property="IndicatorForeground" Value="{DynamicResource OverlayEffectTextBrush}" />
+      <Setter Property="IndicatorBackground" Value="{DynamicResource OverlayEffectOverflowBrush}" />
+    </Style>
+    <Style Selector="overlay|FavoriteBoardView">
+      <Setter Property="Positive" Value="{DynamicResource OverlayEffectPositiveBrush}" />
+      <Setter Property="Negative" Value="{DynamicResource OverlayEffectNegativeBrush}" />
+      <Setter Property="Other" Value="{DynamicResource OverlayEffectOtherBrush}" />
+      <Setter Property="Warning" Value="{DynamicResource OverlayEffectWarningBrush}" />
+      <Setter Property="Text" Value="{DynamicResource OverlayEffectTextBrush}" />
+      <Setter Property="Muted" Value="{DynamicResource OverlayEffectMutedBrush}" />
+      <Setter Property="Track" Value="{DynamicResource OverlayEffectTrackBrush}" />
+      <Setter Property="Overflow" Value="{DynamicResource OverlayEffectOverflowBrush}" />
     </Style>
   </UserControl.Styles>
 
@@ -86,16 +112,16 @@
       </Grid>
       <TextBlock x:Name="RoomPhaseText" Grid.Row="1" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,2" TextWrapping="Wrap" MaxLines="2"
                  TextTrimming="CharacterEllipsis" Text="{Binding RoomStatus.Phase}" IsVisible="{Binding InRoom}" />
-      <!-- 倒计时进度（与合奏页状态卡相同）：距离同步开始为强调色，距离统一停止为就绪绿；没有时间基准时只有“正在校时”。 -->
+      <!-- 倒计时进度（与合奏页状态卡相同）：距离同步开始为强调色，距离统一停止为就绪绿（状态色），轨道为浮窗配色的轨道；没有时间基准时只有“正在校时”。 -->
       <StackPanel x:Name="RoomCountdownPanel" Grid.Row="2" Margin="0,0,0,2" Spacing="2" IsVisible="{Binding HasRoomCountdown}">
         <DockPanel>
           <TextBlock x:Name="RoomCountdownValue" DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding RoomCountdownValue}" />
           <TextBlock x:Name="RoomCountdownLabel" Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding RoomCountdownLabel}" />
         </DockPanel>
         <Panel>
-          <controls:MeterBar Value="{Binding RoomCountdownFraction}" Fill="{DynamicResource OverlayAccentBrush}" Track="#40FFFFFF"
+          <controls:MeterBar Value="{Binding RoomCountdownFraction}" Fill="{DynamicResource OverlayAccentBrush}" Track="{DynamicResource OverlayBarTrackBrush}"
                              IsVisible="{Binding RoomCountdownStarting}" />
-          <controls:MeterBar Value="{Binding RoomCountdownFraction}" Fill="{DynamicResource OverlayReadyBrush}" Track="#40FFFFFF"
+          <controls:MeterBar Value="{Binding RoomCountdownFraction}" Fill="{DynamicResource OverlayReadyBrush}" Track="{DynamicResource OverlayBarTrackBrush}"
                              IsVisible="{Binding RoomCountdownStopping}" />
         </Panel>
       </StackPanel>
@@ -104,7 +130,7 @@
                    Text="{Binding RoomStatus.ScoreCard}" IsVisible="{Binding HasRoomScore}" />
         <!-- 总指挥乐谱的估计播放进度，按本机单调时钟换算。 -->
         <StackPanel x:Name="RoomScoreProgress" Spacing="2" IsVisible="{Binding HasRoomScoreProgress}">
-          <controls:MeterBar Value="{Binding RoomScoreFraction}" Fill="#FF9C7F" Track="#40FFFFFF" IsVisible="{Binding HasRoomScoreFraction}" />
+          <controls:MeterBar Value="{Binding RoomScoreFraction}" Fill="{DynamicResource OverlayBarFillBrush}" Track="{DynamicResource OverlayBarTrackBrush}" IsVisible="{Binding HasRoomScoreFraction}" />
           <TextBlock x:Name="RoomScoreProgressText" Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding RoomScoreProgressText}" />
         </StackPanel>
       </StackPanel>
@@ -341,7 +367,7 @@
           </StackPanel>
           <StackPanel IsVisible="{Binding MeasureRunning}" Spacing="2">
             <TextBlock FontSize="30" FontWeight="Black" Text="{Binding MeasureRunningText}" />
-            <controls:MeterBar Value="{Binding MeasureProgress}" Fill="{DynamicResource OverlayAccentBrush}" Track="{DynamicResource OverlayMutedBrush}" />
+            <controls:MeterBar Value="{Binding MeasureProgress}" Fill="{DynamicResource OverlayBarFillBrush}" Track="{DynamicResource OverlayBarTrackBrush}" />
             <DockPanel>
               <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding MeasureDps}" />
               <TextBlock Classes="dim" Text="DPS" />
@@ -389,7 +415,7 @@
                   <TextBlock TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
                 </controls:ClientIconSlot>
               </DockPanel>
-              <controls:MeterBar Value="{Binding Ratio}" Fill="#FF9C7F" Track="#40FFFFFF" />
+              <controls:MeterBar Value="{Binding Ratio}" Fill="{DynamicResource OverlayBarFillBrush}" Track="{DynamicResource OverlayBarTrackBrush}" />
             </StackPanel>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
@@ -417,5 +443,18 @@
         </ItemsControl.ItemsPanel>
       </ItemsControl>
     </DockPanel>
+
+    <!-- 收藏浮窗：只列为它勾选的收藏项（不受“只显示收藏”影响），没出现的项变暗常驻；解锁时按住一项拖动排序。 -->
+    <Panel IsVisible="{Binding IsFavorites}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasFavoritesHint}">
+        <TextBlock Classes="dim" TextWrapping="Wrap" Text="{Binding FavoritesHint}" />
+      </ScrollViewer>
+      <overlay:FavoriteBoardView x:Name="FavoriteBoard" VerticalAlignment="Top" Items="{Binding FavoriteItems}" Horizontal="{Binding FavoritesHorizontal}"
+                                 Alerts="{Binding AwakeningAlerts}" Reorder="{Binding ReorderFavorite}" />
+    </Panel>
+
+    <!-- 觉醒监控：固定两项（徽章觉醒、职业觉醒），未觉醒变暗，觉醒时按提示设置闪烁，之后显示冷却；不排序，按住任意处拖动元件。 -->
+    <overlay:FavoriteBoardView x:Name="AwakeningBoard" IsVisible="{Binding IsAwakening}" VerticalAlignment="Top" Items="{Binding FavoriteItems}"
+                               Horizontal="{Binding FavoritesHorizontal}" Alerts="{Binding AwakeningAlerts}" />
   </Panel>
 </UserControl>

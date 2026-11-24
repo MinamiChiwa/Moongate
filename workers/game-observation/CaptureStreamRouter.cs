@@ -239,6 +239,17 @@ internal sealed class CaptureStreamRouter(int devices, IReadOnlySet<int> signatu
         }
     }
 
+    /// <summary>全部解析器中最早的到期时点；没有时为空。</summary>
+    public double? NextDueMs
+    {
+        get
+        {
+            double? due = null;
+            foreach (var parser in Parsers) if (parser.NextDueMs is { } value && (due is null || value < due)) due = value;
+            return due;
+        }
+    }
+
     public void Tick(double mono, DateTimeOffset utc)
     {
         foreach (var parser in Parsers.ToArray()) parser.Tick(mono, utc);

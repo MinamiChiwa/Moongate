@@ -93,14 +93,15 @@ public sealed class TwAutomatonAppearanceTests
 
     internal static byte[] Prefix(int type = 3, ulong entity = 1, uint sheet = 0x11223344,
         string text = "", byte boss = 0, float offset = 0, int? countOverride = null, int? stringBytesOverride = null,
-        float breakPoint = 0, long breakPointMax = 0, long healthMax = 0, bool encrypted = false, byte[]? payload = null, byte[]? iv = null)
+        float breakPoint = 0, long breakPointMax = 0, long healthMax = 0, bool encrypted = false, byte[]? payload = null, byte[]? iv = null,
+        ulong owner = 0)
     {
         using var schema = JsonDocument.Parse(typeof(TwAutomatonAppearance).Assembly.GetManifestResourceStream("MabiTool.Tw20261110AutomatonSchema")!);
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream, Encoding.Unicode, true);
         void Write(string name, string field = "")
         {
             if (name is "object" or "System.Object" or "System.ValueType" or "System.Enum") return;
-            if (name == "Shared.ChannelObjects.ChannelObjectId") { writer.Write(field is "Id" or "ChannelObjectId" ? entity : 0UL); return; }
+            if (name == "Shared.ChannelObjects.ChannelObjectId") { writer.Write(field is "Id" or "ChannelObjectId" ? entity : field == "OwnerPlayerId" ? owner : 0UL); return; }
             if (name == "uint8[]" && field is "Payload" or "IV" && (field == "Payload" ? payload : iv) is { } raw) { writer.Write(raw.Length); writer.Write(raw); return; }
             if (name == "Shared.Protocols.ProtocolDatas.ReplicatedDatas.ReplicatedTime") { writer.Write(0f); return; }
             if (name == "Silvervine.ManualMemory.UniqueString") { Write("string"); return; }

@@ -40,6 +40,7 @@ public static class ContractEvents
         new("combat.encounter.closed", "combat-observation", typeof(CombatEncounterClosed)),
         new("combat.observation.degraded", "combat-observation", typeof(CombatObservationDegraded)),
         new("combat.measurement.changed", "combat-observation", typeof(CombatMeasurementState)),
+        new("combat.live.changed", "combat-observation", typeof(CombatLiveChanged)),
         new("inventory.snapshot.changed", "inventory", typeof(InventorySnapshotChanged)),
         new("inventory.observation.degraded", "inventory", typeof(InventoryObservationDegraded)),
         new("inventory.catalog.changed", "inventory", typeof(InventoryCatalogChanged)),

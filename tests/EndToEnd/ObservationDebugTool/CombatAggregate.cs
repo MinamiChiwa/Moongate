@@ -86,7 +86,7 @@ public sealed class CombatAggregate
         var local = frame.Entities.FirstOrDefault(entity => entity.Role.KnownValue == CombatEntityRole.LocalPlayer)?.Key;
         LocalIdentityObserved |= local is not null;
         var monsters = frame.Entities.Where(entity => entity.Role.KnownValue == CombatEntityRole.Monster).Select(entity => entity.Key).ToHashSet();
-        foreach (var damage in frame.Damage.Where(value => value.SourceEntity == local && value.Chain != true))
+        foreach (var damage in frame.Damage.Where(value => value.SourceEntity == local))
         { LocalDamageEvents++; LocalDamage += damage.Amount.Value; }
         SelfEffects += frame.Effects.Count(effect => effect.EntityKey == local);
         MonsterEffects += frame.Effects.Count(effect => monsters.Contains(effect.EntityKey));

@@ -44,6 +44,8 @@ internal sealed class EncounterState(string id, string owner, string observation
         if (Gaps.Count < 256) Gaps.Add(gap);
         else Gaps[^1] = CombatGapAccumulator.Merge(Gaps[^1], gap);
     }
+    /// <summary>技能分组键的队友后缀：计入的伤害配到的技能表现由本机以外的实体施放（连携）时，分组键为“技能编号:teammate”。</summary>
+    public const string TeammateSuffix = ":teammate";
     /// <param name="targetLabel">怪物目标的名称占位（客户端表 ID），由读取侧按当前名称表解析；玩家与未知目标为空。</param>
     public void Add(CombatDamageEvent value, string attribution, string targetId, string targetName, Func<bool> groupCapacity,
         CombatResolvedName? targetLabel = null)
@@ -60,7 +62,9 @@ internal sealed class EncounterState(string id, string owner, string observation
         FirstDamageMs = Math.Min(FirstDamageMs ?? value.MonotonicMs, value.MonotonicMs);
         if (LastDamageAt is null || value.MonotonicMs >= LastDamageMs) LastDamageAt = value.ObservedAt;
         var skill = value.SkillId.ToString();
-        AddGroup(skills, skill, skill, null, limits.MaximumSkills, "other-skills");
+        // 连携（施放者与攻击者不同）照常计入攻击者；施放者不是本机时单列为队友技能，旧历史中归为 chain 的条目不经过这里。
+        var key = value.Chain == true && value.SkillCasterKey is { } caster && caster != local ? skill + TeammateSuffix : skill;
+        AddGroup(skills, key, skill, null, limits.MaximumSkills, "other-skills");
         AddGroup(targets, targetId, targetName, targetLabel, limits.MaximumEntities, "other-targets");
         if (!trackRolling) return;
         while (rolling.TryPeek(out var first) && first.At < value.MonotonicMs - CombatSession.MaximumRollingWindowMs) rolling.Dequeue();
@@ -105,7 +109,8 @@ internal sealed class EncounterState(string id, string owner, string observation
             reasons.ToArray(), owner, observation, revision, healing is null ? null : healing with { Targets = null }, dpsDuration);
         return new(Id, owner, observation, local.GameSessionId, local.ObservationGeneration, revision, summary, StartedAt, EndedAt,
             StartedMs, EndedMs, includeOwned, Attributed.Snapshot(), Direct.Snapshot(), Owned.Snapshot(), Unknown.Snapshot(),
-            skills.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Value.Value.Group(x.Key, x.Value.Name)).ToArray(),
+            skills.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Value.Value.Group(x.Key, x.Value.Name) is var group &&
+                x.Key.EndsWith(TeammateSuffix, StringComparison.Ordinal) ? group with { Teammate = true } : group).ToArray(),
             targets.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Value.Value.Group(x.Key, x.Value.Name) with { ResolvedName = x.Value.Label }).ToArray(),
             Gaps.ToArray(), resources, false, BoundaryRevision, Segment, healing, Record, BreakSummary(end));
     }

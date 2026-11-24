@@ -1,11 +1,10 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using MabiTool.Desktop.Localization;
 
 namespace MabiTool.Desktop.Pages.Dyeing;
 
 /// <summary>后端的原始取值。界面不认识的值原样保留，除非用户改选。</summary>
-public static partial class ColorCodes
+public static class ColorCodes
 {
     public const string ExactHex = "exact-hex";
     public const string Similar = "similar";
@@ -23,14 +22,7 @@ public static partial class ColorCodes
     /// <summary>
     /// 六位十六进制色码整理成大写 #RRGGBB；格式不对时为空（原工具 vision.normalize_hex 的规则）。
     /// </summary>
-    public static string? NormalizeHex(string? text)
-    {
-        var value = (text ?? string.Empty).Trim().TrimStart('#').ToUpperInvariant();
-        return HexPattern().IsMatch(value) ? "#" + value : null;
-    }
-
-    [GeneratedRegex("^[0-9A-F]{6}$", RegexOptions.CultureInvariant)]
-    private static partial Regex HexPattern();
+    public static string? NormalizeHex(string? text) => Controls.ColorMath.NormalizeHex(text);
 }
 
 /// <summary>草稿里的一个区域；<see cref="MatchMode"/> 是后端原始值。替代色按内容比较，刷新时设置没变的卡片不重新载入。</summary>

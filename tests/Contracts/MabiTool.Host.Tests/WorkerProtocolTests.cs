@@ -121,6 +121,104 @@ public sealed class WorkerProtocolTests
         Assert.All(peer.Sent.Where(item => item.Sequence is not (3 or 75)), item => Assert.Equal("encoded", item.Path));
     }
 
+    [Fact]
+    public async Task CombatWriterSendsSparseReportsAtOnceAndBatchesBurstsWithinTheHostRateLimit()
+    {
+        // 写出按负载自适应：零星报告入队即写出，不再固定等待合批；突发时令牌用完后按速率上限写出，期间到达的报告并入队尾的批次。
+        // 宿主按“窗口满 1 秒重置、窗口内至多 256 条”读取，突发期间不超出，也没有容量缺口。
+        var peer = new TimedPeer();
+        var profile = SyntheticCombat.Profile;
+        const string interest = "cccccccccccccccccccccccccccccccc";
+        var published = new List<(ulong Sequence, double At)>();
+        var source = new BurstSource(profile, async (context, ct) =>
+        {
+            ulong sequence = 0;
+            for (var i = 0; i < 5; i++)
+            {
+                await Task.Delay(60, ct);
+                var report = Report(++sequence); lock (published) published.Add((sequence, Now())); context.Publish(report);
+            }
+            // 1.5 秒内 3,000 份报告（每毫秒两份）：远超每秒 80 批的写出上限。
+            var start = Now();
+            while (sequence < 5 + 3000)
+            {
+                var due = (int)Math.Min(3000, (Now() - start) * 2);
+                while (sequence < 5 + (ulong)due) { var report = Report(++sequence); lock (published) published.Add((sequence, Now())); context.Publish(report); }
+                await Task.Delay(1, ct);
+            }
+        });
+        var run = new MabiTool.Observation.Worker.ObservationCaptureRun(peer, source,
+            new MabiTool.Observation.Worker.ObservationCaptureRequest("fixture-game", "TW", 4242, DateTimeOffset.UnixEpoch, null,
+                MabiTool.Providers.TwObservation.Combat.Tw20261110CombatProtocol.CaptureProfile),
+            new WorkerFrame(1, "1", Request, "request", Run, "7", "1", JsonSerializer.SerializeToElement(new { })));
+        run.Initialize();
+        run.Context.Configure(new(true, new(interest, profile.Id, true, false, false)));
+        using var stop = new CancellationTokenSource(); using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await run.RunAsync(stop, lifetime.Token);
+
+        var sent = peer.Sent.ToArray();
+        // 零星报告各自一条消息，入队后很快写出（改动前固定等待 15 ms 合批，系统计时器下实际约 16–31 ms）。
+        var sparse = published.Take(5).Select(item => sent.Single(message => message.Sequence == item.Sequence).At - item.At).Order().ToArray();
+        Assert.True(sparse[2] < 12, $"零星报告入队到写出的中位延迟 {sparse[2]:0.0} ms");
+        // 突发：每条写出的消息以最后一份的序号代表合并的批次，3,005 份报告全部写出、没有容量缺口；消息数远少于报告数。
+        Assert.Equal(3005UL, sent[^1].Sequence);
+        Assert.DoesNotContain(sent, message => message.Gap);
+        Assert.InRange(sent.Length, 20, 400);
+        var window = double.NegativeInfinity; var count = 0;
+        foreach (var message in sent)
+        {
+            if (message.At - window >= 1000) { window = message.At; count = 0; }
+            Assert.True(++count <= 256, "写出超过宿主每秒 256 条的受理上限");
+        }
+        // 最后一份报告在突发结束后不久写出：积压有界，延迟不随时间累积。
+        Assert.True(sent[^1].At - published[^1].At < 500, $"最后一份报告 {sent[^1].At - published[^1].At:0} ms 后才写出");
+
+        static double Now() => System.Diagnostics.Stopwatch.GetTimestamp() * (1000d / System.Diagnostics.Stopwatch.Frequency);
+        CombatCaptureReport Report(ulong sequence)
+        {
+            var mono = Now(); var at = DateTimeOffset.UtcNow;
+            var key = new EntityKey("fixture-game", new(1), new(1111), null);
+            var local = new CombatEntityObservation(key, "玩家", "玩家", CombatEntityRole.LocalPlayer, null, false, true, ObservationQuality.Confirmed);
+            var damage = new CombatDamageEvent("hit-" + sequence, profile.Source, key, key with { RawInstanceId = new(2222) },
+                new(77), new(100), CombatDamageKind.Unclassified, at, mono, new(sequence), 0, false, true, ObservationQuality.Confirmed);
+            return new(1, interest, local, new(1, profile.Source, "fixture-game", new(1), new(sequence), at, mono, [local], [damage], [], [], [], true));
+        }
+    }
+
+    private sealed class BurstSource(ObservationCombatProfile profile, Func<MabiTool.Observation.Worker.ObservationCaptureContext, CancellationToken, Task> capture)
+        : MabiTool.Observation.Worker.IObservationCaptureSource
+    {
+        public IReadOnlyList<CaptureChannelOption> Channels() => [];
+        public Task CaptureAsync(MabiTool.Observation.Worker.ObservationCaptureRequest request, Action<GameCaptureReport> publish, CancellationToken ct) =>
+            throw new NotSupportedException();
+        public IReadOnlyList<ObservationCombatProfile> CombatProfiles => [profile];
+        public Task CaptureSharedAsync(MabiTool.Observation.Worker.ObservationCaptureRequest request, MabiTool.Observation.Worker.ObservationCaptureContext context,
+            CancellationToken ct) => capture(context, ct);
+    }
+
+    /// <summary>记录每条战斗消息写出的时刻、所代表的最后一份序号与是否为容量缺口。</summary>
+    private sealed class TimedPeer : MabiTool.Observation.Worker.IObservationPeer
+    {
+        public readonly List<(double At, ulong Sequence, bool Gap)> Sent = [];
+        public Task SendAsync(string kind, object payload, WorkerFrame? scope, CancellationToken ct)
+        {
+            Record(JsonSerializer.SerializeToUtf8Bytes(payload, WorkerProtocol.Json)); return Task.CompletedTask;
+        }
+        public Task SendEncodedAsync(string kind, ReadOnlyMemory<byte> payload, WorkerFrame? scope, CancellationToken ct)
+        {
+            Record(payload.ToArray()); return Task.CompletedTask;
+        }
+        private void Record(byte[] payload)
+        {
+            var at = System.Diagnostics.Stopwatch.GetTimestamp() * (1000d / System.Diagnostics.Stopwatch.Frequency);
+            using var document = JsonDocument.Parse(payload);
+            if (!document.RootElement.TryGetProperty("combat", out var combat)) return;
+            var frame = combat.GetProperty("frame");
+            var gap = frame.GetProperty("gaps").EnumerateArray().Any(item => item.GetProperty("reason").GetString() == "combat.transportCapacity");
+            lock (Sent) Sent.Add((at, ulong.Parse(frame.GetProperty("sequence").GetString()!, System.Globalization.CultureInfo.InvariantCulture), gap));
+        }
+    }
+
     private sealed class CombatOnlySource(ObservationCombatProfile profile) : MabiTool.Observation.Worker.IObservationCaptureSource
     {
         public IReadOnlyList<CaptureChannelOption> Channels() => [];

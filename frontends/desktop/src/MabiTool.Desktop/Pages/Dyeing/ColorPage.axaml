@@ -235,7 +235,7 @@
                   <controls:ExpandPanel Grid.Row="3" IsExpanded="{Binding IsSimilar, Mode=OneWay}">
                     <DockPanel Margin="0,8,0,0">
                       <TextBlock DockPanel.Dock="Left" Classes="label" MinWidth="52" Margin="0,0,8,0" Text="{DynamicResource D.Tolerance}" />
-                      <color:DyeSlider x:Name="ToleranceSlider" Minimum="1" Maximum="35" Value="{Binding Tolerance}"
+                      <controls:DyeSlider x:Name="ToleranceSlider" Minimum="1" Maximum="35" Value="{Binding Tolerance}"
                                        Track="{DynamicResource TrackBrush}" Fill="{DynamicResource InkBrush}"
                                        Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
                                        AutomationProperties.Name="{DynamicResource D.Tolerance}" />
@@ -471,129 +471,13 @@
     </ScrollViewer>
   </DockPanel>
 
-  <!-- 选色浮层：色相环与饱和度／明度方块、当前／打开时、最近、常用色、精调与数值输入。宽度与内容高度固定，窗口矮时在浮层内滚动。 -->
-  <!-- 层的显示与隐藏由代码后置管理：打开时先按锚点排好位置再显示，关闭时淡出后再隐藏（AnchoredLayer）。 -->
-  <Panel x:Name="PickerLayer" IsVisible="False" KeyDown="OnLayerKeyDown">
-    <Border Background="Transparent" PointerPressed="OnPickerOutsidePressed" />
-    <color:AnchoredLayer x:Name="PickerHost">
-    <Border x:Name="PickerPanel" Classes="panel popup anchored" Width="336" Padding="14">
-      <!-- 数据上下文由代码后置在打开时设为所选卡片的选色模型，关闭过渡结束后才清空，淡出期间内容保持关闭那一刻的样子。 -->
-      <DockPanel x:Name="PickerContent" x:DataType="color:ColorPickerModel">
-          <!-- 标题行：当前目标色的色块与 HEX、关闭。放在滚动区外、按最高元素（关闭按钮）定高并垂直居中，按钮连同悬停放大不被滚动区裁切。 -->
-          <DockPanel DockPanel.Dock="Top" MinHeight="30" Margin="0,0,0,10">
-            <Button DockPanel.Dock="Right" x:Name="PickerClose" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center" Content="✕"
-                    Command="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).ClosePickerCommand}"
-                    AutomationProperties.Name="{DynamicResource D.Close}" />
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-              <Border x:Name="PickerResultSwatch" Classes="swatch" Width="18" Height="18" Background="{Binding TargetBrush}"
-                      ToolTip.Tip="{Binding Target}" />
-              <TextBlock x:Name="PickerResultHex" Classes="hex" Width="58" FontSize="12" Text="{Binding Target}" />
-            </StackPanel>
-            <TextBlock Classes="name strong" FontSize="13" VerticalAlignment="Center" Text="{DynamicResource D.PickerTitle}" />
-          </DockPanel>
-      <ScrollViewer x:Name="PickerScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Spacing="10">
-          <Grid ColumnDefinitions="184,*" Height="184">
-            <color:HsvWheel x:Name="PickerWheel" Width="184" Height="184"
-                            Hue="{Binding Hue}" Saturation="{Binding Saturation}" Brightness="{Binding Brightness}"
-                            AutomationProperties.Name="{DynamicResource D.PickerTitle}" />
-            <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="4">
-              <!-- 当前／打开时对照：点“打开时”回到打开浮层时的颜色。 -->
-              <Grid ColumnDefinitions="*,*">
-                <TextBlock Classes="label" FontSize="10" Text="{DynamicResource D.PickerNow}" />
-                <TextBlock Grid.Column="1" Classes="label" FontSize="10" TextAlignment="Right" Text="{DynamicResource D.PickerBefore}" />
-              </Grid>
-              <Grid ColumnDefinitions="*,*" Height="40">
-                <Border CornerRadius="8,0,0,8" Background="{Binding TargetBrush}" BorderBrush="{DynamicResource HairlineBrush}"
-                        BorderThickness="1,1,0,1" ToolTip.Tip="{Binding Target}" />
-                <Button x:Name="PickerRevert" Grid.Column="1" Classes="bare cell" Command="{Binding RevertCommand}"
-                        ToolTip.Tip="{Binding OriginalTip}" AutomationProperties.Name="{Binding OriginalTip}">
-                  <Border CornerRadius="0,8,8,0" Background="{Binding OriginalBrush}" BorderBrush="{DynamicResource HairlineBrush}"
-                          BorderThickness="0,1,1,1" />
-                </Button>
-              </Grid>
-              <DockPanel Margin="0,8,0,0">
-                <TextBlock DockPanel.Dock="Right" Classes="label" FontSize="10" Text="{DynamicResource D.NoRecent}" IsVisible="{Binding NoRecent}" />
-                <TextBlock Classes="label" FontSize="10" Text="{DynamicResource D.Recent}" />
-              </DockPanel>
-              <ItemsControl x:Name="PickerRecent" controls:StableItems.Source="{Binding Recent}">
-                <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate><color:EvenColumns Columns="4" /></ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate DataType="color:RecentSlot">
-                    <Panel Height="22" Margin="1.5">
-                      <Border Classes="swatch" IsVisible="{Binding Empty}" />
-                      <Button Classes="bare cell" IsVisible="{Binding Filled}"
-                              Command="{Binding $parent[ItemsControl].((color:ColorPickerModel)DataContext).PickCommand}"
-                              CommandParameter="{Binding Swatch}" ToolTip.Tip="{Binding Swatch.Tip, FallbackValue={x:Null}}">
-                        <Border Classes="swatch" Background="{Binding Swatch.Brush, FallbackValue={x:Null}}" />
-                      </Button>
-                    </Panel>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </Grid>
-          <!-- 两行时尚设计常用色：基础中性色、经典服饰色（色值与来源见 ColorMath.CommonColors）。 -->
-          <StackPanel Spacing="4">
-            <TextBlock Classes="label" FontSize="10" Text="{DynamicResource D.CommonColors}" />
-            <ItemsControl x:Name="PickerCommon" ItemsSource="{Binding Common}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><color:EvenColumns Columns="10" /></ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="color:PickerSwatch">
-                  <Button Classes="bare cell" Height="22" Margin="1.5"
-                          Command="{Binding $parent[ItemsControl].((color:ColorPickerModel)DataContext).PickCommand}"
-                          CommandParameter="{Binding}" ToolTip.Tip="{Binding Tip}" AutomationProperties.Name="{Binding Tip}">
-                    <Border Classes="swatch" Background="{Binding Brush}" />
-                  </Button>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-          <Border Classes="rule" />
-          <DockPanel>
-            <TextBlock DockPanel.Dock="Right" Classes="label" FontSize="10" Text="HSV" />
-            <TextBlock Classes="label" FontSize="11" Text="{DynamicResource D.Fine}" />
-          </DockPanel>
-          <Grid ColumnDefinitions="44,*,52" RowDefinitions="28,28,28">
-            <TextBlock Classes="label" FontSize="11" Text="{DynamicResource D.Hue}" />
-            <color:DyeSlider x:Name="HueSlider" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="360"
-                             Value="{Binding Hue}" Track="{Binding HueTrack}"
-                             Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
-                             AutomationProperties.Name="{DynamicResource D.Hue}" />
-            <TextBox x:Name="HueInput" Grid.Column="2" Classes="field num" Classes.invalid="{Binding HueInvalid}"
-                     Text="{Binding HueInput}" MaxLength="3" AutomationProperties.Name="{DynamicResource D.Hue}" />
-            <TextBlock Grid.Row="1" Classes="label" FontSize="11" Text="{DynamicResource D.Saturation}" />
-            <color:DyeSlider x:Name="SaturationSlider" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="100"
-                             Value="{Binding Saturation}" Track="{Binding SaturationTrack}"
-                             Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
-                             AutomationProperties.Name="{DynamicResource D.Saturation}" />
-            <TextBox x:Name="SaturationInput" Grid.Row="1" Grid.Column="2" Classes="field num" Classes.invalid="{Binding SaturationInvalid}"
-                     Text="{Binding SaturationInput}" MaxLength="3" AutomationProperties.Name="{DynamicResource D.Saturation}" />
-            <TextBlock Grid.Row="2" Classes="label" FontSize="11" Text="{DynamicResource D.Lightness}" />
-            <color:DyeSlider x:Name="BrightnessSlider" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="100"
-                             Value="{Binding Brightness}" Track="{Binding BrightnessTrack}"
-                             Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
-                             AutomationProperties.Name="{DynamicResource D.Lightness}" />
-            <TextBox x:Name="BrightnessInput" Grid.Row="2" Grid.Column="2" Classes="field num" Classes.invalid="{Binding BrightnessInvalid}"
-                     Text="{Binding BrightnessInput}" MaxLength="3" AutomationProperties.Name="{DynamicResource D.Lightness}" />
-          </Grid>
-          <Button x:Name="PickerConfirm" Classes="primary compact" HorizontalAlignment="Right" Content="{DynamicResource D.Confirm}"
-                  Command="{Binding $parent[UserControl].((color:ColorPageModel)DataContext).ClosePickerCommand}" />
-        </StackPanel>
-      </ScrollViewer>
-      </DockPanel>
-    </Border>
-    </color:AnchoredLayer>
-  </Panel>
+  <!-- 选色浮层：共用控件 ColorPickerLayer（色相环与方块、当前／打开时、最近、常用色、精调与数值输入），锚定到所选卡片的目标色色块。 -->
+  <controls:ColorPickerLayer x:Name="ColorPicker" Title="{DynamicResource D.PickerTitle}" CloseCommand="{Binding ClosePickerCommand}" />
 
   <!-- 目标色集合浮层（原工具 AtlasPanel.qml）：适合、1:1、放大、缩小，放大后拖动浏览；最近邻放大。 -->
   <Panel x:Name="AtlasLayer" IsVisible="False" KeyDown="OnLayerKeyDown">
     <Border Background="Transparent" PointerPressed="OnAtlasOutsidePressed" />
-    <color:AnchoredLayer x:Name="AtlasHost">
+    <controls:AnchoredLayer x:Name="AtlasHost">
     <Border x:Name="AtlasPanel" Classes="panel popup anchored" Width="500" Height="336" Padding="14">
       <DockPanel>
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
@@ -623,7 +507,7 @@
         </Border>
       </DockPanel>
     </Border>
-    </color:AnchoredLayer>
+    </controls:AnchoredLayer>
   </Panel>
 
   <!-- 选色方案层（原工具 QuickPanel presets）：默认预设（可展开）、名称与“保存当前设置”、方案列表的载入与删除。 -->
@@ -671,7 +555,7 @@
                           <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="3" /></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
-                          <DataTemplate DataType="color:PickerSwatch">
+                          <DataTemplate DataType="controls:PickerSwatch">
                             <Border Classes="swatch" Width="18" Height="18" Background="{Binding Brush}" ToolTip.Tip="{Binding Hex}" />
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>

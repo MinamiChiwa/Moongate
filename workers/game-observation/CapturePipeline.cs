@@ -110,6 +110,15 @@ internal sealed class CapturePipeline : IDisposable
 
     public void Tick() => context.Execute(() => Router.Tick(mono(), utc()));
 
+    /// <summary>解析的下一个到期时点（与 <see cref="Tick"/> 同一单调时钟）；没有时为空。</summary>
+    public double? NextDueMs
+    {
+        get { double? due = null; context.Execute(() => due = Router.NextDueMs); return due; }
+    }
+
+    /// <summary>当前单调时点（与 <see cref="Tick"/> 同一时钟，离线回放为样本时钟）。</summary>
+    public double Now => mono();
+
     /// <summary>状态报告（含本机身份）始终发送，音乐字段只在音乐兴趣开启时填写。</summary>
     public void Report()
     {

@@ -194,29 +194,72 @@ public sealed class InventoryTw202611LoginTests
     }
 
     /// <summary>
-    /// 补充上限只判定没有会员的状态：登录数据明确没有生效会员时为基础上限；
-    /// 有任何生效会员（含全方位）、会员数据没有读到或到期时刻读不出时为空。
+    /// 补充上限的会员判定：没有生效会员为基础上限；全方位（<c>Combination</c>）生效且其余生效项都认识时加会员加成，其余三项只是并列的普通会员，
+    /// 不带加成；会员数据没有读到、到期时刻读不出、有不认识的生效编号或只有其余三项生效（没有样本）时为空。
     /// </summary>
     [Fact]
-    public void RefillCapIsGivenOnlyWhenLoginMembershipsDecideIt()
+    public void RefillCapFollowsTheActiveCombinationMembership()
     {
-        uint combination = ClientRefillCaps.Combination, basic = 1, battle = 2, life = 3;
+        uint combination = ClientRefillCaps.Combination, adventurer = 0x488CD169, pioneer = 0x0666828C, life = 0x1E25A5DE, unknown = 0x12345678;
         Assert.Equal(0x3D92AC47u, combination);
         var caps = new ClientRefillCaps(new Dictionary<string, int> { ["SilverCoin"] = 100, ["Pass_Deep"] = 10 },
-            new Dictionary<string, int> { ["SilverCoin"] = 50, ["Pass_Deep"] = 5 }, new HashSet<uint> { basic, battle, life, combination });
+            new Dictionary<string, int> { ["SilverCoin"] = 50, ["Pass_Deep"] = 5 }, new HashSet<uint> { adventurer, pioneer, life, combination });
         var now = DateTimeOffset.FromUnixTimeMilliseconds(SilverRefilled);
-        LoginMembership Active(uint id) => new(id, now.AddDays(3));
+        LoginMembership Active(uint id) => new(id, now.AddDays(2));
+        LoginMembership Expired(uint id) => new(id, now.AddSeconds(-1));
+        (int?, int?) Caps(params LoginMembership[] memberships) => (caps.For("SilverCoin", memberships, now), caps.For("Pass_Deep", memberships, now));
+        // 没有会员、全部到期、到期时刻恰为登录时刻：基础上限。
+        Assert.Equal((100, 10), Caps());
+        Assert.Equal((100, 10), Caps(Expired(adventurer), Expired(pioneer), Expired(life), Expired(combination)));
+        Assert.Equal((100, 10), Caps(new LoginMembership(combination, now)));
+        // 全方位生效：登录数据里与其余三项并列（四项）、只有全方位一项、其余三项已到期。
+        Assert.Equal((150, 15), Caps(Active(adventurer), Active(pioneer), Active(life), Active(combination)));
+        Assert.Equal((150, 15), Caps(Active(combination)));
+        Assert.Equal((150, 15), Caps(Expired(adventurer), Expired(pioneer), Expired(life), Active(combination)));
+        // 只有其余三项生效（全方位项缺失或已到期）：没有样本，未知。
+        Assert.Equal(((int?)null, (int?)null), Caps(Active(adventurer), Active(pioneer), Active(life)));
+        Assert.Equal(((int?)null, (int?)null), Caps(Active(life), Expired(combination)));
+        // 不认识的生效编号：未知；不认识但已到期的项不影响判定。
+        Assert.Equal(((int?)null, (int?)null), Caps(Active(combination), Active(unknown)));
+        Assert.Equal((150, 15), Caps(Active(combination), Expired(unknown)));
+        Assert.Equal((100, 10), Caps(Expired(unknown)));
+        // 到期时刻读不出、没有读到会员、其他货币：未知。
+        Assert.Equal(((int?)null, (int?)null), Caps(Active(combination), new LoginMembership(life, null)));
         Assert.Null(caps.For("SilverCoin", null, now));
-        Assert.Equal(100, caps.For("SilverCoin", [], now));
-        Assert.Equal(10, caps.For("Pass_Deep", [new(combination, now.AddSeconds(-1))], now));
-        Assert.Null(caps.For("SilverCoin", [Active(battle), Active(life)], now));
-        Assert.Equal(((int?)null, (int?)null), (caps.For("SilverCoin", [Active(basic), Active(combination)], now), caps.For("Pass_Deep", [Active(combination)], now)));
-        Assert.Null(caps.For("SilverCoin", [Active(basic), Active(battle), Active(life)], now));
-        Assert.Null(caps.For("SilverCoin", [new(battle, null)], now));
         Assert.Null(caps.For("Gold", [], now));
-        // 会员表读不出：没有会员仍是基础上限，有生效会员时未知。
-        var baseOnly = caps with { Memberships = null };
-        Assert.Equal((100, (int?)null), (baseOnly.For("SilverCoin", [], now), baseOnly.For("SilverCoin", [Active(battle)], now)));
+        // 会员表或加成读不出：没有会员仍是基础上限，全方位生效时未知。
+        var withoutTable = caps with { Memberships = null, MemberBonus = new Dictionary<string, int>() };
+        Assert.Equal((100, (int?)null), (withoutTable.For("SilverCoin", [], now), withoutTable.For("SilverCoin", [Active(combination)], now)));
+        // 契约 refillCap 的最大值为 1,000,000：加成后超过时未知。
+        var large = caps with { Base = new Dictionary<string, int> { ["SilverCoin"] = ClientRefillCaps.MaximumCap - 10 } };
+        Assert.Equal((ClientRefillCaps.MaximumCap - 10, (int?)null), (large.For("SilverCoin", [], now), large.For("SilverCoin", [Active(combination)], now)));
+    }
+
+    /// <summary>
+    /// 会员生效的登录数据（四项并列，开始与到期时刻相同；结构取自台服 2026-11-24 的会员角色登录数据，数值为合成）：
+    /// 完整同步帧的银币、魔族貢品上限在登录时刻之前为 150／15，到期之后重新登录为 100／10。
+    /// </summary>
+    [Fact]
+    public void MembershipLoginGivesMemberCapsUntilItsExpiry()
+    {
+        uint[] ids = [0x488CD169, 0x0666828C, 0x1E25A5DE, ClientRefillCaps.Combination];
+        var memberships = ids.Select(id => (id, Start: 1794000000000L, Expire: 1794200000000L)).ToArray();
+        var caps = new ClientRefillCaps(new Dictionary<string, int> { ["SilverCoin"] = 100, ["Pass_Deep"] = 10 },
+            new Dictionary<string, int> { ["SilverCoin"] = 50, ["Pass_Deep"] = 5 }, ids.ToHashSet());
+        var layout = Layout() with { Schema = WalletSchema() };
+        layout = layout with { Resources = layout.Resources! with { RefillCaps = caps } };
+        (int?, int?) FullCaps(DateTimeOffset utc)
+        {
+            var frames = new List<InventoryFrame>(); ulong generation = 0;
+            var observer = new InventoryProtocolObserver("game", new("fixture", "1", "TW", "offline"), layout, frames.Add, () => ++generation);
+            observer.Accept((int)Login, WalletLoginBody(false, memberships: memberships), 0, utc);
+            observer.Accept((int)Profile, ProfileBody(Character, "本机角色"), 3000, utc);
+            var resources = frames.Single(f => f.Kind.KnownValue == InventoryFrameKind.Full).Resources!.ToDictionary(r => r.Key);
+            return (resources["silverCoin"].RefillCap, resources["passDeep"].RefillCap);
+        }
+        var expire = DateTimeOffset.FromUnixTimeMilliseconds(memberships[0].Expire);
+        Assert.Equal((150, 15), FullCaps(expire.AddHours(-1)));
+        Assert.Equal((100, 10), FullCaps(expire.AddSeconds(1)));
     }
 
     private const long SilverRefilled = 1794726769529, PassDeepRefilled = 1794705984874;
@@ -229,7 +272,7 @@ public sealed class InventoryTw202611LoginTests
         Record("Base", null, ("CharacterId", "int64"));
         Record(ClientInventoryDecoder.RootType, "Base", ("MusicNoteItemInventory", "Music"), ("Quest", "Quest"), ("JamItemInventory", "Jam"),
             ("SkillReserve", "Reserve"), ("Wallet", "Wallet"), ("AccountExpirableMoney", "Expirable"), ("SkillSlot", "Slots"),
-            ("FollowCameraForceAngle", "Angle"), ("SilverCoin", "Silver"), ("PassDeep", "Deep"), ("AccountProfile", "Profile"), ("Tail", "Tail"));
+            ("FollowCameraForceAngle", "Angle"), ("SilverCoin", "Silver"), ("PassDeep", "Deep"), ("Membership", "Membership"), ("AccountProfile", "Profile"), ("Tail", "Tail"));
         Record("Music", null, ("MusicNoteItems", "System.Collections.Generic.Dictionary`2<Items.NonStackableId,Score>"));
         Record("Items.NonStackableId", "System.ValueType", ("rawValue", "int64"));
         Record("ScoreSheetId", "System.ValueType", ("Id", "int32"));
@@ -244,6 +287,11 @@ public sealed class InventoryTw202611LoginTests
         Record("RefillData", null, ("LastUpdateTime", "int64"));
         Record("Silver", null, ("SilverCoinRefillData", "RefillData"));
         Record("Deep", null, ("LastUpdatedTime", "int64"));
+        Record("Core.Times.RealTime", "System.ValueType", ("rawValue", "int64"));
+        Record("Shared.Symbols.MembershipSheetId", "System.ValueType", ("Id", "int32"));
+        Record("MembershipInfo", "System.ValueType", ("Id", "Shared.Symbols.MembershipSheetId"), ("StartTime", "Core.Times.RealTime"), ("ExpireTime", "Core.Times.RealTime"),
+            ("DailyRewardedTime", "Core.Times.RealTime"), ("WeeklyRewardedTime", "Core.Times.RealTime"));
+        Record("Membership", null, ("ActivatedMemberships", "System.Collections.Generic.Dictionary`2<Shared.Symbols.MembershipSheetId,MembershipInfo>"));
         Record("Profile", null, ("MasterCharacterId", "int64"));
         Record("Tail", null, ("Value", "int32"));
         Record("AccountId", "System.ValueType", ("int64Value", "int64"));
@@ -266,7 +314,7 @@ public sealed class InventoryTw202611LoginTests
         Assert.Equal(60UL, full.Resources!.Single(r => r.Key == "silverCoin").Value!.Value.Value);
     }
 
-    private static byte[] WalletLoginBody(bool duplicateWallet, bool emptySkills = false)
+    private static byte[] WalletLoginBody(bool duplicateWallet, bool emptySkills = false, (uint Id, long Start, long Expire)[]? memberships = null)
     {
         var values = new Dictionary<string, long> { ["goldFree"] = 988534, ["silverCoin"] = 60, ["passDeep"] = 1, ["heartToken"] = 529, ["guildCoin"] = 1410, ["decaFree"] = 5548,
             // 最后一个字段的低 4 字节作为集合长度非法，错位一个 int64 的候选读不通（实采里由真实字段分布排除）。
@@ -287,7 +335,12 @@ public sealed class InventoryTw202611LoginTests
             else { w.Write(2); w.Write(1); w.Write(101); w.Write(2); w.Write(102); }
             w.Write(0.5f);
         }
-        w.Write(SilverRefilled); w.Write(PassDeepRefilled); w.Write(Character); w.Write(7);
+        w.Write(SilverRefilled); w.Write(PassDeepRefilled);
+        // 会员字典：键 4 字节，值为编号加开始、到期、每日、每周领取时刻（RealTime 各 8 字节）。
+        w.Write(memberships?.Length ?? 0);
+        foreach (var (id, start, expire) in memberships ?? [])
+        { w.Write(id); w.Write(id); w.Write(start); w.Write(expire); w.Write(start - 1000); w.Write(start - 1000); }
+        w.Write(Character); w.Write(7);
         return stream.ToArray();
     }
 

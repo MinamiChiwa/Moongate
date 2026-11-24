@@ -25,7 +25,7 @@ public static class ExtensionPermissions
 
     public static IReadOnlyList<ExtensionPermission> All { get; } = Array.AsReadOnly<ExtensionPermission>([
         new("combat.read", false, "读取战斗数据", "讀取戰鬥資料", "DPS、效果与分段的快照，以及战斗变化事件", "DPS、效果與分段的快照，以及戰鬥變化事件",
-            ["combat.snapshot"], ["combat.summary.changed", "combat.effects.changed", "combat.encounter.closed", "combat.observation.degraded", "combat.measurement.changed"]),
+            ["combat.snapshot"], ["combat.summary.changed", "combat.effects.changed", "combat.encounter.closed", "combat.observation.degraded", "combat.measurement.changed", "combat.live.changed"]),
         new("inventory.read", false, "读取背包与保管箱", "讀取背包與保管箱", "库存账户与物品查询，以及库存变化事件", "庫存帳戶與物品查詢，以及庫存變化事件",
             ["inventory.accounts", "inventory.items"], ["inventory.snapshot.changed", "inventory.observation.degraded"]),
         new("game.read", false, "读取游戏绑定与地图频道", "讀取遊戲綁定與地圖頻道", "当前绑定的游戏窗口、抓包状态、地图与频道", "目前綁定的遊戲視窗、抓包狀態、地圖與頻道",

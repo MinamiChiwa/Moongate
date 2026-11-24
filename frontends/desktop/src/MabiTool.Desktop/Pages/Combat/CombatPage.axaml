@@ -30,26 +30,30 @@
         <ItemsControl ItemsSource="{Binding All}" ItemTemplate="{StaticResource EffectItemTemplate}" />
       </StackPanel>
     </DataTemplate>
-    <!-- 效果收藏层：按名称或编号搜索已提取到的效果，逐项收藏或取消；收藏与“只显示收藏”对主页面与浮窗同时生效。 -->
-    <Flyout x:Key="FavoritesFlyout" Placement="BottomEdgeAlignedRight">
-      <StackPanel x:DataType="combat:CombatPageModel" Width="360" Spacing="8">
+    <!-- 效果收藏层：在客户端 Buff 表与已提取到的效果里按名称或编号搜索，逐项收藏或取消；收藏与“只显示收藏”对主页面与浮窗同时生效。
+         重名的项第二行写描述摘要，悬停提示为完整描述。 -->
+    <Flyout x:Key="FavoritesFlyout" Placement="BottomEdgeAlignedRight" Opened="OnFavoritesOpened">
+      <StackPanel x:DataType="combat:CombatPageModel" Width="380" Spacing="8">
         <TextBlock Classes="h2" FontSize="15" Text="{DynamicResource C.FavoritesTitle}" />
         <TextBox x:Name="FavoriteSearchBox" Classes="field" Text="{Binding FavoriteQuery}" PlaceholderText="{DynamicResource C.FavoritesSearch}"
                  AutomationProperties.Name="{DynamicResource C.FavoritesSearch}" />
         <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding FavoriteCatalogNote}" />
-        <TextBlock Classes="note" TextWrapping="Wrap" Text="{DynamicResource C.FavoritesEmptyCatalog}" IsVisible="{Binding NoFavoriteCatalog}" />
-        <ScrollViewer MaxHeight="300" HorizontalScrollBarVisibility="Disabled">
+        <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding FavoriteEmptyText}" IsVisible="{Binding NoFavoriteCatalog}" />
+        <ScrollViewer MaxHeight="320" HorizontalScrollBarVisibility="Disabled">
           <ItemsControl ItemsSource="{Binding FavoriteCatalog}">
             <ItemsControl.ItemTemplate>
               <DataTemplate DataType="combat:FavoriteEntryView">
-                <DockPanel Margin="0,0,0,4">
+                <DockPanel Margin="0,0,0,4" Background="Transparent" ToolTip.Tip="{Binding Tip}">
                   <Button DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" Classes.active="{Binding Favorite}"
                           Content="{Binding StarText}" Command="{Binding ToggleCommand}" ToolTip.Tip="{Binding StarTip}" />
                   <Path DockPanel.Dock="Left" Width="12" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" Stretch="Fill"
                         Data="M10,0 L19,5 L17,22 L3,22 L1,5 Z" Fill="{Binding Fill}" RenderTransformOrigin="50%,50%">
                     <Path.RenderTransform><RotateTransform Angle="{Binding Angle}" /></Path.RenderTransform>
                   </Path>
-                  <TextBlock Classes="name" FontSize="13" VerticalAlignment="Center" Text="{Binding Label}" ToolTip.Tip="{Binding Label}" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Classes="name" FontSize="13" TextTrimming="CharacterEllipsis" Text="{Binding Label}" />
+                    <TextBlock Classes="name muted" FontSize="12" TextTrimming="CharacterEllipsis" Text="{Binding Summary}" IsVisible="{Binding HasSummary}" />
+                  </StackPanel>
                 </DockPanel>
               </DataTemplate>
             </ItemsControl.ItemTemplate>

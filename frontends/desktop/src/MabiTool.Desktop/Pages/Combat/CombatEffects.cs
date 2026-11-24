@@ -4,7 +4,7 @@ using MabiTool.Desktop.Localization;
 
 namespace MabiTool.Desktop.Pages.Combat;
 
-// 自身与怪物效果卡片的 Buff 收藏：只显示收藏的开关与收藏层（按名称或编号搜索已提取到的 Buff 并收藏或取消）。
+// 自身与怪物效果卡片的 Buff 收藏：只显示收藏的开关与收藏层（按名称或编号搜索客户端 Buff 表与已提取到的 Buff 并收藏或取消）。
 // 状态只有 CombatEffectFavorites 一份，主页面、明细窗口与浮窗联动。
 public sealed partial class CombatPageModel
 {
@@ -21,8 +21,8 @@ public sealed partial class CombatPageModel
     /// <summary>收藏或取消一项：参数是收藏层的一行或效果卡片上的一个效果。</summary>
     public ICommand ToggleFavoriteEffectCommand => toggleFavorite ??= new RelayCommand(item =>
     {
-        var id = item switch { FavoriteEntryView entry => entry.Id, EffectRow row => row.EffectId, _ => null };
-        if (id is not null) CombatEffectFavorites.Toggle(id);
+        if (item is FavoriteEntryView entry) CombatEffectFavorites.Toggle(entry);
+        else if (item is EffectRow { EffectId: { } id }) CombatEffectFavorites.Toggle(id);
     });
     private ICommand? toggleSelfOnly, toggleTargetOnly, toggleFavorite;
 
@@ -33,17 +33,60 @@ public sealed partial class CombatPageModel
         set { if (Set(ref favoriteQuery, value)) SyncFavorites(); }
     }
 
-    /// <summary>收藏层列出的“已提取到的 Buff”：本机观测到的效果，收藏的排在前面，至多 200 项。</summary>
+    /// <summary>
+    /// 收藏层列出的效果：客户端 Buff 表与本机观测到的效果目录的并集，已收藏的在前、其次观测到过的，至多 <see cref="CombatEffectFavorites.SearchLimit"/> 项。
+    /// </summary>
     public StableList<FavoriteEntryView> FavoriteCatalog { get; } = [];
     public bool NoFavoriteCatalog => FavoriteCatalog.Count == 0;
-    public string FavoriteCatalogNote => UiText.Pick(
-        $"已提取 {CombatEffectFavorites.CatalogCount} 种效果（本机观测到的），已收藏 {CombatEffectFavorites.Favorites.Count} 种",
-        $"已提取 {CombatEffectFavorites.CatalogCount} 種效果（本機觀測到的），已收藏 {CombatEffectFavorites.Favorites.Count} 種");
+    public string FavoriteEmptyText => favoriteQuery.Trim().Length > 0
+        ? UiText.Pick("没有符合的效果", "沒有符合的效果") : UiText.Pick("还没有可选的效果", "還沒有可選的效果");
+    private int favoriteTotal;
+
+    /// <summary>来源与数量：客户端 Buff 表的状态（读取中、不可用的原因）、本机观测到的数量与收藏数；结果超过上限时写明总数。</summary>
+    public string FavoriteCatalogNote
+    {
+        get
+        {
+            var client = backend.GetClientBuffs();
+            var observed = CombatEffectFavorites.CatalogCount;
+            var favorites = CombatEffectFavorites.Favorites.Count;
+            var source = client.Ready
+                ? UiText.Pick($"客户端 Buff 表 {client.Entries.Count} 种，本机观测到 {observed} 种，已收藏 {favorites} 种",
+                    $"用戶端 Buff 表 {client.Entries.Count} 種，本機觀測到 {observed} 種，已收藏 {favorites} 種")
+                : client.Loading
+                    ? UiText.Pick($"正在读取客户端 Buff 表，暂时只列出本机观测到的 {observed} 种，已收藏 {favorites} 种",
+                        $"正在讀取用戶端 Buff 表，暫時只列出本機觀測到的 {observed} 種，已收藏 {favorites} 種")
+                    : client.Problem is { } problem
+                        ? UiText.Pick($"客户端 Buff 表不可用（{problem}），只列出本机观测到的 {observed} 种，已收藏 {favorites} 种",
+                            $"用戶端 Buff 表無法使用（{problem}），只列出本機觀測到的 {observed} 種，已收藏 {favorites} 種")
+                        : UiText.Pick($"本机观测到 {observed} 种，已收藏 {favorites} 种", $"本機觀測到 {observed} 種，已收藏 {favorites} 種");
+            return favoriteTotal > FavoriteCatalog.Count
+                ? source + UiText.Pick($"；符合 {favoriteTotal} 项，只列出前 {FavoriteCatalog.Count} 项，输入更多文字缩小范围",
+                    $"；符合 {favoriteTotal} 項，只列出前 {FavoriteCatalog.Count} 項，輸入更多文字縮小範圍")
+                : source;
+        }
+    }
+
+    /// <summary>收藏层打开：请后端适配层读取客户端 Buff 表（已读到且游戏没换进程时沿用），列表随即按现有内容刷新。</summary>
+    public void OpenFavorites()
+    {
+        backend.RequestClientBuffs();
+        SyncFavorites();
+    }
+
+    // 客户端 Buff 表到达或状态变化：补齐收藏的名称，再刷新收藏层。
+    private void OnClientBuffsChanged(object? sender, EventArgs e)
+    {
+        CombatEffectFavorites.Learn(backend.GetClientBuffs());
+        SyncFavorites();
+    }
 
     private void SyncFavorites()
     {
-        FavoriteCatalog.Sync(CombatEffectFavorites.Search(favoriteQuery));
-        Raise(nameof(NoFavoriteCatalog)); Raise(nameof(FavoriteCatalogNote));
+        var result = CombatEffectFavorites.Find(favoriteQuery, backend.GetClientBuffs());
+        favoriteTotal = result.Total;
+        FavoriteCatalog.Sync(result.Items);
+        Raise(nameof(NoFavoriteCatalog)); Raise(nameof(FavoriteEmptyText)); Raise(nameof(FavoriteCatalogNote));
         Raise(nameof(SelfFavoritesOnly)); Raise(nameof(TargetFavoritesOnly));
     }
 }

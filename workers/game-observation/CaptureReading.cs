@@ -13,11 +13,15 @@ internal enum CaptureReadMode { Poll, Immediate, MinToCopy }
 /// <param name="BufferBytes">每个句柄的内核缓冲字节数。</param>
 /// <param name="MinToCopyBytes">MinToCopy 方式的最小拷贝量。</param>
 /// <param name="TimeoutMs">MinToCopy 方式的等待超时、Poll 方式的轮询间隔。</param>
-/// <param name="CoalesceMs">Immediate 方式的合批间隔：距上次唤醒不足该间隔又有包时，先等这一间隔再读（持续高流量时按间隔成批读取）；0 为不合批。</param>
+/// <param name="CoalesceMs">Immediate 方式的合批间隔：距上次唤醒不足该间隔又有包时，先等这一间隔再读（持续高流量时按间隔成批读取，
+/// 等待由高精度计时器唤醒）；0 为不合批。</param>
 internal sealed record CaptureReadConfig(CaptureReadMode Mode, int BufferBytes, int MinToCopyBytes = 0, int TimeoutMs = 10, int CoalesceMs = 0)
 {
-    /// <summary>常驻捕获采用的读取方式：有包即由读事件唤醒，持续有包时按 10 ms 成批读取；本机回环实测空闲时每秒只唤醒 2 次，低于轮询的每秒约 64 次读取。</summary>
-    public static CaptureReadConfig Resident { get; } = new(CaptureReadMode.Immediate, NativeCaptureBoundary.DeviceBufferBytes, CoalesceMs: 10);
+    /// <summary>
+    /// 常驻捕获采用的读取方式：有包即由读事件唤醒，相邻唤醒不足 4 ms 又有包时先等 4 ms 成批读取（每秒至多约 250 次唤醒）；
+    /// 本机回环实测空闲时每秒只唤醒 2 次，低于轮询的每秒约 64 次读取。
+    /// </summary>
+    public static CaptureReadConfig Resident { get; } = new(CaptureReadMode.Immediate, NativeCaptureBoundary.DeviceBufferBytes, CoalesceMs: 4);
     /// <summary>不支持读事件时的回退：非阻塞读取、每轮间隔 10 ms。</summary>
     public CaptureReadConfig Fallback => this with { Mode = CaptureReadMode.Poll, TimeoutMs = 10, CoalesceMs = 0 };
     /// <summary>诊断计数中的读取方式；<paramref name="fallback"/> 为计划的读事件方式因 Npcap 不支持而回退。</summary>

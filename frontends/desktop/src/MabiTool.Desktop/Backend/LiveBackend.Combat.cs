@@ -205,8 +205,10 @@ public sealed partial class LiveBackend
     /// 整场随工作区与战斗记录修订、当前分段随分段修订、进行中的测量随测量与工作区修订（计时中累计随检查点增长，测量修订只在阶段变化时变）、
     /// 已结束的记录随战斗记录修订重读。
     /// </summary>
+    /// <param name="refresh">为假（只为最新捕获事件而来的一轮）时，同一查询只是数据修订推进就沿用上次的结果，间隔到时由补读重读。</param>
     private async Task<(CombatRangeSummary? Range, string? Problem, CombatSelectionSnapshot Selection)> RangeAsync(
-        MabiToolClient api, CombatWorkspace? workspace, CombatEncounterPage history, CombatMeasurementState? measurement, CancellationToken token)
+        MabiToolClient api, CombatWorkspace? workspace, CombatEncounterPage history, CombatMeasurementState? measurement, CancellationToken token,
+        bool refresh = true)
     {
         // 这一轮读取针对的选择；结果带着它返回，选择已经改变时页面不采用。
         var chosen = selection.Snapshot();
@@ -218,13 +220,15 @@ public sealed partial class LiveBackend
         if (query.Scope == "observation" && !HasSegments(workspace, history.Items)) return (null, null, chosen);
         // 同一查询刚得到“不存在”时，等分段或战斗记录变化后再查，不按每轮刷新反复请求。
         var memo = string.Join('|', query.Scope, query.EncounterId, query.ObservationId, query.TargetId, workspace?.Encounter?.Id, history.Revision);
-        lock (gate) if (missingRange is { } missing && missing.Key == memo) return (null, missing.Problem, chosen);
+        lock (gate) if (missingRange is { } missing && missing.Key == memo && (missing.Until == 0 || Now < missing.Until)) return (null, missing.Problem, chosen);
         var live = query.Scope == "observation" ? $"w{workspace?.Revision}"
             : query.EncounterId == workspace?.Encounter?.Id ? $"e{workspace?.Encounter?.Revision}"
             : query.EncounterId == measurement?.MeasurementId ? $"m{measurement?.Revision}|w{workspace?.Revision}"
             : string.Empty;
         var key = memo + "|" + live;
-        lock (gate) if (rangeRead is { } read && read.Key == key) return (read.Range, read.Problem, chosen);
+        lock (gate)
+            if (rangeRead is { } read && (read.Key == key || !refresh && read.Key.StartsWith(memo + "|", StringComparison.Ordinal)))
+                return (read.Range, read.Problem, chosen);
         try
         {
             var range = await api.QueryCombatRangeAsync(query, token);
@@ -241,11 +245,22 @@ public sealed partial class LiveBackend
         }
         catch (MabiToolApiException error) when (error.Status == 404)
         {
-            // 进行中的测量在第一次检查点写入前查不到：不记为“不存在”，下一轮照常再查。
+            // 进行中的测量、当前分段与观测中的整场在宿主写入检查点前查不到（快照随最新捕获先到，检查点稍后落库）：
+            // 不记为“不存在”，隔 SecondaryInterval 再查；一直记住会让这一段剩下的时间都不再查询，页面停在没有结果。
             if (measurement?.MeasurementId is { } running && query.EncounterId == running) return (null, null, chosen);
+            if (query.Scope == "encounter" && workspace?.Encounter is { Summary.Final: false } segment && query.EncounterId == segment.Id ||
+                query.Scope == "observation" && workspace?.Observation is { State: "observing" } observing && query.ObservationId == observing.Id)
+            {
+                lock (gate)
+                {
+                    var at = Now + Span(SecondaryInterval);
+                    missingRange = (memo, null, at); followUpAt = followUpAt == 0 ? at : Math.Min(followUpAt, at);
+                }
+                return (null, null, chosen);
+            }
             // 整场范围在观察还没有战斗记录时为空，不算错误；记录已删除时写明。
             var problem = query.Scope == "observation" ? null : error.Problem?.Code ?? "resource.notFound";
-            lock (gate) missingRange = (memo, problem);
+            lock (gate) missingRange = (memo, problem, 0);
             return (null, problem, chosen);
         }
         catch (MabiToolApiException error) { return (null, error.Problem?.Code ?? $"http.{error.Status}", chosen); }
@@ -263,7 +278,8 @@ public sealed partial class LiveBackend
         return (scope, measurement.MeasurementId ?? string.Empty, measurement.LastResultId ?? seenResult ?? string.Empty);
     }
 
-    private (string Key, string? Problem)? missingRange;
+    /// <summary>刚得到“不存在”的范围查询；Until 为 0 时一直有效（记录已删除），否则到该时刻（进行中的数据尚未落库）后再查。</summary>
+    private (string Key, string? Problem, long Until)? missingRange;
     private string? missingTimeline;
 
     /// <summary>这次观察是否已有自动分段（整场范围的来源）：当前分段或历史里同一观察、不是保存记录的战斗。</summary>

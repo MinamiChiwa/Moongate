@@ -55,6 +55,13 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
         public int HousekeepingDue;
         /// <summary>上次捕获的时刻（TimeProvider 时间戳），用于帧合并窗口。</summary>
         public long LastCapture;
+        /// <summary>自上次即时通知以来应用的记录中最新一条的抓包时点（观察单调毫秒与 UTC）；没有时为 NaN 与空。</summary>
+        public double NewestCaptureMs = double.NaN;
+        public DateTimeOffset? NewestCaptureAt;
+        /// <summary>最近应用的一帧的观测时刻（与 <see cref="LastMono"/> 对应），用于把血量的观测时刻换算为单调时点。</summary>
+        public DateTimeOffset LastObservedAt;
+        /// <summary>上次即时通知时界面可见数据的签名。</summary>
+        public LiveSignature? Notified;
         public string? TracedSegment;
         public readonly HashSet<string> TracedEnds = new(StringComparer.Ordinal);
         public readonly Queue<string> TracedOrder = new();
@@ -109,7 +116,10 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
     internal static TimeSpan OperationCheckInterval { get; set; } = TimeSpan.FromSeconds(1);
     /// <summary>没有新帧也没有待保存变化时，最新捕获（观测时点、效果剩余时间）的刷新间隔。</summary>
     internal static TimeSpan IdleCaptureInterval { get; set; } = TimeSpan.FromSeconds(1);
-    /// <summary>连续到达的帧至多在该窗口内合并为一次捕获与发布。</summary>
+    /// <summary>
+    /// 两次捕获至少相隔该窗口：距上次捕获不足时等到窗口结束（按截止时间由高精度计时器唤醒），期间到达的帧合并为一次捕获与发布；
+    /// 相隔更久到达的帧立即处理。
+    /// </summary>
     internal static TimeSpan CoalesceWindow { get; set; } = TimeSpan.FromMilliseconds(10);
     /// <summary>离线性能探针：每次发布最新捕获后以（工作区修订、已应用的最后一帧单调时点）回调；未设置时不调用。</summary>
     internal Action<UInt64String, double>? LiveObserver { get; set; }
@@ -248,13 +258,14 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
         job.Session.Acknowledge(initial); job.LastSaved = clock.GetTimestamp();
         history.PublishLive(initial.Workspace, job.Session.EntityEffects);
         var producer = ProduceAsync(job);
+        using var coalesceTimer = new PreciseTimer();
         using var housekeepingTimer = new PeriodicTimer(HousekeepingInterval, clock);
         var housekeepingLoop = HousekeepingAsync(job, housekeepingTimer);
         try
         {
             while (true)
             {
-                await WaitForWorkAsync(job);
+                await WaitForWorkAsync(job, coalesceTimer);
                 // 后台保存的失败（数据库错误）与同步保存时一样结束本次观察。
                 if (job.Saving is { IsCompleted: true } saved) { job.Saving = null; await saved; }
                 await job.Gate.WaitAsync(job.Stop.Token);
@@ -280,7 +291,11 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
                         { job.Session.ReportGap("queue-capacity", job.Session.MonotonicMs, job.Session.MonotonicMs, batch.DroppedEvents.Value); applied = true; }
                         for (var i = 0; i < batch.Frames.Count; i++)
                             if (job.Session.Apply(batch.Frames[i]))
-                            { job.LastMono = batch.Frames[i].MonotonicMs; job.LastReceived = batch.ReceivedAt[i]; job.Received = true; applied = true; }
+                            {
+                                var frame = batch.Frames[i];
+                                job.LastMono = frame.MonotonicMs; job.LastReceived = batch.ReceivedAt[i]; job.Received = true; applied = true;
+                                job.LastObservedAt = frame.ObservedAt; NoteCaptured(job, frame);
+                            }
                         if (job.Buffer.Count == 0) break;
                     }
                     if (applied || housekeeping) await TickMeasurementAsync(job);
@@ -310,6 +325,7 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
                     // 快照先发布（读取立即可见），检查点按变化与时间阈值在后台保存，发布不等待写盘。
                     var checkpoint = job.Session.Capture(); job.LastCapture = clock.GetTimestamp(); job.CaptureTick = ticks;
                     history.PublishLive(checkpoint.Workspace, job.Session.EntityEffects); LiveObserver?.Invoke(checkpoint.Workspace.Revision, job.LastMono);
+                    await NotifyLiveAsync(job, checkpoint.Workspace);
                     if (SaveDue(job, checkpoint))
                     {
                         if (job.Saving is null && job.SaveGate.Wait(0)) job.Saving = SaveInBackgroundAsync(job, checkpoint);
@@ -402,9 +418,10 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
     }
 
     /// <summary>
-    /// 等待新帧、例行检查时刻或后台保存完成。新帧到达时若距上次捕获不足合并窗口，等到窗口结束再处理，期间到达的帧一并应用。
+    /// 等待新帧、例行检查时刻或后台保存完成。新帧到达时若距上次捕获不足合并窗口，等到窗口结束再处理（按截止时间由高精度计时器唤醒；
+    /// 测试替换时钟时按替换的时钟），期间到达的帧一并应用。
     /// </summary>
-    private async Task WaitForWorkAsync(Job job)
+    private async Task WaitForWorkAsync(Job job, PreciseTimer timer)
     {
         // 待重新判定的保存只在后台保存结束后处理（保存完成时会唤醒循环），保存进行中照常等待。
         if (job.Buffer.Count == 0 && !job.Buffer.Completed && Volatile.Read(ref job.HousekeepingDue) == 0 && job.Saving is not { IsCompleted: true } &&
@@ -413,7 +430,96 @@ public sealed partial class CombatOperations(OperationStore operations, CombatHi
         job.Stop.Token.ThrowIfCancellationRequested();
         job.Wake.Reader.TryRead(out _);
         var sinceCapture = clock.GetElapsedTime(job.LastCapture);
-        if (job.Buffer.Count > 0 && sinceCapture < CoalesceWindow) await Task.Delay(CoalesceWindow - sinceCapture, clock, job.Stop.Token);
+        if (job.Buffer.Count > 0 && sinceCapture < CoalesceWindow)
+        {
+            if (ReferenceEquals(clock, TimeProvider.System)) await timer.DelayAsync(CoalesceWindow - sinceCapture, job.Stop.Token);
+            else await Task.Delay(CoalesceWindow - sinceCapture, clock, job.Stop.Token);
+        }
+    }
+
+    /// <summary>
+    /// 界面可见的战斗数据签名：观察与本机战斗状态、当前分段及其伤害与治疗合计、当前攻击目标及其血量与死亡。
+    /// 只有观测时刻、单调时点或时长推进时签名不变。
+    /// </summary>
+    internal readonly record struct LiveSignature(string State, string? LocalCombat, string? Encounter, string? Damage, bool Final,
+        string? HealingCast, string? HealingReceived, string? Target, CombatEntityHealth? Health, bool? Dead, string? Redirected)
+    {
+        public static LiveSignature Of(CombatWorkspace workspace)
+        {
+            var summary = workspace.Encounter?.Summary; var target = workspace.CurrentTarget;
+            return new(workspace.Observation.State, workspace.Observation.LocalCombatState?.RawValue, workspace.Encounter?.Id,
+                summary?.AttributedDamage.ToString(), summary?.Final == true, summary?.Healing?.CastAmount.ToString(), summary?.Healing?.ReceivedAmount.ToString(),
+                target?.EntityId, target?.Health, target?.Dead, target?.RedirectedFrom);
+        }
+    }
+
+    /// <summary>记下应用的帧中伤害与治疗记录最新的抓包时点（即时通知的抓包时点取自这些记录）。</summary>
+    private static void NoteCaptured(Job job, CombatFrame frame)
+    {
+        void Note(double mono, DateTimeOffset at)
+        {
+            if (!double.IsFinite(mono) || !double.IsNaN(job.NewestCaptureMs) && mono <= job.NewestCaptureMs) return;
+            job.NewestCaptureMs = mono; job.NewestCaptureAt = at;
+        }
+        foreach (var damage in frame.Damage) Note(damage.MonotonicMs, damage.ObservedAt);
+        foreach (var heal in frame.Healing ?? []) Note(heal.MonotonicMs, heal.ObservedAt);
+    }
+
+    /// <summary>即时通知的资源修订：宿主内全部观察共用一个递增序号，按序号顺序发布。</summary>
+    private readonly SemaphoreSlim liveGate = new(1, 1);
+    private ulong liveRevision;
+
+    /// <summary>
+    /// 发布最新捕获后：界面可见的数据有变化时推送 <c>combat.live.changed</c>（不等检查点），抓包时点取自上次通知以来应用的伤害与治疗，
+    /// 只有当前目标血量变化时按该血量的观测时刻换算。签名未变（保活帧、只有时间推进）时不推送。
+    /// </summary>
+    private async Task NotifyLiveAsync(Job job, CombatWorkspace workspace)
+    {
+        if (events is null) return;
+        var signature = LiveSignature.Of(workspace);
+        var previous = job.Notified;
+        if (previous == signature) { job.NewestCaptureMs = double.NaN; job.NewestCaptureAt = null; return; }
+        double? captured = double.IsNaN(job.NewestCaptureMs) ? null : job.NewestCaptureMs;
+        var capturedAt = job.NewestCaptureAt;
+        if ((previous is null || previous.Value.Health != signature.Health) && workspace.CurrentTarget?.Health?.ObservedAt is { } observed &&
+            job.LastObservedAt != default)
+        {
+            var mono = job.LastMono - (job.LastObservedAt - observed).TotalMilliseconds;
+            if (double.IsFinite(mono) && mono <= job.LastMono && (captured is null || mono > captured)) { captured = mono; capturedAt = observed; }
+        }
+        job.Notified = signature; job.NewestCaptureMs = double.NaN; job.NewestCaptureAt = null;
+        await liveGate.WaitAsync(job.Stop.Token);
+        try
+        {
+            var revision = new UInt64String(checked(++liveRevision));
+            var payload = new CombatLiveChanged(job.Owner, job.Id, workspace.Revision, captured, capturedAt);
+            await events.PublishVolatileAsync(new("combat-live-" + revision, "combat-live", "combat-live", revision, "combat.live.changed",
+                System.Text.Json.JsonSerializer.SerializeToElement(payload, ContractJson.Options)), clock.GetUtcNow(), job.Stop.Token);
+        }
+        catch (OperationException) { }
+        finally { liveGate.Release(); }
+    }
+
+    /// <summary>显示延迟报告在诊断中的最短间隔（同一客户端）。</summary>
+    internal static readonly TimeSpan DisplayLatencyInterval = TimeSpan.FromSeconds(10);
+    private readonly ConcurrentDictionary<string, long> latencyReports = new(StringComparer.Ordinal);
+
+    /// <summary>前端报告的战斗数据显示延迟：校验后写入诊断事件 combat.display.latency，同一客户端至多每 10 秒一条。</summary>
+    public CombatDisplayLatencyReceipt ReportDisplayLatency(string principal, CombatDisplayLatencyReport report)
+    {
+        static bool Valid(double value) => double.IsFinite(value) && value is >= 0 and <= 60_000;
+        if (report.Samples is < 1 or > 4096 || report.TotalSamples < report.Samples || !Valid(report.MedianMs) || !Valid(report.P95Ms) ||
+            !Valid(report.MaximumMs) || report.MedianMs > report.P95Ms || report.P95Ms > report.MaximumMs)
+            throw new OperationException("request.invalid", "显示延迟报告的样本数或统计值无效");
+        if (trace is null) return new(false);
+        var now = clock.GetTimestamp();
+        if (latencyReports.TryGetValue(principal, out var last) && clock.GetElapsedTime(last, now) < DisplayLatencyInterval) return new(false);
+        if (latencyReports.Count >= 64) latencyReports.Clear();
+        latencyReports[principal] = now;
+        static string Ms(double value) => Math.Round(value, 1).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+        trace.Emit(DiagnosticEvents.CombatDisplayLatency, new DiagnosticFields().Count("samples", report.Samples).Count("totalSamples", report.TotalSamples)
+            .Value("medianMs", Ms(report.MedianMs)).Value("p95Ms", Ms(report.P95Ms)).Value("maximumMs", Ms(report.MaximumMs)));
+        return new(true);
     }
 
     /// <summary>例行检查计时器：每个周期推进计数并唤醒执行循环；任务停止时结束。</summary>

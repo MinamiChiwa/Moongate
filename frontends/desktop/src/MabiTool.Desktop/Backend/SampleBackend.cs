@@ -118,6 +118,17 @@ public sealed partial class SampleBackend : IDesktopBackend
     public event EventHandler? ClientIconsChanged;
     internal void RaiseClientIconsChanged() => ClientIconsChanged?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>测试用：客户端 Buff 表的替身；为空时与样本数据一样没有客户端表。改动后调用 <see cref="RaiseClientBuffsChanged"/>。</summary>
+    internal ClientBuffList? ClientBuffs { get; set; }
+
+    /// <summary>测试用：收藏层请求读取客户端 Buff 表的次数。</summary>
+    internal int ClientBuffRequests { get; private set; }
+
+    public ClientBuffList GetClientBuffs() => ClientBuffs ?? ClientBuffList.Unsupported;
+    public void RequestClientBuffs() => ClientBuffRequests++;
+    public event EventHandler? ClientBuffsChanged;
+    internal void RaiseClientBuffsChanged() => ClientBuffsChanged?.Invoke(this, EventArgs.Empty);
+
     /// <summary>Buff 收藏筛选与真实后端一样在这里统一套用。</summary>
     public CombatPageData GetCombat() => CombatEffectFavorites.Apply(SampleData());
 
@@ -203,7 +214,7 @@ public sealed partial class SampleBackend : IDesktopBackend
                 new(Pick("召唤物 9%", "召喚物 9%"), 9, "#E99A7F", true),
                 new(Pick("未归属 5%，不计入本人", "未歸屬 5%，不計入本人"), 5, "#B9BECC", false)
             ],
-            Pick("连携伤害保留在时间轴，不计入统计", "連攜傷害保留在時間軸，不計入統計"),
+            Pick("本人伤害配到队友技能时照常计入，技能列表标“（队友）”", "本人傷害配到隊友技能時照常計入，技能列表標「（隊友）」"),
             [
                 new("重擊", "1,140,382", "41%", "96", "38%", "31%", "44%", "8%", "6,210～21,480",
                     "24%", "6%", "0%", "33%", noElements),

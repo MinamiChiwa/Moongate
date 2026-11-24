@@ -61,7 +61,14 @@ public sealed partial class CombatHistoryStore(SqliteStore database, OperationSt
         ALTER TABLE combat_preferences ADD COLUMN revision TEXT NOT NULL DEFAULT '0';
         ALTER TABLE combat_auto_observation ADD COLUMN revision TEXT NOT NULL DEFAULT '0';
         """);
-    public static IReadOnlyList<DatabaseMigration> Migrations { get; } = Array.AsReadOnly([Migration, EncounterReferenceMigration, PreferencesMigration, ControlRevisionsMigration]);
+    // 快照读取（战斗中每秒可达 60 次）的两条查询不再随历史规模变慢：选当前观察按更新时刻排序、存储统计汇总字节数，原先都要读到每行
+    // 大正文（工作区至多 4 MiB、战斗记录正文）之后的列，SQLite 须走完整条溢出页链，100 条约 300 KB 的历史时每次约 60–600 ms，
+    // 且在事件中心的锁内执行。两条索引让它们只读索引（覆盖扫描），与历史规模无关。
+    public static DatabaseMigration ReadIndexesMigration { get; } = new("combat-observation", 5, """
+        CREATE INDEX combat_observations_recent ON combat_observations(updated_at,id);
+        CREATE INDEX combat_encounters_storage ON combat_encounters(owner,closed,favorite,bytes,timeline_bytes,id);
+        """);
+    public static IReadOnlyList<DatabaseMigration> Migrations { get; } = Array.AsReadOnly([Migration, EncounterReferenceMigration, PreferencesMigration, ControlRevisionsMigration, ReadIndexesMigration]);
     private const string ActiveWorkspaceReference = "EXISTS (SELECT 1 FROM combat_observations o WHERE o.encounter_id=combat_encounters.id AND o.terminal=0)";
     private static CombatRetentionLimits CheckLimits(CombatRetentionLimits value)
     {

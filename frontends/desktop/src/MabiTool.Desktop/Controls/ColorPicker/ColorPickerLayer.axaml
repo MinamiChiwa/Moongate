@@ -1,0 +1,210 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Controls.ColorPickerLayer"
+             x:DataType="controls:ColorPickerModel">
+  <!--
+    选色浮层（染色页与浮窗配色共用）：色相环与饱和度／明度方块、当前／打开时、最近、常用色、精调与数值输入；
+    HexEditable 为真时标题行的 HEX 是可输入的文本框（只认六位）。宽度与内容高度固定，窗口矮时在浮层内滚动。
+    控件铺满所在页面的根容器；层的显示与隐藏由 Open／Close 管理：打开时先按锚点排好位置再显示，关闭时淡出后再隐藏。
+  -->
+  <UserControl.Styles>
+    <Style Selector="Button.bare">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="Button.bare:pointerover">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.bare.cell">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="TextBox.field.num">
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Margin" Value="8,0,0,0" />
+      <Setter Property="Padding" Value="6,0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextAlignment" Value="Right" />
+    </Style>
+    <Style Selector="TextBox.field.hex">
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Width" Value="76" />
+      <Setter Property="Padding" Value="6,0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBox.invalid">
+      <Setter Property="BorderBrush" Value="{DynamicResource StopBrush}" />
+    </Style>
+    <!-- 打开与关闭：不透明度与轻微下移、缩放，Window.motion 下 200 ms 减速曲线；减弱动效时直接到位。 -->
+    <Style Selector="Border.anchored">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="RenderTransform" Value="translateY(-6px) scale(0.98)" />
+    </Style>
+    <Style Selector="Border.anchored.shown">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="RenderTransform" Value="translateY(0px) scale(1)" />
+    </Style>
+    <Style Selector="Window.motion Border.anchored">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2" Easing="CubicEaseOut" />
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.rule">
+      <Setter Property="Height" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource HairlineBrush}" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.compact">
+      <Setter Property="Padding" Value="9,2" />
+      <Setter Property="MinHeight" Value="26" />
+    </Style>
+    <Style Selector="Border.swatch">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource HairlineBrush}" />
+    </Style>
+    <Style Selector="TextBlock.hex">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel x:Name="PickerLayer" IsVisible="False" KeyDown="OnLayerKeyDown">
+    <Border Background="Transparent" PointerPressed="OnOutsidePressed" />
+    <controls:AnchoredLayer x:Name="PickerHost">
+    <Border x:Name="PickerPanel" Classes="panel popup anchored" Width="336" Padding="14">
+      <!-- 数据上下文在打开时设为选色模型，关闭过渡结束后才清空，淡出期间内容保持关闭那一刻的样子。 -->
+      <DockPanel x:Name="PickerContent">
+          <!-- 标题行：当前颜色的色块与 HEX、关闭。放在滚动区外、按最高元素（关闭按钮）定高并垂直居中，按钮连同悬停放大不被滚动区裁切。 -->
+          <DockPanel DockPanel.Dock="Top" MinHeight="30" Margin="0,0,0,10">
+            <Button DockPanel.Dock="Right" x:Name="PickerClose" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center" Content="✕"
+                    Command="{Binding $parent[controls:ColorPickerLayer].CloseCommand}"
+                    AutomationProperties.Name="{DynamicResource D.Close}" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <Border x:Name="PickerResultSwatch" Classes="swatch" Width="18" Height="18" Background="{Binding TargetBrush}"
+                      ToolTip.Tip="{Binding Target}" />
+              <TextBlock x:Name="PickerResultHex" Classes="hex" Width="58" FontSize="12" Text="{Binding Target}"
+                         IsVisible="{Binding !$parent[controls:ColorPickerLayer].HexEditable}" />
+              <TextBox x:Name="PickerHexInput" Classes="field hex" Classes.invalid="{Binding HexInvalid}" Text="{Binding HexInput}"
+                       MaxLength="7" PlaceholderText="#RRGGBB" AutomationProperties.Name="HEX"
+                       IsVisible="{Binding $parent[controls:ColorPickerLayer].HexEditable}" />
+            </StackPanel>
+            <TextBlock Classes="name strong" FontSize="13" VerticalAlignment="Center" Text="{Binding $parent[controls:ColorPickerLayer].Title}" />
+          </DockPanel>
+      <ScrollViewer x:Name="PickerScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="184,*" Height="184">
+            <controls:HsvWheel x:Name="PickerWheel" Width="184" Height="184"
+                               Hue="{Binding Hue}" Saturation="{Binding Saturation}" Brightness="{Binding Brightness}"
+                               AutomationProperties.Name="{Binding $parent[controls:ColorPickerLayer].Title}" />
+            <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="4">
+              <!-- 当前／打开时对照：点“打开时”回到打开浮层时的颜色。 -->
+              <Grid ColumnDefinitions="*,*">
+                <TextBlock Classes="label" FontSize="10" Text="{DynamicResource D.PickerNow}" />
+                <TextBlock Grid.Column="1" Classes="label" FontSize="10" TextAlignment="Right" Text="{DynamicResource D.PickerBefore}" />
+              </Grid>
+              <Grid ColumnDefinitions="*,*" Height="40">
+                <Border CornerRadius="8,0,0,8" Background="{Binding TargetBrush}" BorderBrush="{DynamicResource HairlineBrush}"
+                        BorderThickness="1,1,0,1" ToolTip.Tip="{Binding Target}" />
+                <Button x:Name="PickerRevert" Grid.Column="1" Classes="bare cell" Command="{Binding RevertCommand}"
+                        ToolTip.Tip="{Binding OriginalTip}" AutomationProperties.Name="{Binding OriginalTip}">
+                  <Border CornerRadius="0,8,8,0" Background="{Binding OriginalBrush}" BorderBrush="{DynamicResource HairlineBrush}"
+                          BorderThickness="0,1,1,1" />
+                </Button>
+              </Grid>
+              <DockPanel Margin="0,8,0,0">
+                <TextBlock DockPanel.Dock="Right" Classes="label" FontSize="10" Text="{DynamicResource D.NoRecent}" IsVisible="{Binding NoRecent}" />
+                <TextBlock Classes="label" FontSize="10" Text="{DynamicResource D.Recent}" />
+              </DockPanel>
+              <ItemsControl x:Name="PickerRecent" controls:StableItems.Source="{Binding Recent}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><controls:EvenColumns Columns="4" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="controls:RecentSlot">
+                    <Panel Height="22" Margin="1.5">
+                      <Border Classes="swatch" IsVisible="{Binding Empty}" />
+                      <Button Classes="bare cell" IsVisible="{Binding Filled}"
+                              Command="{Binding $parent[ItemsControl].((controls:ColorPickerModel)DataContext).PickCommand}"
+                              CommandParameter="{Binding Swatch}" ToolTip.Tip="{Binding Swatch.Tip, FallbackValue={x:Null}}">
+                        <Border Classes="swatch" Background="{Binding Swatch.Brush, FallbackValue={x:Null}}" />
+                      </Button>
+                    </Panel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Grid>
+          <!-- 两行时尚设计常用色：基础中性色、经典服饰色（色值与来源见 ColorMath.CommonColors）。 -->
+          <StackPanel Spacing="4">
+            <TextBlock Classes="label" FontSize="10" Text="{DynamicResource D.CommonColors}" />
+            <ItemsControl x:Name="PickerCommon" ItemsSource="{Binding Common}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:EvenColumns Columns="10" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="controls:PickerSwatch">
+                  <Button Classes="bare cell" Height="22" Margin="1.5"
+                          Command="{Binding $parent[ItemsControl].((controls:ColorPickerModel)DataContext).PickCommand}"
+                          CommandParameter="{Binding}" ToolTip.Tip="{Binding Tip}" AutomationProperties.Name="{Binding Tip}">
+                    <Border Classes="swatch" Background="{Binding Brush}" />
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <Border Classes="rule" />
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Right" Classes="label" FontSize="10" Text="HSV" />
+            <TextBlock Classes="label" FontSize="11" Text="{DynamicResource D.Fine}" />
+          </DockPanel>
+          <Grid ColumnDefinitions="44,*,52" RowDefinitions="28,28,28">
+            <TextBlock Classes="label" FontSize="11" Text="{DynamicResource D.Hue}" />
+            <controls:DyeSlider x:Name="HueSlider" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="360"
+                                Value="{Binding Hue}" Track="{Binding HueTrack}"
+                                Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
+                                AutomationProperties.Name="{DynamicResource D.Hue}" />
+            <TextBox x:Name="HueInput" Grid.Column="2" Classes="field num" Classes.invalid="{Binding HueInvalid}"
+                     Text="{Binding HueInput}" MaxLength="3" AutomationProperties.Name="{DynamicResource D.Hue}" />
+            <TextBlock Grid.Row="1" Classes="label" FontSize="11" Text="{DynamicResource D.Saturation}" />
+            <controls:DyeSlider x:Name="SaturationSlider" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="100"
+                                Value="{Binding Saturation}" Track="{Binding SaturationTrack}"
+                                Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
+                                AutomationProperties.Name="{DynamicResource D.Saturation}" />
+            <TextBox x:Name="SaturationInput" Grid.Row="1" Grid.Column="2" Classes="field num" Classes.invalid="{Binding SaturationInvalid}"
+                     Text="{Binding SaturationInput}" MaxLength="3" AutomationProperties.Name="{DynamicResource D.Saturation}" />
+            <TextBlock Grid.Row="2" Classes="label" FontSize="11" Text="{DynamicResource D.Lightness}" />
+            <controls:DyeSlider x:Name="BrightnessSlider" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="100"
+                                Value="{Binding Brightness}" Track="{Binding BrightnessTrack}"
+                                Knob="{DynamicResource PopupBrush}" KnobEdge="{DynamicResource InkBrush}"
+                                AutomationProperties.Name="{DynamicResource D.Lightness}" />
+            <TextBox x:Name="BrightnessInput" Grid.Row="2" Grid.Column="2" Classes="field num" Classes.invalid="{Binding BrightnessInvalid}"
+                     Text="{Binding BrightnessInput}" MaxLength="3" AutomationProperties.Name="{DynamicResource D.Lightness}" />
+          </Grid>
+          <Button x:Name="PickerConfirm" Classes="primary compact" HorizontalAlignment="Right" Content="{DynamicResource D.Confirm}"
+                  Command="{Binding $parent[controls:ColorPickerLayer].CloseCommand}" />
+        </StackPanel>
+      </ScrollViewer>
+      </DockPanel>
+    </Border>
+    </controls:AnchoredLayer>
+  </Panel>
+</UserControl>

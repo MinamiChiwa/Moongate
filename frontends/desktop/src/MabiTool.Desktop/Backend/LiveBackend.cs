@@ -11,14 +11,14 @@ namespace MabiTool.Desktop.Backend;
 
 /// <summary>
 /// 通过本机发现文件连接后端，用生成的 SDK 读取状态并转发意图。
-/// 后端事件按主题标记要读的对象（同一检查点的事件合并成一轮），界面各处报告可见性，没有可见使用者的数据不读；
+/// 后端事件按主题标记要读的对象（到达即读，每秒至多 60 轮，间隔内的事件并入下一轮），界面各处报告可见性，没有可见使用者的数据不读；
 /// 倒计时由界面按本机时钟递减；
 /// 连接中断后保留最后状态并标记为未连接，每两秒重试，重连后不重放任何旧操作。
 /// </summary>
 public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
 {
     private static readonly EventStreamOptions DesktopEvents = new(
-        ["combat.summary.changed", "combat.effects.changed", "combat.encounter.closed", "combat.observation.degraded", "combat.measurement.changed",
+        ["combat.live.changed", "combat.summary.changed", "combat.effects.changed", "combat.encounter.closed", "combat.observation.degraded", "combat.measurement.changed",
             "shortcut.triggered", "inventory.snapshot.changed", "inventory.catalog.changed", "game.observation.changed",
             "room.session.changed", "room.server.changed", "room.preferences.changed"],
         [], null);
@@ -29,10 +29,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         IReadOnlyList<CombatEffectCoverage> Coverage, bool Simulation,
         IReadOnlyList<CombatDamageEvent>? FirstAttacks = null, CombatRangeSummary? Range = null, string? RangeProblem = null,
         CombatMeasurementState? Measurement = null, long MeasurementAt = 0, OperationSnapshot? Starting = null, string? EffectProblem = null,
-        string? RangeKey = null, long EffectsAt = 0, long TargetEffectsAt = 0);
-
-    /// <summary>两轮事件驱动的战斗读取的最小间隔；倒计时由界面按本机时钟递减，不依赖读取频率。</summary>
-    internal static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMilliseconds(250);
+        string? RangeKey = null, long EffectsAt = 0, long TargetEffectsAt = 0, CombatEntityEffects? AimEffects = null, long AimEffectsAt = 0);
 
     /// <summary>战斗意图等待后端回应的上限；超时后在活动胶囊写明，不在界面上无限等待。</summary>
     internal static readonly TimeSpan CombatRequestTimeout = TimeSpan.FromSeconds(15);
@@ -42,6 +39,9 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
     private readonly DesktopShortcutNotifications shortcutNotifications;
     private readonly CancellationTokenSource lifetime = new();
     private readonly SemaphoreSlim wake = new(0, 1);
+    /// <summary>战斗循环的唤醒信号与帧间隔计时器（高精度，只作用于本进程）。</summary>
+    private readonly SemaphoreSlim combatWake = new(0, 1);
+    private readonly ModuleSdk.PreciseTimer combatTimer = new();
     private readonly Lock gate = new();
     private State state = new(false, null, null, null, null, null, [], null, [], false);
     /// <summary>本次握手得到的宿主实际监听地址（发现文件里的地址，可能是系统分配的端口）；未连接时为空。</summary>
@@ -238,7 +238,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         var data = CombatMapper.Map(new(current.Connected, current.Binding?.Binding is not null, current.Workspace,
             current.History, current.TargetEffects, current.EffectProblem, current.Coverage, current.FirstAttacks, scope, range,
             pending ? null : current.Range, pending ? null : current.RangeProblem, current.Measurement, current.MeasurementAt, current.EffectsAt,
-            current.TargetEffectsAt, HealthNotice()))
+            current.TargetEffectsAt, HealthNotice(), current.AimEffects, current.AimEffectsAt))
             with { SelectedScope = scope, SelectedTarget = range, Pending = pending };
         // 开始观测已受理、正在等待识别角色时可取消；失败时写明原因。
         var capture = current.Connected ? GetCaptureStatus() : null;
@@ -377,6 +377,8 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         client?.Dispose();
         lifetime.Dispose();
         wake.Dispose();
+        combatWake.Dispose();
+        combatTimer.Dispose();
     }
 
     // 拆段被拒绝的两种常见原因给出短句，其余错误码照常原样显示。
@@ -449,17 +451,19 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                 // 新连接：全部数据重读一次，历史、范围与效果的缓存作废。
                 lock (gate)
                 {
-                    due = Due.All; urgent = true; pendingSince = 0;
+                    due = Due.All; urgent = true;
                     lastStatusRead = lastSnapshotRead = lastCaptureRead = lastRoomRead = lastColorRunRead = lastSurfacesRead = lastAutoRead = 0;
-                    historyPage = null; rangeRead = null; coverageRead = null; targetRead = default; measurementState = null;
+                    historyPage = null; rangeRead = null; coverageRead = null; targetRead = default; aimRead = default; measurementState = null;
                     pagesDue = true; systemInfo = null; iconCatalogDue = true;
                 }
                 var events = ListenAsync(api, backendEpoch, session.Token);
+                // 战斗数据由独立的循环读取，不排在图标、合奏、曲长等读取之后。
+                var combat = RunCombatAsync(api, simulation, events, session.Token);
                 try
                 {
-                    while (!events.IsCompleted)
+                    while (!events.IsCompleted && !combat.IsCompleted)
                     {
-                        await RefreshAsync(api, simulation, token);
+                        await RefreshStatusAsync(api, simulation, token);
                         await RefreshClientIconsAsync(api, token);
                         await RefreshColorRunAsync(api, token);
                         await RefreshPagesAsync(api, token);
@@ -470,12 +474,16 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                         // 每类数据按自己的时机到期（事件、用户操作、可见性变化或例行间隔），没有到期的工作时一直等待。
                         await WaitForWorkAsync(token);
                     }
+                    // 战斗读取失败或被取消（连接中断、后端错误、请求超时）与主循环一样结束本次连接。
+                    if (combat.IsFaulted || combat.IsCanceled) await combat;
                     await events;
                 }
                 finally
                 {
                     await session.CancelAsync();
                     try { await events; }
+                    catch (Exception error) when (error is not OutOfMemoryException) { }
+                    try { await combat; }
                     catch (Exception error) when (error is not OutOfMemoryException) { }
                 }
             }
@@ -528,15 +536,25 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         finally
         {
             shortcutNotifications.Disconnect(generation);
-            // 事件流结束：唤醒主循环，让它发现连接已断并重新握手。
+            // 事件流结束：唤醒主循环与战斗循环，让它们发现连接已断并重新握手。
             Signal();
+            SignalCombat();
         }
     }
 
-    private async Task RefreshAsync(MabiToolClient api, bool simulation, CancellationToken token)
+    /// <summary>战斗循环：有战斗视图可见时按到期的战斗工作读取，事件流结束或读取失败时结束（失败时主循环随之结束本次连接）。</summary>
+    private async Task RunCombatAsync(MabiToolClient api, bool simulation, Task events, CancellationToken token)
     {
-        await RefreshStatusAsync(api, simulation, token);
-        await RefreshCombatAsync(api, simulation, token);
+        try
+        {
+            while (!events.IsCompleted)
+            {
+                await RefreshCombatAsync(api, simulation, token);
+                ReportDisplayLatency(api);
+                await WaitForCombatAsync(events, token);
+            }
+        }
+        finally { Signal(); }
     }
 
     private string? statusSignature;
@@ -596,19 +614,23 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
     {
         Due flags;
         State current;
-        bool visible, shown;
+        bool visible, shown, secondary;
         lock (gate)
         {
             if (!CombatWanted) return;
             var now = Now;
             var fallback = Elapsed(lastSnapshotRead, SnapshotInterval);
             var ready = (due & Due.Combat) != 0 && CombatReadyAt() <= now;
-            if (!ready && !fallback && (followUpAt == 0 || followUpAt > now)) return;
+            var followUp = followUpAt != 0 && followUpAt <= now;
+            if (!ready && !fallback && !followUp) return;
             flags = due & Due.Combat;
             if (fallback) flags |= Due.Snapshot;
             if (combatPageVisible && Elapsed(lastAutoRead, SlowInterval)) flags |= Due.Auto;
+            // 只为最新捕获事件而来的一轮（只读快照，非用户操作）不重读按时间线重新统计的范围、明细与首击，至多每 SecondaryInterval 一次。
+            secondary = urgent || followUp || (flags & ~(Due.Snapshot | Due.Measurement | Due.Auto)) != 0 || Elapsed(lastSecondaryRead, SecondaryInterval);
+            if (secondary) lastSecondaryRead = now;
             due &= ~Due.Combat;
-            urgent = false; pendingSince = 0; followUpAt = 0; lastCombatRound = now;
+            urgent = false; followUpAt = 0; lastCombatRound = now;
             if ((flags & Due.Snapshot) != 0) lastSnapshotRead = now;
             if ((flags & Due.Auto) != 0) lastAutoRead = now;
             visible = combatPageVisible; shown = combatPageShown; combatPageShown = false;
@@ -643,10 +665,9 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         var page = historyPage!;
         var history = page.Items;
 
-        var coverage = await CoverageAsync(api, workspace, token);
         CombatMeasurementState? measurement; long measurementTime;
         lock (gate) { measurement = measurementState; measurementTime = measurementAt; }
-        var (range, rangeProblem, chosen) = await RangeAsync(api, workspace, page, measurement, token);
+        var (range, rangeProblem, chosen) = await RangeAsync(api, workspace, page, measurement, token, secondary);
         // 怪物效果：按页面同一规则（所选目标，否则正在攻击或排序第一个仍在当前观测中的怪物）取效果目标，只查询当前观测里的实体；
         // 同一目标只在效果事件列出它、或目标换了时重读。
         var effectTarget = CombatMapper.EffectTargetId(workspace, chosen.Scope, chosen.Target, range);
@@ -661,9 +682,40 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
             target = (selected.Id, effects, problem, Now);
         }
         lock (gate) targetRead = target;
-        // 首击只在 DPS检测页显示：页面切走后不读取它的时间线。
-        var firstAttacks = visible ? await FirstAttacksAsync(api, workspace, range, history, chosen, token) : null;
-        await RefreshDetailAsync(api, workspace, history, range, rangeProblem, chosen.Key, token);
+        // 收藏浮窗的目标项取当前攻击目标（快照 currentTarget）的效果：与效果目标是同一实体时沿用，否则按同一规则另读。
+        var aimId = workspace?.CurrentTarget?.EntityId is { } aimEntity && workspace.Entities.Any(entity => entity.Id == aimEntity) ? aimEntity : null;
+        var aimEffects = aimRead;
+        if (aimId is null) aimEffects = default;
+        else if (aimId == target.Id) aimEffects = target;
+        else if (aimEffects.Id != aimId || (flags & Due.TargetEffects) != 0 || aimEffects.Effects is null && aimEffects.Problem is null)
+        {
+            CombatEntityEffects? effects = null; string? problem = null;
+            try { effects = await api.GetCombatEntityEffectsAsync(aimId, token); }
+            catch (MabiToolApiException error) { problem = error.Problem?.Code ?? $"http.{error.Status}"; }
+            aimEffects = (aimId, effects, problem, Now);
+        }
+        lock (gate) aimRead = aimEffects;
+        // 换了范围或目标后的这一轮：范围结果与目标效果一到就先交给界面，覆盖率、首击与明细随后读到再更新。它们按时间线分页查询，
+        // 数据多时一轮要数百毫秒，切换不等它们；首击属于旧选择，先清空（显示未读取）。
+        if (current.RangeKey != chosen.Key)
+        {
+            lock (gate)
+            {
+                state = state with { Workspace = workspace, History = history, TargetEffects = target.Effects, Simulation = simulation,
+                    FirstAttacks = null, Range = range, RangeProblem = rangeProblem, Measurement = measurement, MeasurementAt = measurementTime,
+                    EffectProblem = target.Problem, RangeKey = chosen.Key, EffectsAt = selfEffectsAt, TargetEffectsAt = target.At,
+                    AimEffects = aimEffects.Effects, AimEffectsAt = aimEffects.At };
+                AdoptLive(workspace, simulation);
+            }
+            Notify();
+        }
+        var coverage = await CoverageAsync(api, workspace, token);
+        // 首击只在 DPS检测页显示：页面切走后不读取它的时间线。只为最新捕获事件而来的一轮沿用上次的首击与明细，间隔到时补读。
+        var firstAttacks = !visible ? null : secondary || current.RangeKey != chosen.Key ? await FirstAttacksAsync(api, workspace, range, history, chosen, token)
+            : current.FirstAttacks;
+        if (secondary) await RefreshDetailAsync(api, workspace, history, range, rangeProblem, chosen.Key, token);
+        else if (visible || combatDetailOpen || chosen.Scope != "segment" || chosen.Target is not null)
+            lock (gate) { var at = lastSecondaryRead + Span(SecondaryInterval); followUpAt = followUpAt == 0 ? at : Math.Min(followUpAt, at); }
 
         string? resource;
         lock (gate) resource = combatResourceRevision;
@@ -674,7 +726,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         var next = string.Join('|', resource, workspace?.Revision, summary?.DurationMs, summary?.EncounterDps, summary?.RollingDps,
             aim?.EntityId, aim?.Health?.Current, aim?.Health?.Maximum, aim?.Health?.State, aim?.Health?.Reason, aim?.Health?.Stale, aim?.Dead,
             aim?.IsBoss, aim?.RedirectedFrom, aim?.ResolvedName?.State, aim?.ResolvedName?.Text, aim?.ResolvedName?.Reason,
-            page.Revision, target.Effects?.Revision, target.Id, target.Problem, coverage.Count,
+            page.Revision, target.Effects?.Revision, target.Id, target.Problem, aimEffects.Effects?.Revision, aimEffects.Id, coverage.Count,
             string.Join(',', coverage.Select(item => item.Ratio)), firstAttacks?.Count, firstAttacks?.FirstOrDefault()?.MonotonicMs, range?.Result.Revision,
             range?.Result.Summary.AttributedDamage, range?.TargetId, rangeProblem, chosen.Key, measurement?.Revision, measurement?.Phase,
             measurement?.Damage, measurement?.CurrentDps, measurement?.Available, measurement?.UnavailableReason,
@@ -685,9 +737,13 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
             changed = shown || next != combatSignature;
             combatSignature = next;
             if (changed)
+            {
                 state = state with { Workspace = workspace, History = history, TargetEffects = target.Effects, Coverage = coverage, Simulation = simulation,
                     FirstAttacks = firstAttacks, Range = range, RangeProblem = rangeProblem, Measurement = measurement, MeasurementAt = measurementTime,
-                    EffectProblem = target.Problem, RangeKey = chosen.Key, EffectsAt = selfEffectsAt, TargetEffectsAt = target.At };
+                    EffectProblem = target.Problem, RangeKey = chosen.Key, EffectsAt = selfEffectsAt, TargetEffectsAt = target.At,
+                    AimEffects = aimEffects.Effects, AimEffectsAt = aimEffects.At };
+                AdoptLive(workspace, simulation);
+            }
         }
         if (changed) Notify();
     }
@@ -749,6 +805,13 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         catch (ObjectDisposedException) { }
     }
 
+    private void SignalCombat()
+    {
+        try { combatWake.Release(); }
+        catch (SemaphoreFullException) { }
+        catch (ObjectDisposedException) { }
+    }
+
     // 界面线程上最多排着一次 Changed：后端事件密集时（观测与定时测量中每秒可达十余次）合并成一次整页重读，
     // 界面线程不会被排队的通知占满而失去响应。标记在执行前清除，执行期间到达的变化会再排一次，不丢更新。
     private int notifyQueued;
@@ -760,6 +823,8 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
         {
             Volatile.Write(ref notifyQueued, 0);
             Changed?.Invoke(this, EventArgs.Empty);
+            // 界面已按这次通知重读并显示：记下显示的战斗数据距抓包时刻的延迟。
+            RecordDisplayed();
         });
     }
 

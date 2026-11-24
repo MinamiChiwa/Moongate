@@ -13,6 +13,11 @@ public sealed partial class TwCombatObserver
     private const int MaximumMemo = 256, MaximumLocalTargets = 512;
     /// <summary>只有 HP 变化时的实体快照发布间隔下限：高频 HP 更新按实体合并，不为每次更新发布一帧。</summary>
     private const double HealthPublishMs = 200;
+    /// <summary>
+    /// 当前目标候选（本机命中过的目标、本机主目标、首领）的血量、最大值、死亡或离场变化后，或本机主目标改变后，距上次发布满该间隔即发布实体快照帧
+    /// （与界面每秒至多 60 次的刷新上限相当）；其他自动体只有 HP 变化时仍按 <see cref="HealthPublishMs"/>。
+    /// </summary>
+    private const double HealthUrgentMs = 16;
     /// <summary>离场实体以 inScope=false 发布后，从实体表移除前的保留时长。</summary>
     private const double DepartedRetentionMs = 3000;
 
@@ -38,7 +43,7 @@ public sealed partial class TwCombatObserver
     private readonly TwHealthCipher cipher = new();
     private (byte[] Key, byte[] Iv)? broadcast;
     private (ulong? Target, double Mono, DateTimeOffset At)? mainTarget;
-    private bool healthDirty;
+    private bool healthDirty, healthUrgent;
     private ulong carryRevision;
     /// <summary>
     /// 实体 HP 的随帧上报：只有本机命中过的目标、本机主目标与首领（当前目标规则用到的候选）带 health，且只在相对上次上报有变化后的
@@ -116,7 +121,18 @@ public sealed partial class TwCombatObserver
     /// 按自动体状态补全实体快照的 HP、首领、死亡、类型与表 ID；v4 以前的兴趣不输出这些字段（旧宿主按未知成员拒绝）。
     /// 布尔字段只在为真时输出：实体快照随每帧发送，省去常见的假值。
     /// </summary>
-    private CombatEntityObservation Describe(ulong id, CombatEntityObservation entity)
+    private CombatEntityObservation Describe(ulong id, CombatEntityObservation entity) => Owned(id, DescribeActor(id, entity));
+
+    /// <summary>出现帧登记了所有者的自动体：角色为 Owned，所有者为同一代次的玩家实体，标为已确认；不随 v4 血量兴趣变化。</summary>
+    private CombatEntityObservation Owned(ulong id, CombatEntityObservation entity)
+    {
+        if (!owners.TryGetValue(id, out var owner) || entity.Role.KnownValue is not (CombatEntityRole.Unknown or CombatEntityRole.Owned)) return entity;
+        var key = Key(owner);
+        return entity.Role.KnownValue == CombatEntityRole.Owned && entity.OwnerKey == key && entity.OwnerConfirmed
+            ? entity : entity with { Role = CombatEntityRole.Owned, OwnerKey = key, OwnerConfirmed = true };
+    }
+
+    private CombatEntityObservation DescribeActor(ulong id, CombatEntityObservation entity)
     {
         if (!interest.Health || !actors.TryGetValue(id, out var actor))
             return entity.Health is null && entity.IsBoss is null && entity.Dead is null && entity.ActorType is null && entity.SheetId is null
@@ -190,7 +206,7 @@ public sealed partial class TwCombatObserver
         }
         else if (update.PlainValue is { } plain && Valid(actor, plain)) Set(actor, plain);
         else actor.Failure = HealthUndecryptable;
-        healthDirty = true;
+        healthDirty = true; healthUrgent |= HealthCandidate(update.Entity);
         Refresh(update.Entity);
     }
 
@@ -205,7 +221,7 @@ public sealed partial class TwCombatObserver
         TwCombatWire.RequireHealthMaxCipher(body, encoding);
         if (!interest.Health || broadcast is not { } key || !cipher.TryHealthMax(key.Key, key.Iv, body, out var entity, out var value) || value <= 0 ||
             !actors.TryGetValue(entity, out var actor)) return;
-        actor.Max = value; carryRevision++; healthDirty = true;
+        actor.Max = value; carryRevision++; healthDirty = true; healthUrgent |= HealthCandidate(entity);
         Refresh(entity);
     }
 
@@ -220,7 +236,7 @@ public sealed partial class TwCombatObserver
         }
         if (actor.Dead == update.Dead) return;
         actor.Dead = update.Dead; carryRevision++;
-        Refresh(update.Entity); healthDirty = true;
+        Refresh(update.Entity); healthDirty = true; healthUrgent |= HealthCandidate(update.Entity);
     }
 
     /// <summary>对象离场 20272：实体以 inScope=false 发布一次，保留 <see cref="DepartedRetentionMs"/> 后移除；身份备忘与延续记录作废。</summary>
@@ -230,7 +246,7 @@ public sealed partial class TwCombatObserver
         memo.Remove(entity);
         if (!entities.TryGetValue(entity, out var known)) { actors.Remove(entity); return; }
         entities[entity] = known with { InScope = false };
-        departed[entity] = inputMs; carryRevision++; healthDirty = true;
+        departed[entity] = inputMs; carryRevision++; healthDirty = true; healthUrgent |= HealthCandidate(entity);
         nextPurgeMs = Math.Min(nextPurgeMs, inputMs + DepartedRetentionMs);
     }
 
@@ -245,12 +261,12 @@ public sealed partial class TwCombatObserver
             if (now - at < DepartedRetentionMs) { nextPurgeMs = Math.Min(nextPurgeMs, at + DepartedRetentionMs); continue; }
             departed.Remove(id);
             if (entities.TryGetValue(id, out var entity) && entity.InScope) continue;
-            entities.Remove(id); lastSeen.Remove(id); actors.Remove(id);
+            entities.Remove(id); lastSeen.Remove(id); actors.Remove(id); owners.Remove(id);
             foreach (var key in activeBuffs.Keys.Where(key => key.Owner == id).ToArray()) activeBuffs.Remove(key);
             healthDirty = true;
         }
     }
-    /// <summary>最早一个离场实体到期移除的时点；离场、死亡与主目标变化随下一帧（至多 200 ms）发布，不单独触发快照帧。</summary>
+    /// <summary>最早一个离场实体到期移除的时点；离场、死亡与主目标变化随下一次推进或下一帧发布（当前目标候选距上次发布满 16 ms，其余至多 200 ms）。</summary>
     private double nextPurgeMs = double.PositiveInfinity;
 
     private void OnMainTarget(TwMainTargetUpdate update)
@@ -259,7 +275,7 @@ public sealed partial class TwCombatObserver
         ulong? target = update.Target == -1 ? null : (ulong)update.Target;
         if (target is { } id) Observe(id);
         mainTarget = (target, inputMs, clockUtc);
-        healthDirty = true;
+        healthDirty = true; healthUrgent = true;
     }
 
     private void OnBroadcastKey(ReadOnlySpan<byte> body, byte encoding)
@@ -365,7 +381,7 @@ public sealed partial class TwCombatObserver
 
     private void ClearActors(bool keepBroadcast)
     {
-        actors.Clear(); memo.Clear(); memoOrder.Clear(); departed.Clear(); nextPurgeMs = double.PositiveInfinity; localTargets.Clear(); mainTarget = null; healthDirty = false;
+        actors.Clear(); memo.Clear(); memoOrder.Clear(); departed.Clear(); nextPurgeMs = double.PositiveInfinity; localTargets.Clear(); mainTarget = null; healthDirty = false; healthUrgent = false;
         reported.Clear(); stripped.Clear(); keyframeMs = double.NegativeInfinity;
         if (!keepBroadcast) broadcast = null;
         carryRevision++;

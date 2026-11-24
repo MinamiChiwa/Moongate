@@ -9,15 +9,19 @@ namespace MabiTool.Providers.TwObservation.ItemCatalog;
 /// EffectPolarities 为 Buff 表 AffectType 列：buff（增益）、debuff（减益）、none（表里标为无）；列结构不符时为空，效果极性按未知处理。
 /// Actors 为怪物以外的自动体名称（键为种类 npc、npc-companion、pet、summoned-automaton、gimmick、memorial-saga-minion）；
 /// EmptyMonsters 为 Monster 表中名称为空或只有空格的行；BossGroupNames 为这些空名怪物经 Raid → RaidGroup、BattleZone → BattleZoneGroup 关联到的首领组名。
+/// EffectDescriptions 为 Buff 表第 3 列 DescriptionText（去掉富文本标记，至多 <see cref="ClientCombatNameCatalog.MaximumDescriptionChars"/> 字）；
+/// 列结构不符时为空，名称照常可用。
 /// </summary>
 public sealed record CombatNameTables(string Id, IReadOnlyDictionary<uint, string> Monsters, IReadOnlyDictionary<uint, string> Skills,
     IReadOnlyDictionary<uint, string> Effects, IReadOnlyDictionary<string, string> Unsupported,
     IReadOnlyDictionary<uint, string>? EffectPolarities = null,
     IReadOnlyDictionary<string, IReadOnlyDictionary<uint, string>>? Actors = null,
-    IReadOnlySet<uint>? EmptyMonsters = null, IReadOnlyDictionary<uint, string>? BossGroupNames = null)
+    IReadOnlySet<uint>? EmptyMonsters = null, IReadOnlyDictionary<uint, string>? BossGroupNames = null,
+    IReadOnlyDictionary<uint, string>? EffectDescriptions = null)
 {
     /// <summary>名称常驻内存的估算：每条按 48 字节加 UTF-16 文本计。</summary>
     public long Bytes => new[] { Monsters, Skills, Effects }.Concat(Actors?.Values ?? []).Append(BossGroupNames ?? new Dictionary<uint, string>())
+        .Append(EffectDescriptions ?? new Dictionary<uint, string>())
         .Sum(table => table.Sum(pair => 48L + pair.Value.Length * 2L)) + (EffectPolarities?.Count ?? 0) * 24L + (EmptyMonsters?.Count ?? 0) * 16L;
 }
 
@@ -28,7 +32,7 @@ public sealed record CombatNameTables(string Id, IReadOnlyDictionary<uint, strin
 /// </summary>
 public static partial class ClientCombatNameCatalog
 {
-    public const int MaximumEntriesPerTable = 100000, MaximumNameChars = 80;
+    public const int MaximumEntriesPerTable = 100000, MaximumNameChars = 80, MaximumDescriptionChars = 400;
     private const string MetaPath = "Sheetdata_Client/client.sheetmeta.bin";
     private const string TextPath = "Sheetdata_Client/client.sheettext.bin";
     private const string DataPath = "Sheetdata_Client/client.sheetdata.bin";
@@ -197,7 +201,15 @@ public static partial class ClientCombatNameCatalog
         if (!unsupported.Remove("effect-polarity", out _))
             foreach (var (key, value) in affect)
                 if (value switch { "Buff" => "buff", "Debuff" => "debuff", "None" => "none", _ => null } is { } polarity) polarities[key] = polarity;
-        return new(id, monsters, skills, effects, unsupported, polarities, actors, emptyMonsters, bossGroups);
+        // 效果描述同样单独读取：列结构不符时只有描述为空。
+        var descriptions = new Dictionary<uint, string>();
+        Rows("effect-description", BuffSheet, BuffPolarityColumns.Take(4).ToArray(), (key, row) =>
+        {
+            row.Var(); row.Var();
+            if (Description(ClientNameTable.ReadString(text, checked((int)row.Var()))) is { } value) descriptions.TryAdd(key, value);
+        });
+        if (unsupported.Remove("effect-description")) descriptions.Clear();
+        return new(id, monsters, skills, effects, unsupported, polarities, actors, emptyMonsters, bossGroups, descriptions);
     }
     private static void Skip(ClientDataReader row, string codec)
     {
@@ -223,5 +235,32 @@ public static partial class ClientCombatNameCatalog
         var value = ColorTag().Replace(raw, string.Empty).Trim();
         return value.Length is 0 or > MaximumNameChars || value.Any(char.IsControl) ? null : value;
     }
+    /// <summary>
+    /// Buff 表里开发用的占位名称（2026-11-22 对 tw-20261118 客户端 4,551 个有名称的行离线核对）：没有任何文字（如“—”）、
+    /// 含下划线的开发命名（如“假人_增益(顯示X)”“集中_視覺專用”，63 行），或以“不顯示”“測試”“拍攝用”“未標記”“假人”开头、含“임시”（临时）的名称。
+    /// 这些行不列入客户端 Buff 目录；名称解析不受影响，实际观测到时照常显示原文。
+    /// </summary>
+    public static bool IsPlaceholderName(string name) =>
+        !name.Any(char.IsLetter) || name.Contains('_') || name.Contains("임시", StringComparison.Ordinal)
+        || PlaceholderPrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal));
+    private static readonly string[] PlaceholderPrefixes = ["不顯示", "測試", "拍攝用", "未標記", "假人"];
+
+    /// <summary>
+    /// 描述去掉富文本标记（color、b、i、size 等），客户端运行时才代入的数值模板（<c>$#MagicEffect@…{0}[%]$</c>）换成“？”（带 [%] 的为“？%”），
+    /// 保留换行，其余控制字符与连续空白合并为一个空格；空描述视为没有，超过 <see cref="MaximumDescriptionChars"/> 字时截断并以“…”结尾。
+    /// </summary>
+    internal static string? Description(string raw)
+    {
+        raw = ValueTemplate().Replace(raw, match => match.Value.Contains("[%]", StringComparison.Ordinal) ? "？%" : "？");
+        var lines = RichTag().Replace(raw.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n'), string.Empty)
+            .Split('\n').Select(line => Spaces().Replace(new string(line.Select(c => char.IsControl(c) ? ' ' : c).ToArray()), " ").Trim())
+            .Where(line => line.Length > 0);
+        var value = string.Join('\n', lines);
+        if (value.Length == 0) return null;
+        return value.Length <= MaximumDescriptionChars ? value : value[..(MaximumDescriptionChars - 1)].TrimEnd() + "…";
+    }
     [GeneratedRegex(@"</?color(?:=#[0-9a-fA-F]{6,8})?>", RegexOptions.CultureInvariant)] private static partial Regex ColorTag();
+    [GeneratedRegex(@"\$#[^$\r\n]{1,256}\$", RegexOptions.CultureInvariant)] private static partial Regex ValueTemplate();
+    [GeneratedRegex(@"</?(?:color|b|i|u|s|size|sup|sub|mark|link|style)(?:=[^>]{0,64})?>", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)] private static partial Regex RichTag();
+    [GeneratedRegex(@"[\p{Zs}\t]{2,}",RegexOptions.CultureInvariant)] private static partial Regex Spaces();
 }

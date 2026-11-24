@@ -7,8 +7,8 @@ using Xunit;
 namespace MabiTool.Desktop.Tests;
 
 /// <summary>
-/// 后端适配层按主题、修订与可见性读取：摘要事件只读快照，修订未变不请求不通知，不可见不读、重新可见补读，
-/// 用户操作立即读取，同一检查点的事件合并成一轮且显示最后状态。替身后端见 <see cref="CombatStubHost"/>。
+/// 后端适配层按主题、修订与可见性读取：摘要与最新捕获事件只读快照，修订未变不请求不通知，不可见不读、重新可见补读，
+/// 用户操作立即读取，密集事件每秒至多读 60 轮且显示最后状态，最新捕获事件到达即读并记下显示延迟。替身后端见 <see cref="CombatStubHost"/>。
 /// </summary>
 public sealed class DesktopRefreshTests
 {
@@ -179,6 +179,42 @@ public sealed class DesktopRefreshTests
         Assert.InRange(stub.Count(Snapshot), 1, 2);
     }
 
+    // 快照随最新捕获先到、宿主检查点稍后才写入：当前分段的范围查询先回 404。查不到不能记成“不存在”，
+    // 否则这一段剩下的时间所选目标都不再查询，页面一直停在没有结果。
+    [AvaloniaFact]
+    public async Task TargetInTheCurrentSegmentIsShownOnceTheCheckpointLands()
+    {
+        var (backend, stub, _) = await ConnectAsync();
+        await using var _ = backend;
+        stub.RangeMissingReplies = 3;
+        await backend.SendIntentAsync("combat.target", "ent-m1", TestContext.Current.CancellationToken);
+        await Until(() => backend.ShownRange is { HasRange: true, Problem: null } && backend.GetCombat() is { Pending: false, SelectedTarget: "ent-m1" },
+            "检查点写入后显示所选目标的范围结果", 3);
+        Assert.Equal(0, stub.RangeMissingReplies);
+    }
+
+    // 换目标的这一轮：范围结果一到就交给界面，不等覆盖率与首击的时间线查询（数据多时每次数百毫秒）。
+    [AvaloniaFact]
+    public async Task SwitchingTargetShowsTheRangeWithoutWaitingForTimelineReads()
+    {
+        var (backend, stub, _) = await ConnectAsync();
+        await using var _ = backend;
+        backend.SetCombatPageVisible(true);
+        // 覆盖率同一分段至多每 2 秒读一次：等过这一间隔，换目标的同时分段有新伤害，这一轮要重读覆盖率（时间线查询 1.5 秒）。
+        await Task.Delay(2300, TestContext.Current.CancellationToken);
+        await Until(() => stub.TimelineInFlight == 0, "没有进行中的时间线查询");
+        stub.TimelineDelay = TimeSpan.FromMilliseconds(1500);
+        var timelines = stub.Count("POST /api/v1/combat/encounters/{id}/timeline/query");
+        var clock = Stopwatch.StartNew();
+        stub.Checkpoint(true);
+        await backend.SendIntentAsync("combat.target", "ent-m1", TestContext.Current.CancellationToken);
+        await Until(() => backend.ShownRange is { HasRange: true } && backend.GetCombat() is { Pending: false, SelectedTarget: "ent-m1" }, "显示所选目标的范围结果");
+        Assert.True(clock.Elapsed < TimeSpan.FromMilliseconds(700), $"换目标后 {clock.Elapsed.TotalMilliseconds:0} ms 才显示");
+        // 覆盖率随后读到再更新，选择不变。
+        await Until(() => stub.Count("POST /api/v1/combat/encounters/{id}/timeline/query") > timelines && stub.TimelineInFlight == 0, "随后读取时间线");
+        Assert.Equal("ent-m1", backend.GetCombat().SelectedTarget);
+    }
+
     [AvaloniaFact]
     public async Task UserSelectionIsReadWithoutWaitingForTheCoalescingWindow()
     {
@@ -188,25 +224,56 @@ public sealed class DesktopRefreshTests
         var clock = Stopwatch.StartNew();
         await backend.SendIntentAsync("combat.scope", "observation", TestContext.Current.CancellationToken);
         await Until(() => stub.Count("POST /api/v1/combat/ranges/query") > 0, "切换范围后读取整场结果");
-        Assert.True(clock.Elapsed < LiveBackend.CoalesceWindow, $"用户操作后 {clock.Elapsed.TotalMilliseconds:0} ms 才读取");
+        Assert.True(clock.Elapsed < TimeSpan.FromMilliseconds(150), $"用户操作后 {clock.Elapsed.TotalMilliseconds:0} ms 才读取");
         await Until(() => backend.GetCombat() is { Pending: false, SelectedScope: "observation" }, "页面显示整场结果");
     }
 
     [AvaloniaFact]
-    public async Task EventsOfOneCheckpointAreCoalescedAndTheLastStateIsShown()
+    public async Task EventsWithinOneFrameAreMergedIntoTheNextRoundAndTheLastStateIsShown()
     {
         var (backend, stub, _) = await ConnectAsync();
         await using var _ = backend;
         stub.ResetCounters();
         var rounds = backend.CombatRounds;
-        // 两个检查点的摘要与效果事件（共四条）几乎同时到达。
+        // 两个检查点的摘要与效果事件（共四条）几乎同时到达：第一条立即读，读取进行中或帧间隔内到达的并入下一轮。
         stub.Checkpoint(true, CombatStubHost.LocalId);
         stub.Checkpoint(true, CombatStubHost.LocalId, stub.CurrentTargetId!);
         await Until(() => backend.ShownWorkspaceRevision == stub.WorkspaceRevision, "显示最后一个检查点的快照");
         await Task.Delay(400, TestContext.Current.CancellationToken);
-        Assert.Equal(1, backend.CombatRounds - rounds);
-        Assert.Equal(1, stub.Count(Snapshot));
+        Assert.InRange(backend.CombatRounds - rounds, 1, 2);
+        Assert.Equal(backend.CombatRounds - rounds, stub.Count(Snapshot));
         Assert.Equal(1, stub.Count("GET /api/v1/combat/entities/{id}/effects"));
         Assert.Equal(stub.WorkspaceRevision, backend.ShownWorkspaceRevision);
+    }
+
+    // 最新捕获事件：到达即读快照（不等合并窗口）；密集到达时每秒至多读 60 轮、不丢最后的状态；
+    // 界面显示后按事件的抓包时点记下显示延迟。
+    [AvaloniaFact]
+    public async Task LiveEventsAreReadAtOnceCappedAtSixtyRoundsAndRecordTheDisplayLatency()
+    {
+        var (backend, stub, _) = await ConnectAsync();
+        await using var _ = backend;
+        stub.ResetCounters();
+        var clock = Stopwatch.StartNew();
+        var revision = stub.Hit(live: true);
+        await Until(() => backend.ShownWorkspaceRevision == revision, "最新捕获事件后读到新快照");
+        Assert.True(clock.Elapsed < TimeSpan.FromMilliseconds(150), $"最新捕获事件后 {clock.Elapsed.TotalMilliseconds:0} ms 才显示");
+        await Until(() => backend.DisplayLatency() is { Samples: >= 1 }, "界面显示后记下显示延迟");
+        var latency = backend.DisplayLatency()!;
+        Assert.InRange(latency.MedianMs, 0, 1000);
+
+        // 400 ms 内 40 条最新捕获事件：读取轮数不超过帧上限，最后一条的修订一定显示。
+        stub.ResetCounters();
+        clock.Restart();
+        for (var i = 0; i < 40; i++)
+        {
+            revision = stub.Hit(live: true);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+        await Until(() => backend.ShownWorkspaceRevision == revision, "显示最后一条最新捕获事件的修订");
+        var reads = stub.Count(Snapshot);
+        Assert.True(reads <= clock.Elapsed.TotalMilliseconds / LiveBackend.FrameInterval.TotalMilliseconds + 2,
+            $"{clock.Elapsed.TotalMilliseconds:0} ms 内读了 {reads} 次快照");
+        Assert.True(reads >= 2, "密集事件期间仍按帧持续读取");
     }
 }
