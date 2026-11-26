@@ -25,8 +25,8 @@ internal static class PortableUpdateStartup
         Console.WriteLine($"更新已回退：数据库已恢复到安装 {journal.ToVersion} 之前的备份 {journal.BackupId}");
     }
 
-    /// <summary>宿主完成数据迁移并开始监听后调用。</summary>
-    internal static void ReportReady(PortableInstallation? installation)
+    /// <summary>宿主完成数据迁移并开始监听后调用；<paramref name="database"/> 用于事务结束后回收更早的更新前数据库备份。</summary>
+    internal static void ReportReady(PortableInstallation? installation, SqliteStore? database = null)
     {
         if (installation is null) return;
         var root = installation.ToolRoot;
@@ -47,6 +47,10 @@ internal static class PortableUpdateStartup
                 // 计划按版本回收：提交后不高于新版本而删除，回退或中止后仍高于旧版本而保留。
                 foreach (var directory in new[] { "previous", "staging", "transactions", "downloads" })
                     UpdatePaths.DeleteOwnedTree(Path.Combine(UpdateLayout.Root(root), directory));
+                // 更新前的数据库备份只留这次事务的一份，更早各次更新留下的删除（自动与手动备份有快照登记，不受影响）。
+                if (database is not null)
+                    try { database.PruneUpdateDatabaseBackupsAsync(journal.BackupId).GetAwaiter().GetResult(); }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException or StorageException or ObjectDisposedException or System.Data.Common.DbException) { }
                 File.Delete(UpdateLayout.Journal(root));
             }
         }

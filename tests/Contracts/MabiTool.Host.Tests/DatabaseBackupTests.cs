@@ -549,6 +549,39 @@ public sealed class DatabaseBackupTests
         command.ExecuteNonQuery();
     }
 
+    /// <summary>更新前的数据库备份只留指定的一份：数据快照登记的数据库备份与非备份标识命名的内容不动；快照登记表不存在时不删。</summary>
+    [Fact]
+    public async Task UpdateBackupPruningKeepsTheLatestUpdateAndRegisteredSnapshots()
+    {
+        using var workspace = new Workspace();
+        using var root = workspace.Open();
+        await using (var database = SqliteStore.Open(root, [DataBackupStore.Migration]))
+        {
+            DataSnapshotDescriptor snapshot; DatabaseBackupDescriptor older, latest;
+            using (var maintenance = database.Activities.TryEnterMaintenance("backup")!)
+            {
+                snapshot = await database.CreateDataSnapshotAsync(maintenance);
+                older = await database.CreateDatabaseBackupAsync(maintenance);
+                latest = await database.CreateDatabaseBackupAsync(maintenance);
+            }
+            var other = Directory.CreateDirectory(Path.Combine(root.Paths.Backups, "database", "notes"));
+            Assert.Equal(1, await database.PruneUpdateDatabaseBackupsAsync(latest.BackupId));
+            Assert.False(Directory.Exists(Path.GetDirectoryName(workspace.BackupFile(root, older))));
+            Assert.True(File.Exists(workspace.BackupFile(root, latest)));
+            Assert.True(File.Exists(workspace.BackupFile(root, snapshot.Database)));
+            Assert.True(other.Exists);
+        }
+
+        using var bare = new Workspace();
+        using var bareRoot = bare.Open();
+        await using var unregistered = SqliteStore.Open(bareRoot);
+        DatabaseBackupDescriptor kept;
+        using (var maintenance = unregistered.Activities.TryEnterMaintenance("backup")!)
+            kept = await unregistered.CreateDatabaseBackupAsync(maintenance);
+        Assert.Equal(0, await unregistered.PruneUpdateDatabaseBackupsAsync(Guid.NewGuid().ToString("N")));
+        Assert.True(File.Exists(bare.BackupFile(bareRoot, kept)));
+    }
+
     private sealed class Workspace : IDisposable
     {
         private readonly string directory;

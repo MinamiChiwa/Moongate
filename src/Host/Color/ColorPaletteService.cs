@@ -102,6 +102,8 @@ public sealed class ColorPaletteService : IHostedService, IAsyncDisposable
     {
         var runId = Guid.NewGuid().ToString("N");
         var folder = Path.Combine(options!.AssetRoot, runId);
+        // 渲染期间寻色开始时的运行目录回收不删这个目录；结束时下面的 finally 删除它。
+        using var inUse = ColorRunFolders.Use(folder);
         var entered = false;
         try
         {

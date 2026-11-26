@@ -17,6 +17,37 @@ namespace MabiTool.Host.Tests;
 [SupportedOSPlatform("windows")]
 public sealed class ColorPaletteTests
 {
+    /// <summary>染色运行目录只留创建时间最近的三个；集合图正在使用的目录、非运行标识命名的目录不删。</summary>
+    [Fact]
+    public void ColorRunFoldersKeepTheThreeMostRecentRuns()
+    {
+        var repository = new DirectoryInfo(AppContext.BaseDirectory);
+        while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "MabiTool.slnx"))) repository = repository.Parent;
+        var root = Path.Combine(repository!.FullName, "artifacts", "tmp", "color-runs-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var start = new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc);
+            var runs = Enumerable.Range(0, 5).Select(index =>
+            {
+                var folder = Directory.CreateDirectory(Path.Combine(root, Guid.NewGuid().ToString("N")));
+                File.WriteAllBytes(Path.Combine(folder.FullName, "frame.png"), [1, 2, 3]);
+                folder.CreationTimeUtc = start.AddHours(index);
+                return folder.FullName;
+            }).ToArray();
+            var palette = Directory.CreateDirectory(Path.Combine(root, Guid.NewGuid().ToString("N")));
+            palette.CreationTimeUtc = start.AddHours(-1);
+            var other = Directory.CreateDirectory(Path.Combine(root, "notes"));
+            using (ColorRunFolders.Use(palette.FullName))
+                Assert.Equal(2, ColorRunFolders.Prune(root));
+            Assert.Equal(runs[2..], runs.Where(Directory.Exists));
+            Assert.True(palette.Exists && other.Exists);
+            // 释放后的集合图目录是最旧的一个，下次回收时删除。
+            Assert.Equal(1, ColorRunFolders.Prune(root));
+            Assert.False(Directory.Exists(palette.FullName));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
     [Fact]
     public async Task HttpPaletteUsesWorkerCachesPngAssetsAndAllowsReadOnlyDownload()
     {

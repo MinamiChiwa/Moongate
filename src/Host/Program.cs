@@ -47,7 +47,7 @@ try
             await application.StartAsync();
             started = true;
             if (ownerRequested) _ = OwnerProcess.WatchAsync(owner, application.Lifetime);
-            PortableUpdateStartup.ReportReady(portable);
+            PortableUpdateStartup.ReportReady(portable, application.Services.GetService<MabiTool.Infrastructure.SqliteStore>());
             if (portFallback is not null)
             {
                 var actual = new Uri(application.Urls.Single()).Port;

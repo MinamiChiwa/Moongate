@@ -107,6 +107,8 @@ public sealed class ColorRunWorkerFactory(ColorWorkerOptions options, GameSessio
             interaction = new(Input, Leases, binding, lease, capture, TimeSpan.FromMinutes(5));
             port = new(interaction, run.Id, lease.FencingToken.ToString(), options.AssetRoot,
                 allowProcessRead && run.RulesSnapshot.Strategy.KnownValue == ColorStrategy.Precise);
+            // 本次运行目录已建好、是最新的一个：连同它只留最近三次。
+            ColorRunFolders.Prune(options.AssetRoot);
             var ownedPort = port;
             using var stopInput = ct.Register(ownedPort.AbortInput);
             rental = await Workers.RentAsync(run.Id, _ => ownedPort.AbortInput(), ct);

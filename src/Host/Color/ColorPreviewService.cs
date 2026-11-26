@@ -63,6 +63,8 @@ public sealed class ColorPreviewService(ColorWorkerOptions? options, ActivityBar
             throw new ArgumentException("颜色评价需要两个绝对路径：MABITOOL_COLOR_PYTHON 和 MABITOOL_COLOR_WORKER_DIRECTORY");
         var assets = paths.Resolve("temp", "color-previews");
         Directory.CreateDirectory(assets);
+        // 宿主启动时只留最近三次寻色的运行目录。
+        ColorRunFolders.Prune(assets);
         var options = new ColorWorkerOptions(python, directory, assets);
         int Budget(string name, int fallback, int minimum, int maximum)
         {

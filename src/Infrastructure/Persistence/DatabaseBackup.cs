@@ -37,6 +37,40 @@ public sealed partial class SqliteStore
         finally { databaseBackupGate.Release(); }
     }
 
+    /// <summary>
+    /// 应用内更新前的数据库备份只保留最近一次：删除 backups\database 下既不属于任何数据快照登记、也不是
+    /// <paramref name="keepBackupId"/> 的备份。快照登记表不存在时不删除；名称不是备份标识的内容与链接不动。返回删除的数量。
+    /// </summary>
+    public async Task<int> PruneUpdateDatabaseBackupsAsync(string keepBackupId, CancellationToken token = default)
+    {
+        await databaseBackupGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var root = paths.Resolve("backups", "database");
+            if (!Directory.Exists(root) || new DirectoryInfo(root).LinkTarget is not null ||
+                (long)ReadScalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='platform_data_backups'")! != 1) return 0;
+            var registered = Read(connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = "SELECT database_backup_id FROM platform_data_backups";
+                using var reader = command.ExecuteReader();
+                var result = new HashSet<string>(StringComparer.Ordinal);
+                while (reader.Read()) result.Add(reader.GetString(0));
+                return result;
+            });
+            var removed = 0;
+            foreach (var folder in new DirectoryInfo(root).EnumerateDirectories())
+            {
+                if (folder.Name == keepBackupId || registered.Contains(folder.Name) || folder.LinkTarget is not null ||
+                    !Workers.WorkerProtocol.IsId(folder.Name)) continue;
+                try { Updates.UpdatePaths.DeleteOwnedTree(folder.FullName); removed++; }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or Updates.UpdatePackageException) { }
+            }
+            return removed;
+        }
+        finally { databaseBackupGate.Release(); }
+    }
+
     /// <summary>调用方可用安装日志中固定的描述复验备份，拒绝只替换清单及数据库的情况。</summary>
     public async Task<DatabaseBackupDescriptor> VerifyDatabaseBackupAsync(string backupId,
         DatabaseBackupDescriptor? expected = null, CancellationToken token = default)

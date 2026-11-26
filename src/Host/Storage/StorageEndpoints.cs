@@ -141,6 +141,9 @@ internal sealed class StorageRetentionLifetime(StorageControlStore store, Activi
             catch (OperationException error) when (error.Code == "resource.busy") { }
             catch (Exception error) when (error is IOException or OperationException or ActivityBarrierException)
             { logger.LogWarning("{Code}", error is StorageException storage ? storage.Code : error is OperationException operation ? operation.Code : "storage.unavailable"); }
+            // 其他未预期的异常（例如临时目录条目超过扫描上限）只记警告，下一周期继续；不让后台服务退出而停掉宿主。
+            catch (Exception error) when (error is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+            { logger.LogWarning("storage.cleanupFailed {Type}", error.GetType().Name); }
         }
     }
 }
