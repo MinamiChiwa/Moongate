@@ -10,9 +10,17 @@ Moongate 以 [MIT 许可](LICENSE)发布。本文件列出 Moongate 移植或并
 | [MabiSync](https://github.com/MinamiChiwa/MabiSync) | MinamiChiwa（南千和） | MIT（作者授权） | 合奏房间协议、校时与调度、前台输入、台服音乐与合奏观测 |
 | [SyncCue](https://github.com/MinamiChiwa/SyncCue) | MinamiChiwa（南千和） | MIT（作者授权） | 房间生命周期与单调计时 |
 | [Color Studio](https://github.com/MinamiChiwa/mabinogi-mobile-color-studio) | MinamiChiwa（南千和） | MIT（作者授权） | 染色寻色引擎、截图与精准数据源、选色方案 |
-| MabiAgent | MinamiChiwa（南千和） | MIT（作者授权） | 背包读取与客户端道具名称关联、后台触控输入 |
+| MabiAgent | MinamiChiwa（南千和） | MIT（作者授权） | 背包读取与客户端道具名称关联、后台触控输入、原地专注钓鱼（状态机、进度条读数与模板匹配、PrintWindow 截图）、采集物的生活技能归类 |
 
 战斗统计（伤害、DPS、治疗、效果、破防）由本项目依据台服实际数据与客户端资料独立实现；mobilay 的功能形态作为界面参考。
+
+## 功能参考
+
+下列项目只作为功能行为的参考，Moongate 不包含其代码、文字、图片或视频资源。
+
+| 项目 | 许可 | 版权人 | 参考提交 | 参考内容 |
+|---|---|---|---|---|
+| [mofo-mabinogi-mobile-addon](https://github.com/sallyHADEV/mofo-mabinogi-mobile-addon) | MIT | Copyright (c) 2026 sallyHADEV | `dc6949259cea12de40d637f77acc8ca019796175` | 游戏命令行相关功能的呈现行为：任务列表排序与已完成未领奖、加工队列按设施分组与倒计时、附近合奏提示 |
 
 ## .NET 组件
 
@@ -50,6 +58,18 @@ Moongate 以 [MIT 许可](LICENSE)发布。本文件列出 Moongate 移植或并
 | 资源 | 许可 |
 |---|---|
 | Noto Sans SC、Noto Sans TC（子集化） | SIL Open Font License 1.1，原文见 `frontends/desktop/src/MabiTool.Desktop/Assets/Fonts/OFL.txt` |
+
+## 游戏命令行工具
+
+本仓库的 `packaging/game-cli/` 与每个发行包都附带 Mabinogi Mobile 游戏客户端自带的命令行工具 `MabinogiMobile_CLI.exe`（版本 0.1.0+b587207e73fabc7e8993d2e4d38c803f87e013f7，SHA-256 `913a4c38a0275ced1b5925a2d8e14dbefb0595c045d2590e5c04295ca8748cc8`），位于 `components/game-cli/`，由 Moongate 部署到用户绑定的台服游戏目录后调用。该文件的版权归 Nexon / devCAT 所有，不适用 Moongate 的 MIT 许可；Moongate 是非商业的爱好者项目，与 NEXON、devCAT 无关，按原样随仓库与发行包分发，未修改该文件。来源、版本、长度与哈希登记在 `packaging/game-cli/game-cli.lock.json`。
+
+## 钓鱼识别模板
+
+本仓库的 `workers/life-vision/Assets/templates/`（8 张）与 `tests/Providers/MabiTool.LifeVision.Tests/Fixtures/` 的测试夹具，以及每个发行包的 `components/life-vision/templates/`，是台服 Mabinogi Mobile 客户端的界面裁图（上钩图标、弹窗标题、场景图标、满包提示等），经 MabiAgent 从游戏截图裁取。这些图片的版权归 Nexon / devCAT 所有，不适用 Moongate 的 MIT 许可；Moongate 是非商业的爱好者项目，与 NEXON、devCAT 无关，按原样随仓库与发行包分发，只用于识别游戏界面。每张图片的来源、长度与 SHA-256 登记在 `templates.lock.json` 与 `fixtures.lock.json`。
+
+## 游戏图标
+
+本仓库的 `frontends/desktop/src/MabiTool.Desktop/Assets/GameIcons/` 与每个发行包的桌面前端（程序集内嵌资源）附带 100 个 64×64 图标，用于 DPS检测页与浮窗的属性标签（暴击、强击、连击、追击、无防备、破防、多重打击与八种元素），以及角色页、背包页的卡片。其中 96 个由 `scripts/maintenance/GameIconExtractor` 从台服 Mabinogi Mobile 客户端只读取出，版权归 Nexon / devCAT 所有，不适用 Moongate 的 MIT 许可；Moongate 是非商业的爱好者项目，与 NEXON、devCAT 无关。另 4 个（服务器、日常日历、多云、雾）由 Moongate 按客户端图标风格自绘，随项目以 MIT 许可发布。每个图标的来源资源路径、长度、SHA-256 与版权方（或“自绘”）登记在 `game-icons.lock.json`，发行包把该登记文件放在 `components/core/licenses/`。
 
 ## 不随包发行的外部组件
 

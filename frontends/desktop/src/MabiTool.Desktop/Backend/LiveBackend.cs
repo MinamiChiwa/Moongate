@@ -20,7 +20,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
     private static readonly EventStreamOptions DesktopEvents = new(
         ["combat.live.changed", "combat.summary.changed", "combat.effects.changed", "combat.encounter.closed", "combat.observation.degraded", "combat.measurement.changed",
             "shortcut.triggered", "inventory.snapshot.changed", "inventory.catalog.changed", "game.observation.changed",
-            "room.session.changed", "room.server.changed", "room.preferences.changed"],
+            "room.session.changed", "room.server.changed", "room.preferences.changed", "life.fishing.changed"],
         [], null);
 
     private sealed record State(bool Connected, string? Problem, GameBindingSnapshot? Binding,
@@ -455,6 +455,10 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                     lastStatusRead = lastSnapshotRead = lastCaptureRead = lastRoomRead = lastColorRunRead = lastSurfacesRead = lastAutoRead = 0;
                     historyPage = null; rangeRead = null; coverageRead = null; targetRead = default; aimRead = default; measurementState = null;
                     pagesDue = true; systemInfo = null; iconCatalogDue = true;
+                    ResetConnector();
+                    ResetFishing();
+                    ResetGameData();
+                    ResetLife();
                 }
                 var events = ListenAsync(api, backendEpoch, session.Token);
                 // 战斗数据由独立的循环读取，不排在图标、合奏、曲长等读取之后。
@@ -469,8 +473,13 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                         await RefreshPagesAsync(api, token);
                         await RefreshExtensionSurfacesAsync(api, token);
                         await RefreshCaptureAsync(api, token);
+                        await RefreshConnectorAsync(api, token);
+                        await RefreshFishingAsync(api, token);
+                        await RefreshLifeSnapshotAsync(api, token);
+                        RefreshGameData(api, token);
                         await RefreshRoomAsync(api, token);
                         await PumpScoreDurationsAsync(api, token);
+                        await RefreshScoreSupportAsync(api, token);
                         // 每类数据按自己的时机到期（事件、用户操作、可见性变化或例行间隔），没有到期的工作时一直等待。
                         await WaitForWorkAsync(token);
                     }
@@ -528,6 +537,7 @@ public sealed partial class LiveBackend : IDesktopBackend, IAsyncDisposable
                     Signal();
                 }
                 else if (message.Event == "game.observation.changed") MarkDue(Due.Capture, immediate: false);
+                else if (message.Event == "life.fishing.changed") MarkDue(Due.Fishing, immediate: false);
                 else if (message.Event == "room.preferences.changed") MarkRoomPreferencesDue();
                 else if (message.Event.StartsWith("room.", StringComparison.Ordinal)) MarkDue(Due.Room, immediate: false);
                 else Signal();

@@ -39,7 +39,7 @@ public sealed partial class MainWindow : Window
         DataContextChanged += (_, _) =>
         {
             if (DataContext is ShellViewModel { Catalog.Mini: { } mini }) mini.Main = this;
-            if (DataContext is ShellViewModel shell) { WatchPicker(shell.GamePicker); WatchNpcapGuide(shell.NpcapGuide); }
+            if (DataContext is ShellViewModel shell) { WatchPicker(shell.GamePicker); WatchNpcapGuide(shell.NpcapGuide); WatchConnector(shell.Connector); WatchUpdateConfirm(shell.UpdateConfirm); }
         };
         AddHandler(KeyDownEvent, OnPickerKeyDown, RoutingStrategies.Tunnel);
         // 小屏或高缩放时按工作区收缩初始与最小尺寸：显示前按主屏先收缩一次，显示后按实际所在屏幕再核对并把标题栏拉回屏幕内。
@@ -198,7 +198,11 @@ public sealed partial class MainWindow : Window
     private void OnPickerKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Escape) return;
+        // 风险确认在最上层：Esc 等于取消，不发送任何请求。
+        if (connector is { RiskOpen: true }) { connector.CancelRisk(); e.Handled = true; return; }
+        if (updateConfirm is { IsOpen: true }) { updateConfirm.Close(); e.Handled = true; return; }
         if (npcapGuide is { IsOpen: true }) { npcapGuide.Close(); e.Handled = true; return; }
+        if (connector is { IsOpen: true }) { connector.Close(); e.Handled = true; return; }
         if (picker is not { IsOpen: true }) return;
         picker.Close();
         e.Handled = true;
@@ -234,6 +238,87 @@ public sealed partial class MainWindow : Window
     private void OnNpcapGuideOutsidePressed(object? sender, PointerPressedEventArgs e)
     {
         npcapGuide?.Close();
+        e.Handled = true;
+    }
+
+    private GameConnectorModel? connector;
+    private IInputElement? connectorRiskReturn;
+
+    // 游戏连接器弹出层从状态胶囊正下方展开，打开后焦点落在关闭按钮，关闭后回到胶囊；
+    // 风险确认窗口打开时焦点落在确认按钮，关闭后回到打开前的焦点。
+    private void WatchConnector(GameConnectorModel model)
+    {
+        if (connector is not null) connector.PropertyChanged -= OnConnectorChanged;
+        connector = model;
+        connector.PropertyChanged += OnConnectorChanged;
+    }
+
+    private void OnConnectorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (connector is null) return;
+        if (e.PropertyName == nameof(GameConnectorModel.IsOpen))
+        {
+            if (connector.IsOpen)
+            {
+                if (ConnectorChip.TranslatePoint(new Point(0, ConnectorChip.Bounds.Height), Frame) is { } anchor)
+                    ConnectorPanel.Margin = new Thickness(anchor.X, anchor.Y + 6, 14, 14);
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => ConnectorClose.Focus(NavigationMethod.Tab), Avalonia.Threading.DispatcherPriority.Loaded);
+            }
+            else ConnectorChip.Focus(NavigationMethod.Tab);
+        }
+        else if (e.PropertyName == nameof(GameConnectorModel.RiskOpen))
+        {
+            if (connector.RiskOpen)
+            {
+                connectorRiskReturn = FocusManager?.GetFocusedElement();
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => ConnectorRiskConfirm.Focus(NavigationMethod.Tab), Avalonia.Threading.DispatcherPriority.Loaded);
+            }
+            else
+            {
+                (connectorRiskReturn as InputElement ?? ConnectorChip)?.Focus(NavigationMethod.Tab);
+                connectorRiskReturn = null;
+            }
+        }
+    }
+
+    private void OnConnectorOutsidePressed(object? sender, PointerPressedEventArgs e)
+    {
+        connector?.Close();
+        e.Handled = true;
+    }
+
+    // 风险确认窗口点外面不关闭：只拦住点击，不让它落到下层。
+    private void OnConnectorRiskOutsidePressed(object? sender, PointerPressedEventArgs e) => e.Handled = true;
+
+    private UpdateConfirmModel? updateConfirm;
+    private IInputElement? updateConfirmReturn;
+
+    // 确认窗口打开时焦点落在“下载”，关闭后回到打开前的焦点（设置页的“下载更新”按钮）。
+    private void WatchUpdateConfirm(UpdateConfirmModel model)
+    {
+        if (updateConfirm is not null) updateConfirm.PropertyChanged -= OnUpdateConfirmChanged;
+        updateConfirm = model;
+        updateConfirm.PropertyChanged += OnUpdateConfirmChanged;
+    }
+
+    private void OnUpdateConfirmChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (updateConfirm is null || e.PropertyName != nameof(UpdateConfirmModel.IsOpen)) return;
+        if (updateConfirm.IsOpen)
+        {
+            updateConfirmReturn = FocusManager?.GetFocusedElement();
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => UpdateConfirmDownload.Focus(NavigationMethod.Tab), Avalonia.Threading.DispatcherPriority.Loaded);
+        }
+        else
+        {
+            (updateConfirmReturn as InputElement)?.Focus(NavigationMethod.Tab);
+            updateConfirmReturn = null;
+        }
+    }
+
+    private void OnUpdateConfirmOutsidePressed(object? sender, PointerPressedEventArgs e)
+    {
+        updateConfirm?.Close();
         e.Handled = true;
     }
 

@@ -67,6 +67,12 @@
           "MabiTool.ModuleSdk": "[0.1.0, )"
         }
       },
+      "mabitool.modules.life": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )"
+        }
+      },
       "mabitool.modules.musiclibrary": {
         "type": "Project",
         "dependencies": {
@@ -111,6 +117,14 @@
       "mabitool.providers.tunnels": {
         "type": "Project",
         "dependencies": {
+          "MabiTool.Platform.Windows": "[0.1.0, )"
+        }
+      },
+      "mabitool.providers.twcli": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Infrastructure": "[0.1.0, )",
+          "MabiTool.ModuleSdk": "[0.1.0, )",
           "MabiTool.Platform.Windows": "[0.1.0, )"
         }
       },

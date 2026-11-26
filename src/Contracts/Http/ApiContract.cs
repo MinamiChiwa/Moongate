@@ -19,6 +19,7 @@ public static class ApiContract
     public static EndpointDefinition CreateUpdateCheck { get; } = new("/api/v1/updates/checks", "createUpdateCheck", typeof(OperationSnapshot), Method: "POST",
         RequestType: typeof(UpdateCheckRequest), Permission: ApiPermissions.UpdatesManage, Idempotent: true, SuccessStatus: 202);
     public static EndpointDefinition UpdatePlan { get; } = new("/api/v1/updates/plans/{id}", "getUpdatePlan", typeof(UpdatePlanSnapshot), ETag: true);
+    public static EndpointDefinition UpdateNotes { get; } = new("/api/v1/updates/plans/{id}/notes", "getUpdateNotes", typeof(UpdateReleaseNotes));
     public static EndpointDefinition DownloadUpdatePlan { get; } = new("/api/v1/updates/plans/{id}/downloads", "downloadUpdatePlan", typeof(OperationSnapshot), Method: "POST",
         Permission: ApiPermissions.UpdatesManage, Idempotent: true, Conditional: true, SuccessStatus: 202);
     public static EndpointDefinition ApplyUpdatePlan { get; } = new("/api/v1/updates/plans/{id}/apply", "applyUpdatePlan", typeof(OperationSnapshot), Method: "POST",
@@ -153,7 +154,7 @@ public static class ApiContract
     public static EndpointDefinition ModuleSettingsSchema { get; } = new("/api/v1/modules/{id}/settings-schema",
         "getModuleSettingsSchema", typeof(JsonElement), "application/schema+json");
     public static EndpointDefinition Capabilities { get; } = new("/api/v1/capabilities", "getCapabilities", typeof(ApiList<CapabilitySnapshot>));
-    public static EndpointDefinition CaptureColorScreen { get; } = new("/api/v1/color/captures", "captureColorScreen", typeof(ColorScreenCapture), Method: "POST", Permission: ApiPermissions.DesktopCapture);
+    public static EndpointDefinition CaptureColorScreen { get; } = new("/api/v1/color/captures", "captureColorScreen", typeof(ColorScreenCapture), Method: "POST", RequestType: typeof(ColorCaptureRequest), Permission: ApiPermissions.DesktopCapture);
     public static EndpointDefinition PickColorPixel { get; } = new("/api/v1/color/captures/{id}/pixels", "pickColorPixel", typeof(ColorPickedPixel), Method: "POST", RequestType: typeof(ColorPixelQuery), Permission: ApiPermissions.DesktopCapture);
     public static EndpointDefinition ReadColorCapture { get; } = new("/api/v1/color/captures/{id}/content", "readColorCapture", typeof(ColorAssetContent), Method: "POST", RequestType: typeof(ColorAssetRangeRequest), Permission: ApiPermissions.DesktopCapture);
     public static EndpointDefinition ReleaseColorCapture { get; } = new("/api/v1/color/captures/{id}", "releaseColorCapture", typeof(ColorCaptureRelease), Method: "DELETE", Permission: ApiPermissions.DesktopCapture);
@@ -358,7 +359,7 @@ public static class ApiContract
         GameCaptureSettings, SaveGameCaptureSettings, StartChannelDetection, ChannelDetection, CancelChannelDetection,
         GameInputOwnership, ActivateGameWindow, GameEmergencyStop, Shortcuts, ShortcutSettings, ChangeShortcutSettings, Modules, ModuleSettingsSchema, Capabilities, Health, Ready, ShutdownHost, OpenApi,
         FileCapabilities, CreateUpload, Upload, UploadContent, FileSelection, UploadSelection, Asset, AssetContent,
-        UpdateState, UpdatePolicy, SaveUpdatePolicy, CreateUpdateCheck, UpdatePlan, DownloadUpdatePlan, ApplyUpdatePlan,
+        UpdateState, UpdatePolicy, SaveUpdatePolicy, CreateUpdateCheck, UpdatePlan, UpdateNotes, DownloadUpdatePlan, ApplyUpdatePlan,
         StorageUsage, PreviewStorageCleanup, StorageCleanupPlan, ExecuteStorageCleanup, StorageCleanupResult,
         StorageModuleData, PreviewStorageModuleDeletion, StorageModuleDeletionPlan, ExecuteStorageModuleDeletion,
         StorageBackups, StorageBackup, CreateStorageBackup, StorageDirectorySelection,
@@ -383,7 +384,7 @@ public static class ApiContract
         EditRoomRoster, SetRoomMode, SetRoomReadiness, BindRoomCharacter, SelectRoomLeader, KickRoomMember, SetRoomGameOperation, StopRoomLocally, ReleaseRoomInput,
         StartColorRun, ColorRun, SelectColorCandidate, RetryColorRun, ColorLibrary, ColorProfile, EditColorLibrary, QueryColorHistory, ColorHistory, ExportColorHistory, ColorAsset, ColorAssetContent,
         CaptureColorScreen, PickColorPixel, ReadColorCapture, ReleaseColorCapture, PreviewColor, RenderColorPalette, ColorPresence, ColorRuntime,
-        .. InventoryApi.Endpoints, .. ClientIconApi.Endpoints
+        .. InventoryApi.Endpoints, .. ClientIconApi.Endpoints, .. GameConnectorApi.Endpoints, .. MusicLibraryApi.Endpoints, .. LifeApi.Endpoints, .. GameDataApi.Endpoints
     ]);
 
     public static IReadOnlyList<Type> DomainTypes { get; } = Array.AsReadOnly<Type>([

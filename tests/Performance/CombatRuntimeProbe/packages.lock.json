@@ -49,12 +49,14 @@
           "MabiTool.Modules.Color": "[0.1.0, )",
           "MabiTool.Modules.CombatObservation": "[0.1.0, )",
           "MabiTool.Modules.Inventory": "[0.1.0, )",
+          "MabiTool.Modules.Life": "[0.1.0, )",
           "MabiTool.Modules.MusicLibrary": "[0.1.0, )",
           "MabiTool.Modules.Rooms": "[0.1.0, )",
           "MabiTool.Platform.Windows": "[0.1.0, )",
           "MabiTool.Providers.GitHubReleases": "[0.1.0, )",
           "MabiTool.Providers.Replay": "[0.1.0, )",
           "MabiTool.Providers.Tunnels": "[0.1.0, )",
+          "MabiTool.Providers.TwCli": "[0.1.0, )",
           "MabiTool.Providers.TwObservation": "[0.1.0, )",
           "MabiTool.RoomServer": "[0.1.0, )"
         }
@@ -84,6 +86,12 @@
           "MabiTool.Contracts": "[0.1.0, )",
           "MabiTool.Infrastructure": "[0.1.0, )",
           "MabiTool.ModuleSdk": "[0.1.0, )"
+        }
+      },
+      "mabitool.modules.life": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Contracts": "[0.1.0, )"
         }
       },
       "mabitool.modules.musiclibrary": {
@@ -130,6 +138,14 @@
       "mabitool.providers.tunnels": {
         "type": "Project",
         "dependencies": {
+          "MabiTool.Platform.Windows": "[0.1.0, )"
+        }
+      },
+      "mabitool.providers.twcli": {
+        "type": "Project",
+        "dependencies": {
+          "MabiTool.Infrastructure": "[0.1.0, )",
+          "MabiTool.ModuleSdk": "[0.1.0, )",
           "MabiTool.Platform.Windows": "[0.1.0, )"
         }
       },

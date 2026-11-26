@@ -8,7 +8,7 @@ using MabiTool.Providers.GitHubReleases;
 namespace MabiTool.Host.Updates;
 
 internal sealed class UpdateApiService(PortableInstallation? installation, IUpdateDownloadService downloads,
-    OperationStore operations, UpdatePolicyStore policy, TimeProvider clock)
+    OperationStore operations, UpdatePolicyStore policy, TimeProvider clock, UpdateNotesService? notes = null)
 {
     public UpdateStateSnapshot State()
     {
@@ -69,6 +69,9 @@ internal sealed class UpdateApiService(PortableInstallation? installation, IUpda
         };
     }
 
+    public Task<UpdateReleaseNotes> Notes(string id, CancellationToken ct) =>
+        (notes ?? throw new UpdatePackageException("update.sourceNotConfigured")).GetAsync(id, ct);
+
     public async Task<UpdatePlanSnapshot> Plan(string id, CancellationToken ct)
     {
         var plan = await downloads.ReadPlanAsync(id, ct);
@@ -103,6 +106,8 @@ internal static class UpdateEndpoints
             var plan = await Required<UpdateApiService>(context).Plan(id, context.RequestAborted);
             context.Response.Headers.ETag = "\"update-plan-" + plan.Id + "-" + plan.Revision + "\""; return Results.Ok(plan);
         }).WithMetadata(ApiContract.UpdatePlan);
+        app.MapGet(ApiContract.UpdateNotes.Path, async (string id, HttpContext context) =>
+            Results.Ok(await Required<UpdateApiService>(context).Notes(id, context.RequestAborted))).WithMetadata(ApiContract.UpdateNotes);
         app.MapPost(ApiContract.DownloadUpdatePlan.Path, async (string id, HttpContext context) =>
         {
             var operation = await Required<UpdateCheckOperations>(context).SubmitDownloadAsync(LocalApiMiddleware.Session(context).ClientId, id,

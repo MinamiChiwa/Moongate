@@ -40,12 +40,13 @@ public sealed class ScorePager(IDesktopBackend backend, int pageSize)
         Request();
     }
 
-    // 同一页只登记一次，避免后端每次刷新又回头登记。
+    // 同一页只登记一次（时长与游戏连接器的可演奏性），避免后端每次刷新又回头登记。
     private void Request()
     {
         var ids = Visible.Select(row => row.Id).ToList();
         if (ids.SequenceEqual(requested)) return;
         requested = ids;
         backend.RequestScoreDetails(ids);
+        backend.RequestScoreSupport(ids);
     }
 }

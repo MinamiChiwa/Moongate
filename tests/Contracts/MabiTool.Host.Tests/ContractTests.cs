@@ -182,7 +182,7 @@ public sealed class ContractTests
             Assert.Equal("Moongate", (await sdk.GetSystemInfoAsync()).Product);
             Assert.Equal("Moongate", typeof(BackendApplication).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyProductAttribute), false)
                 .Cast<System.Reflection.AssemblyProductAttribute>().Single().Product);
-            Assert.Equal(11, (await sdk.GetModulesAsync()).Items.Count);
+            Assert.Equal(12, (await sdk.GetModulesAsync()).Items.Count);
             Assert.Contains((await sdk.GetCapabilitiesAsync()).Items, x => x.Id == "system.inspect");
             Assert.Equal("healthy", (await sdk.GetHealthAsync()).Status);
             Assert.Equal("ready", (await sdk.GetReadyAsync()).Status);

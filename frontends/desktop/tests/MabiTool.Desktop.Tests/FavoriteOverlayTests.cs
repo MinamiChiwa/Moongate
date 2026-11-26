@@ -1,17 +1,20 @@
 using System.Diagnostics;
 using Avalonia.Headless.XUnit;
+using Avalonia.VisualTree;
 using MabiTool.Contracts;
 using MabiTool.Desktop.Backend;
 using MabiTool.Desktop.Overlay;
 using MabiTool.Desktop.Pages.Combat;
 using Xunit;
+using static MabiTool.Desktop.Tests.TestUi;
 
 namespace MabiTool.Desktop.Tests;
 
 /// <summary>
 /// 收藏浮窗：选择与顺序的保存与旧文件默认、新收藏追加与取消收藏移除、不受“只显示收藏”影响、换图后自身项推算与到期结束；
-/// 旧版面里收藏浮窗的觉醒项被移除；觉醒监控浮窗的两项、提示设置保存与提示音条件；
-/// 觉醒按后端标记识别、同名不同 Id 不触发、冷却按实际或推算、1 秒内重复只算一次。
+/// 旧版面里收藏浮窗的觉醒项、覆盖率元件与职业觉醒设置被移除；觉醒监控浮窗只有徽章觉醒、提示设置保存与提示音条件；
+/// DPS 元件的觉醒显示默认打开并随触发亮起、与觉醒监控浮窗共用设置、只有 DPS 元件时提示音照常且一次触发只响一次；
+/// 觉醒按后端标记识别、同名不同 Id 与职业觉醒标记不触发、冷却按实际或推算、1 秒内重复只算一次。
 /// </summary>
 public sealed class FavoriteOverlayTests : IDisposable
 {
@@ -117,7 +120,7 @@ public sealed class FavoriteOverlayTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void AwakeningWidgetShowsBothItemsKeepsItsSettingsAndGatesTheSound()
+    public void AwakeningWidgetShowsOnlyTheBadgeKeepsItsSettingsAndGatesTheSound()
     {
         var store = OldStore();
         var catalog = MabiTool.Desktop.Modules.BuiltInModules.CreateCatalog(new SampleBackend(), store);
@@ -128,40 +131,178 @@ public sealed class FavoriteOverlayTests : IDisposable
         var placement = store.Place(AwakeningBoard.Id);
         using var page = new MabiTool.Desktop.Pages.Overlay.OverlayPageModel(catalog, catalog.Overlay!) { SelectedWidgetId = AwakeningBoard.Id };
         Assert.Equal((true, true, false), (page.HasLayoutSetting, page.ShowAlerts, page.HasFavoritesSetting));
-        Assert.Equal([FavoriteEffectTracker.Badge, FavoriteEffectTracker.Class], page.Alerts.Select(alert => alert.Kind));
-        page.AlertSoundCommand.Execute(FavoriteEffectTracker.Badge);
-        page.AlertVolumeCommand.Execute(FavoriteEffectTracker.Badge + ":-");
-        page.AlertSecondsCommand.Execute(FavoriteEffectTracker.Class + ":+");
+        Assert.Equal("徽章觉醒", page.Alert!.Title);
+        page.AlertSoundCommand.Execute(null);
+        page.AlertVolumeCommand.Execute("-");
+        page.AlertSecondsCommand.Execute("+");
         page.FavoriteLayoutCommand.Execute("horizontal");
 
         using var widget = new OverlayWidgetModel(AwakeningBoard.Id, new SampleBackend());
         widget.SetFavoriteSource(placement, store);
         Assert.True(widget.IsAwakening);
         Assert.True(widget.FavoritesHorizontal);
-        Assert.Equal([AwakeningBoard.BadgeKey, AwakeningBoard.ClassKey], widget.FavoriteItems.Select(item => item.Key));
-        Assert.All(widget.FavoriteItems, item => Assert.True(item.Describe(Ms(0)).Dim));
-        Assert.Equal(["徽章觉醒", "职业觉醒"], widget.FavoriteItems.Select(item => item.Describe(Ms(0)).Name));
+        var item = Assert.Single(widget.FavoriteItems);
+        Assert.Equal(AwakeningBoard.BadgeKey, item.Key);
+        Assert.Equal(("徽章觉醒", true), (item.Describe(Ms(0)).Name, item.Describe(Ms(0)).Dim));
 
         store.Flush();
         var reloaded = new OverlayLayoutStore(layouts);
-        Assert.Equal((true, 0.7, 4d), (reloaded.Awakening.Badge.Sound, reloaded.Awakening.Badge.Volume, reloaded.Awakening.Class.FlashSeconds));
+        Assert.Equal((true, 0.7, 4d), (reloaded.Awakening.Badge.Sound, reloaded.Awakening.Badge.Volume, reloaded.Awakening.Badge.FlashSeconds));
         Assert.True(reloaded.Active.Widgets.Single(widget => widget.WidgetId == AwakeningBoard.Id).Horizontal);
 
-        // 提示音只在当前版面有未关闭的觉醒监控浮窗、且该项打开音效时播放。
-        var played = new List<string>();
-        AwakeningSound.Player = (kind, _, _) => played.Add(kind);
+        // 提示音只在打开音效、且当前版面有未关闭的觉醒监控浮窗时播放（这个版面没有 DPS 元件）。
+        var played = 0;
+        AwakeningSound.Player = (_, _) => played++;
         try
         {
-            AwakeningSound.Notify(FavoriteEffectTracker.Badge, store);
-            AwakeningSound.Notify(FavoriteEffectTracker.Class, store);
-            Assert.Equal([FavoriteEffectTracker.Badge], played);
+            AwakeningSound.Notify(store);
+            Assert.Equal(1, played);
             store.Close(placement);
-            AwakeningSound.Notify(FavoriteEffectTracker.Badge, store);
+            AwakeningSound.Notify(store);
             store.Unplace(AwakeningBoard.Id);
-            AwakeningSound.Notify(FavoriteEffectTracker.Badge, store);
-            Assert.Equal([FavoriteEffectTracker.Badge], played);
+            AwakeningSound.Notify(store);
+            Assert.Equal(1, played);
         }
         finally { AwakeningSound.Player = null; }
+    }
+
+    [AvaloniaFact]
+    public void OldLayoutsDropTheCoverageWidgetAndTheClassAwakeningSettings()
+    {
+        // 早期版本：版面里有覆盖率元件，觉醒提示设置里还有职业觉醒。
+        File.WriteAllText(layouts, """
+            { "ActiveId": "a",
+              "Awakening": { "Badge": { "Flash": false, "Color": "#FF0000", "FlashSeconds": 5, "Sound": true, "Volume": 0.5 },
+                             "Class": { "Flash": true, "Color": "#8AB4FF", "FlashSeconds": 3, "Sound": true, "Volume": 0.8 } },
+              "Layouts": [ { "Id": "a", "Name": "A", "Widgets": [
+                { "WidgetId": "combat.dps", "X": 1, "Y": 0, "Scale": 1, "Skin": "glass" },
+                { "WidgetId": "combat.coverage", "X": 0.5, "Y": 0.3, "Scale": 1, "Skin": "glass" },
+                { "WidgetId": "combat.awakening", "X": 0.2, "Y": 0.4, "Scale": 1, "Skin": "glass" } ] } ] }
+            """);
+        var store = new OverlayLayoutStore(layouts);
+        Assert.Equal([AwakeningBoard.DpsId, AwakeningBoard.Id], store.Active.Widgets.Select(widget => widget.WidgetId));
+        Assert.Equal((1d, 0d, 0.2, 0.4), (store.Active.Widgets[0].X, store.Active.Widgets[0].Y, store.Active.Widgets[1].X, store.Active.Widgets[1].Y));
+        var badge = store.Awakening.Badge;
+        Assert.Equal((false, "#FF0000", 5d, true, 0.5), (badge.Flash, badge.Color, badge.FlashSeconds, badge.Sound, badge.Volume));
+        // 旧版面的 DPS 元件没有觉醒开关字段：觉醒显示按默认打开。
+        Assert.False(store.Active.Widgets[0].HideAwakening);
+        Assert.DoesNotContain(MabiTool.Desktop.Modules.BuiltInModules.CreateCatalog(new SampleBackend()).Modules.SelectMany(module => module.Widgets),
+            widget => widget.Id == "combat.coverage");
+
+        store.Commit();
+        store.Flush();
+        var saved = File.ReadAllText(layouts);
+        Assert.DoesNotContain("combat.coverage", saved);
+        Assert.DoesNotContain("\"Class\"", saved);
+        Assert.DoesNotContain("HideAwakening", saved);
+        Assert.Contains("#FF0000", saved);
+    }
+
+    [AvaloniaFact]
+    public void DpsWidgetShowsTheBadgeAwakeningByDefaultAndLightsUpWhenItTriggers()
+    {
+        File.WriteAllText(layouts, """
+            { "ActiveId": "a", "Layouts": [ { "Id": "a", "Name": "A", "Widgets": [
+                { "WidgetId": "combat.dps", "X": 1, "Y": 0, "Scale": 1, "Skin": "glass" } ] } ] }
+            """);
+        var store = new OverlayLayoutStore(layouts);
+        var backend = new SampleBackend();
+        var catalog = MabiTool.Desktop.Modules.BuiltInModules.CreateCatalog(backend, store);
+        using var page = new MabiTool.Desktop.Pages.Overlay.OverlayPageModel(catalog, catalog.Overlay!) { SelectedWidgetId = AwakeningBoard.DpsId };
+        Assert.Equal((true, true, true), (page.HasDpsAwakeningSetting, page.DpsAwakeningShown, page.ShowAlerts));
+        var window = new OverlayWindow(store, catalog, backend) { Width = 960, Height = 540 };
+        window.Show();
+        LayoutProbe.Settle();
+        try
+        {
+            var view = window.GetVisualDescendants().OfType<OverlayWidgetView>()
+                .Single(candidate => ((OverlayWidgetModel)candidate.DataContext!).WidgetId == AwakeningBoard.DpsId);
+            var board = Named<FavoriteBoardView>(view, "DpsAwakening");
+            Assert.True(board.IsEffectivelyVisible);
+            Assert.Same(store.Awakening, board.Alerts);
+            var item = Assert.Single(board.Items!);
+            Assert.True(item.Describe(Ms(0)).Dim);
+
+            // 徽章觉醒触发：DPS 元件里的一项亮起，显示徽章名与剩余时间。
+            FavoriteEffectTracker.Clock = () => Ms(100);
+            FavoriteEffectTracker.WallClock = () => Now.AddMilliseconds(100);
+            Data(Ms(100), true, View(355098955, 35_000, Now, Now, "badge", name: "飛舞之劍"));
+            var look = item.Describe(Ms(10_100));
+            Assert.Equal(("徽章觉醒·飛舞之劍", "25s", false), (look.Name, look.Remaining, look.Dim));
+
+            // 在版面页关闭：元件里不再显示，觉醒提示设置随之收起，开关保存进版面。
+            page.DpsAwakeningCommand.Execute("hide");
+            LayoutProbe.Settle();
+            Assert.False(board.IsEffectivelyVisible);
+            Assert.False(page.ShowAlerts);
+            store.Flush();
+            Assert.Contains("\"HideAwakening\": true", File.ReadAllText(layouts));
+            page.DpsAwakeningCommand.Execute("show");
+            LayoutProbe.Settle();
+            Assert.True(board.IsEffectivelyVisible);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void AwakeningSettingsAreSharedBothWaysAndTheSoundPlaysOnceWithOnlyTheDpsWidget()
+    {
+        var store = new OverlayLayoutStore(layouts);
+        var dps = store.Place(AwakeningBoard.DpsId);
+        var awakening = store.Place(AwakeningBoard.Id);
+        var catalog = MabiTool.Desktop.Modules.BuiltInModules.CreateCatalog(new SampleBackend(), store);
+        using var dpsPage = new MabiTool.Desktop.Pages.Overlay.OverlayPageModel(catalog, catalog.Overlay!) { SelectedWidgetId = AwakeningBoard.DpsId };
+        using var boardPage = new MabiTool.Desktop.Pages.Overlay.OverlayPageModel(catalog, catalog.Overlay!) { SelectedWidgetId = AwakeningBoard.Id };
+
+        // DPS 元件的卡片把闪烁颜色改为红色：觉醒监控浮窗的卡片同时是红色；在觉醒监控浮窗的卡片关闭闪烁，DPS 元件的卡片同样关闭。
+        dpsPage.OpenColorPicker(dpsPage.Alert!.Color)!.HexInput = "#FF0000";
+        Assert.Equal("#FF0000", boardPage.Alert!.Color.Hex);
+        boardPage.AlertFlashCommand.Execute(null);
+        Assert.False(dpsPage.Alert!.Flash);
+        // 两个元件绘制时读同一个设置实例。
+        using var dpsWidget = new OverlayWidgetModel(AwakeningBoard.DpsId, new SampleBackend());
+        using var boardWidget = new OverlayWidgetModel(AwakeningBoard.Id, new SampleBackend());
+        dpsWidget.SetFavoriteSource(dps, store);
+        boardWidget.SetFavoriteSource(awakening, store);
+        Assert.Same(boardWidget.AwakeningAlerts, dpsWidget.AwakeningAlerts);
+        Assert.Equal(("#FF0000", false), (dpsWidget.AwakeningAlerts!.Badge.Color, dpsWidget.AwakeningAlerts.Badge.Flash));
+
+        // 只有 DPS 元件（觉醒显示打开）时也播放提示音；觉醒效果与冷却效果 0.4 秒内先后到达只响一次。
+        dpsPage.AlertSoundCommand.Execute(null);
+        store.Close(awakening);
+        var played = 0;
+        AwakeningSound.Player = (_, _) => played++;
+        void Notify() => AwakeningSound.Notify(store);
+        FavoriteEffectTracker.Triggered += Notify;
+        void Trigger(double seconds, params CombatEffectView[] views)
+        {
+            FavoriteEffectTracker.Clock = () => Ms(seconds * 1000);
+            FavoriteEffectTracker.WallClock = () => Now.AddSeconds(seconds);
+            Data(Ms(seconds * 1000), true, views);
+        }
+        try
+        {
+            Trigger(0.1, View(355098955, 35_000, Now, Now, "badge", name: "飛舞之劍"));
+            Trigger(0.5, View(355098955, 34_600, Now, Now, "badge", name: "飛舞之劍"),
+                View(315606915, 90_000, Now.AddMilliseconds(400), Now.AddMilliseconds(400), "badge-cooldown"));
+            Assert.Equal(1, played);
+
+            // 觉醒监控浮窗也在版面上：下一次触发仍只响一次。
+            store.Reopen(awakening);
+            Trigger(200, View(355098955, 35_000, Now.AddSeconds(200), Now.AddSeconds(200), "badge", name: "飛舞之劍"));
+            Assert.Equal(2, played);
+
+            // DPS 元件关闭觉醒显示、觉醒监控浮窗也关闭：不再播放。
+            dpsPage.DpsAwakeningCommand.Execute("hide");
+            store.Close(awakening);
+            Trigger(400, View(355098955, 35_000, Now.AddSeconds(400), Now.AddSeconds(400), "badge", name: "飛舞之劍"));
+            Assert.Equal(2, played);
+        }
+        finally
+        {
+            FavoriteEffectTracker.Triggered -= Notify;
+            AwakeningSound.Player = null;
+        }
     }
 
     [AvaloniaFact]
@@ -271,8 +412,8 @@ public sealed class FavoriteOverlayTests : IDisposable
     [AvaloniaFact]
     public void AwakeningIsRecognizedByTheBackendMarkWithCooldownAndRepeatSuppression()
     {
-        var fired = new List<string>();
-        void OnTriggered(string kind) => fired.Add(kind);
+        var fired = 0;
+        void OnTriggered() => fired++;
         FavoriteEffectTracker.Triggered += OnTriggered;
         try
         {
@@ -280,8 +421,8 @@ public sealed class FavoriteOverlayTests : IDisposable
             FavoriteEffectTracker.WallClock = () => Now;
             // 同名“覺醒”但后端没有标记：不触发。
             Data(Ms(0), true, View(2018547152, 5000, Now, Now, name: "覺醒"));
-            Assert.Empty(fired);
-            Assert.Equal(AwakeningPhase.Idle, FavoriteEffectTracker.Describe(FavoriteEffectTracker.Badge, Ms(0)).Phase);
+            Assert.Equal(0, fired);
+            Assert.Equal(AwakeningPhase.Idle, FavoriteEffectTracker.Describe(Ms(0)).Phase);
 
             // 徽章觉醒效果与冷却效果相隔 0.4 秒先后到达：只算一次触发，显示触发的徽章与剩余时间。
             FavoriteEffectTracker.Clock = () => Ms(100);
@@ -291,25 +432,32 @@ public sealed class FavoriteOverlayTests : IDisposable
             FavoriteEffectTracker.WallClock = () => Now.AddMilliseconds(500);
             Data(Ms(500), true, View(355098955, 34_600, Now, Now, "badge", name: "飛舞之劍"),
                 View(315606915, 90_000, Now.AddMilliseconds(400), Now.AddMilliseconds(400), "badge-cooldown"));
-            Assert.Equal([FavoriteEffectTracker.Badge], fired);
-            var active = FavoriteEffectTracker.Describe(FavoriteEffectTracker.Badge, Ms(10_000));
+            Assert.Equal(1, fired);
+            var active = FavoriteEffectTracker.Describe(Ms(10_000));
             Assert.Equal((AwakeningPhase.Active, "飛舞之劍"), (active.Phase, active.Badge));
             Assert.Equal("徽章觉醒·飛舞之劍", new FavoriteItem(AwakeningBoard.BadgeKey, FavoriteItemKind.Badge, "徽章觉醒", string.Empty,
                 EffectPolarity.Positive, null, false).Describe(Ms(10_000)).Name);
             // 觉醒结束后按冷却效果的实际剩余显示冷却，不标推算。
-            var cooling = FavoriteEffectTracker.Describe(FavoriteEffectTracker.Badge, Ms(40_000));
+            var cooling = FavoriteEffectTracker.Describe(Ms(40_000));
             Assert.Equal((AwakeningPhase.Cooldown, false), (cooling.Phase, cooling.Predicted));
             Assert.Equal(50_500, cooling.RemainingMs!.Value, 0);
-            Assert.Equal(AwakeningPhase.Idle, FavoriteEffectTracker.Describe(FavoriteEffectTracker.Badge, Ms(91_000)).Phase);
+            Assert.Equal(AwakeningPhase.Idle, FavoriteEffectTracker.Describe(Ms(91_000)).Phase);
 
-            // 职业觉醒没有冷却效果：从触发时刻按 60 秒推算冷却。
-            FavoriteEffectTracker.Clock = () => Ms(1000);
-            FavoriteEffectTracker.WallClock = () => Now.AddSeconds(1);
-            Data(Ms(1000), true, View(674865859, 15_000, Now.AddSeconds(1), Now.AddSeconds(1), "class"));
-            Assert.Equal([FavoriteEffectTracker.Badge, FavoriteEffectTracker.Class], fired);
-            var predicted = FavoriteEffectTracker.Describe(FavoriteEffectTracker.Class, Ms(20_000));
+            // 后端的职业觉醒标记不监控：不触发，徽章觉醒保持未觉醒。
+            FavoriteEffectTracker.Clock = () => Ms(95_000);
+            FavoriteEffectTracker.WallClock = () => Now.AddSeconds(95);
+            Data(Ms(95_000), true, View(674865859, 15_000, Now.AddSeconds(95), Now.AddSeconds(95), "class"));
+            Assert.Equal(1, fired);
+            Assert.Equal(AwakeningPhase.Idle, FavoriteEffectTracker.Describe(Ms(95_000)).Phase);
+
+            // 再次触发而没有收到冷却效果：觉醒结束后从触发时刻按 90 秒推算冷却。
+            FavoriteEffectTracker.Clock = () => Ms(200_000);
+            FavoriteEffectTracker.WallClock = () => Now.AddSeconds(200);
+            Data(Ms(200_000), true, View(355098955, 35_000, Now.AddSeconds(200), Now.AddSeconds(200), "badge", name: "飛舞之劍"));
+            Assert.Equal(2, fired);
+            var predicted = FavoriteEffectTracker.Describe(Ms(240_000));
             Assert.Equal((AwakeningPhase.Cooldown, true), (predicted.Phase, predicted.Predicted));
-            Assert.Equal(41_000, predicted.RemainingMs!.Value, 0);
+            Assert.Equal(50_000, predicted.RemainingMs!.Value, 0);
         }
         finally { FavoriteEffectTracker.Triggered -= OnTriggered; }
     }

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- 热点循环（模板匹配、截图格式转换）不经分层 JIT 的低优化档，首帧即按稳态速度运行；后台 GC 线程对单进程短周期工作没有收益。 -->
+    <TieredPGO>false</TieredPGO>
+    <TieredCompilationQuickJitForLoops>false</TieredCompilationQuickJitForLoops>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Infrastructure/MabiTool.Infrastructure.csproj" />
+  </ItemGroup>
+  <!-- 识别模板与登记文件随 Worker 输出（含 dotnet publish）放到 templates/，TemplateCatalog 从 exe 同目录读取并核对 SHA-256。 -->
+  <ItemGroup>
+    <None Update="Assets/templates/**">
+      <Link>templates/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Assets/templates.lock.json">
+      <Link>templates/templates.lock.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

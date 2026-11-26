@@ -34,9 +34,10 @@ public sealed class LocalApiTests
             }
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token);
             var modules = await client.GetFromJsonAsync<ApiList<ModuleSnapshot>>("/api/v1/modules");
-            Assert.Equal(11, modules!.Items.Count);
+            Assert.Equal(12, modules!.Items.Count);
+            // 环境信息由游戏数据服务提供，登记为已实现；未启用染色运行时的宿主上只有染色不可用。
             Assert.All(modules.Items, module => Assert.Equal(
-                module.Id is "performance" or "color" or "environment" ? "unavailable" : "idle", module.State));
+                module.Id is "color" ? "unavailable" : "idle", module.State));
             var info = await client.GetFromJsonAsync<SystemInfo>("/api/v1/system/info");
             Assert.Equal("1.0", info!.ApiVersion);
             using var schema = await client.GetAsync("/api/v1/modules/color/settings-schema");
@@ -54,20 +55,31 @@ public sealed class LocalApiTests
             Assert.Equal(3, capabilities.Items.Count(x => x.ModuleId == "inventory"));
             var inventory = capabilities.Items.Single(x => x.Id == "music.inventory");
             Assert.Equal(CapabilityStatus.Unavailable, inventory.Status.KnownValue);
-            Assert.Equal("provider.unavailable", inventory.ReasonCode);
-            Assert.Null(inventory.ProviderId);
+            Assert.Equal("platform.unsupported", inventory.ReasonCode);
+            Assert.Equal("tw-cli", inventory.ProviderId);
             Assert.NotEqual(default, inventory.CheckedAt);
 
+            // 环境、附近、角色与交易所能力由游戏连接器状态生成：不支持连接器的宿主给出连接器的原因。
             var environment = capabilities.Items.Single(x => x.Id == "environment.observe");
             Assert.Equal(CapabilityStatus.Unavailable, environment.Status.KnownValue);
-            Assert.Equal("provider.unavailable", environment.ReasonCode);
-            Assert.Null(environment.ProviderId);
+            Assert.Equal("platform.unsupported", environment.ReasonCode);
+            Assert.Equal("tw-cli", environment.ProviderId);
             Assert.Equal("environment", environment.ModuleId);
+            Assert.All(new[] { "nearby.observe", "character.info", "market.prices" }, id =>
+                Assert.Equal((CapabilityStatus.Unavailable, "platform.unsupported"),
+                    (capabilities.Items.Single(x => x.Id == id).Status.KnownValue!.Value, capabilities.Items.Single(x => x.Id == id).ReasonCode)));
 
+            // 生活模块总是实现：采集、加工、制作随连接器状态，钓鱼随持久存储与识别组件；模拟宿主上它们都是不可用并写明原因。
+            Assert.All(new[] { "life.gather", "life.altering", "life.crafting" }, id =>
+                Assert.Equal((CapabilityStatus.Unavailable, "platform.unsupported", "life"),
+                    (capabilities.Items.Single(x => x.Id == id).Status.KnownValue!.Value, capabilities.Items.Single(x => x.Id == id).ReasonCode, capabilities.Items.Single(x => x.Id == id).ModuleId)));
+            var fishing = capabilities.Items.Single(x => x.Id == "life.fishing");
+            Assert.Equal((CapabilityStatus.Unavailable, "storage.unavailable", "life"), (fishing.Status.KnownValue!.Value, fishing.ReasonCode, fishing.ModuleId));
             var playback = capabilities.Items.Single(x => x.Id == "performance.play");
             Assert.Equal(CapabilityStatus.Unavailable, playback.Status.KnownValue);
-            Assert.Equal("module.notImplemented", playback.ReasonCode);
-            Assert.Null(playback.ProviderId);
+            Assert.Equal("platform.unsupported", playback.ReasonCode);
+            Assert.Equal(CapabilityStatus.Unavailable, capabilities.Items.Single(x => x.Id == "game.connector").Status.KnownValue);
+            Assert.Equal(CapabilityStatus.Unavailable, capabilities.Items.Single(x => x.Id == "performance.instrument").Status.KnownValue);
             using var missing = await client.GetAsync("/api/v1/unknown");
             Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
         }

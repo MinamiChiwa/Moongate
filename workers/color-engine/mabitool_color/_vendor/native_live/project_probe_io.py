@@ -7,6 +7,7 @@ from mabitool_color._vendor.input_gestures import PointerGesture
 from .dye_action_checkpoint import record_action_checkpoint, _binding
 from mabitool_color._vendor.vision import recognize,read_codes,_swatch_distance,ocr_counters,ocr_time_scale
 from .probe_timer import read_timer
+from .frame_verification import SWATCH_LIMIT
 from mabitool_color._vendor.dye_regions import region_count as validate_region_count
 from .session_status import (PaletteEnded,SessionBindingChanged,SessionProbeUnstable,
     session_diagnostic,changed_token_fields)
@@ -27,23 +28,46 @@ class FrameReadTimeout(TimeoutError):
         self.partial_frame=partial_frame
 
 
-def merge_native_hex(decoded, native_hex):
-    """Fill only OCR omissions from the same checkpoint's native HEX."""
+def card_swatch(image,card):
+    """色卡色块中心的中位色，与读字时校验色码所用的取样位置相同。"""
+    x,y,w,h=card;cx=x+round(w*.50);cy=y+round(h*.43);rad=max(2,round(w*.04))
+    return np.median(image[cy-rad:cy+rad+1,cx-rad:cx+rad+1].reshape(-1,3),axis=0)
+
+
+def merge_native_hex(decoded, native_hex, swatch_samples=None):
+    """Fill only OCR omissions from the same checkpoint's native HEX.
+
+    色码文字未读出的卡按色块核验（来源 ``swatch``）须同时满足：本帧读字在时限内完成、
+    该卡没有识别超时、色块与游戏色码色差不超过 3，且本帧至少另有一张卡的色码文字与
+    游戏数据一致。色块只核对游戏色码，不产生截图色码文字，也不进入色卡缓存；其余缺口
+    仍记为 ``native_checkpoint``。``screenshot_hex_verified`` 表示每张卡都已由文字或色块核验。
+    """
     if not isinstance(decoded, dict) or not isinstance(decoded.get('hex'), list) or len(decoded['hex']) not in (2,3):
         raise ValueError('Two or three screenshot HEX values required')
     if not isinstance(native_hex, (list, tuple)) or len(native_hex) != len(decoded['hex']):
         raise ValueError('Screenshot and native checkpoint region counts disagree')
     values=list(decoded['hex']);sources=[]
+    distances=[None]*len(values)
+    if isinstance(swatch_samples,(list,tuple)) and len(swatch_samples)==len(values):
+        distances=[_swatch_distance(native,sample) if sample is not None and isinstance(native,str)
+                   and re.fullmatch('#[0-9A-F]{6}',native) else None for native,sample in zip(native_hex,swatch_samples)]
+    reads={item.get('region'):item for item in decoded.get('hex_read_diagnostics') or [] if isinstance(item,dict)}
+    swatch_allowed=(decoded.get('local_frame_timeout') is not True
+                    and any(observed is not None for observed in decoded['hex']))
     for index,(observed,native) in enumerate(zip(values,native_hex)):
         if observed is None:
             if not isinstance(native,str):raise ValueError('Missing native checkpoint HEX')
-            values[index]=native;sources.append('native_checkpoint')
+            values[index]=native
+            timed_out=int((reads.get(index+1) or {}).get('ocr_timeouts') or 0)>0
+            swatch=(swatch_allowed and not timed_out and distances[index] is not None
+                    and distances[index]<=SWATCH_LIMIT)
+            sources.append('swatch' if swatch else 'native_checkpoint')
         else:
             if observed != native:raise ValueError('Screenshot and checkpoint HEX disagree')
             sources.append('screenshot')
     return dict(decoded,hex=values,hex_source=sources,
-                screenshot_hex=list(decoded['hex']),
-                screenshot_hex_verified=all(v is not None for v in decoded['hex']))
+                screenshot_hex=list(decoded['hex']),hex_swatch_distances=distances,
+                screenshot_hex_verified=all(source in ('screenshot','swatch') for source in sources))
 
 
 def reread_conflicting_hex(image,decoded,native_hex,*,deadline,check=lambda:None,card_cache=None):
@@ -483,7 +507,8 @@ class ProjectProbeIO:
                             # Optional conflict diagnostics must not replace
                             # F9 or the real session-deadline exception.
                             decoded['diagnostic_write_error']=type(exc).__name__+': '+str(exc)
-                try:decoded=merge_native_hex(decoded,self.last_client_hex)
+                try:decoded=merge_native_hex(decoded,self.last_client_hex,
+                    [card_swatch(image,card) for card in decoded.get('cards') or []])
                 except ValueError as exc:
                     # 核验原因按这一帧的逐卡读数判定。
                     exc.decoded_frames=[*frames,decoded];raise

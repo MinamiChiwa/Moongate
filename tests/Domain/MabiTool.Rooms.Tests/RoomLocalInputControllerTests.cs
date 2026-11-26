@@ -226,6 +226,215 @@ public sealed class RoomLocalInputControllerTests
         Assert.Equal("released", f.Input.Snapshot.State);
     }
 
+    private sealed class FakeMusic : IRoomGameMusic
+    {
+        public bool Available { get; set; } = true;
+        public double StartLeadMs { get; set; } = 120;
+        public bool? Playable { get; set; } = true;
+        public GameMusicResult StartResult { get; set; } = new(GameMusicOutcome.Accepted);
+        public GameMusicResult StopResult { get; set; } = new(GameMusicOutcome.Accepted);
+        public List<string> Calls { get; } = [];
+        public GameActivityProof? LastProof { get; private set; }
+        public ValueTask<GameInstrumentPreparation> PrepareInstrumentAsync(GameActivityProof proof, string? instrumentName, CancellationToken ct) => ValueTask.FromResult(new GameInstrumentPreparation(null));
+        public ValueTask<bool?> WarmAsync(string? title, CancellationToken ct) => ValueTask.FromResult(Playable);
+        public bool? TryIsPlayable(string title) => Playable;
+        public ValueTask<GameMusicResult> StartAsync(GameActivityProof proof, string title, CancellationToken ct) { LastProof = proof; Calls.Add("start:" + title); return ValueTask.FromResult(StartResult); }
+        public ValueTask<GameMusicResult> StopAsync(GameActivityProof proof, CancellationToken ct) { LastProof = proof; Calls.Add("stop"); return ValueTask.FromResult(StopResult); }
+    }
+
+    [Fact]
+    public void GameProvidedScoreStartsAndStopsThroughTheConnectorWithTheRoundLeaseAndNoKeysOrWindowActivation()
+    {
+        var music = new FakeMusic();
+        var f = new Fixture(music);
+        f.Input.ScoreTitleSource = () => "Song A";
+        f.Arm();
+        var activations = f.Activations;
+        var start = f.Action("start"); var stop = f.Action("stop");
+        Assert.True(f.Input.Prepare(start).Ready); Assert.True(f.Input.Prepare(stop).Ready);
+        Assert.Equal(activations, f.Activations);
+        Assert.Equal(120, f.Input.ExecutionLeadMs(start));
+        Assert.Equal(0, f.Input.ExecutionLeadMs(stop));
+        var started = f.Input.Execute(start, CancellationToken.None);
+        Assert.Equal(("sent", null), (started.Status, started.Detail));
+        Assert.Equal("performing", f.Input.Snapshot.State);
+        Assert.Equal(f.Input.ActivityProof, music.LastProof);
+        Assert.Equal("sent", f.Input.Execute(stop, CancellationToken.None).Status);
+        Assert.Equal(["start:Song A", "stop"], music.Calls);
+        Assert.Empty(f.Device.Commands);
+        Assert.Equal("released", f.Input.Snapshot.State);
+        Assert.True(f.Available());
+    }
+
+    [Fact]
+    public void UserComposedOrUnknownScoreKeepsKeyStartWhileStopStillUsesTheConnector()
+    {
+        foreach (bool? playable in new bool?[] { false, null })
+        {
+            var music = new FakeMusic { Playable = playable };
+            var f = new Fixture(music);
+            f.Input.ScoreTitleSource = () => "My Own";
+            f.Arm();
+            var start = f.Action("start"); var stop = f.Action("stop");
+            f.Input.Prepare(start); f.Input.Prepare(stop);
+            Assert.Equal(0, f.Input.ExecutionLeadMs(start));
+            Assert.Equal("sent", f.Input.Execute(start, CancellationToken.None).Status);
+            Assert.Equal(["down:Space", "up:Space"], f.Device.Commands);
+            Assert.Equal("sent", f.Input.Execute(stop, CancellationToken.None).Status);
+            Assert.Equal(["stop"], music.Calls);
+            Assert.Equal(2, f.Device.Commands.Count);
+        }
+    }
+
+    [Fact]
+    public void StopFallsBackToTheKeyOnlyWhenTheCommandWasDefinitelyNotSentAndNeverAfterAnUnknownResult()
+    {
+        var music = new FakeMusic { StopResult = new(GameMusicOutcome.Unavailable, "gameCli.notConnected") };
+        var f = new Fixture(music);
+        f.Input.ScoreTitleSource = () => "Song A";
+        f.Arm();
+        var start = f.Action("start"); f.Input.Prepare(start); f.Input.Execute(start, CancellationToken.None);
+        var stop = f.Action("stop"); f.Input.Prepare(stop);
+        Assert.Equal("sent", f.Input.Execute(stop, CancellationToken.None).Status);
+        Assert.Equal(["start:Song A", "stop"], music.Calls);
+        Assert.Equal(["down:Escape", "up:Escape"], f.Device.Commands);
+
+        var unknown = new FakeMusic { StopResult = new(GameMusicOutcome.Interrupted, "gameCli.interrupted") };
+        var g = new Fixture(unknown);
+        g.Input.ScoreTitleSource = () => "Song A";
+        g.Arm();
+        var begin = g.Action("start"); g.Input.Prepare(begin); g.Input.Execute(begin, CancellationToken.None);
+        var halt = g.Action("stop"); g.Input.Prepare(halt);
+        var outcome = g.Input.Execute(halt, CancellationToken.None);
+        Assert.Equal(("rejected", "gameCli.interrupted"), (outcome.Status, outcome.Detail));
+        Assert.Empty(g.Device.Commands);
+        Assert.Equal(EffectStatus.Unknown, g.Input.Snapshot.EffectStatus.KnownValue);
+    }
+
+    [Fact]
+    public void NothingToStopIsTreatedAsStoppedAndARefusedStartIsReportedWithoutPressingKeys()
+    {
+        var music = new FakeMusic { StopResult = new(GameMusicOutcome.Rejected, "gameCli.invalidState") };
+        var f = new Fixture(music);
+        f.Input.ScoreTitleSource = () => "Song A";
+        f.Arm();
+        var start = f.Action("start"); f.Input.Prepare(start); f.Input.Execute(start, CancellationToken.None);
+        var stop = f.Action("stop"); f.Input.Prepare(stop);
+        Assert.Equal("sent", f.Input.Execute(stop, CancellationToken.None).Status);
+
+        var refusing = new FakeMusic { StartResult = new(GameMusicOutcome.Rejected, "gameCli.notAvailableOnCombat") };
+        var g = new Fixture(refusing);
+        g.Input.ScoreTitleSource = () => "Song A";
+        g.Arm();
+        var begin = g.Action("start"); g.Input.Prepare(begin);
+        var outcome = g.Input.Execute(begin, CancellationToken.None);
+        Assert.Equal(("rejected", "gameCli.notAvailableOnCombat"), (outcome.Status, outcome.Detail));
+        Assert.Empty(g.Device.Commands);
+        Assert.Equal(["start:Song A"], refusing.Calls);
+    }
+
+    [Fact]
+    public void ConnectorIsNotUsedForEmoteOrWhenUnavailableAndStopNeedsNoKeyMappingWhenItIs()
+    {
+        var music = new FakeMusic();
+        var f = new Fixture(music);
+        f.Input.ScoreTitleSource = () => "Song A";
+        f.Preferences = f.Preferences with { Bindings = new Dictionary<string, ModeInputPreferences>
+        { ["emote"] = new(new(LocalBindingKind.Key, 65), null, false) } };
+        f.Arm("emote");
+        var emote = f.Action("start", "emote"); f.Input.Prepare(emote);
+        Assert.Equal(0, f.Input.ExecutionLeadMs(emote));
+        f.Input.Execute(emote, CancellationToken.None);
+        Assert.Empty(music.Calls);
+
+        var offline = new FakeMusic { Available = false };
+        var g = new Fixture(offline);
+        g.Input.ScoreTitleSource = () => "Song A";
+        g.Arm();
+        var begin = g.Action("start"); g.Input.Prepare(begin); g.Input.Execute(begin, CancellationToken.None);
+        Assert.Empty(offline.Calls);
+        Assert.Equal(["down:Space", "up:Space"], g.Device.Commands);
+
+        var noStopKey = new Fixture(new FakeMusic());
+        noStopKey.Preferences = noStopKey.Preferences with { Bindings = new Dictionary<string, ModeInputPreferences>
+        { ["ensemble"] = new(new(LocalBindingKind.Key, 32), null, false) } };
+        noStopKey.Arm();
+        var withoutConnector = new Fixture();
+        withoutConnector.Preferences = noStopKey.Preferences;
+        Assert.Equal("input.actionMappingUnavailable", Assert.Throws<RoomInputException>(() => withoutConnector.Arm()).Code);
+    }
+
+    /// <summary>开始命令一直不返回，直到完成源给出结果或取消令牌取消（取消时与命令行服务一致，以 Interrupted 返回）。</summary>
+    private sealed class HangingMusic : IRoomGameMusic
+    {
+        private readonly TaskCompletionSource<GameMusicResult> release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Available => true;
+        public double StartLeadMs => 0;
+        public ManualResetEventSlim Entered { get; } = new();
+        public void Complete(GameMusicResult result) => release.TrySetResult(result);
+        public ValueTask<GameInstrumentPreparation> PrepareInstrumentAsync(GameActivityProof proof, string? instrumentName, CancellationToken ct) => ValueTask.FromResult(new GameInstrumentPreparation(null));
+        public ValueTask<bool?> WarmAsync(string? title, CancellationToken ct) => ValueTask.FromResult<bool?>(true);
+        public bool? TryIsPlayable(string title) => true;
+        public async ValueTask<GameMusicResult> StartAsync(GameActivityProof proof, string title, CancellationToken ct)
+        {
+            Entered.Set();
+            try { return await release.Task.WaitAsync(ct); }
+            catch (OperationCanceledException) { return new(GameMusicOutcome.Interrupted, "gameCli.interrupted"); }
+        }
+        public ValueTask<GameMusicResult> StopAsync(GameActivityProof proof, CancellationToken ct) => ValueTask.FromResult(new GameMusicResult(GameMusicOutcome.Accepted));
+    }
+
+    [Fact]
+    public async Task HangingConnectorCallKeepsTheControllerResponsiveAndInterruptingItReturnsInterrupted()
+    {
+        var music = new HangingMusic();
+        var f = new Fixture(music);
+        f.Input.ScoreTitleSource = () => "Song A";
+        f.Arm();
+        var start = f.Action("start"); var stop = f.Action("stop");
+        Assert.True(f.Input.Prepare(start).Ready); Assert.True(f.Input.Prepare(stop).Ready);
+        using var interrupt = new CancellationTokenSource();
+        var running = Task.Run(() => f.Input.Execute(start, interrupt.Token));
+        Assert.True(music.Entered.Wait(TimeSpan.FromSeconds(5)));
+
+        // 命令行调用挂起期间控制器锁已释放：状态读取、租约证明、续租与后续停止的准备都不被挡住。
+        var responsive = Task.Run(() =>
+        {
+            _ = f.Input.Snapshot; _ = f.Input.ActivityProof; f.Input.KeepAlive();
+            return f.Input.Prepare(f.Action("stop")).Ready;
+        });
+        Assert.True(await responsive.WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.False(running.IsCompleted);
+
+        // 紧急停止中断命令行进程：挂起的调用以 Interrupted 返回，动作按已发出且效果未知处理。
+        interrupt.Cancel();
+        var outcome = await running.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(("rejected", "gameCli.interrupted"), (outcome.Status, outcome.Detail));
+        Assert.Equal(EffectStatus.Unknown, f.Input.Snapshot.EffectStatus.KnownValue);
+        Assert.Empty(f.Device.Commands);
+    }
+
+    [Fact]
+    public async Task ConnectorResultThatArrivesAfterTheLeaseWasReleasedIsLateAndChangesNoState()
+    {
+        var music = new HangingMusic();
+        var f = new Fixture(music);
+        f.Input.ScoreTitleSource = () => "Song A";
+        f.Arm();
+        var start = f.Action("start"); f.Input.Prepare(start);
+        var running = Task.Run(() => f.Input.Execute(start, CancellationToken.None));
+        Assert.True(music.Entered.Wait(TimeSpan.FromSeconds(5)));
+        f.Input.ReleaseAll();
+        Assert.Equal("released", f.Input.Snapshot.State);
+        var revision = f.Input.Snapshot.Revision;
+        music.Complete(new(GameMusicOutcome.Accepted));
+        var outcome = await running.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(("rejected", "room.planStale"), (outcome.Status, outcome.Detail));
+        Assert.Equal("released", f.Input.Snapshot.State);
+        Assert.Equal(revision, f.Input.Snapshot.Revision);
+        Assert.True(f.Available());
+    }
+
     private sealed class Fixture
     {
         public bool OperateGame { get; set; } = true;
@@ -240,11 +449,11 @@ public sealed class RoomLocalInputControllerTests
         public GamePlaybackEvidence? Playback { get; set; }
         public RoomPreferences Preferences { get; set; } = RoomPreferences.Default with { Bindings = new Dictionary<string, ModeInputPreferences>
         { ["ensemble"] = new(new(LocalBindingKind.Key, 32), new(LocalBindingKind.Key, 27), false) } };
-        public Fixture()
+        public Fixture(IRoomGameMusic? music = null)
         {
             Bindings.Update(new("TW", 100, Time.GetUtcNow(), new(500), "test", new(100, 200, 800, 600), 96, 96, false));
             Device.ForegroundWindowIdentity = new(500); Leases = new(Time); Clock = new(Time); RefreshClock();
-            Input = new("rooms:client", new(Bindings, Leases, new(Leases, Bindings, Device, Time), Activate, () => Playback), Time, Clock, () => Preferences, () => Authorized, Time,
+            Input = new("rooms:client", new(Bindings, Leases, new(Leases, Bindings, Device, Time), Activate, () => Playback, Music: music), Time, Clock, () => Preferences, () => Authorized, Time,
                 operateGame: () => OperateGame);
         }
         /// <summary>窗口激活能否把游戏切到前台；成功时设备的前台窗口变为游戏窗口。</summary>

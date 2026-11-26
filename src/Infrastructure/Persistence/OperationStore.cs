@@ -123,7 +123,7 @@ public sealed partial class OperationStore(SqliteStore store, TimeProvider? time
         if (SqliteStore.IsTerminal(previous.State.KnownValue) || previous.Cancellation.State.KnownValue != CancellationState.None) return previous;
         var deferred = previous.Phase == "applying";
         var color = previous.Kind == "color.search";
-        var combat = previous.Kind == "combat.observe" || previous.Kind.StartsWith("inventory.", StringComparison.Ordinal);
+        var combat = previous.Kind == "combat.observe" || previous.Kind.StartsWith("inventory.", StringComparison.Ordinal) || previous.Kind == FishingKind;
         var roomServer = IsRoomServerOperation(previous.Kind);
         var storage = previous.Kind is "storage.backup" or "storage.restore" or "storage.migrate" or "storage.moduleDelete";
         var snapshot = previous with

@@ -62,6 +62,30 @@ internal sealed partial class CombatStubHost : HttpMessageHandler
     public ClientIconCatalog? IconCatalog { get { lock (gate) return iconCatalog; } set { lock (gate) iconCatalog = value; } }
     private ClientIconCatalog? iconCatalog;
 
+    /// <summary>游戏连接器快照；为空时三个连接器接口回 404（旧宿主）。写操作的回应就是当前快照。</summary>
+    public GameConnectorSnapshot? Connector { get { lock (gate) return connector; } set { lock (gate) connector = value; } }
+    private GameConnectorSnapshot? connector;
+
+    /// <summary>游戏数据查询的答案（所有主题一并回）；为空时接口回 404（旧宿主）。</summary>
+    public GameDataSnapshot? GameData { get { lock (gate) return gameData; } set { lock (gate) gameData = value; } }
+    private GameDataSnapshot? gameData;
+
+    /// <summary>
+    /// 收到的游戏数据查询，按先后记录（取值时的副本）。请求计数在进入处理之前就加一，查询在处理里才记入，
+    /// 所以等查询时要等这里的条数，不能只看 <see cref="Count"/>。
+    /// </summary>
+    public IReadOnlyList<GameDataQuery> GameDataQueries { get { lock (gate) return [.. gameDataQueries]; } }
+    private readonly List<GameDataQuery> gameDataQueries = [];
+
+    /// <summary>可演奏性查询的答案；没有列出的乐谱回“未知”。</summary>
+    public Dictionary<string, GameScoreSupportState> ScoreSupport { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>收到的连接器写操作与可演奏性查询（乐谱编号），按先后记录（取值时的副本，记录与读取都在锁内）。</summary>
+    public IReadOnlyList<GameConnectorCommand> ConnectorCommands { get { lock (gate) return [.. connectorCommands]; } }
+    public IReadOnlyList<IReadOnlyList<string>> ScoreSupportQueries { get { lock (gate) return [.. scoreSupportQueries]; } }
+    private readonly List<GameConnectorCommand> connectorCommands = [];
+    private readonly List<IReadOnlyList<string>> scoreSupportQueries = [];
+
     /// <summary>每个可用键的图标内容（测试用代码生成的纯色 PNG，不含游戏图片）。</summary>
     public byte[] IconPng { get; set; } = [];
 
@@ -252,6 +276,20 @@ internal sealed partial class CombatStubHost : HttpMessageHandler
                 case ("GET", "/api/v1/combat/snapshot"):
                     return Json(new CombatSnapshot(Epoch, "cursor", new(workspaceRevision), Workspace(), new(history.Count, new(0), 0, new(0), false, 0, new(0))));
                 case ("GET", "/api/v1/combat/encounters"): return Json(new CombatEncounterPage(history.ToArray(), null, new(historyRevision)));
+                case ("GET", "/api/v1/game/connector"): return connector is { } state ? Json(state) : NotFound();
+                case ("POST", "/api/v1/game/connector/commands"):
+                    connectorCommands.Add(JsonSerializer.Deserialize<GameConnectorCommand>(content!.ReadAsStream(), ContractJson.Options)!);
+                    return connector is { } current ? Json(current) : NotFound();
+                case ("POST", "/api/v1/game/data/query"):
+                    gameDataQueries.Add(JsonSerializer.Deserialize<GameDataQuery>(content!.ReadAsStream(), ContractJson.Options)!);
+                    return gameData is { } data ? Json(data) : NotFound();
+                case ("POST", "/api/v1/game/connector/score-support/query"):
+                {
+                    var ids = JsonSerializer.Deserialize<GameScoreSupportQuery>(content!.ReadAsStream(), ContractJson.Options)!.ScoreIds;
+                    scoreSupportQueries.Add(ids);
+                    return connector is not { } host ? NotFound() : Json(new GameScoreSupportPage(Epoch, host.Status,
+                        ids.Select(id => new GameScoreSupport(id, ScoreSupport.GetValueOrDefault(id, GameScoreSupportState.Unknown), null)).ToArray()));
+                }
                 case ("GET", "/api/v1/combat/measurement"): return Json(measurement);
                 case ("GET", "/api/v1/combat/auto-observation"): return Json(new CombatAutoObservationState(true, "observing", null, ObservationId, new(1)));
                 case ("POST", "/api/v1/combat/ranges/query"):

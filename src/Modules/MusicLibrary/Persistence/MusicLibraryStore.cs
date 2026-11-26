@@ -196,8 +196,7 @@ public sealed class MusicLibraryStore(SqliteStore database, string hostEpoch, Ti
                     var search = name.SearchIndex + " " + (artist is null ? "" : artist.Name + " " + string.Join(' ', artist.Aliases));
                     var score = new ScoreEntry(entry.Id, entry.RawTitle, name.Cleaned, artist?.Id ?? inferred?.Id, name.Tags,
                         [new(source.Scope.Provider, source.Scope.Region, source.Scope.RealmId + ":" + source.Scope.CharacterId,
-                            entry.StableSourceId, null, source.Scope.Kind is ScoreSourceKind.ImportedLibrary or ScoreSourceKind.ImportedMml
-                                ? "none" : entry.StableSourceId is null ? "ambiguous" : "stable-id", entry.Ambiguous)],
+                            entry.StableSourceId, null, ScoreCatalog.Locator(source.Scope.Kind, entry.StableSourceId), entry.Ambiguous)],
                         entry.CandidateGroup, entry.Availability.ToString().ToLowerInvariant(), new(source.Revision));
                     return (Score: score, Search: search);
                 }).Where(x => Match(x.Search)).OrderBy(x => x.Score.DisplayTitle, StringComparer.Ordinal).ThenBy(x => x.Score.Id, StringComparer.Ordinal).ToArray();

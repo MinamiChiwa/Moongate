@@ -62,7 +62,8 @@ public sealed class LiveBackendTests
 
             // 能力表随页面状态读取：未实现的能力给出说明，可用或能力表没有的编号没有说明。
             await Until(() => backend.GetCapabilityNotice(CapabilityIds.PerformancePlay) is not null, "读取后端能力表");
-            Assert.Equal("台服暂不支持游戏内选曲演奏", backend.GetCapabilityNotice(CapabilityIds.PerformancePlay));
+            // 模拟宿主没有游戏连接器环境：原因为 platform.unsupported；指向“游戏连接器”胶囊的说明只跟在 gameCli.* 原因后面。
+            Assert.Equal("暂不可用：系统不受支持", backend.GetCapabilityNotice(CapabilityIds.PerformancePlay));
             Assert.Equal("后端未实现，暂不可用", backend.GetCapabilityNotice(CapabilityIds.RoomsCoordinate));
             Assert.StartsWith("暂不可用：", backend.GetCapabilityNotice(CapabilityIds.ColorSearch));
             Assert.Null(backend.GetCapabilityNotice("system.inspect"));
@@ -72,30 +73,28 @@ public sealed class LiveBackendTests
             using (var music = new Pages.Music.MusicPageModel(backend))
             {
                 Assert.True(music.HasCapabilityNotice);
-                Assert.Equal("台服暂不支持游戏内选曲演奏", music.CapabilityNotice);
+                Assert.StartsWith("暂不可用：", music.CapabilityNotice);
                 Assert.False(music.CanStart);
                 Assert.False(music.CanNext);
             }
 
-            // 展示接口的 nearby、environment 主题在模拟宿主上缺失且原因为 provider.unavailable：
-            // 依赖它们的浮窗元件在游戏浮窗里隐藏，编辑页保留并标注；其他主题没有说明。
+            // 展示接口的 nearby、environment 主题随游戏连接器：模拟宿主没有连接器环境，主题缺失并带连接器的原因（platform.unsupported），
+            // 不再固定为 provider.unavailable；浮窗元件照常显示外框并写“暂不可用：原因”，其他主题没有说明。
             await Until(() => backend.GetPresentationNotice(PresentationTopics.Nearby) is not null, "读取展示接口主题状态");
             foreach (var topic in PresentationTopics.Watched)
             {
                 var missing = backend.GetPresentationNotice(topic);
                 Assert.NotNull(missing);
-                Assert.True(missing.PlatformUnsupported);
-                Assert.Equal("provider.unavailable", missing.ReasonCode);
-                Assert.Equal("台服暂不支持", missing.Text);
+                Assert.False(missing.PlatformUnsupported);
+                Assert.Equal("platform.unsupported", missing.ReasonCode);
+                Assert.StartsWith("暂不可用：", missing.Text);
             }
             Assert.Null(backend.GetPresentationNotice("room"));
             Assert.Null(backend.GetPresentationNotice("no.such.topic"));
             using (var widget = new Overlay.OverlayWidgetModel("performance.nearby", backend, PresentationTopics.Nearby))
             {
-                Assert.False(widget.FrameVisible);
-                widget.Editing = true;
                 Assert.True(widget.FrameVisible);
-                Assert.Equal("台服暂不支持", widget.NoticeText);
+                Assert.Equal(backend.GetPresentationNotice(PresentationTopics.Nearby)!.Text, widget.NoticeText);
             }
 
             await backend.SendCombatIntentAsync(CombatIntent.StartObservation, null, TestContext.Current.CancellationToken);
@@ -139,6 +138,11 @@ public sealed class LiveBackendTests
                 Assert.Empty(LayoutProbe.FindTextOverflow(window));
                 LayoutProbe.SaveScreenshot(window, $"{module}-live-mock-1280x860");
             }
+
+            // 乐谱库在没有游戏连接器的宿主上照常打开：状态行写明游戏乐谱来源不可用的原因（连接器的原因码），本机整理不受影响。
+            LayoutProbe.Select(window, "music-library");
+            await Until(() => backend.GetMusic().Status.Contains("游戏乐谱来源暂不可用：系统不受支持"), "乐谱库状态行写明来源不可用的原因");
+            Assert.DoesNotContain("尚未从游戏同步", backend.GetMusic().Status);
 
             // 迷你窗读同一个后端：清单、乐谱与活动区来自真实接口，紧急停止可用。
             var mini = new Shell.MiniWindow { DataContext = new Shell.MiniWindowModel(backend), Width = 440, Height = 920 };
@@ -265,7 +269,7 @@ public sealed class LiveBackendTests
             await Until(() => backend.GetColor().Profiles.All(profile => profile.Name != "聯調方案"), "方案已删除");
 
             // 模拟宿主没有配置桌面截图源：错误码经共用映射换成中文短句交回界面。
-            var capture = await backend.CaptureScreenAsync(token);
+            var capture = await backend.CaptureScreenAsync(new PixelRect(0, 0, 1920, 1080), token);
             Assert.Null(capture.Capture);
             Assert.Equal("请求未完成：功能不可用", capture.Message);
 
@@ -662,6 +666,105 @@ public sealed class LiveBackendTests
                 && log.Skip(before).Any(item => item.Path == "/api/v1/combat/encounters")
                 && log.Skip(before).Any(item => item.Path == "/api/v1/modules"), "重连后重读战斗与页面状态");
             Assert.True(backend.GetModules().Modules.Count > 0);
+        }
+        finally { await StopHostAsync(host, root); }
+    }
+
+    // MobiFolio 数据文件：三张乐谱（两张同名）、一个文件夹里的一个清单（两个条目）。
+    private static MusicImportFile Json(string name, string json) => new(name, System.Text.Encoding.UTF8.GetBytes(json));
+
+    /// <summary>乐谱来源合并、清单读取与编辑、导入预览与提交都经真实后端（模拟宿主）完成。</summary>
+    [AvaloniaFact]
+    public async Task MusicImportListsAndEditsReachTheMockHost()
+    {
+        var hostDll = FindHostDll();
+        Assert.SkipWhen(hostDll is null, "未找到已构建的 MabiTool.Host.dll");
+        var (host, root) = await StartHostAsync(hostDll!);
+        using var hostProcess = host;
+        var token = TestContext.Current.CancellationToken;
+        try
+        {
+            await using var backend = new LiveBackend(Path.Combine(root, "runtime", "instance.json"),
+                action => Avalonia.Threading.Dispatcher.UIThread.Post(action));
+            backend.Start();
+            await Until(() => backend.GetModules().Modules.Count > 0, "连接模拟宿主并读取模块");
+            backend.SetSurfaceVisible("main", true);
+            backend.SetSurfaceVisible("music", true);
+            await Until(() => backend.GetMusic().Lists is { CanEdit: true }, "读到曲库");
+            Assert.Empty(backend.GetMusic().Lists!.Playlists);
+
+            // 导入：预览不写入曲库；确认后才提交，来源合并进乐谱表，清单与文件夹按层级读到。
+            var files = new[]
+            {
+                Json("scores.json", """{"items":[{"Name":"夕陽"},{"Name":"夕陽"},{"Name":"旅程"}]}"""),
+                Json("playlists.json", """{"folders":[{"id":"f1","name":"收藏","parent":null}],"playlists":[{"id":"l1","name":"晚間","folder":"f1","memo":"備註","items":[{"key":"夕陽#1","title":"夕陽","inst":""},{"key":"旅程","title":"旅程","inst":""}]}]}""")
+            };
+            var preview = await RetryStorage(() => backend.PreviewMusicImportAsync(files, "KR", token), reply => reply.Message);
+            Assert.True(preview.Ok, preview.Message);
+            Assert.Equal((3, 1, 1, 2), (preview.Preview!.Scores, preview.Preview.Folders, preview.Preview.Playlists, preview.Preview.PlaylistItems));
+            Assert.Empty(backend.GetMusic().Lists!.Playlists);
+            var bad = await backend.PreviewMusicImportAsync([Json("scores.json", "不是 JSON")], "KR", token);
+            Assert.False(bad.Ok);
+            var committed = await backend.CommitMusicImportAsync(preview.Preview.Id, token);
+            Assert.True(committed.Ok, committed.Message);
+            Assert.Equal("已导入 3 张乐谱、1 个清单", committed.Message);
+            await Until(() => backend.GetMusic().Scores.Count == 3 && backend.GetMusic().Lists!.Playlists.Count == 1, "导入的乐谱与清单出现");
+            var music = backend.GetMusic();
+            Assert.All(music.Scores, score => Assert.Equal("导入", score.Source));
+            Assert.Equal(["夕陽", "夕陽", "旅程"], music.Scores.Select(score => score.Title).Order(StringComparer.Ordinal));
+            Assert.Equal("3 张", music.Playlists[0].Note);
+            var imported = music.Lists!.Playlists.Single();
+            Assert.Equal(("晚間", "收藏", 2), (imported.Name, imported.FolderPath, imported.Items.Count));
+            Assert.Equal("2 首 · 收藏", music.Playlists.Single(chip => chip.Id == imported.Id).Note);
+            Assert.Equal(["收藏"], music.Lists.Folders.Select(folder => folder.Name));
+            // 同一份数据不能重复导入。
+            var again = await backend.PreviewMusicImportAsync(files, "KR", token);
+            Assert.False(again.Ok);
+
+            // 选中清单后乐谱表只显示清单里的乐谱（两个条目指向两张乐谱）。
+            await backend.SendIntentAsync("music.playlist", imported.Id, token);
+            await Until(() => backend.GetMusic().Lists!.Selected?.Id == imported.Id && backend.GetMusic().Scores.Count == 2, "选中清单后筛选乐谱");
+
+            // 编辑：新建、加入乐谱（可重复）、排序、逐条乐器、默认乐器、重命名、备注、移动、删除；每次都由后端判定。
+            async Task<BackendReply> Edit(MusicListEdit edit) => await RetryStorage(() => backend.EditMusicLibraryAsync(edit, token), reply => reply.Message);
+            Assert.True((await Edit(new(MusicListEditKind.CreatePlaylist, Text: "新清單"))).Ok);
+            await Until(() => backend.GetMusic().Lists!.Playlists.Any(item => item.Name == "新清單"), "新清單出現");
+            var created = backend.GetMusic().Lists!.Playlists.Single(item => item.Name == "新清單");
+            Assert.Equal(string.Empty, created.FolderPath);
+            var scoreId = backend.GetMusic().Lists!.Selected!.Items[0].ScoreId;
+            Assert.True((await Edit(new(MusicListEditKind.AddItem, PlaylistId: created.Id, ScoreId: scoreId))).Ok);
+            Assert.True((await Edit(new(MusicListEditKind.AddItem, PlaylistId: created.Id, ScoreId: scoreId))).Ok);
+            Assert.False((await Edit(new(MusicListEditKind.AddItem, PlaylistId: created.Id, ScoreId: "不存在的乐谱"))).Ok);
+            await Until(() => backend.GetMusic().Lists!.Playlists.Single(item => item.Id == created.Id).Items.Count == 2, "同一乐谱重复加入得到两个条目");
+            var items = backend.GetMusic().Lists!.Playlists.Single(item => item.Id == created.Id).Items;
+            Assert.NotEqual(items[0].Id, items[1].Id);
+            Assert.True((await Edit(new(MusicListEditKind.MoveItem, PlaylistId: created.Id, ItemId: items[1].Id, Direction: -1))).Ok);
+            Assert.True((await Edit(new(MusicListEditKind.SetItemInstrument, PlaylistId: created.Id, ItemId: items[0].Id, Text: "piano"))).Ok);
+            Assert.True((await Edit(new(MusicListEditKind.SetDefaultInstrument, PlaylistId: created.Id, Text: "harp"))).Ok);
+            Assert.True((await Edit(new(MusicListEditKind.RenamePlaylist, PlaylistId: created.Id, Text: "改名清單"))).Ok);
+            Assert.True((await Edit(new(MusicListEditKind.SetNotes, PlaylistId: created.Id, Text: "第一行\n第二行"))).Ok);
+            Assert.True((await Edit(new(MusicListEditKind.MovePlaylist, PlaylistId: created.Id, FolderId: music.Lists.Folders[0].Id))).Ok);
+            await Until(() => backend.GetMusic().Lists!.Playlists.Any(item => item.Name == "改名清單" && item.FolderPath == "收藏" && item.Notes == "第一行\n第二行"), "重命名、备注与移动生效");
+            var edited = backend.GetMusic().Lists!.Playlists.Single(item => item.Id == created.Id);
+            Assert.Equal([items[1].Id, items[0].Id], edited.Items.Select(item => item.Id));
+            Assert.Equal(("piano", "沿用清单"), (edited.Items[1].InstrumentId, edited.Items[0].Instrument));
+            Assert.Equal("harp", edited.DefaultInstrumentId);
+            Assert.True((await Edit(new(MusicListEditKind.RemoveItem, PlaylistId: created.Id, ItemId: items[0].Id))).Ok);
+            Assert.True((await Edit(new(MusicListEditKind.CreateFolder, Text: "新夾"))).Ok);
+            await Until(() => backend.GetMusic().Lists!.Folders.Any(folder => folder.Name == "新夾") &&
+                              backend.GetMusic().Lists!.Playlists.Single(item => item.Id == created.Id).Items.Count == 1, "移除条目与新建文件夹生效");
+            var folder = backend.GetMusic().Lists!.Folders.Single(item => item.Name == "新夾");
+            Assert.True((await Edit(new(MusicListEditKind.RenameFolder, FolderId: folder.Id, Text: "改名夾"))).Ok);
+            Assert.True((await Edit(new(MusicListEditKind.DeleteFolder, FolderId: music.Lists.Folders[0].Id))).Ok);
+            // 删除文件夹：其中的清单移到上一层（根目录）。
+            await Until(() => backend.GetMusic().Lists!.Folders.Select(item => item.Name).SequenceEqual(["改名夾"])
+                              && backend.GetMusic().Lists!.Playlists.All(item => item.FolderPath.Length == 0), "删除文件夹后清单移到根目录");
+            Assert.True((await Edit(new(MusicListEditKind.DeletePlaylist, PlaylistId: created.Id))).Ok);
+            await Until(() => backend.GetMusic().Lists!.Playlists.All(item => item.Id != created.Id), "清单已删除");
+            // 引用的清单已不存在：不发送，回执说明。
+            var gone = await backend.EditMusicLibraryAsync(new(MusicListEditKind.RenamePlaylist, PlaylistId: created.Id, Text: "晚"), token);
+            Assert.False(gone.Ok);
+            Assert.Contains("已经不存在", gone.Message);
         }
         finally { await StopHostAsync(host, root); }
     }

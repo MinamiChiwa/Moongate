@@ -7,6 +7,20 @@ namespace MabiTool.Desktop.Backend;
 public static class CapabilityIds
 {
     public const string PerformancePlay = "performance.play";
+    /// <summary>演奏前自动换乐器（游戏连接器的 <c>get_instruments</c>、<c>change_instrument</c>）。</summary>
+    public const string PerformanceInstrument = "performance.instrument";
+    /// <summary>乐谱库与合奏查询背包乐器。</summary>
+    public const string MusicInventory = "music.inventory";
+    /// <summary>游戏连接器本身（台服游戏自带的命令行工具）。</summary>
+    public const string GameConnector = "game.connector";
+    /// <summary>环境信息（频道、区域、天气、游戏内时间；游戏连接器的 <c>get_current_environment</c>）。</summary>
+    public const string EnvironmentObserve = "environment.observe";
+    /// <summary>附近玩家及其演奏状态（<c>get_near_pcs</c>）。</summary>
+    public const string NearbyObserve = "nearby.observe";
+    /// <summary>角色信息页的命令行数据（属性、货币、日常与周常任务）。</summary>
+    public const string CharacterInfo = "character.info";
+    /// <summary>交易所查价（<c>get_market_prices</c>、<c>get_market_price_detail</c>）。</summary>
+    public const string MarketPrices = "market.prices";
     public const string RoomsCoordinate = "rooms.coordinate";
     public const string ColorSearch = "color.search";
     public const string InventoryFull = "inventory.full";
@@ -23,12 +37,12 @@ public static class CapabilityNotice
     public static string? Describe(CapabilitySnapshot? capability)
     {
         if (capability is null || capability.Status.KnownValue != CapabilityStatus.Unavailable) return null;
-        // 台服没有游戏内选曲演奏依赖的命令行工具，不论原因码都说明台服的状况。
-        if (capability.Id == CapabilityIds.PerformancePlay)
-            return Pick("台服暂不支持游戏内选曲演奏", "台服暫不支援遊戲內選曲演奏");
         return capability.ReasonCode switch
         {
             "module.notImplemented" => Pick("后端未实现，暂不可用", "後端未實作，暫不可用"),
+            // 游戏连接器的原因（未启用、未连接游戏、已失效、命令行工具缺失等）后面指向侧栏的“游戏连接器”胶囊。
+            { } code when code.StartsWith("gameCli.", StringComparison.Ordinal) =>
+                Pick("暂不可用：", "暫不可用：") + Localization.CodeText.Reason(code) + ConnectorText.Pointer,
             var code => Pick("暂不可用：", "暫不可用：") + Localization.CodeText.Reason(code)
         };
     }

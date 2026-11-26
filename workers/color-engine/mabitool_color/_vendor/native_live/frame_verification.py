@@ -3,6 +3,10 @@
 The verdict names one reason per run status: a covering window first, then the
 card layout, then per-card OCR outcomes. A reason that concerns exactly one
 card carries its 1-based region number (``hex_mismatch.2``).
+
+``independently_verified`` is the per-frame pass rule shared by the adaptive
+session gate and later visual confirmation; card rows record whether each card
+was verified by text or by swatch.
 """
 from .dye_visual_readiness import VisualNotReady, NativeLayoutNotReady
 
@@ -21,14 +25,64 @@ class VerificationFailed(VisualNotReady):
         self.layout_diagnostic = layout_diagnostic
 
 
+def card_verified_by(frame, index, color):
+    """单张卡在这一帧的核验来源：``screenshot``（读出的色码与游戏数据一致）或 ``swatch``
+    （文字未读出，色块与游戏色码色差不超过 ``SWATCH_LIMIT``）；未核验为 None。"""
+    sources = frame.get('hex_source')
+    observed = frame.get('screenshot_hex')
+    distances = frame.get('hex_swatch_distances')
+    if not isinstance(sources, list) or not isinstance(observed, list) or not 0 <= index < min(len(sources), len(observed)):
+        return None
+    if sources[index] == 'screenshot':
+        return 'screenshot' if observed[index] == color else None
+    if sources[index] == 'swatch':
+        distance = distances[index] if isinstance(distances, list) and index < len(distances) else None
+        if observed[index] is None and type(distance) in (int, float) and distance <= SWATCH_LIMIT:
+            return 'swatch'
+    return None
+
+
+def independently_verified(frame, colors, regions=None):
+    """单帧截图核验：本局放行输入与之后的目视确认共用。
+
+    要核对的每张卡须由色码文字或色块核验（见 ``card_verified_by``），且本帧至少一张卡由
+    色码文字核验，以文字确认截图里确实是本局的色卡。``regions`` 为要核对的卡（从 0 起）；
+    省略时核对全部卡，并要求帧记录的 ``screenshot_hex_verified`` 为真。
+    """
+    if not isinstance(frame, dict) or not isinstance(colors, (list, tuple)) or not colors:
+        return False
+    count = len(colors)
+    sources = frame.get('hex_source')
+    observed = frame.get('screenshot_hex')
+    if (not isinstance(sources, list) or len(sources) != count or not isinstance(observed, list)
+            or len(observed) != count
+            or not any(card_verified_by(frame, i, color) == 'screenshot' for i, color in enumerate(colors))):
+        return False
+    if regions is None:
+        if frame.get('screenshot_hex_verified') is not True:
+            return False
+        regions = range(count)
+    return all(0 <= i < count and card_verified_by(frame, i, colors[i]) is not None for i in regions)
+
+
 def _card(region, frames, expected):
-    row = dict(region=region, expected_hex=expected, observed_hex=[], ocr_timeouts=0, ocr_calls=0,
-               ocr_empty=0, best_text=None, best_swatch_distance=None, status='verified')
+    row = dict(region=region, expected_hex=expected, observed_hex=[], hex_source=[], ocr_timeouts=0, ocr_calls=0,
+               ocr_empty=0, best_text=None, best_swatch_distance=None, game_swatch_distance=None,
+               status='verified', verified_by=None)
     statuses = []
     for frame in frames:
         values = frame.get('screenshot_hex', frame.get('hex')) or []
         observed = values[region - 1] if region - 1 < len(values) else None
         row['observed_hex'].append(observed)
+        sources = frame.get('hex_source') or []
+        source = sources[region - 1] if region - 1 < len(sources) else None
+        row['hex_source'].append(source)
+        # 色块与游戏色码的色差，取两帧中较大者。
+        distances = frame.get('hex_swatch_distances') or []
+        distance = distances[region - 1] if region - 1 < len(distances) else None
+        if distance is not None:
+            previous = row['game_swatch_distance']
+            row['game_swatch_distance'] = distance if previous is None else max(previous, distance)
         reads = frame.get('hex_read_diagnostics') or []
         read = next((item for item in reads if item.get('region') == region), {})
         for key in ('ocr_timeouts', 'ocr_calls', 'ocr_empty'):
@@ -38,6 +92,8 @@ def _card(region, frames, expected):
             row['best_swatch_distance'] = read.get('best_swatch_distance')
         if observed is not None:
             statuses.append('verified' if expected is None or observed == expected else 'hex_mismatch')
+        elif source == 'swatch':
+            statuses.append('verified')
         elif read.get('ocr_timeouts'):
             statuses.append('ocr_timeout')
         elif read.get('best_swatch_distance') is not None and read['best_swatch_distance'] >= SWATCH_LIMIT:
@@ -50,6 +106,8 @@ def _card(region, frames, expected):
     failing = [status for status in statuses if status != 'verified']
     if failing:
         row['status'] = min(failing, key=REASONS.index)
+    else:
+        row['verified_by'] = 'swatch' if 'swatch' in row['hex_source'] else 'screenshot'
     return row
 
 

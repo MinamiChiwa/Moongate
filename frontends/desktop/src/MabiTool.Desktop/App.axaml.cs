@@ -41,9 +41,9 @@ public sealed class App : Application
             LoadAssetPack(args);
             var backend = CreateBackend(args);
             var layouts = new OverlayLayoutStore(OverlayLayoutStore.DefaultPath);
-            // 收藏变化同步到收藏浮窗（新收藏追加到“收藏浮窗 1”，取消的从两个收藏浮窗移除）；觉醒触发时按设置播放提示音。
+            // 收藏变化同步到收藏浮窗（新收藏追加到“收藏浮窗 1”，取消的从两个收藏浮窗移除）；徽章觉醒触发时按设置播放提示音。
             Pages.Combat.CombatEffectFavorites.Toggled += layouts.FavoriteToggled;
-            FavoriteEffectTracker.Triggered += kind => AwakeningSound.Notify(kind, layouts);
+            FavoriteEffectTracker.Triggered += () => AwakeningSound.Notify(layouts);
             desktop.MainWindow = CreateMainWindow(backend, layouts);
             UiMotion.FollowSystem(desktop.MainWindow);
             var shown = desktop.MainWindow;

@@ -47,16 +47,26 @@ public sealed class CapabilityNoticeTests
     [AvaloniaFact]
     public void NotImplementedCapabilityExplainsItself()
     {
-        Assert.Equal("台服暂不支持游戏内选曲演奏",
+        Assert.Equal("后端未实现，暂不可用",
             CapabilityNotice.Describe(Capability("performance.play", CapabilityStatus.Unavailable, "module.notImplemented")));
         Assert.Equal("后端未实现，暂不可用",
             CapabilityNotice.Describe(Capability("rooms.coordinate", CapabilityStatus.Unavailable, "module.notImplemented")));
     }
 
     [AvaloniaFact]
-    public void PlayCapabilityExplainsTheTaiwanServerForEveryReason()
+    public void PlayCapabilityExplainsTheConnectorReasonAndPointsToTheChip()
     {
-        Assert.Equal("台服暂不支持游戏内选曲演奏",
+        // 游戏连接器的原因码按原因给出说明，并指向侧栏的“游戏连接器”胶囊；其他原因码仍走通用映射。
+        foreach (var (code, reason) in new[]
+                 {
+                     ("gameCli.disabled", "游戏连接器未启用"), ("gameCli.gameNotRunning", "游戏未运行"),
+                     ("gameCli.expired", "连接器已失效，需重新启用并重启游戏"), ("gameCli.cliMissing", "找不到命令行工具文件"),
+                     ("gameCli.cliHashMismatch", "命令行工具版本不符"), ("gameCli.checking", "正在检测连接器"),
+                     ("gameCli.catalogLoading", "游戏指令目录读取中"), ("gameCli.commandMissing", "游戏不支持所需指令")
+                 })
+            Assert.Equal($"暂不可用：{reason}（点左上角“游戏连接器”查看）",
+                CapabilityNotice.Describe(Capability("performance.play", CapabilityStatus.Unavailable, code)));
+        Assert.Equal("暂不可用：数据来源不可用",
             CapabilityNotice.Describe(Capability("performance.play", CapabilityStatus.Unavailable, "provider.unavailable")));
     }
 
@@ -170,9 +180,11 @@ public sealed class CapabilityNoticeTests
         try
         {
             UiText.Apply(Avalonia.Application.Current!, UiLanguage.TraditionalChinese);
-            Assert.Equal("台服暫不支援遊戲內選曲演奏",
+            Assert.Equal("後端未實作，暫不可用",
                 CapabilityNotice.Describe(Capability("performance.play", CapabilityStatus.Unavailable, "module.notImplemented")));
-            Assert.Equal("台服暫不支援遊戲內選曲演奏",
+            Assert.Equal("暫不可用：遊戲連接器未啟用（點左上角「遊戲連接器」查看）",
+                CapabilityNotice.Describe(Capability("performance.play", CapabilityStatus.Unavailable, "gameCli.disabled")));
+            Assert.Equal("暫不可用：資料來源不可用",
                 CapabilityNotice.Describe(Capability("performance.play", CapabilityStatus.Unavailable, "provider.unavailable")));
             Assert.Equal("後端未實作，暫不可用",
                 CapabilityNotice.Describe(Capability("rooms.coordinate", CapabilityStatus.Unavailable, "module.notImplemented")));
@@ -223,10 +235,7 @@ public sealed class CapabilityNoticeTests
                 var notice = window.GetVisualDescendants().OfType<TextBlock>().Where(text => text.Name == "CapabilityNotice").ToList();
                 Assert.Single(notice);
                 Assert.True(notice[0].IsEffectivelyVisible, module);
-                var expected = module == "music-library"
-                    ? language == UiLanguage.TraditionalChinese ? "台服暫不支援遊戲內選曲演奏" : "台服暂不支持游戏内选曲演奏"
-                    : language == UiLanguage.TraditionalChinese ? "後端未實作，暫不可用" : "后端未实现，暂不可用";
-                Assert.Equal(expected, notice[0].Text);
+                Assert.Equal(language == UiLanguage.TraditionalChinese ? "後端未實作，暫不可用" : "后端未实现，暂不可用", notice[0].Text);
             }
         }
         finally

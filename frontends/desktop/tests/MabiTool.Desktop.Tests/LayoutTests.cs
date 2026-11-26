@@ -14,6 +14,7 @@ using MabiTool.Desktop.Overlay;
 using MabiTool.Desktop.Pages.Combat;
 using MabiTool.Desktop.Pages.Diagnostics;
 using MabiTool.Desktop.Pages.Dyeing;
+using MabiTool.Desktop.Pages.Life;
 using MabiTool.Desktop.Pages.Modules;
 using MabiTool.Desktop.Pages.Music;
 using MabiTool.Desktop.Pages.Overlay;
@@ -42,7 +43,7 @@ public sealed class LayoutTests
     private static readonly (double Width, double Height) MiniNarrowest = (340, 640), MiniCommon = (440, 920);
 
     // 简体文字比繁体长的界面状态（倒计时、自定义等），两种语言都检查。
-    private static readonly HashSet<string> SimplifiedToo = ["rooms", "rooms.join", "settings", "settings.limit-invalid"];
+    private static readonly HashSet<string> SimplifiedToo = ["rooms", "rooms.join", "settings", "settings.limit-invalid", "life.data", "life.picker", "life.expanded"];
 
     // 另在中间与最宽尺寸下各检查一轮的代表状态。
     private static readonly HashSet<string> AllSizes = ["combat", "rooms", "presentation", "settings", "mini"];
@@ -51,8 +52,10 @@ public sealed class LayoutTests
 
     private static string? PlayUnavailable(string id) => id == CapabilityIds.PerformancePlay
         ? CapabilityNotice.Describe(new(id, "performance", CapabilityStatus.Unavailable, null, null, null, null,
-            "module.notImplemented", DateTimeOffset.UnixEpoch, []))
+            "gameCli.expired", DateTimeOffset.UnixEpoch, []))
         : null;
+
+    private static void OpenConnector(Window window) => Click(window, Named<Button>(window, "ConnectorChip"));
 
     private static TopicNotice? NearbyUnsupported(string topic) => topic == PresentationTopics.Nearby
         ? TopicNoticeText.Describe(new(topic, CapabilityStatus.Unavailable, "provider.unavailable"))
@@ -61,6 +64,12 @@ public sealed class LayoutTests
     private static IDisposable? OpenGameLayer(Window window)
     {
         Click(window, Named<Button>(Page<MusicPage>(window), "GameLayerButton"));
+        return null;
+    }
+
+    private static IDisposable? OpenListsLayer(Window window)
+    {
+        Click(window, Named<Button>(Page<MusicPage>(window), "ListsButton"));
         return null;
     }
 
@@ -162,6 +171,30 @@ public sealed class LayoutTests
     private static IDisposable? OpenColorLayer(Window window, string name) =>
         Do(w => ClickInPlace(w, Named<Button>(w, name)), window);
 
+    // 生活页的队列确认框：先复位“不再询问”，对暂停的队列点“继续”。
+    private static IDisposable? OpenLifeConfirm(Window window) => Do(w =>
+    {
+        LifeConfirmPolicy.Reset();
+        ((LifePageModel)Page<LifePage>(w).DataContext!).StartCommand.Execute(null);
+    }, window);
+
+    // 生活页的二级菜单：皮革加工设备空槽的配方菜单。
+    private static IDisposable? OpenLifePicker(Window window) => Do(w =>
+    {
+        var model = (LifePageModel)Page<LifePage>(w).DataContext!;
+        model.Facilities.Single(x => x.Name == "皮革加工設備").Dots.Single(x => x.IsEmpty).Command!.Execute(null);
+    }, window);
+
+    // 生活页采集卡片：展开全部技能分组（展开状态在本次运行内保持，结束时复位）。
+    private static IDisposable? ExpandLifeSkills(Window window)
+    {
+        Do(w =>
+        {
+            foreach (var group in ((LifePageModel)Page<LifePage>(w).DataContext!).SkillGroups.Where(x => !x.IsExpanded).ToList()) group.ToggleCommand.Execute(null);
+        }, window);
+        return new Release(LifePageModel.ResetAnnouncements);
+    }
+
     private static Action<Window> InsideWindow(string panelName) => window =>
     {
         var panel = Named<Border>(window, panelName);
@@ -253,6 +286,7 @@ public sealed class LayoutTests
         var opened = MabiTool.Desktop.Pages.Inventory.InventoryTableWindow.Current!;
         LayoutProbe.Render(opened);
         Assert.Empty(LayoutProbe.FindTextOverflow(opened));
+        Assert.Empty(LayoutProbe.FindHoverClipping(opened));
         Assert.NotEmpty(Named<MabiTool.Desktop.Controls.Tables.DataTable>(opened, "ItemsTable").View);
         var model = (MabiTool.Desktop.Pages.Inventory.InventoryPageModel)opened.DataContext!;
         var name = model.Data.AccountId == "account-long" ? "inventory-window.long" : "inventory-window";
@@ -374,6 +408,8 @@ public sealed class LayoutTests
             Shot: Shot.Full),
         new("music.long", "music-library", "long"),
         new("music.game-layer.long", "music-library", "long", OpenGameLayer, Shot: Shot.Narrow),
+        new("music.lists-layer", "music-library", "sample", OpenListsLayer),
+        new("music.lists-layer.long", "music-library", "long", OpenListsLayer, Shot: Shot.Narrow),
         new("mini", null, "sample", window => Do(w => ((MiniWindowModel)w.DataContext!).SelectCommand.Execute("s2"), window),
             Shot: Shot.Full, Mini: true),
         new("mini.notice", null, "play-unavailable",
@@ -432,12 +468,26 @@ public sealed class LayoutTests
         new("color.history.long", "color", "long", window => OpenColorLayer(window, "RecordsButton")),
 
         // 背包
+        // 生活
+        new("life", "life", "sample"),
+        new("life.data", "life", "life-data", Shot: Shot.Full),
+        new("life.long", "life", "life-long", Shot: Shot.Narrow),
+        new("life.confirm", "life", "life-data", window => OpenLifeConfirm(window), InsideWindow("ConfirmPanel"), Shot.Narrow),
+        new("life.picker", "life", "life-long", OpenLifePicker, InsideWindow("PickerPanel"), Shot.Narrow),
+        new("life.expanded", "life", "life-long", ExpandLifeSkills, Shot: Shot.Full),
+
         new("inventory", "inventory", "sample", Shot: Shot.Full),
         new("inventory.long", "inventory", "long"),
         new("inventory.search", "inventory", "sample", OpenInventorySearch,
             Check: window => Assert.NotEmpty(Named<MabiTool.Desktop.Controls.Tables.DataTable>(window, "ItemsTable").MatchIndices), Shot: Shot.Narrow),
         new("inventory.window", "inventory", "sample", OpenInventoryWindow, InventoryWindowFits, Shot.Narrow),
         new("inventory.window.long", "inventory", "long", OpenInventoryWindow, InventoryWindowFits),
+
+        // 角色与交易所
+        new("character", "character", "sample", Shot: Shot.Full),
+        // 没连上后端：各卡片的图标照常显示，数值全为未读取。
+        new("character.offline", "character", "offline"),
+        new("market", "market", "sample"),
 
         // 浮窗版面
         new("presentation", "presentation", "sample",
@@ -525,8 +575,27 @@ public sealed class LayoutTests
         new("shell.game-picker.empty", null, "no-windows", window => Do(OpenPicker, window),
             PickerInsideWindow),
         new("shell.game-picker.long", null, "long", window => Do(OpenPicker, window), PickerInsideWindow),
+        // 游戏连接器弹出层（游戏运行中：开关与恢复停用并写明原因；命令行文件缺失）与首次启用的风险确认窗口。
+        new("shell.connector", null, "connector-running", window => Do(OpenConnector, window), InsideWindow("ConnectorPanel"), Shot.Full),
+        new("shell.connector.missing", null, "connector-missing", window => Do(OpenConnector, window), InsideWindow("ConnectorPanel")),
+        new("shell.connector.long", null, "long", window => Do(OpenConnector, window), InsideWindow("ConnectorPanel")),
+        new("shell.connector-risk", null, "sample", window => Do(w =>
+        {
+            OpenConnector(w);
+            Click(w, Named<Button>(w, "ConnectorOnButton"));
+        }, window), InsideWindow("ConnectorRiskPanel"), Shot.Full),
         new("shell.sidebar-expanded", null, "sample", window =>
         {
+            // 内建模块都已实现（乐谱库已移回内建分组），“未实现模块”分组由一个登记为未实现的示例扩展提供。
+            var catalog = ((ShellViewModel)window.DataContext!).Catalog;
+            if (catalog.Modules.All(module => module.Id != "ext.pending"))
+                catalog.ReplaceExtensions([.. catalog.Modules.Where(module => module.Origin == ModuleOrigin.Extension),
+                    new ModuleDescriptor("ext.pending", "未实现模块（示例）", "未", Avalonia.Media.Colors.Gray, ModuleOrigin.Extension,
+                        () => new Pages.PendingPage(), pending: true)]);
+            LayoutProbe.Settle();
+            // 九个内建入口之后的分组标题在较矮的窗口里位于滚动区下方，先滚入视野再点。
+            Named<Avalonia.Controls.Primitives.ToggleButton>(window, "PendingToggle").BringIntoView();
+            LayoutProbe.Settle();
             Click(window, Named<Avalonia.Controls.Primitives.ToggleButton>(window, "PendingToggle"));
             Assert.True(Named<ItemsControl>(window, "PendingList").IsEffectivelyVisible);
             return null;
@@ -579,6 +648,8 @@ public sealed class LayoutTests
         "no-healing" => new SampleBackend { NoHealingData = true },
         "update-badge" => new SampleBackend { AvailableRelease = "2026.11.13-preview-build-with-a-very-long-identifier" },
         "play-unavailable" => new SampleBackend { CapabilityNotices = PlayUnavailable },
+        "connector-running" => new SampleBackend { ConnectorView = SampleBackend.SampleConnector(ConnectorState.Connected, riskAcknowledged: true) },
+        "connector-missing" => new SampleBackend { ConnectorView = SampleBackend.SampleConnector(ConnectorState.Unavailable) },
         "not-in-room" => new SampleBackend { InRoom = false },
         "kicked" => new SampleBackend { InRoom = false, ExitReason = "kicked" },
         "member" => new SampleBackend { IsRoomOwner = false },
@@ -601,6 +672,8 @@ public sealed class LayoutTests
         "no-windows" => new SampleBackend { NoGameWindows = true },
         "color-running" => new SampleBackend { ColorRunning = true },
         "color-low-time" => new SampleBackend { ColorRunning = true, ColorRemainingMs = 8_000 },
+        "life-data" => new SampleBackend { Life = LifeTests.LayoutSnapshot() },
+        "life-long" => new SampleBackend { Life = LifeTests.LayoutSnapshot(longNames: true) },
         _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null)
     };
 
@@ -719,6 +792,11 @@ public sealed class LayoutTests
     {
         var problems = LayoutProbe.FindTextOverflow(window);
         Assert.True(problems.Count == 0, $"{state.Name}（{theme}）：{string.Join("；", problems)}");
+        if (theme == "浅色")
+        {
+            var clipped = LayoutProbe.FindHoverClipping(window);
+            Assert.True(clipped.Count == 0, $"{state.Name}：{string.Join("；", clipped)}");
+        }
         state.Check?.Invoke(window);
         if (state.Mini) return;
 

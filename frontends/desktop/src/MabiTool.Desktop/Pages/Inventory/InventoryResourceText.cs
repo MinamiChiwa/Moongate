@@ -1,6 +1,7 @@
 using System.Globalization;
 using MabiTool.Contracts;
 using MabiTool.Desktop.Localization;
+using MabiTool.Desktop.Theme;
 
 namespace MabiTool.Desktop.Pages.Inventory;
 
@@ -11,22 +12,24 @@ namespace MabiTool.Desktop.Pages.Inventory;
 public sealed record InventoryRefill(DateTimeOffset LastRefilledAt, double IntervalSeconds, bool Full = false);
 
 /// <summary>
-/// 背包页一项资源的一行。<see cref="Observed"/> 为假的行只出现在“未读取”折叠或概况的未读取行里，<see cref="Detail"/> 是未读取的原因。
-/// <see cref="Tip"/> 是悬停提示：最近变化与时间、最近一次更新的角色、补充时间、客户端说明原文等。
-/// <see cref="Account"/> 为真的行属于“账户资源”组，否则属于 <see cref="CharacterId"/> 角色；<see cref="Summary"/> 为真的行（金币、银币、魔族貢品）显示在“概况”卡片。
-/// <see cref="Refill"/> 有值时该行带补充倒计时（<see cref="InventoryRefillText"/>）。
+/// 背包页资源卡的一项。<see cref="Observed"/> 为假的项只出现在“未读取”折叠或主货币的未读取格里，<see cref="Detail"/> 是未读取的原因。
+/// <see cref="Tip"/> 是悬停提示：来源、最近变化与时间、最近一次更新的角色、补充时间、客户端说明原文等。
+/// <see cref="Account"/> 为真的项属于“账户资源”组，否则属于 <see cref="CharacterId"/> 角色；<see cref="Summary"/> 为真的项（金币、银币、魔族貢品）是主货币。
+/// <see cref="Refill"/> 有值时该项带补充倒计时（<see cref="InventoryRefillText"/>）。<see cref="RawName"/> 是游戏原文名称（与命令行货币按它对应），
+/// <see cref="Icon"/> 是随包货币图标（对应不上时为空），<see cref="Source"/> 是数值的来源（抓包或游戏连接器）。
 /// </summary>
 public sealed record InventoryResourceRow(string Key, string Name, string Value, string Detail, string Tip, bool Observed,
-    bool Account = false, string? CharacterId = null, bool Summary = false, InventoryRefill? Refill = null);
+    bool Account = false, string? CharacterId = null, bool Summary = false, InventoryRefill? Refill = null, string? RawName = null,
+    string? Icon = null, GameDataSource Source = GameDataSource.Capture);
 
 /// <summary>
 /// 资源视图换成背包页的行（账户级与各角色的角色级，归属范围由后端按客户端 AccountWallet 结构给出）。每项一行：名称与当前值，其余放进悬停提示。
-/// 金币按角色合成一行（免费 + 付费），与银币、魔族貢品标为概况行；迁移时找不到所属角色的旧值放在账户组并注明。
+/// 金币按角色合成一行（免费 + 付费），与银币、魔族貢品标为主货币；迁移时找不到所属角色的旧值放在账户组并注明。
 /// 货币名称是游戏原文（台服繁体），简体界面按 <see cref="Simplify"/> 换成对应简体字；客户端表读不到名称时以字段名显示。
 /// </summary>
 public static class InventoryResourceText
 {
-    /// <summary>概况卡片的三项，按显示顺序。</summary>
+    /// <summary>资源卡主货币的三项，按显示顺序。</summary>
     public static readonly string[] SummaryKeys = ["goldTotal", "silverCoin", "passDeep"];
 
     /// <param name="characterNames">账户下的角色编号 → 名称，用于注明最近一次更新的角色；没有时不注明。</param>
@@ -49,20 +52,67 @@ public static class InventoryResourceText
             var full = item is { Value: { } held, RefillCap: { } cap } && held.Value >= (ulong)cap;
             var refill = item.RefillIntervalSeconds is { } seconds and > 0 && (full || item.LastRefilledAt is not null)
                 ? new InventoryRefill(item.LastRefilledAt ?? default, seconds, full) : null;
+            var icon = GameIcons.Currency(item.MoneyType, item.RawName);
             if (item.State != "observed" || item.Value is not { } value)
             {
-                rows.Add(new(item.Key, name, UiText.Pick("未读取", "未讀取"), Unread(item.Reason), Tip(name, item, null), false, account, item.CharacterId, summary));
+                rows.Add(new(item.Key, name, UiText.Pick("未读取", "未讀取"), Unread(item.Reason), Tip(name, item, null), false, account, item.CharacterId, summary,
+                    null, item.RawName, icon));
                 continue;
             }
             rows.Add(new(item.Key, name, value.Value.ToString("N0", CultureInfo.InvariantCulture), string.Empty,
                 Tip(name, item, account && item.ObservedCharacterId is { Length: > 0 } who ? characterNames?.GetValueOrDefault(who) : null),
-                true, account, item.CharacterId, summary, refill));
+                true, account, item.CharacterId, summary, refill, item.RawName, icon));
         }
         return rows;
     }
 
     /// <summary>
-    /// 概况的三行（金币、银币、魔族貢品），取自 <paramref name="rows"/> 里 <paramref name="characterId"/> 角色的概况行；
+    /// 命令行货币（<c>get_currencies</c>，来源为游戏连接器）与抓包资源合并，规则见 tw-game-cli“背包资源卡的货币与来源合并”：
+    /// 命令行只对应当前登录角色（<paramref name="currentCharacter"/>）与它所在的账户（账户资源只在所选账户就是当前账户时给出当前角色），
+    /// 按游戏原文名称对应抓包的行——对应一行时数值取命令行；对应免费与付费两行时合成一行，抓包分项写进悬停提示；命令行有、抓包没有的追加为当前角色的一项。
+    /// 命令行没读到（来源不是游戏连接器或没有内容）时全部取抓包。每个已读到的项在悬停提示末尾写明来源；补充倒计时与上限沿用抓包。
+    /// </summary>
+    public static IReadOnlyList<InventoryResourceRow> Merge(IReadOnlyList<InventoryResourceRow> rows, GameCurrenciesData? cli, string? currentCharacter)
+    {
+        var captureLine = UiText.Pick("来源：抓包", "來源：抓包");
+        InventoryResourceRow Captured(InventoryResourceRow row) => row.Observed ? row with { Tip = row.Tip + "\n" + captureLine } : row;
+        var amounts = currentCharacter is not null && cli?.Items is { } items && cli.Status.Source.KnownValue == GameDataSource.Connector
+            ? items.Where(item => item.Amount is not null && item.DisplayName.Trim().Length > 0).ToList() : [];
+        if (amounts.Count == 0) return rows.Select(Captured).ToList();
+
+        var cliLine = UiText.Pick("来源：", "來源：") + Pages.Character.CharacterText.Note(cli!.Status).Text;
+        var byName = rows.Where(row => (row.Account || row.CharacterId == currentCharacter) && row.RawName is { Length: > 0 })
+            .GroupBy(row => row.RawName!.Trim(), StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
+        var replaced = new Dictionary<InventoryResourceRow, InventoryResourceRow?>(ReferenceEqualityComparer.Instance);
+        var extra = new List<InventoryResourceRow>();
+        foreach (var currency in amounts)
+        {
+            var raw = currency.DisplayName.Trim();
+            var value = Pages.Character.CharacterText.Number(currency.Amount);
+            if (!byName.TryGetValue(raw, out var matches))
+            {
+                var name = Simplify(raw).Replace('(', '（').Replace(')', '）');
+                extra.Add(new("cli:" + raw, name, value, string.Empty, string.Join("\n", name, cliLine), true, false, currentCharacter, false, null, raw,
+                    GameIcons.Currency(null, raw), GameDataSource.Connector));
+                continue;
+            }
+            var first = matches[0];
+            var display = matches.Count > 1 ? Simplify(raw).Replace('(', '（').Replace(')', '）') : first.Name;
+            var capture = matches.Select(row => (matches.Count > 1 ? row.Name + "：" : UiText.Pick("抓包：", "抓包：")) + row.Value);
+            var tip = string.Join("\n", new[] { display }.Concat(matches.Count > 1 ? [UiText.Pick("抓包分项：", "抓包分項："), .. capture] : capture).Append(cliLine));
+            replaced[first] = first with { Name = display, Value = value, Detail = string.Empty, Tip = tip, Observed = true, Source = GameDataSource.Connector };
+            foreach (var other in matches.Skip(1)) replaced[other] = null;
+        }
+        var result = new List<InventoryResourceRow>(rows.Count + extra.Count);
+        foreach (var row in rows)
+            if (!replaced.TryGetValue(row, out var replacement)) result.Add(Captured(row));
+            else if (replacement is not null) result.Add(replacement);
+        result.AddRange(extra);
+        return result;
+    }
+
+    /// <summary>
+    /// 主货币的三项（金币、银币、魔族貢品），取自 <paramref name="rows"/> 里 <paramref name="characterId"/> 角色的主货币行；
     /// 没有该角色或资源视图未读取时给出未读取行，三行始终都在，卡片高度不变。
     /// </summary>
     public static IReadOnlyList<InventoryResourceRow> Summary(IEnumerable<InventoryResourceRow> rows, string? characterId)
@@ -73,7 +123,8 @@ public static class InventoryResourceText
             "goldTotal" => UiText.Pick("金币", "金幣"),
             "silverCoin" => UiText.Pick("银币", "銀幣"),
             _ => UiText.Pick("魔族贡品", "魔族貢品")
-        }, UiText.Pick("未读取", "未讀取"), Unread(null), UiText.Pick("还没有读到该角色的资源", "還沒有讀到該角色的資源"), false, false, characterId, true)).ToList();
+        }, UiText.Pick("未读取", "未讀取"), Unread(null), UiText.Pick("还没有读到该角色的资源", "還沒有讀到該角色的資源"), false, false, characterId, true,
+            null, null, GameIcons.Currency(key switch { "goldTotal" => "Gold", "silverCoin" => "SilverCoin", _ => "Pass_Deep" }, null))).ToList();
     }
 
     /// <summary>金币一行：免费与付费都读到时为两者之和，悬停分列两项；任一项未读取时整行未读取，悬停写明已读到的那一项。</summary>
@@ -88,8 +139,10 @@ public static class InventoryResourceText
         var latest = new[] { free, paid }.Where(item => item?.ObservedAt is not null).MaxBy(item => item!.ObservedAt);
         var tip = string.Join("\n", new[] { name, parts }.Concat(latest is null ? [] : Lines(latest)).Where(line => line.Length > 0));
         if (free?.Value is { } a && paid?.Value is { } b && free.State == "observed" && paid.State == "observed")
-            return new("goldTotal", name, (a.Value + b.Value).ToString("N0", CultureInfo.InvariantCulture), string.Empty, tip, true, false, character, true);
-        return new("goldTotal", name, UiText.Pick("未读取", "未讀取"), Unread((free?.State != "observed" ? free : paid)?.Reason), tip, false, false, character, true);
+            return new("goldTotal", name, (a.Value + b.Value).ToString("N0", CultureInfo.InvariantCulture), string.Empty, tip, true, false, character, true,
+                null, free?.RawName ?? paid?.RawName, GameIcons.Currency("Gold", null));
+        return new("goldTotal", name, UiText.Pick("未读取", "未讀取"), Unread((free?.State != "observed" ? free : paid)?.Reason), tip, false, false, character, true,
+            null, free?.RawName ?? paid?.RawName, GameIcons.Currency("Gold", null));
     }
 
     /// <summary>未读取的原因一句。</summary>

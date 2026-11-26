@@ -58,7 +58,8 @@ public static class IconMotion
 
 /// <summary>
 /// 图标槽的登记处。每个槽有内建的矢量图标和默认动效；素材包可以按槽替换图片和动效。
-/// 槽名规则：模块入口为 module.&lt;模块标识&gt;，面板标题为 panel.&lt;页面&gt;.&lt;面板&gt;，外壳入口为 shell.&lt;名称&gt;。
+/// 槽名规则：模块入口为 module.&lt;模块标识&gt;，面板标题为 panel.&lt;页面&gt;.&lt;面板&gt;，外壳入口为 shell.&lt;名称&gt;，
+/// 生活页的设施、技能与队列为 life.&lt;类别&gt;.&lt;种类&gt;。
 /// </summary>
 public static class IconRegistry
 {
@@ -75,6 +76,9 @@ public static class IconRegistry
         ["module.color"] = ("M12 3.5C12 3.5 6 10 6 14.5A6 6 0 0 0 18 14.5C18 10 12 3.5 12 3.5Z M9.5 15A2.5 2.5 0 0 0 12 17.5", "bounce"),
         ["module.combat-observation"] = ("M12 3V7 M12 17V21 M3 12H7 M17 12H21 M12 16A4 4 0 1 0 12 8A4 4 0 0 0 12 16Z", "spin"),
         ["module.inventory"] = ("M5 9H19L18 20H6Z M9 9V7A3 3 0 0 1 15 7V9", "bounce"),
+        ["module.character"] = ("M12 11A3.5 3.5 0 1 0 12 4A3.5 3.5 0 0 0 12 11Z M5 20C5 16.5 8 14 12 14C16 14 19 16.5 19 20", "pulse"),
+        ["module.market"] = ("M4 9L12 4L20 9 M6 9V17 M10 9V17 M14 9V17 M18 9V17 M4 20H20", "bounce"),
+        ["module.life"] = ("M5 19C5 11 10 5 19 5C19 14 14 19 5 19Z M5 19L13 11", "float"),
         ["module.presentation"] = ("M4 6H15V15H4Z M9 15V19H20V10H15", "float"),
         ["module.shell.modules"] = ("M4 4H10V10H4Z M14 4H20V10H14Z M4 14H10V20H4Z M17 13.5V20.5 M13.5 17H20.5", "pop"),
         ["module.shell.settings"] = ("M4 7H14 M18 7H20 M16 9A2 2 0 1 0 16 5A2 2 0 0 0 16 9Z M4 17H6 M10 17H20 M8 19A2 2 0 1 0 8 15A2 2 0 0 0 8 19Z", "shake"),
@@ -83,7 +87,35 @@ public static class IconRegistry
         ["panel.combat.damage"] = ("M12 3L14 9L20.5 9.5L15.5 13.5L17.5 20L12 16.2L6.5 20L8.5 13.5L3.5 9.5L10 9Z", "pop"),
         ["panel.combat.self"] = ("M12 11A3.5 3.5 0 1 0 12 4A3.5 3.5 0 0 0 12 11Z M5 20C5 16.5 8 14 12 14C16 14 19 16.5 19 20", "pulse"),
         ["panel.combat.target"] = ("M6 10A6 6 0 0 1 18 10V14A6 6 0 0 1 6 14Z M6 9L4 4L8.5 6.5 M18 9L20 4L15.5 6.5 M10 12.5V13 M14 12.5V13", "shake"),
-        ["panel.combat.history"] = ("M12 21A9 9 0 1 0 12 3A9 9 0 0 0 12 21Z M12 7.5V12L15 14", "spin")
+        ["panel.combat.history"] = ("M12 21A9 9 0 1 0 12 3A9 9 0 0 0 12 21Z M12 7.5V12L15 14", "spin"),
+        // 生活：加工设施 life.facility.<种类>、制作设施 life.craft.<种类>、生活技能 life.skill.<种类>、总队列 life.queue。
+        // 槽名固定，游戏内图标打包后按槽替换，页面只引用槽名。
+        ["life.facility.metal"] = ("M4 16L7 10H17L20 16Z M7 10L9 6H15L17 10", "bounce"),
+        ["life.facility.wood"] = ("M3 9H21V14H3Z M3 18H21 M7 9V14 M12 9V14 M17 9V14", "shake"),
+        ["life.facility.cloth"] = ("M7 4H17 M7 20H17 M9 4V20 M15 4V20 M9 8H15 M9 12H15 M9 16H15", "spin"),
+        ["life.facility.leather"] = ("M7 4L12 6L17 4L19 8L17 12L19 18L12 20L5 18L7 12L5 8Z", "swing"),
+        ["life.facility.herb"] = ("M10 3H14 M10 3V9L5 18A2 2 0 0 0 7 21H17A2 2 0 0 0 19 18L14 9V3 M7.5 15H16.5", "bounce"),
+        ["life.facility.food"] = ("M4 10H20 M5 10V17A3 3 0 0 0 8 20H16A3 3 0 0 0 19 17V10 M9 7C9 6 10 6 10 4 M14 7C14 6 15 6 15 4", "pulse"),
+        ["life.facility.other"] = ("M12 15A3 3 0 1 0 12 9A3 3 0 0 0 12 15Z M12 3V6 M12 18V21 M3 12H6 M18 12H21 M5.6 5.6L7.8 7.8 M16.2 16.2L18.4 18.4 M5.6 18.4L7.8 16.2 M16.2 7.8L18.4 5.6", "spin"),
+        ["life.craft.weapon"] = ("M14 4H20V10L9 21L6 18Z M5 13L11 19 M3 21L6 18", "swing"),
+        ["life.craft.armor"] = ("M12 3L19 6V11C19 16 16 19 12 21C8 19 5 16 5 11V6Z", "pop"),
+        ["life.craft.potion"] = ("M10 3H14 M10.5 3V8A6 6 0 1 0 13.5 8V3 M7 14H17", "bounce"),
+        ["life.craft.food"] = ("M3 11H21A9 9 0 0 1 3 11Z M8 7C8 6 9 6 9 4 M12 7C12 6 13 6 13 4 M16 7C16 6 17 6 17 4", "pulse"),
+        ["life.craft.multi"] = ("M3 9H21V19H3Z M8 9V6H16V9 M3 13H21 M11 13V15H13V13", "bounce"),
+        ["life.craft.decor"] = ("M12 21V12 M12 12C12 8 8 6 5 7C5 10 8 12 12 12 M12 12C12 8 16 6 19 7C19 10 16 12 12 12 M8 21H16", "float"),
+        ["life.craft.instant"] = ("M13 3L5 14H12L11 21L19 10H12Z", "pop"),
+        ["life.craft.other"] = ("M14 6L18 10 M4 20L13.5 10.5 M12 4L20 12L17 15L9 7Z", "swing"),
+        ["life.skill.logging"] = ("M12 3L6 11H9L5 17H19L15 11H18Z M12 17V21", "swing"),
+        ["life.skill.mining"] = ("M4 9C8 4 16 4 20 9 M12 6V21", "shake"),
+        ["life.skill.herb"] = ("M12 21V10 M12 14C8 14 6 11 6 8C9 8 12 10 12 14 M12 11C16 11 18 8 18 5C15 5 12 7 12 11", "float"),
+        ["life.skill.daily"] = ("M4 10H20L18 20H6Z M8 10L12 4L16 10 M9 14V17 M12 14V17 M15 14V17", "bounce"),
+        ["life.skill.insect"] = ("M12 7V19 M12 9C9 4 4 5 4 9C4 12 8 13 12 12 M12 9C15 4 20 5 20 9C20 12 16 13 12 12", "float"),
+        ["life.skill.wool"] = ("M7 16A3 3 0 0 1 7 10A4 4 0 0 1 14 8A3.5 3.5 0 0 1 18 14A2.5 2.5 0 0 1 17 16Z M9 16V20 M15 16V20", "bounce"),
+        ["life.skill.harvest"] = ("M12 21V6 M12 9C10 8 9 6 9 4C11 5 12 7 12 9 M12 9C14 8 15 6 15 4C13 5 12 7 12 9 M12 14C10 13 9 11 9 9C11 10 12 12 12 14 M12 14C14 13 15 11 15 9C13 10 12 12 12 14", "swing"),
+        ["life.skill.hoe"] = ("M5 20L15 10 M13 5H20V9L15 10L13 8Z", "shake"),
+        ["life.skill.fishing"] = ("M3 12C6 7 13 6 17 12C13 18 6 17 3 12Z M17 12L21 8V16Z M8 11.5V12", "swing"),
+        ["life.skill.other"] = ("M6 12H6.01 M12 12H12.01 M18 12H18.01", "pulse"),
+        ["life.queue"] = ("M8 6H20 M8 12H20 M8 18H20 M4 6H4.01 M4 12H4.01 M4 18H4.01", "pulse")
     };
 
     private static readonly Dictionary<string, IconSpec> Vectors = new(StringComparer.Ordinal);

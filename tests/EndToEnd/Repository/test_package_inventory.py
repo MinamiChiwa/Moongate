@@ -1,6 +1,7 @@
 """目录包清单：发行身份、组件集合、许可映射与解压版 zip 布局。"""
 import json
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -39,6 +40,9 @@ class PackageInventoryTests(unittest.TestCase):
         fonts = "frontends/desktop/src/MabiTool.Desktop/Assets/Fonts/OFL.txt"
         (self.root / fonts).parent.mkdir(parents=True)
         shutil.copyfile(ROOT / fonts, self.root / fonts)
+        icons = "frontends/desktop/src/MabiTool.Desktop/Assets/GameIcons/game-icons.lock.json"
+        (self.root / icons).parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / icons, self.root / icons)
         (self.root / "packaging/licenses").mkdir(parents=True)
         shutil.copyfile(ROOT / "packaging/licenses/MinamiChiwa-MIT.txt", self.root / "packaging/licenses/MinamiChiwa-MIT.txt")
         shutil.copyfile(ROOT / "LICENSE", self.root / "LICENSE")
@@ -65,6 +69,14 @@ class PackageInventoryTests(unittest.TestCase):
         sbom = json.loads((self.package / "sbom.spdx.json").read_text(encoding="utf-8"))
         self.assertTrue(any(item["fileName"] == "./components/release.json" for item in sbom["files"]))
         self.assertFalse((self.package / "release-input.json").exists())
+        # 桌面内嵌的游戏图标：登记文件随包保存，声明写明版权方并逐个列出哈希。
+        icons = json.loads((ROOT / "frontends/desktop/src/MabiTool.Desktop/Assets/GameIcons/game-icons.lock.json").read_text(encoding="utf-8"))
+        self.assertTrue((self.package / "components/core/licenses/game-icons.lock.json").is_file())
+        entry = next(item for item in sbom["packages"] if item["name"] == "desktop-game-icons")
+        self.assertTrue(entry["copyrightText"].startswith("Copyright Nexon / devCAT"))
+        notices = (self.package / "THIRD_PARTY_NOTICES.txt").read_text(encoding="utf-8")
+        for item in (icons["files"][0], next(item for item in icons["files"] if item["author"] == "自绘")):
+            self.assertIn(f"{item['path']}  SHA-256 {item['sha256']}", notices)
         # 树哈希的规则与 Moongate.exe、宿主的 C# 实现共用同一组向量（ReleaseIdentity.TreeSha256）。
         vector = self.root / "vector"
         (vector / "b").mkdir(parents=True)
@@ -130,6 +142,98 @@ class PackageInventoryTests(unittest.TestCase):
         self.assertIn("components/core/MabiTool.Host.pdb", result.stderr)
         self.assertFalse((self.package / "sbom.spdx.json").exists())
 
+    def game_cli(self, content=b"cli binary"):
+        """被测仓库根的登记与包内组件：登记的长度与哈希取自 content，文件内容是测试用字节。"""
+        lock = {"schemaVersion": 1, "id": "game-cli", "fileName": "MabinogiMobile_CLI.exe", "version": "0.1.0+test",
+                "platform": "win-x64", "sha256": hashlib.sha256(content).hexdigest(), "length": len(content),
+                "source": "测试来源。", "vendor": "Nexon / devCAT", "copyright": "版权归属 Nexon / devCAT。",
+                "distribution": "由发行者随包分发，未修改该文件。"}
+        (self.root / "packaging/game-cli").mkdir(parents=True, exist_ok=True)
+        (self.root / "packaging/game-cli/game-cli.lock.json").write_text(json.dumps(lock, ensure_ascii=False), encoding="utf-8")
+        component = self.package / "components/game-cli"
+        component.mkdir()
+        (component / lock["fileName"]).write_bytes(content)
+        return component
+
+    def test_game_cli_component_is_optional_registered_and_verified_against_the_lock(self):
+        self.fixture()
+        module = runpy.run_path(str(ROOT / "scripts/build/package-inventory.py"))
+        self.assertEqual(0, self.inventory().returncode)
+        identity = json.loads((self.package / "components/release.json").read_text(encoding="utf-8"))
+        self.assertNotIn("game-cli", [item["id"] for item in identity["components"]])
+
+        component = self.game_cli()
+        result = self.inventory()
+        self.assertEqual(0, result.returncode, result.stderr)
+        identity = json.loads((self.package / "components/release.json").read_text(encoding="utf-8"))
+        self.assertEqual(["core", "desktop", "dotnet-runtime", "game-cli", "room-server"], [item["id"] for item in identity["components"]])
+        # 每个组件的树哈希都等于落盘后的目录内容：声明文件在 release.json 之前写入 core。
+        for item in identity["components"]:
+            self.assertEqual(module["tree_sha256"](self.package / "components" / item["id"]), (item["treeSha256"], item["files"]))
+        self.assertEqual(1, next(item for item in identity["components"] if item["id"] == "game-cli")["files"])
+
+        digest = hashlib.sha256(b"cli binary").hexdigest()
+        sbom = json.loads((self.package / "sbom.spdx.json").read_text(encoding="utf-8"))
+        entry = next(item for item in sbom["packages"] if item["name"] == "MabinogiMobile_CLI.exe")
+        self.assertEqual(([dict(algorithm="SHA256", checksumValue=digest)], "Copyright Nexon / devCAT"), (entry["checksums"], entry["copyrightText"]))
+        self.assertTrue(any(item["fileName"] == "./components/game-cli/MabinogiMobile_CLI.exe" for item in sbom["files"]))
+        notices = (self.package / "THIRD_PARTY_NOTICES.txt").read_text(encoding="utf-8")
+        for expected in (digest, "0.1.0+test", "Nexon / devCAT", "由发行者随包分发，未修改该文件"):
+            self.assertIn(expected, notices)
+        self.assertEqual(notices, (self.package / "components/core/THIRD_PARTY_NOTICES.txt").read_text(encoding="utf-8"))
+
+        # 内容与登记不符（长度相同、哈希不同）或组件里有登记之外的文件时拒绝。
+        executable = component / "MabinogiMobile_CLI.exe"
+        executable.write_bytes(b"cli binarz")
+        result = self.inventory()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("SHA-256", result.stderr)
+        executable.write_bytes(b"cli binary")
+        (component / "extra.txt").write_text("other")
+        result = self.inventory()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("extra.txt", result.stderr)
+
+    def life_vision(self, content=b"template pixels"):
+        """被测仓库根的模板登记与包内组件：登记的长度与哈希取自 content。"""
+        lock = {"schemaVersion": 1, "id": "life-vision-templates", "vendor": "Nexon / devCAT", "copyright": "版权归 Nexon / devCAT。",
+                "source": "测试来源。", "distribution": "随包分发，按字节原样保存。",
+                "files": [{"path": "templates/hook.png", "sha256": hashlib.sha256(content).hexdigest(), "length": len(content),
+                           "origin": "test", "role": "上钩图标"}]}
+        text = json.dumps(lock, ensure_ascii=False)
+        (self.root / "workers/life-vision/Assets").mkdir(parents=True, exist_ok=True)
+        (self.root / "workers/life-vision/Assets/templates.lock.json").write_text(text, encoding="utf-8")
+        component = self.package / "components/life-vision"
+        (component / "templates").mkdir(parents=True)
+        (component / "templates/hook.png").write_bytes(content)
+        (component / "templates/templates.lock.json").write_text(text, encoding="utf-8")
+        (component / "MabiTool.LifeVision.Worker.dll").write_bytes(b"worker")
+        return component
+
+    def test_life_vision_component_ships_only_registered_templates_and_declares_their_vendor(self):
+        self.fixture()
+        component = self.life_vision()
+        result = self.inventory()
+        self.assertEqual(0, result.returncode, result.stderr)
+        identity = json.loads((self.package / "components/release.json").read_text(encoding="utf-8"))
+        self.assertIn("life-vision", [item["id"] for item in identity["components"]])
+        sbom = json.loads((self.package / "sbom.spdx.json").read_text(encoding="utf-8"))
+        entry = next(item for item in sbom["packages"] if item["name"] == "life-vision-templates")
+        self.assertEqual("Copyright Nexon / devCAT", entry["copyrightText"])
+        notices = (self.package / "THIRD_PARTY_NOTICES.txt").read_text(encoding="utf-8")
+        for expected in (hashlib.sha256(b"template pixels").hexdigest(), "Nexon / devCAT", "templates/hook.png"):
+            self.assertIn(expected, notices)
+
+        (component / "templates/hook.png").write_bytes(b"template pixelz")
+        result = self.inventory()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("SHA-256", result.stderr)
+        (component / "templates/hook.png").write_bytes(b"template pixels")
+        (component / "templates/extra.png").write_bytes(b"stray")
+        result = self.inventory()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("extra.png", result.stderr)
+
     def archive(self, archive):
         script = ROOT / "scripts/build/package-archive.ps1"
         return subprocess.run([shutil.which("pwsh") or "powershell", "-NoProfile", "-File", str(script),
@@ -163,6 +267,56 @@ class PackageInventoryTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("launch-backend.cmd", result.stderr)
         self.assertEqual([], list(self.root.glob("rejected.zip*")))
+
+
+class PublishCliInputTests(unittest.TestCase):
+    """publish-backend.ps1 在创建工作区之前核对命令行工具输入（-CliExecutable 或仓库内的文件）：任何不符都在发布步骤之前失败，不留下发布工作区。"""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(dir=ROOT / "artifacts/tmp")
+        self.root = Path(self.directory.name)
+        self.lock = json.loads((ROOT / "packaging/game-cli/game-cli.lock.json").read_text(encoding="utf-8"))
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def publish(self, executable):
+        script = ROOT / "scripts/build/publish-backend.ps1"
+        command = ("[Console]::OutputEncoding = [Text.UTF8Encoding]::new(); "
+                   f"try {{ & '{script}' -CliExecutable '{executable}' }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}")
+        before = {path.name for path in (ROOT / "artifacts/tmp").glob("publish-*")}
+        result = subprocess.run([shutil.which("pwsh") or "powershell", "-NoProfile", "-Command", command],
+                                capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(before, {path.name for path in (ROOT / "artifacts/tmp").glob("publish-*")})
+        self.assertNotEqual(0, result.returncode)
+        return result.stderr
+
+    def test_repository_cli_matches_its_registration(self):
+        data = (ROOT / "packaging/game-cli" / self.lock["fileName"]).read_bytes()
+        self.assertEqual(self.lock["length"], len(data))
+        self.assertEqual(self.lock["sha256"], hashlib.sha256(data).hexdigest())
+
+    def test_cli_input_is_rejected_before_any_publish_step(self):
+        length = self.lock["length"]
+        self.assertIn("不存在", self.publish(self.root / "missing" / self.lock["fileName"]))
+        other = self.root / "tool.exe"
+        other.write_bytes(bytes(length))
+        self.assertIn("文件名须为 " + self.lock["fileName"], self.publish(other))
+        folder = self.root / "input"
+        folder.mkdir()
+        executable = folder / self.lock["fileName"].lower()
+        executable.write_bytes(bytes(length - 1))
+        self.assertIn(f"长度 {length - 1} ", self.publish(executable))
+        executable.write_bytes(bytes(length))
+        self.assertIn("SHA-256", self.publish(executable))
+        if os.name == "nt":
+            junction = self.root / "link"
+            result = subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(folder)], capture_output=True)
+            self.assertEqual(0, result.returncode)
+            try:
+                self.assertIn("链接", self.publish(junction / executable.name))
+            finally:
+                os.rmdir(junction)
 
 
 class UpdateAssetsTests(unittest.TestCase):

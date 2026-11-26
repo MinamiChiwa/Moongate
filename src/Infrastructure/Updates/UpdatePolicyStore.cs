@@ -9,7 +9,7 @@ public sealed record UpdateCheckSchedule(DateTimeOffset? LastAttemptAt, DateTime
 /// <summary>策略修订和检查时间在同一短写事务内裁决；网络请求由协调器在事务外执行。</summary>
 public sealed class UpdatePolicyStore(SqliteStore database, TimeProvider? timeProvider = null)
 {
-    public static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(60);
+    public static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(10);
     public static readonly TimeSpan MaximumJitter = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan FailureRetry = TimeSpan.FromMinutes(30);
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
@@ -114,7 +114,7 @@ public sealed class UpdatePolicyStore(SqliteStore database, TimeProvider? timePr
             return next;
     }
 
-    /// <summary>宿主每次启动后 <see cref="StartupDelay"/> 检查一次，不沿用上次运行排定的较晚时间；之后按间隔。</summary>
+    /// <summary>宿主每次启动后约 <see cref="StartupDelay"/> 检查一次（等宿主与界面就绪），不沿用上次运行排定的较晚时间；之后按间隔。</summary>
     public Task ScheduleStartupAsync(CancellationToken token = default) => database.WriteAsync(tx =>
     {
         EnsureRow(tx);

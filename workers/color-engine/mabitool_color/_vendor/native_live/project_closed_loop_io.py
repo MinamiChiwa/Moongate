@@ -7,7 +7,7 @@ from .dye_action_checkpoint import _binding
 from mabitool_color._vendor.input_gestures import PointerGesture
 from .read_dye_input_backend import read_input_backend, input_backend_binding
 from .dye_visual_readiness import VisualNotReady, INITIAL_LAYOUT_ERRORS
-from .frame_verification import VerificationFailed, classify
+from .frame_verification import VerificationFailed, classify, independently_verified
 from .window_occlusion import find_occluders, palette_capture_rect
 from .dye_hex_glyphs import read_card_glyphs, prepare_hex_assets
 from .session_status import SessionStatusError
@@ -114,18 +114,19 @@ class ProjectClosedLoopIO(ProjectProbeIO):
             frames=super().frames(label,deadline,read_colors=read_colors)
             from .adaptive_build import is_adaptive,enable_session_input,session_input_allowed
             if is_adaptive(getattr(self.backend,'adapter',None)) and not session_input_allowed(self.backend):
-                if any(frame.get('screenshot_hex_verified') is not True
-                       or frame.get('hex_source')!=['screenshot']*len(self.last_client_hex or []) for frame in frames):
+                colors=self.last_client_hex or []
+                if any(not independently_verified(frame,colors) for frame in frames):
                     raise self._verification_failure(label,frames,None)
                 enable_session_input(self.backend,self.reference,
                     dict(self.last_observation,client_hex=self.last_client_hex),frames)
                 self.backend.build_diagnostic['session_capability']='model_verified'
+                # 逐卡核验记录：verified_by 写明该卡由色码文字（screenshot）还是色块（swatch）核验。
                 (self.folder/'adaptive-session.json').write_text(json.dumps(dict(
                     build=self.backend.adapter.diagnostic(),capability='model_verified',
                     process_identity=self.last_observation['process_identity'],
                     session_token=self.last_observation['session_token'],
-                    screenshot_hex_verified=True,inputs_sent=self.input_attempts,
-                    input_response_verified=False),indent=2),encoding='utf-8')
+                    screenshot_hex_verified=True,cards=classify(frames,colors)['cards'],
+                    inputs_sent=self.input_attempts,input_response_verified=False),indent=2),encoding='utf-8')
             return frames
         except SessionStatusError:raise
         except ValueError as exc:

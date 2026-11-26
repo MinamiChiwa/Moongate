@@ -46,10 +46,10 @@ public sealed record PerformanceQueueState(string Id, string Owner, string Mode,
     bool Shuffle, PerformanceRepeatMode Repeat, double GapSeconds, double AdvanceMargin,
     PerformancePhase Phase, int ConsecutiveFailures, UInt64String Generation,
     string? CurrentScoreId, DateTimeOffset? CurrentStartedAt, DateTimeOffset? GapUntil,
-    PerformanceStopReason? StopReason);
+    PerformanceStopReason? StopReason, string? LastError = null);
 public sealed record PerformanceSessionCreateRequest(string? Id, string Mode, string GameSessionId,
     IReadOnlyList<PlaylistItem> Items, bool Shuffle, PerformanceRepeatMode Repeat,
     double GapSeconds = 2, double AdvanceMargin = 2);
 public sealed record PerformanceSessionCommand(string Action, int Direction = 0,
     PerformanceStopReason? StopReason = null, DateTimeOffset? At = null,
-    IReadOnlyList<PlaylistItem>? Items = null);
+    IReadOnlyList<PlaylistItem>? Items = null, string? Detail = null);

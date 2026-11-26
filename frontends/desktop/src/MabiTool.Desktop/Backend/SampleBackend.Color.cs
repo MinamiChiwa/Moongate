@@ -41,7 +41,7 @@ public sealed partial class SampleBackend
         ]))
     };
 
-    private ScreenCapture? sampleCapture;
+    private readonly HashSet<string> liveCaptures = [];
 
     /// <summary>测试用：寻色进行中，显示阶段与候选方案，区域卡停用。</summary>
     internal bool ColorRunning { get; set; }
@@ -63,8 +63,11 @@ public sealed partial class SampleBackend
 
     public int CancelledAtlasRequests { get; private set; }
 
-    /// <summary>测试用：样本截屏的物理边界；为空时取本机的物理虚拟桌面（读不到时为 (-160, 0) 160×90）。</summary>
-    internal PixelRect? SampleCaptureBounds { get; set; }
+    /// <summary>测试用：返回非空说明时拒绝这块区域的截屏（模拟后端拒绝或没有截图源）。</summary>
+    internal Func<PixelRect, string?>? CaptureRefusal { get; set; }
+
+    /// <summary>测试用：已截取但尚未释放的样本画面数。</summary>
+    internal int UnreleasedCaptures => liveCaptures.Count;
 
     /// <summary>测试用：进行中的寻色在 <see cref="ColorProgressAt"/> 时的剩余毫秒。</summary>
     internal double ColorRemainingMs { get; set; } = 83_000;
@@ -188,27 +191,29 @@ public sealed partial class SampleBackend
     }
 
     /// <summary>
-    /// 样本画面：铺满 <see cref="SampleCaptureBounds"/>（默认本机物理虚拟桌面），左上、右上、左下、右下四块分别是
+    /// 样本画面：铺满请求的区域（吸管请求的一块显示器），左上、右上、左下、右下四块分别是
     /// #1F3A6B、#F2E9D8、#8C2F45、#0E8C7D。
     /// </summary>
-    public Task<CaptureReply> CaptureScreenAsync(CancellationToken cancellationToken)
+    public Task<CaptureReply> CaptureScreenAsync(PixelRect region, CancellationToken cancellationToken)
     {
-        var bounds = SampleCaptureBounds ?? DesktopScreenPickHost.Instance.DesktopBounds() ?? new PixelRect(-160, 0, 160, 90);
+        if (CaptureRefusal?.Invoke(region) is { } refusal) return Task.FromResult(new CaptureReply(null, refusal));
+        var bounds = region;
         var (width, height) = (bounds.Width, bounds.Height);
         var rgb = new byte[width * height * 3];
         byte[][] colors = [[0x1F, 0x3A, 0x6B], [0xF2, 0xE9, 0xD8], [0x8C, 0x2F, 0x45], [0x0E, 0x8C, 0x7D]];
         for (var y = 0; y < height; y++)
             for (var x = 0; x < width; x++)
                 colors[(y < height / 2 ? 0 : 2) + (x < width / 2 ? 0 : 1)].CopyTo(rgb, (y * width + x) * 3);
-        sampleCapture = new ScreenCapture("capture-" + (UiIntents.Count + 1).ToString(CultureInfo.InvariantCulture), bounds.X, bounds.Y, width, height, rgb);
-        UiIntents.Add(("color.capture", sampleCapture.Id));
-        return Task.FromResult(new CaptureReply(sampleCapture, string.Empty));
+        var capture = new ScreenCapture("capture-" + (UiIntents.Count + 1).ToString(CultureInfo.InvariantCulture), bounds.X, bounds.Y, width, height, rgb);
+        liveCaptures.Add(capture.Id);
+        UiIntents.Add(("color.capture", capture.Id));
+        return Task.FromResult(new CaptureReply(capture, string.Empty));
     }
 
     public Task ReleaseCaptureAsync(string captureId, CancellationToken cancellationToken)
     {
         UiIntents.Add(("color.release", captureId));
-        if (sampleCapture?.Id == captureId) sampleCapture = null;
+        liveCaptures.Remove(captureId);
         return Task.CompletedTask;
     }
 

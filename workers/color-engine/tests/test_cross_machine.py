@@ -4,15 +4,18 @@ import os
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from mabitool_color._vendor.native_input_response import InputGeometry
 from mabitool_color._vendor.native_live.build_adapters import UNITY_LAYOUT
-from mabitool_color._vendor.native_live.frame_verification import classify
+from mabitool_color._vendor.native_live.frame_verification import classify, independently_verified
 from mabitool_color._vendor.native_live.map_unity_window import map_unity_geometry_to_client
+from mabitool_color._vendor.native_live.project_probe_io import card_swatch, merge_native_hex
 from mabitool_color._vendor.native_live.read_dye_window_mapping import render_scale_viewport
+from mabitool_color._vendor.native_live import same_session_dye_planner as planner
 
 LOCAL_UNITYPLAYER = Path(os.environ.get('MABITOOL_TEST_UNITYPLAYER', r'C:\Nexon\Library\MabinogiMobile_TW\appdata\UnityPlayer.dll'))
 EXPECTED = ['#112233', '#445566', '#778899']
@@ -44,6 +47,59 @@ class VerificationReasonTests(unittest.TestCase):
         covered = classify([timeout], EXPECTED, occluders=[dict(rect=[0, 0, 10, 10], overlap=[0, 0, 5, 5], process='x.exe')])
         self.assertEqual((covered['reason'], covered['code']), ('occluded', 'occluded'))
         self.assertEqual(classify(None, EXPECTED)['code'], 'layout')
+
+
+class SwatchVerificationTests(unittest.TestCase):
+    """色码文字误读而色块一致：自适应构建本局放行前的逐帧截图核验。"""
+    CARDS = [(10, 10, 60, 60), (110, 10, 60, 60), (210, 10, 60, 60)]
+
+    def merged(self, texts, swatches):
+        image = np.zeros((90, 290, 3), np.uint8)
+        for (x, y, w, h), color in zip(self.CARDS, swatches):
+            image[y:y + h, x:x + w] = [int(color[i:i + 2], 16) for i in (1, 3, 5)]
+        decoded = frame(texts, [(2, dict(best_text='#4F5566', best_swatch_distance=10.0))])
+        decoded.update(cards=list(self.CARDS))
+        return merge_native_hex(decoded, EXPECTED, [card_swatch(image, card) for card in self.CARDS])
+
+    def test_misread_card_passes_by_swatch_when_another_card_text_matches(self):
+        merged = self.merged(['#112233', None, '#778899'], EXPECTED)
+        self.assertEqual(merged['hex_source'], ['screenshot', 'swatch', 'screenshot'])
+        self.assertEqual(merged['screenshot_hex'], ['#112233', None, '#778899'])
+        self.assertTrue(independently_verified(merged, EXPECTED))
+        card = classify([merged, merged], EXPECTED)['cards'][1]
+        self.assertEqual((card['status'], card['verified_by'], card['game_swatch_distance']), ('verified', 'swatch', 0.0))
+
+    def test_swatch_differing_from_game_hex_stays_swatch_mismatch(self):
+        merged = self.merged(['#112233', None, '#778899'], ['#112233', '#4F5566', '#778899'])
+        self.assertEqual(merged['hex_source'][1], 'native_checkpoint')
+        self.assertFalse(independently_verified(merged, EXPECTED))
+        self.assertEqual(classify([merged, merged], EXPECTED)['code'], 'swatch_mismatch.2')
+
+    def test_swatch_alone_on_every_card_is_not_enough(self):
+        merged = self.merged([None, None, None], EXPECTED)
+        self.assertEqual(merged['hex_source'], ['native_checkpoint'] * 3)
+        self.assertFalse(independently_verified(merged, EXPECTED))
+
+    def feedback(self, frames):
+        """回读的目视确认（assess_feedback）；本帧色码已达标，只看截图核验。"""
+        native = dict(stop_reason='target_observed', observed_target_accepted=True, screenshot_verified=False)
+        rules = [dict(enabled=True, exact=True, colors=[color], tolerance=0) for color in EXPECTED]
+        with mock.patch.object(planner, 'assess_native_feedback', return_value=native):
+            return planner.assess_feedback(None, dict(client_hex=EXPECTED), frames, rules)
+
+    def test_later_readback_confirms_a_swatch_verified_card(self):
+        frames = [dict(self.merged(['#112233', None, '#778899'], EXPECTED), captured_monotonic=when) for when in (1., 2.)]
+        self.assertTrue(all(planner.screenshot_confirmed(dict(client_hex=EXPECTED), frame) for frame in frames))
+        result = self.feedback(frames)
+        self.assertEqual((result['screenshot_verified'], result['observed_target_accepted']), (True, True))
+
+    def test_later_readback_by_swatch_alone_is_unconfirmed(self):
+        swatch_only = dict(hex=list(EXPECTED), screenshot_hex=[None] * 3, hex_source=['swatch'] * 3,
+                           hex_swatch_distances=[0.] * 3, screenshot_hex_verified=True)
+        frames = [dict(swatch_only, captured_monotonic=when) for when in (1., 2.)]
+        self.assertFalse(planner.screenshot_confirmed(dict(client_hex=EXPECTED), frames[0]))
+        result = self.feedback(frames)
+        self.assertEqual((result['screenshot_verified'], result['stop_reason']), (False, 'target_visual_unconfirmed'))
 
 
 class UnityLayoutLocatorTests(unittest.TestCase):

@@ -152,6 +152,60 @@ public sealed class ThemeAndMotionAssetTests
     }
 
     [AvaloniaFact]
+    public void PackImageIconGrowsAsOneBlockInsteadOfBeingCroppedByItsTile()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "moongate-pack-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            using (var bitmap = new RenderTargetBitmap(new PixelSize(32, 32)))
+            {
+                using (var context = bitmap.CreateDrawingContext())
+                    context.FillRectangle(new SolidColorBrush(Color.Parse("#2F5D8A")), new Rect(0, 0, 32, 32));
+                bitmap.Save(Path.Combine(directory, "block.png"), new PngBitmapEncoderOptions());
+            }
+            File.WriteAllText(Path.Combine(directory, "pack.json"), """{ "icons": { "module.color": { "image": "block.png", "hover": "pop" } } }""");
+            IconRegistry.LoadPack(directory);
+
+            var tile = new IconTile { Slot = "module.color", Accent = Brushes.Red, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            var window = new Window { Width = 120, Height = 120, Background = Brushes.White, Content = tile };
+            window.Show();
+            try
+            {
+                LayoutProbe.Settle();
+                int[] PixelAt(Point point)
+                {
+                    var target = tile.TranslatePoint(point, window)!.Value;
+                    using var frame = window.CaptureRenderedFrame()!;
+                    using var buffer = frame.Lock();
+                    var offset = (int)target.Y * buffer.RowBytes + (int)target.X * 4;
+                    byte At(int index) => System.Runtime.InteropServices.Marshal.ReadByte(buffer.Address + offset + index);
+                    var bgra = buffer.Format == PixelFormat.Bgra8888;
+                    return [bgra ? At(2) : At(0), At(1), bgra ? At(0) : At(2)];
+                }
+                bool IsImage(int[] color) => Math.Abs(color[0] - 0x2F) + Math.Abs(color[1] - 0x5D) + Math.Abs(color[2] - 0x8A) < 24;
+
+                // 静止：色块之外是窗口底色。
+                Assert.False(IsImage(PixelAt(new Point(-1.5, 15))));
+                // 放大到峰值（1.2 倍，每边外扩 3）：色块连同图片一起变大，色块之外 1.5 处已是图片；放大后的圆角仍是圆的，外接矩形的角上仍是底色。
+                tile.Pose("pop", 0.5);
+                LayoutProbe.Settle();
+                Assert.True(IsImage(PixelAt(new Point(-1.5, 15))), "放大的图片不应被色块自己的边界裁掉");
+                Assert.True(IsImage(PixelAt(new Point(15, 31.5))));
+                Assert.False(IsImage(PixelAt(new Point(-2.5, -2.5))), "放大后的圆角仍应是圆角");
+            }
+            finally { window.Close(); }
+        }
+        finally
+        {
+            IconRegistry.Reset();
+            try { Directory.Delete(directory, true); }
+            catch (IOException) { }
+        }
+    }
+
+    [AvaloniaFact]
     public void AssetPackLoadsListsSkippedEntriesAndIsRemoved()
     {
         using var pack = new TemporaryPack();
@@ -234,7 +288,10 @@ public sealed class ThemeAndMotionAssetTests
     public void EffectAndInstrumentIconsFallBackWhenPackHasNoImage()
     {
         using var pack = new ImagePack();
-        var window = LayoutProbe.Open(new SampleBackend(), 1280, 860, "combat-observation");
+        var backend = new SampleBackend();
+        // 乐器图标显示在演奏队列的乐器按钮上：样本队列第一项指定鲁特琴（素材包有图），第二项的竖琴图片不合格。
+        backend.SendIntentAsync("music.instrument", "0\nlute", CancellationToken.None).GetAwaiter().GetResult();
+        var window = LayoutProbe.Open(backend, 1280, 860, "combat-observation");
         try
         {
             PackImage Effect(string id) => window.GetVisualDescendants().OfType<PackImage>()

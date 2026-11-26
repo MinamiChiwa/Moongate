@@ -22,7 +22,8 @@ namespace MabiTool.Desktop.Controls.Tables;
 
 /// <summary>
 /// 全前端共用的数据表格。拖动表头右边界改列宽、双击边界按内容自适应；点表头排序（Shift 追加多列）；表头筛选按钮；
-/// Ctrl+F 检索并以 Enter／F3 在匹配之间跳转；单击、Ctrl、Shift、Ctrl+A 选择，Ctrl+C 复制所选行（制表符分隔、含表头）；
+/// Ctrl+F 检索并以 Enter／F3 在匹配之间跳转；单击、Ctrl、Shift、Ctrl+A 选择，Ctrl+C 复制所选行（制表符分隔、含表头；
+/// 设了 <see cref="CopyColumnId"/> 时只复制该列的文字）；
 /// 拖动表头调整列顺序，右键表头选择显示的列；列宽、顺序、显隐、排序按 <see cref="TableId"/> 保存在前端偏好里。
 /// 快捷键只在表格获得焦点时生效。行多时虚拟化。
 /// </summary>
@@ -46,6 +47,8 @@ public sealed class DataTable : Border
     public static readonly StyledProperty<bool> AllowColumnMenuProperty = AvaloniaProperty.Register<DataTable, bool>(nameof(AllowColumnMenu), true);
     public static readonly StyledProperty<bool> VirtualizeProperty = AvaloniaProperty.Register<DataTable, bool>(nameof(Virtualize), true);
     public static readonly StyledProperty<Control?> CornerContentProperty = AvaloniaProperty.Register<DataTable, Control?>(nameof(CornerContent));
+    public static readonly StyledProperty<string?> CopyColumnIdProperty = AvaloniaProperty.Register<DataTable, string?>(nameof(CopyColumnId));
+    public static readonly StyledProperty<string?> CopyLabelProperty = AvaloniaProperty.Register<DataTable, string?>(nameof(CopyLabel));
 
     private const double DragThreshold = 6;
     private readonly ListBox list;
@@ -208,6 +211,13 @@ public sealed class DataTable : Border
     public bool Virtualize { get => GetValue(VirtualizeProperty); set => SetValue(VirtualizeProperty, value); }
     /// <summary>右键表头时是否提供选择显示列、恢复默认列与改列名的菜单。</summary>
     public bool AllowColumnMenu { get => GetValue(AllowColumnMenuProperty); set => SetValue(AllowColumnMenuProperty, value); }
+    /// <summary>
+    /// 复制只取这一列（列标识）：Ctrl+C 与行右键菜单把所选各行这一列的文字按行放进剪贴板，不带表头与其他列；
+    /// 右键菜单只给这一项复制（文字取 <see cref="CopyLabel"/>），不给“复制单元格”。为空时复制整行（制表符分隔、含表头）。
+    /// </summary>
+    public string? CopyColumnId { get => GetValue(CopyColumnIdProperty); set => SetValue(CopyColumnIdProperty, value); }
+    /// <summary>设了 <see cref="CopyColumnId"/> 时右键菜单复制项的文字（例如“复制乐谱名”）；为空时用“复制”。</summary>
+    public string? CopyLabel { get => GetValue(CopyLabelProperty); set => SetValue(CopyLabelProperty, value); }
     /// <summary>行的标识：数据重读后按它恢复选择；缺省用行对象本身比较。</summary>
     public Func<object, object?>? RowKey { get; set; }
 
@@ -644,8 +654,15 @@ public sealed class DataTable : Border
 
     // ---------- 复制与导出 ----------
 
-    /// <summary>所选行的复制文字：表头一行加所选行，按当前列顺序与可见列，制表符分隔。</summary>
-    public string SelectionText() => TableQuery.Tsv(SelectedRows, visible, HeaderText);
+    /// <summary>
+    /// 所选行的复制文字：表头一行加所选行，按当前列顺序与可见列，制表符分隔；设了 <see cref="CopyColumnId"/> 时
+    /// 只有所选各行这一列的文字，每行一条（CRLF 分隔，文字里的换行换成空格）。
+    /// </summary>
+    public string SelectionText() => CopyColumn is { } column
+        ? string.Join("\r\n", SelectedRows.Select(row => column.TextOf(row).Replace("\r\n", " ", StringComparison.Ordinal).Replace('\r', ' ').Replace('\n', ' ')))
+        : TableQuery.Tsv(SelectedRows, visible, HeaderText);
+
+    private TableColumn? CopyColumn => CopyColumnId is { Length: > 0 } id ? all.FirstOrDefault(column => column.Id == id) : null;
 
     private async Task CopyAsync(string text)
     {
@@ -1024,12 +1041,20 @@ public sealed class DataTable : Border
         TableColumn? column = null;
         if (presenter is not null && e.TryGetPosition(presenter, out var point)) column = presenter.ColumnAt(point.X);
         var items = new List<Control>();
-        var copy = new MenuItem { Header = Text("T.Copy"), InputGesture = new KeyGesture(Key.C, KeyModifiers.Control) };
+        var single = CopyColumn is not null;
+        var copy = new MenuItem
+        {
+            Header = single && CopyLabel is { Length: > 0 } label ? label : Text("T.Copy"),
+            InputGesture = new KeyGesture(Key.C, KeyModifiers.Control)
+        };
         copy.Click += (_, _) => _ = CopyAsync(SelectionText());
         items.Add(copy);
-        var copyCell = new MenuItem { Header = Text("T.CopyCell"), IsEnabled = column is not null };
-        copyCell.Click += (_, _) => { if (column is not null) _ = CopyAsync(column.TextOf(row)); };
-        items.Add(copyCell);
+        if (!single)
+        {
+            var copyCell = new MenuItem { Header = Text("T.CopyCell"), IsEnabled = column is not null };
+            copyCell.Click += (_, _) => { if (column is not null) _ = CopyAsync(column.TextOf(row)); };
+            items.Add(copyCell);
+        }
         if (CanExport)
         {
             var export = new MenuItem { Header = Text("T.ExportCsv") };

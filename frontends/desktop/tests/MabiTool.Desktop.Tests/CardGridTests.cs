@@ -293,7 +293,7 @@ public sealed class CardGridTests
             var report = new List<string>();
             foreach (var module in new[]
                      {
-                         "combat-observation", "rooms", "music-library", "inventory", "color", "presentation",
+                         "combat-observation", "rooms", "music-library", "inventory", "character", "market", "color", "presentation",
                          "shell.modules", "shell.settings", "shell.diagnostics"
                      })
             {

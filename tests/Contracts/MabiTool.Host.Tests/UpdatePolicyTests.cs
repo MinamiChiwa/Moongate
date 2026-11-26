@@ -21,10 +21,12 @@ public sealed class UpdatePolicyTests
         Assert.Equal(new UpdatePolicy(), policy.Get().Policy);
         Assert.Equal(new UInt64String(0), policy.Get().Revision);
         Assert.Null(policy.Schedule().NextAttemptAt);
+        // 启动后 10 秒检查一次（等宿主与界面就绪），规格上限是 60 秒内。
+        Assert.Equal(TimeSpan.FromSeconds(10), UpdatePolicyStore.StartupDelay);
         await policy.ScheduleStartupAsync();
-        Assert.Equal(clock.Now.AddSeconds(60), policy.Schedule().NextAttemptAt);
+        Assert.Equal(clock.Now.Add(UpdatePolicyStore.StartupDelay), policy.Schedule().NextAttemptAt);
         Assert.False(await policy.TryClaimCheckAsync(0));
-        clock.Now = clock.Now.AddSeconds(60);
+        clock.Now = clock.Now.Add(UpdatePolicyStore.StartupDelay);
         var claimed = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => policy.TryClaimCheckAsync(0.5)));
         Assert.Single(claimed, value => value);
         Assert.Equal(clock.Now, policy.Schedule().LastAttemptAt);
@@ -77,16 +79,16 @@ public sealed class UpdatePolicyTests
             var store = new UpdatePolicyStore(database, clock);
             Assert.Equal(saved, store.Get());
             await store.ScheduleStartupAsync();
-            Assert.Equal(clock.Now.AddSeconds(60), store.Schedule().NextAttemptAt);
+            Assert.Equal(clock.Now.Add(UpdatePolicyStore.StartupDelay), store.Schedule().NextAttemptAt);
             saved = await store.SaveAsync(custom with { AutomaticChecks = true }, UpdatePolicyStore.ETag(saved));
             Assert.False(await store.TryClaimCheckAsync(0));
-            clock.Now = clock.Now.AddSeconds(60);
+            clock.Now = clock.Now.Add(UpdatePolicyStore.StartupDelay);
             Assert.True(await store.TryClaimCheckAsync(0.999));
             var later = store.Schedule().NextAttemptAt;
             Assert.InRange(later!.Value, clock.Now.AddHours(3), clock.Now.AddHours(3).AddMinutes(15));
-            // 下一次启动不沿用较晚的排定时间：启动后 60 秒再检查一次。
+            // 下一次启动不沿用较晚的排定时间：启动后再检查一次。
             await store.ScheduleStartupAsync();
-            Assert.Equal(clock.Now.AddSeconds(60), store.Schedule().NextAttemptAt);
+            Assert.Equal(clock.Now.Add(UpdatePolicyStore.StartupDelay), store.Schedule().NextAttemptAt);
         }
     }
 

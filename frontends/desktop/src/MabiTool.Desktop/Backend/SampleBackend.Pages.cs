@@ -9,17 +9,25 @@ namespace MabiTool.Desktop.Backend;
 
 public sealed partial class SampleBackend
 {
-    private static readonly (string Id, string Title, string Tag, string Tag2, string By, string Instrument, string InstrumentId, string Length, bool Selectable)[] Scores =
+    // 来源：游戏乐谱（游戏列表）、自制乐谱（背包抓包）与导入各有几张，供来源标签与筛选演示。
+    private static readonly (string Id, string Title, string Tag, string Tag2, string By, string Source, string Length, bool Selectable)[] Scores =
     [
-        ("s1", "夜風與營火", "", "", "芙蕾雅", "魯特琴", "lute", "3:40", true),
-        ("s2", "提爾科納的雨", "", "", "芙蕾雅", "豎琴", "harp", "4:12", true),
-        ("s3", "牧羊少年的口哨", "", "", "小麥田", "長笛", "flute", "2:16", true),
-        ("s4", "月光下的艾明馬夏", "", "", "北境旅人", "", "", "", true),
-        ("s5", "杜巴頓廣場午後", "同名第 1 张", "同名第 1 張", "小麥田", "曼陀林", "mandolin", "3:05", true),
-        ("s6", "杜巴頓廣場午後", "同名第 2 张", "同名第 2 張", "", "曼陀林", "mandolin", "3:21", true),
-        ("s7", "艾菈的搖籃曲", "", "", "芙蕾雅", "烏克麗麗", "ukulele", "1:58", true),
-        ("s8", "遠征隊進行曲", "名称结尾有空白，游戏无法选取", "名稱結尾有空白，遊戲無法選取", "北境旅人", "小鼓", "drum", "2:44", false)
+        ("s1", "夜風與營火", "", "", "芙蕾雅", ScoreSources.Game, "3:40", true),
+        ("s2", "提爾科納的雨", "", "", "芙蕾雅", ScoreSources.Game, "4:12", true),
+        ("s3", "牧羊少年的口哨", "", "", "小麥田", ScoreSources.Game, "2:16", true),
+        ("s4", "月光下的艾明馬夏", "", "", "北境旅人", ScoreSources.Composed, "", true),
+        ("s5", "杜巴頓廣場午後", "同名第 1 张", "同名第 1 張", "小麥田", ScoreSources.Composed, "3:05", true),
+        ("s6", "杜巴頓廣場午後", "同名第 2 张", "同名第 2 張", "", ScoreSources.Composed, "3:21", true),
+        ("s7", "艾菈的搖籃曲", "", "", "芙蕾雅", ScoreSources.Imported, "1:58", true),
+        ("s8", "遠征隊進行曲", "名称结尾有空白，游戏无法选取", "名稱結尾有空白，遊戲無法選取", "北境旅人", ScoreSources.Game, "2:44", false)
     ];
+
+    private static string SampleSourceLabel(string key) => key switch
+    {
+        ScoreSources.Game => Pick("游戏乐谱", "遊戲樂譜"),
+        ScoreSources.Composed => Pick("自制乐谱", "自製樂譜"),
+        _ => Pick("导入", "匯入")
+    };
 
     /// <summary>页面登记过的“当前显示的乐谱”，按先后记录，供测试核对查询范围。</summary>
     public List<IReadOnlyList<string>> ScoreDetailRequests { get; } = [];
@@ -27,7 +35,8 @@ public sealed partial class SampleBackend
     // 样本的时长是固定值，不需要查询；这里只记下页面登记了哪些乐谱。
     public void RequestScoreDetails(IReadOnlyList<string> scoreIds) => ScoreDetailRequests.Add(scoreIds);
 
-    private readonly List<string> queue = ["s1", "s2", "s3", "s4"];
+    // 演奏队列：乐谱与这一项的乐器（为空表示游戏当前乐器）；条目 ID 是位置。
+    private readonly List<(string ScoreId, string? Instrument)> queue = [("s1", null), ("s2", "harp"), ("s3", null), ("s4", null)];
     private readonly HashSet<string> disabledModules = [];
     private string playlist = "all";
     private string musicSearch = string.Empty;
@@ -50,7 +59,11 @@ public sealed partial class SampleBackend
         {
             case "music.search": musicSearch = argument ?? string.Empty; break;
             case "music.playlist" when argument is not null: playlist = argument; break;
-            case "music.enqueue" when argument is not null: queue.Add(argument); break;
+            case "music.enqueue" when argument is not null: queue.Add((argument, EnqueueInstrument(argument))); break;
+            case "music.instrument" when argument is not null && argument.Split('\n') is [var item, var instrument]
+                                         && int.TryParse(item, out var at) && at < queue.Count:
+                queue[at] = queue[at] with { Instrument = instrument.Length == 0 ? null : instrument };
+                break;
             case "music.dequeue" when argument is not null && int.TryParse(argument, out var index) && index < queue.Count:
                 queue.RemoveAt(index);
                 break;
@@ -60,6 +73,7 @@ public sealed partial class SampleBackend
             case not null when intent.StartsWith("rooms.", StringComparison.Ordinal): ApplyRoomIntent(intent, argument); break;
             case not null when intent.StartsWith("combat.", StringComparison.Ordinal): ApplyCombatIntent(intent, argument); break;
             case "inventory.account" when argument is not null: inventoryAccount = argument; break;
+            case "character.refresh": CharacterRefreshes++; break;
             // 核心模块同真实后端一样拒绝停用。
             case "modules.toggle" when argument == "game-access": break;
             case "modules.toggle" when argument is not null && !disabledModules.Remove(argument):
@@ -79,19 +93,21 @@ public sealed partial class SampleBackend
                             || score.By.Contains(musicSearch, StringComparison.OrdinalIgnoreCase))
             .Select(score =>
             {
-                var playing = musicPlaying && queue.Count > 0 && queue[0] == score.Id;
+                var playing = musicPlaying && queue.Count > 0 && queue[0].ScoreId == score.Id;
                 return new ScoreRow(score.Id, score.Title, playing ? Pick("演奏中", "演奏中") : Pick(score.Tag, score.Tag2),
                     score.By.Length == 0 ? Pick("未识别", "未辨識") : score.By,
-                    score.Instrument.Length == 0 ? Pick("未指定", "未指定") : score.Instrument,
                     score.Length.Length == 0 ? unknown : score.Length, playing, score.Selectable,
-                    score.InstrumentId.Length == 0 ? null : score.InstrumentId);
+                    GameScoreSupportOf(score.Id).State, Source: SampleSourceLabel(score.Source), SourceKey: score.Source);
             }).ToList();
-        var queued = queue.Select((id, index) =>
+        var instruments = SampleLists().Instruments;
+        var queued = queue.Select((entry, index) =>
         {
-            var score = Scores.First(item => item.Id == id);
-            var note = score.Instrument.Length == 0 ? Pick("未指定", "未指定") : score.Instrument;
+            var score = Scores.First(item => item.Id == entry.ScoreId);
+            var note = entry.Instrument is not { } id ? Pick("游戏当前乐器", "遊戲目前樂器")
+                : instruments.FirstOrDefault(item => item.Id == id)?.Name ?? id;
             return new QueueRow(index.ToString(), (index + 1).ToString(), score.Title, note,
-                score.Length.Length == 0 ? unknown : score.Length, musicPlaying && index == 0);
+                score.Length.Length == 0 ? unknown : score.Length, musicPlaying && index == 0, GameScoreSupportOf(score.Id).State,
+                entry.Instrument, musicPlaying);
         }).ToList();
         return new(Pick("312 张乐谱，今天 14:02 从游戏同步", "312 張樂譜，今天 14:02 從遊戲同步"), musicSearch,
             [
@@ -107,7 +123,7 @@ public sealed partial class SampleBackend
                 new(Pick("曲间等待", "曲間等待"), Pick("3 秒", "3 秒")),
                 new(Pick("检测到合奏时", "偵測到合奏時"), Pick("随对方结束而停止", "隨對方結束而停止"))
             ],
-            new(true, true, !musicPlaying && queue.Count > 0, musicPlaying && queue.Count > 1, musicPlaying));
+            new(true, true, !musicPlaying && queue.Count > 0, musicPlaying && queue.Count > 1, musicPlaying), PlayError, SampleLists());
     }
 
     private string inventoryAccount = "account-1";
@@ -139,7 +155,6 @@ public sealed partial class SampleBackend
                 new("misc:9001", "金幣袋", "9001", "ClientCatalog", "misc", Partial(0), unknown, [N(0), N(0)], [N(0), notRead])
             ];
         return new(Pick("已同步 21:14:05，随全局抓包自动更新", "已同步 21:14:05，隨全域抓包自動更新"),
-            [new(Pick("道具", "道具"), Pick($"{rows.Count} 种", $"{rows.Count} 種"))],
             [new("account-1", "account-1"), new("account-2", "account-2")], inventoryAccount, characters, rows,
             [
                 new(Pick("背包：全部类别", "背包：全部類別"), Pick("完整", "完整"), true),
@@ -147,11 +162,19 @@ public sealed partial class SampleBackend
                 new(Pick("公共保管箱：全部类别", "公共保管箱：全部類別"), Pick("完整", "完整"), true)
             ],
             [new(Pick("已收录", "已收錄"), Pick("18,420 条", "18,420 條")), new(Pick("乐器", "樂器"), Pick("126 条", "126 條"))],
-            InventoryResourceText.Rows(ResourcesOverride ?? SampleResources()), "c1");
+            InventoryResourceText.Merge(InventoryResourceText.Rows(ResourcesOverride ?? SampleResources()),
+                CurrenciesOverride ?? (ResourcesOverride is null ? SampleCurrencies() : null), "c1"), "c1");
     }
 
     /// <summary>测试用：替换样本资源视图；为空时用固定样本。</summary>
     internal InventoryResourcesView? ResourcesOverride { get; set; }
+
+    /// <summary>测试用：背包页资源卡合并的命令行货币；为空时固定样本资源配样本货币，替换过资源视图时不合并。</summary>
+    internal GameCurrenciesData? CurrenciesOverride { get; set; }
+
+    /// <summary>样本命令行货币：银币比抓包新一档，韋卡只有命令行读到。</summary>
+    private static GameCurrenciesData SampleCurrencies() => new(new(GameDataSource.Connector, null, DateTimeOffset.Now, false, []),
+        [new("金幣", 988_740), new("銀幣", 64), new("魔族貢品", 1), new("愛心幣", 528), new("韋卡", 150)]);
 
     /// <summary>样本资源：金币、银币、魔族貢品与愛心幣已读取（银币、贡品带补充时间），其余未读取。</summary>
     private static InventoryResourcesView SampleResources()
@@ -181,7 +204,7 @@ public sealed partial class SampleBackend
         new[] { "music-library", "rooms", "color", "combat-observation", "inventory", "presentation" }
             .Select(id => new ModuleState(id, "0.4.6", !disabledModules.Contains(id),
                 disabledModules.Contains(id) ? Pick("已停用", "已停用") : Pick("可用", "可用"), string.Empty))
-            .Append(new("environment", "0.4.6", true, Pick("不可用", "不可用"), Pick("台服数据来源待接入", "台服資料來源待接入"),
+            .Append(new("environment", "0.4.6", true, Pick("可用", "可用"), string.Empty,
                 Pick("环境信息", "環境資訊"), Pick("提供游戏内时间、天气、频道与区域等环境信息", "提供遊戲內時間、天氣、頻道與區域等環境資訊")))
             .Append(new("game-access", "0.4.6", true, Pick("可用", "可用"), string.Empty, Pick("游戏连接", "遊戲連線"),
                 Pick("绑定游戏窗口并抓包识别本机角色与地图，为需要游戏数据的模块提供观测", "綁定遊戲視窗並抓包識別本機角色與地圖，為需要遊戲資料的模組提供觀測"),
@@ -207,8 +230,13 @@ public sealed partial class SampleBackend
                 new(Pick("当前版本", "目前版本"), "0.4.6"), new(Pick("状态", "狀態"), Pick("已是最新", "已是最新"))
             ],
         !Offline, AvailableRelease is not null, Policy: Offline ? null : samplePolicy,
-        AvailableRelease: Offline ? null : AvailableRelease, Connected: !Offline);
+        AvailableRelease: Offline ? null : AvailableRelease, Connected: !Offline,
+        Offer: !Offline && AvailableRelease is { } offered ? new UpdateOfferView(offered, UpdateDownloadKind, UpdateDownloadBytes) : null);
 
     /// <summary>测试用：后端更新状态里发现的新版本标识；为空表示已是最新。</summary>
     internal string? AvailableRelease { get; set; }
+
+    /// <summary>测试用：可用更新的下载方式（incremental、full，空表示后端还没比对完）与本次下载字节数。</summary>
+    internal string? UpdateDownloadKind { get; set; }
+    internal ulong? UpdateDownloadBytes { get; set; }
 }

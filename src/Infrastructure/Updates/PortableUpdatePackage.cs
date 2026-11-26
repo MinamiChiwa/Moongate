@@ -29,6 +29,9 @@ public sealed record UpdatePlanRanges(string ManifestSha256);
 /// </summary>
 public sealed record UpdatePlanEstimate(string DownloadKind, long DownloadBytes, int Segments, int ReusedFiles, int DownloadedFiles, int DeletedFiles);
 
+/// <summary>计划对应版本的更新说明缓存，保存为 <c>update/plans/&lt;计划&gt;.notes.json</c>（内容见 <see cref="UpdateNotesEntry"/>）。</summary>
+public sealed record UpdateNotesCache(IReadOnlyList<UpdateNotesEntry> Entries);
+
 /// <param name="Id">来源种类：<c>GithubDirect</c>（github.com 发行下载地址）或 <c>GithubApi</c>（REST API 资产地址）。</param>
 public sealed record UpdatePlanSource(string Id, Uri Uri);
 
@@ -111,6 +114,43 @@ public static class UpdatePlanStore
         }
         catch (Exception error) when (error is JsonException or IOException or UpdatePackageException) { return null; }
     }
+
+    public static string NotesPath(string toolRoot, string planId)
+    {
+        if (!UpdateLayout.IsTransactionId(planId)) throw new UpdatePackageException("update.planInvalid");
+        return Path.Combine(UpdateLayout.Plans(toolRoot), planId + ".notes.json");
+    }
+
+    /// <summary>保存计划对应版本的更新说明（两种语言都取到时才缓存），与计划同生共灭，由残留回收一并删除。</summary>
+    public static async Task SaveNotesAsync(string toolRoot, string planId, IReadOnlyList<UpdateNotesEntry> entries, CancellationToken token = default)
+    {
+        var path = NotesPath(toolRoot, planId);
+        UpdatePaths.RejectLinks(path);
+        var temporary = path + ".tmp";
+        await File.WriteAllBytesAsync(temporary, JsonSerializer.SerializeToUtf8Bytes(new UpdateNotesCache(entries), Json), token).ConfigureAwait(false);
+        File.Move(temporary, path, overwrite: true);
+    }
+
+    /// <summary>读取缓存的更新说明；不存在、过大、无效（语言、来源不在约定内、重复或超长）时返回空。</summary>
+    public static IReadOnlyList<UpdateNotesEntry>? ReadNotes(string toolRoot, string planId)
+    {
+        var path = NotesPath(toolRoot, planId);
+        try
+        {
+            UpdatePaths.RejectLinks(path);
+            if (!File.Exists(path) || new FileInfo(path).Length > MaximumNotesFileBytes) return null;
+            var entries = JsonSerializer.Deserialize<UpdateNotesCache>(File.ReadAllBytes(path), Json)?.Entries;
+            return entries is { Count: > 0 and <= 2 } && entries.Select(entry => entry.Language).Distinct().Count() == entries.Count &&
+                   entries.All(entry => entry.Language is "zh-Hans" or "zh-Hant" && entry.Source is "repository" or "release" &&
+                                        entry.Markdown.Length is > 0 and <= MaximumNotesCharacters)
+                ? entries : null;
+        }
+        catch (Exception error) when (error is JsonException or IOException or UpdatePackageException) { return null; }
+    }
+
+    /// <summary>单种语言的更新说明字符数上限；缓存文件按两种语言各占满再加余量计。</summary>
+    public const int MaximumNotesCharacters = 64 * 1024;
+    private const int MaximumNotesFileBytes = 512 * 1024;
 
     public static async Task<UpdatePlan> ReadAsync(string toolRoot, string planId, CancellationToken token = default)
     {

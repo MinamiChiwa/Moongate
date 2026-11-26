@@ -71,6 +71,7 @@ public sealed class SharedGameStream : IDisposable
         this.layout = layout;
         identityEnabled = build?.Identity.Enabled ?? true; musicEnabled = build?.Music.Enabled ?? true; combatEnabled = build?.Combat.Enabled ?? true;
         healthEnabled = build?.Health.Enabled ?? true;
+        translation = build?.ProtocolTranslation ?? TwProtocolTranslation.None;
         Music = new(layout == CombatProtocolLayout.MusicOnly ? TwMusicProtocolMap.Reference : TwMusicProtocolMap.Tw20261110);
         inventorySelected = inventoryPrimary ?? (_ => true);
         // 共用流按当前兴趣分发：战斗 profile 只列出战斗协议号，库存协议号来自运行时客户端布局，
@@ -78,12 +79,13 @@ public sealed class SharedGameStream : IDisposable
         var known = layout == CombatProtocolLayout.MusicOnly ? MusicOnlyProtocols
             : build?.KnownProtocols ?? Tw20261110CombatProtocol.StreamProfile.KnownProtocols;
         Stream = new(Dispatch, ResetParsers, new GameStreamProfile(known, known),
-            code => ObserveMusic(code) || ObserveCombat(code) || inventory?.Observes(code) == true,
+            code => ObserveMusic(Baseline(code)) || ObserveCombat(Baseline(code)) || inventory?.Observes(code) == true,
             (code, reason) =>
             {
                 // 展开失败的身份或音乐帧只丢弃该帧，已确认的本机身份保持。
-                if (ObserveMusic(code)) { context.Diagnostics.Rejected("music"); Music.RejectFrame(code); }
-                if (ObserveCombat(code)) combat!.Reject("combat.protocolInvalid", now, utc);
+                var known = Baseline(code);
+                if (ObserveMusic(known)) { context.Diagnostics.Rejected("music"); Music.RejectFrame(known); }
+                if (ObserveCombat(known)) combat!.Reject("combat.protocolInvalid", now, utc);
                 if (inventory?.Observes(code) == true) PostInventoryReset("inventory.protocolInvalid");
             }, context.Diagnostics.Stream);
         context.Diagnostics.ConnectionOpened();
@@ -192,36 +194,38 @@ public sealed class SharedGameStream : IDisposable
     }
     private void Dispatch(int code, byte[] body)
     {
+        // 身份、合奏与战斗按基线协议号解析：未登记构建里编号挪位的协议先换回基线编号；库存仍用运行时布局的编号（下方用 code）。
+        var known = Baseline(code);
         // 战斗先于库存处理同一帧（登录个人数据 20590 两者共用）：完整库存解码较重，不推迟战斗身份与帧发布。
-        if (combat is not null && ObserveCombat(code))
+        if (combat is not null && ObserveCombat(known))
         {
-            if (code != Tw20261110CombatProtocol.PersonalData) SeedCarriedIdentity();
+            if (known != Tw20261110CombatProtocol.PersonalData) SeedCarriedIdentity();
             SeedCarriedEntities();
             var before = combat.Generation; var rejections = combat.ProtocolRejections; var hadLocal = combat.LocalEntity is not null;
             // 观察器内部拒绝的帧按计数差记入战斗分支；逃出的解析异常照常交给重组器的拒绝分支，筛选只计数。
-            try { combat.Accept(code, body, Stream.FrameStreamOffset, Stream.FrameWireLength, CombatReceipt(), utc, Stream.FrameEncoding); }
+            try { combat.Accept(known, body, Stream.FrameStreamOffset, Stream.FrameWireLength, CombatReceipt(), utc, Stream.FrameEncoding); }
             catch (Exception error) when ((error is InvalidDataException or DecoderFallbackException) && RejectedCombat()) { throw; }
             if (combat.ProtocolRejections != rejections) context.Diagnostics.Rejected("combat");
             if (combat.CarriedContradicted) identities.DiscardCarried();
             // 只沿用角色 ID 的连接由本机自疗或本机出现帧确认本机实体：以确认时点作初始化时点，成为主连接。
             if (!hadLocal && combat.LocalEntity is not null && double.IsNegativeInfinity(CombatInitializerAt)) CombatInitializerAt = Stopwatch.GetTimestamp();
-            if (code == Tw20261110CombatProtocol.PersonalData && combat.Generation != before) CombatInitializerAt = Stopwatch.GetTimestamp();
+            if (known == Tw20261110CombatProtocol.PersonalData && combat.Generation != before) CombatInitializerAt = Stopwatch.GetTimestamp();
         }
-        if (ObserveMusic(code))
+        if (ObserveMusic(known))
         {
             try
             {
                 // 本连接没有个人数据时，出现帧可按同一游戏进程已确认的角色 ID 补足（见 TwGameObserver.RememberedCharacterId）。
                 var personal = Music.PersonalId;
                 Music.RememberedCharacterId = identities.Last?.CharacterId;
-                Music.Accept(code, body, Stream.FrameReceivedLocalMs);
+                Music.Accept(known, body, Stream.FrameReceivedLocalMs);
                 // 主连接按初始化时点选择：个人数据帧，或本连接首次由出现帧补足角色 ID 的时刻。
-                if (code == Music.Protocols.Personal || personal is null && Music.PersonalId is not null) MusicInitializerAt = Stopwatch.GetTimestamp();
-                if (code == Music.Protocols.Appearing) SeedCombatIdentity();
+                if (known == Music.Protocols.Personal || personal is null && Music.PersonalId is not null) MusicInitializerAt = Stopwatch.GetTimestamp();
+                if (known == Music.Protocols.Appearing) SeedCombatIdentity();
                 if (Music.Current.Identity is { } confirmed) identities.Remember(confirmed);
             }
             catch (Exception error) when (error is InvalidDataException or DecoderFallbackException)
-            { context.Diagnostics.Rejected("music"); Music.RejectFrame(code); }
+            { context.Diagnostics.Rejected("music"); Music.RejectFrame(known); }
         }
         if (inventory?.Observes(code) == true)
         {
@@ -256,6 +260,9 @@ public sealed class SharedGameStream : IDisposable
     /// <summary>异常筛选中记录战斗解析拒绝；返回 false，异常照常传给重组器。</summary>
     private bool RejectedCombat() { context.Diagnostics.Rejected("combat"); return false; }
     private bool ObserveMusic(int code) => identityEnabled && Music.Observes(code);
+    /// <summary>未登记构建的协议号换算（见 <see cref="TwProtocolTranslation"/>）；已登记构建与编号未变时原样返回。</summary>
+    private readonly TwProtocolTranslation translation;
+    private int Baseline(int code) => translation.ToBaseline(code);
     /// <summary>
     /// 战斗解析尚无本机实体而共享身份已确认时，以该身份补足战斗起点：兴趣晚于登录或切图建立时不必等待下一次切图。
     /// 主连接判定沿用身份初始化时点。

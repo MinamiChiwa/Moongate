@@ -567,7 +567,7 @@
       <Border Background="Transparent" PointerPressed="OnLayerBackdrop" />
       <Border x:Name="AdvancedPanel" Classes="panel popup" Classes.open="{Binding AdvancedOpen}" MaxWidth="600" Margin="24"
               HorizontalAlignment="Center" VerticalAlignment="Center" Padding="18,14">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" controls:EdgeFade.IsEnabled="True">
+        <ScrollViewer Classes="room" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" controls:EdgeFade.IsEnabled="True">
         <StackPanel Spacing="10">
           <DockPanel>
             <Button DockPanel.Dock="Right" Classes="chip" Content="{DynamicResource R.Close}" Command="{Binding CloseLayerCommand}" />

@@ -14,7 +14,14 @@ public sealed class PerformanceSessionService(PerformanceSessionStore store, Tim
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     private sealed record FrozenCreate(PerformanceSessionCreateRequest Request, byte[] Bytes);
 
+    /// <summary>会话创建或状态改变并保存成功后触发（进程内通知，供游戏内演奏驱动唤醒）；处理器不得抛出。</summary>
+    public event Action<PerformanceQueueState>? Changed;
+
     public IReadOnlyList<PerformanceQueueState> List(string owner) => store.List(owner);
+
+    public IReadOnlyList<PerformanceQueueState> ListAll() => store.ListAll();
+
+    public PerformanceQueueState? TryGet(string owner, string id) => store.Get(owner, id);
 
     public PerformanceQueueState Get(string owner, string id) => store.Get(owner, id)
         ?? throw new OperationException("resource.notFound", "演奏会话不存在");
@@ -28,7 +35,15 @@ public sealed class PerformanceSessionService(PerformanceSessionStore store, Tim
         var id = string.IsNullOrWhiteSpace(frozen.Request.Id) ? Guid.NewGuid().ToString("N") : frozen.Request.Id!;
         var state = new PerformanceQueueStateMachine().Create(id, owner, frozen.Request.Mode, frozen.Request.GameSessionId, frozen.Request.Items,
             frozen.Request.Shuffle, frozen.Request.Repeat, frozen.Request.GapSeconds, frozen.Request.AdvanceMargin);
-        return await store.CreateIdempotentAsync(state, "performance-create:" + key, hash, ct);
+        var created = await store.CreateIdempotentAsync(state, "performance-create:" + key, hash, ct);
+        Notify(created);
+        return created;
+    }
+
+    private void Notify(PerformanceQueueState state)
+    {
+        try { Changed?.Invoke(state); }
+        catch (Exception error) when (error is InvalidOperationException or ObjectDisposedException) { }
     }
 
     public async Task<PerformanceQueueState> CommandAsync(string owner, string id, PerformanceSessionCommand request,
@@ -57,7 +72,23 @@ public sealed class PerformanceSessionService(PerformanceSessionStore store, Tim
             "edit" => machine.ApplyQueueEdit(current, request.Items ?? throw new OperationException("request.invalid", "edit 动作必须提供 Items")),
             _ => throw new OperationException("request.invalid", "未知演奏控制动作")
         };
-        return await store.UpdateAsync(owner, id, expected, next, ct);
+        // 原因码（LastError）随失败、停止与停止确认保存，开始与进入演奏时清除。
+        next = request.Action switch
+        {
+            "arm" or "playing" => next with { LastError = null },
+            "failure" or "stop" or "stopped" when !string.IsNullOrWhiteSpace(request.Detail) => next with { LastError = Detail(request.Detail) },
+            _ => next
+        };
+        var saved = await store.UpdateAsync(owner, id, expected, next, ct);
+        if (saved.Generation != current.Generation) Notify(saved);
+        return saved;
+    }
+
+    private static string Detail(string value)
+    {
+        var text = value.Trim();
+        if (text.Length is 0 or > 128 || text.Any(char.IsControl)) throw new OperationException("request.invalid", "演奏原因码无效");
+        return text;
     }
 
     public static string ETag(UInt64String generation) => "\"" + generation + "\"";

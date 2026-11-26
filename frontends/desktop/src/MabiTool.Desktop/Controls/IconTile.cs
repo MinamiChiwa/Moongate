@@ -86,19 +86,28 @@ public sealed class IconTile : Control
         var spec = IconRegistry.Resolve(Slot);
         var tile = new Rect(Bounds.Size);
         var radius = size * 0.3;
-        context.DrawRectangle(Accent, null, tile, radius, radius);
 
         var center = tile.Center;
         var transform = Matrix.CreateTranslation(-center.X, -center.Y) * IconMotion.Transform(motion, Progress, size)
                         * Matrix.CreateTranslation(center.X, center.Y);
+        if (spec?.Image is { } image)
+        {
+            // 素材包图片铺满色块：色块与图片作为一个整体动，放大时圆角随之放大，图片不被色块自己的边界裁掉。
+            using (context.PushTransform(transform))
+            {
+                context.DrawRectangle(Accent, null, tile, radius, radius);
+                using (context.PushClip(new RoundedRect(tile, radius)))
+                    context.DrawImage(image, tile);
+            }
+            return;
+        }
+
+        // 矢量线稿与字章：色块不动，字形在色块内动（字形占色块的 62%，动效的最大幅度也留在色块内）。
+        context.DrawRectangle(Accent, null, tile, radius, radius);
         using (context.PushClip(new RoundedRect(tile, radius)))
         using (context.PushTransform(transform))
         {
-            if (spec?.Image is { } image)
-            {
-                context.DrawImage(image, tile);
-            }
-            else if (spec?.Vector is { } vector)
+            if (spec?.Vector is { } vector)
             {
                 var scale = size * 0.62 / 24;
                 var offset = (size - 24 * scale) / 2;
@@ -132,6 +141,13 @@ public sealed class IconTile : Control
             }
         };
         _ = animation.RunAsync(this, playing.Token);
+    }
+
+    /// <summary>把图标定格在某个动效预设的某个进度上，供测试检查画出的外观。</summary>
+    internal void Pose(string preset, double progress)
+    {
+        motion = IconMotion.Normalize(preset);
+        Progress = progress;
     }
 
     private void OnHostPointerEntered(object? sender, PointerEventArgs e) => Play(IconRegistry.Resolve(Slot)?.HoverMotion);

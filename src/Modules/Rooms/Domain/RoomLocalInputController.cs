@@ -6,7 +6,7 @@ namespace MabiTool.Modules.Rooms.Domain;
 
 public sealed record RoomInputPorts(GameSessionBindingTracker Bindings, ResourceLeaseCoordinator Leases,
     GameInputBroker Input, Func<GameWindowBinding, bool>? Activate = null,
-    Func<GamePlaybackEvidence?>? Playback = null, bool Simulation = false);
+    Func<GamePlaybackEvidence?>? Playback = null, bool Simulation = false, IRoomGameMusic? Music = null);
 public sealed class RoomInputException(string code, string? occupiedBy = null) : Exception(code)
 { public string Code { get; } = code; public string? OccupiedBy { get; } = occupiedBy; }
 public sealed record LocalRoomCapabilities(bool Simulation, bool CanStart, bool CanStop, double RoundTripMs, int ActivationMs);
@@ -14,7 +14,9 @@ public sealed record LocalRoomCapabilities(bool Simulation, bool CanStart, bool 
 /// <summary>固定本轮本地配置，准备时预留资源，调度时只执行已准备的动作。</summary>
 public sealed class RoomLocalInputController : IInputExecutor
 {
-    private sealed record LocalAction(ScheduledAction Action, IReadOnlyList<InputControl> Controls, PhysicalScreenPoint? Point, bool Toggle);
+    /// <summary>经游戏连接器执行：<see cref="Title"/> 为空表示停止（<c>stop_action</c>），否则经 <c>play_music_score</c> 开奏。</summary>
+    private sealed record CliPlan(string? Title);
+    private sealed record LocalAction(ScheduledAction Action, IReadOnlyList<InputControl> Controls, PhysicalScreenPoint? Point, bool Toggle, CliPlan? Cli = null);
     private readonly object gate = new();
     private readonly string owner;
     private readonly RoomInputPorts ports;
@@ -34,6 +36,8 @@ public sealed class RoomLocalInputController : IInputExecutor
     private string? id, mode, sessionId, reason;
     private int offset;
     private bool canStart, canStop, chatConfirmed, started;
+    // 正在经连接器发出的动作 ID：命令行调用在控制器锁外等待，期间用它防止重入并识别迟到结果。
+    private string? cliInFlight;
     // detached：“操作游戏”关闭时的模拟准备，不需要游戏绑定，不持有租约，不发送输入。
     private bool simulated, detached, detachedArmed;
     private ulong revision;
@@ -51,6 +55,22 @@ public sealed class RoomLocalInputController : IInputExecutor
         this.owner = owner; this.ports = ports; this.clock = clock; this.roomClock = roomClock;
         this.preferences = preferences; this.authorized = authorized ?? (() => true); this.time = time ?? TimeProvider.System;
         conflict = conflictsWithShortcut ?? (value => value.Kind.KnownValue == LocalBindingKind.Key && value.Key == 0x78 && !value.Control && !value.Alt && !value.Shift);
+    }
+
+    /// <summary>本机映射的乐谱标题（原文）；由宿主设置，经连接器开奏时按它核对游戏乐谱列表。</summary>
+    public Func<string?>? ScoreTitleSource { get; set; }
+
+    /// <summary>本轮持有的活动控制租约证明；没有租约（未准备、模拟）时为空。</summary>
+    public GameActivityProof? ActivityProof
+    {
+        get { lock (gate) return lease is null ? null : new(lease.Id, lease.FencingToken, lease.OwnerId, lease.GameSessionId, lease.BindingRevision); }
+    }
+
+    public double ExecutionLeadMs(ScheduledAction action)
+    {
+        lock (gate)
+            return actions.TryGetValue(action.Id, out var plan) && plan.Cli is { Title: not null } && ports.Music is { } music
+                ? Math.Clamp(music.StartLeadMs, 0, 1000) : 0;
     }
 
     public RoomLocalPreparation Snapshot
@@ -151,10 +171,12 @@ public sealed class RoomLocalInputController : IInputExecutor
                 if (actions.Count >= 32) throw new RoomInputException("room.preparationCapacityExceeded");
                 // 校时质量只约束开始：停止（含立即停止与一轮后停止）晚到也必须送达，否则游戏内演奏会一直循环。
                 if (action.Kind == "start" && timing.ValidateForPreparation(action.SessionId, roomClock, offset) is { } error) throw new RoomInputException(error);
-                if (!simulated && ports.Activate is not null && !ports.Activate(binding!)) throw new RoomInputException("input.focusChanged");
+                var plan = Map(action);
+                // 经连接器的动作不需要把游戏切到前台，也不发送输入；按键路径仍先激活并核对输入访问。
+                if (plan.Cli is null && !simulated && ports.Activate is not null && !ports.Activate(binding!)) throw new RoomInputException("input.focusChanged");
                 ValidateCurrent(action.Kind == "start");
-                if (!simulated) ports.Input.ValidateAccess(Authority(InputActionKind.Press, InputControl.Space));
-                actions.Add(action.Id, Map(action)); sessionId = action.SessionId;
+                if (plan.Cli is null && !simulated) ports.Input.ValidateAccess(Authority(InputActionKind.Press, InputControl.Space));
+                actions.Add(action.Id, plan); sessionId = action.SessionId;
                 if (mode == "ensemble" && !canStart && action.Kind == "stop") started = true;
                 state = started ? "performing" : "armed"; revision++;
                 return new(true, null);
@@ -179,60 +201,141 @@ public sealed class RoomLocalInputController : IInputExecutor
     {
         lock (gate)
         {
-            if (simulated || binding is null || lease is null || !actions.TryGetValue(action.Id, out var plan) || plan.Action != action) return;
+            if (simulated || binding is null || lease is null || !actions.TryGetValue(action.Id, out var plan) || plan.Action != action || plan.Cli is not null) return;
             ports.Activate?.Invoke(binding);
         }
     }
 
+    /// <summary>经连接器发出的一次动作：锁内校验后记下的计划、租约证明与发出时刻，锁外等待命令行。</summary>
+    private sealed record CliCall(LocalAction Plan, GameActivityProof Proof, CliPlan Cli, double SentAt);
+    private sealed record CliDone(CliCall Call, GameMusicResult Result);
+
     public InputOutcome Execute(ScheduledAction action, CancellationToken ct)
     {
+        CliCall? call;
         lock (gate)
         {
-            if (!actions.TryGetValue(action.Id, out var plan) || plan.Action != action) return new("rejected", null, simulated, "room.planStale");
-            var dispatched = false;
-            double? pressedAt = null;
-            try
+            var outcome = Step(action, ct, null, out call);
+            if (call is null) return outcome!;
+        }
+        // 命令行调用不设超时，游戏或连接器卡住时会一直等待：控制器锁在这里已经释放，状态读取、准备与释放、紧急停止不被挡住；
+        // 取消（调度器取消本动作）或紧急停止中断命令行进程后，调用以 Interrupted 返回。
+        GameMusicResult result;
+        try
+        {
+            var music = ports.Music!;
+            result = (call.Cli.Title is null ? music.StopAsync(call.Proof, ct) : music.StartAsync(call.Proof, call.Cli.Title, ct)).AsTask().GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException) { result = new(GameMusicOutcome.Interrupted, "gameCli.interrupted"); }
+        catch (Exception error) when (error is InvalidOperationException or IOException or ObjectDisposedException)
+        { result = new(GameMusicOutcome.Failed, "gameCli.failed", error.GetType().Name); }
+        lock (gate) return Step(action, ct, new(call, result), out _)!;
+    }
+
+    /// <summary>
+    /// 执行的一步，调用方持有控制器锁。<paramref name="done"/> 为空时是第一步：校验并在需要经连接器发出时返回空结果和 <paramref name="call"/>
+    /// （标记“正在经连接器发出”，不做清理）；否则是连接器调用返回后的第二步：计划与租约未变才写入状态，变了按迟到结果处理，只记诊断。
+    /// </summary>
+    private InputOutcome? Step(ScheduledAction action, CancellationToken ct, CliDone? done, out CliCall? call)
+    {
+        call = null;
+        if (!actions.TryGetValue(action.Id, out var plan) || plan.Action != action)
+            return done is null ? new("rejected", null, simulated, "room.planStale") : Late(action, done);
+        if (done is not null)
+        {
+            var unchanged = cliInFlight == action.Id && lease is not null && ReferenceEquals(plan, done.Call.Plan) &&
+                done.Call.Proof.LeaseId == lease.Id && done.Call.Proof.FencingToken == lease.FencingToken;
+            if (!unchanged) return Late(action, done);
+            cliInFlight = null;
+        }
+        var dispatched = false;
+        double? pressedAt = null;
+        try
+        {
+            if (done is null) { ct.ThrowIfCancellationRequested(); ValidateCurrent(action.Kind == "start"); }
+            var fallback = false;
+            if (plan.Cli is { } cli && !simulated)
             {
-                ct.ThrowIfCancellationRequested(); ValidateCurrent(action.Kind == "start");
-                if (plan.Toggle && !simulated)
+                if (done is null)
                 {
-                    var observed = ports.Playback?.Invoke();
-                    var age = observed is null ? TimeSpan.MaxValue : time.GetUtcNow() - observed.ObservedAt;
-                    if (observed is null || !observed.IsPlaying || observed.GameSessionId != binding!.Session.Id ||
-                        observed.Quality.KnownValue != ObservationQuality.Confirmed || observed.ObservedAt.Offset != TimeSpan.Zero ||
-                        age < TimeSpan.Zero || age > TimeSpan.FromSeconds(2)) throw new RoomInputException("input.stopEvidenceRequired");
+                    // 防止重入并保持 fencing：本动作经连接器发出期间同一控制器不再发出第二个连接器动作。
+                    if (cliInFlight is not null) throw new RoomInputException("room.planStale");
+                    if (ports.Music is null) throw new RoomInputException("resource.leaseExpired");
+                    var proof = ActivityProof ?? throw new RoomInputException("resource.leaseExpired");
+                    cliInFlight = action.Id; effect = EffectStatus.Unknown;
+                    call = new(plan, proof, cli, clock.NowMs);
+                    return null;
                 }
-                // 停止可能在游戏被遮挡或用户切到其他窗口时到点（原工具 GameInput.Execute）：先恢复并前置游戏窗口再发送。
-                if (!simulated && action.Kind == "stop" && ports.Activate is not null && !ports.Activate(binding!))
-                    throw new RoomInputException("input.focusChanged");
-                if (!simulated)
+                var result = done.Result;
+                switch (result.Outcome)
                 {
-                    if (plan.Point is { } point) { ct.ThrowIfCancellationRequested(); ports.Input.Execute(Authority(InputActionKind.MovePointer, null) with { Point = point }); }
-                    foreach (var control in plan.Controls)
-                    {
-                        ct.ThrowIfCancellationRequested(); effect = EffectStatus.Unknown;
-                        ports.Input.Execute(Authority(InputActionKind.Press, control)); pressedAt ??= clock.NowMs; dispatched = true; effect = EffectStatus.InputDispatched;
-                    }
-                    // 与原工具 GameInput.Execute 相同：按下在到点时刻，保持 KeyHoldMs 后再抬起，游戏才能可靠识别这次按键或点击。
-                    if (ct.WaitHandle.WaitOne(KeyHoldMs)) ct.ThrowIfCancellationRequested();
-                    foreach (var control in plan.Controls.Reverse()) { ct.ThrowIfCancellationRequested(); ports.Input.Execute(Authority(InputActionKind.Release, control)); }
+                    case GameMusicOutcome.Accepted:
+                    // 没有可停止的动作：游戏里已经停止。
+                    case GameMusicOutcome.Rejected when cli.Title is null && result.Code == "gameCli.invalidState":
+                        pressedAt = done.Call.SentAt; dispatched = true; effect = EffectStatus.InputDispatched;
+                        break;
+                    // 命令确定没发出：停止回落到已映射的停止键，开始不改用按键。
+                    case GameMusicOutcome.Unavailable when cli.Title is null && plan.Controls.Count > 0:
+                        fallback = true; effect = EffectStatus.None;
+                        break;
+                    case GameMusicOutcome.Unavailable:
+                        effect = EffectStatus.None; throw new RoomInputException(result.Code ?? "gameCli.notConnected");
+                    case GameMusicOutcome.Rejected:
+                        effect = EffectStatus.None; throw new RoomInputException(result.Code ?? "gameCli.failed");
+                    case GameMusicOutcome.Interrupted:
+                        dispatched = true; throw new RoomInputException("gameCli.interrupted");
+                    default:
+                        dispatched = true; throw new RoomInputException(result.Code ?? "gameCli.failed");
                 }
-                started = action.Kind == "start" && mode != "emote"; state = started ? "performing" : "released";
-                if (action.Kind == "start" && mode == "emote" || action.Kind == "stop") ReleaseCore("action-finished");
-                revision++; return new("sent", pressedAt ?? clock.NowMs, simulated, null);
+                if (!fallback)
+                {
+                    started = action.Kind == "start" && mode != "emote"; state = started ? "performing" : "released";
+                    if (action.Kind == "stop") ReleaseCore("action-finished");
+                    revision++; return new("sent", pressedAt ?? clock.NowMs, simulated, null);
+                }
             }
-            catch (RoomInputException error)
+            if (plan.Toggle && !simulated)
             {
-                if (dispatched) effect = EffectStatus.Unknown;
-                // 停止没有送达时本轮在本机已结束，释放准备；否则下一轮开始会被 room.activityActive 拒绝，要再点一次才恢复。
-                // 切换式停止缺少演奏证据时保留准备，可以在拿到证据后再停一次。
-                if (action.Kind == "stop" && error.Code != "input.stopEvidenceRequired") ReleaseCore(error.Code);
-                else { reason = error.Code; revision++; }
-                return new("rejected", null, simulated, error.Code);
+                var observed = ports.Playback?.Invoke();
+                var age = observed is null ? TimeSpan.MaxValue : time.GetUtcNow() - observed.ObservedAt;
+                if (observed is null || !observed.IsPlaying || observed.GameSessionId != binding!.Session.Id ||
+                    observed.Quality.KnownValue != ObservationQuality.Confirmed || observed.ObservedAt.Offset != TimeSpan.Zero ||
+                    age < TimeSpan.Zero || age > TimeSpan.FromSeconds(2)) throw new RoomInputException("input.stopEvidenceRequired");
             }
-            catch (GameInputException error) { if (dispatched) effect = EffectStatus.Unknown; ReleaseCore(error.Code); return new("rejected", null, simulated, error.Code); }
-            catch (OperationCanceledException) { if (dispatched) effect = EffectStatus.Unknown; ReleaseCore("cancelled"); throw; }
-            finally
+            // 停止可能在游戏被遮挡或用户切到其他窗口时到点（原工具 GameInput.Execute）：先恢复并前置游戏窗口再发送。
+            if (!simulated && action.Kind == "stop" && ports.Activate is not null && !ports.Activate(binding!))
+                throw new RoomInputException("input.focusChanged");
+            if (!simulated)
+            {
+                if (plan.Point is { } point) { ct.ThrowIfCancellationRequested(); ports.Input.Execute(Authority(InputActionKind.MovePointer, null) with { Point = point }); }
+                foreach (var control in plan.Controls)
+                {
+                    ct.ThrowIfCancellationRequested(); effect = EffectStatus.Unknown;
+                    ports.Input.Execute(Authority(InputActionKind.Press, control)); pressedAt ??= clock.NowMs; dispatched = true; effect = EffectStatus.InputDispatched;
+                }
+                // 与原工具 GameInput.Execute 相同：按下在到点时刻，保持 KeyHoldMs 后再抬起，游戏才能可靠识别这次按键或点击。
+                if (ct.WaitHandle.WaitOne(KeyHoldMs)) ct.ThrowIfCancellationRequested();
+                foreach (var control in plan.Controls.Reverse()) { ct.ThrowIfCancellationRequested(); ports.Input.Execute(Authority(InputActionKind.Release, control)); }
+            }
+            started = action.Kind == "start" && mode != "emote"; state = started ? "performing" : "released";
+            if (action.Kind == "start" && mode == "emote" || action.Kind == "stop") ReleaseCore("action-finished");
+            revision++; return new("sent", pressedAt ?? clock.NowMs, simulated, null);
+        }
+        catch (RoomInputException error)
+        {
+            if (dispatched) effect = EffectStatus.Unknown;
+            // 停止没有送达时本轮在本机已结束，释放准备；否则下一轮开始会被 room.activityActive 拒绝，要再点一次才恢复。
+            // 切换式停止缺少演奏证据时保留准备，可以在拿到证据后再停一次。
+            if (action.Kind == "stop" && error.Code != "input.stopEvidenceRequired") ReleaseCore(error.Code);
+            else { reason = error.Code; revision++; }
+            return new("rejected", null, simulated, error.Code);
+        }
+        catch (GameInputException error) { if (dispatched) effect = EffectStatus.Unknown; ReleaseCore(error.Code); return new("rejected", null, simulated, error.Code); }
+        catch (OperationCanceledException) { if (dispatched) effect = EffectStatus.Unknown; ReleaseCore("cancelled"); throw; }
+        finally
+        {
+            // 第一步经连接器发出时动作留在计划里，等第二步写入结果后再清理。
+            if (call is null)
             {
                 actions.Remove(action.Id);
                 if (lease is not null) ports.Input.ReleaseHeldInputs(lease.Id);
@@ -240,10 +343,33 @@ public sealed class RoomLocalInputController : IInputExecutor
         }
     }
 
+    /// <summary>连接器调用返回时计划或租约已经变了（被释放、取消或重新准备）：不改任何状态，只留诊断，动作按迟到结果拒绝。</summary>
+    private InputOutcome Late(ScheduledAction action, CliDone done)
+    {
+        System.Diagnostics.Trace.WriteLine($"Room connector result arrived after the plan changed: kind={action.Kind} outcome={done.Result.Outcome} code={done.Result.Code}");
+        return new("rejected", null, simulated, "room.planStale");
+    }
+
     private LocalAction Map(ScheduledAction action)
     {
         var stop = action.Kind == "stop";
         if (stop && !canStop || !stop && !canStart) throw new RoomInputException("input.actionMappingUnavailable");
+        var cli = PlanForConnector(stop);
+        if (cli is null) return MapKeys(action, stop);
+        // 经连接器的动作不依赖按键映射与停止证据；有映射时保留作为“命令没发出”时的停止回落。
+        try { return MapKeys(action, stop) with { Cli = cli }; }
+        catch (RoomInputException) { return new(action, [], null, false, cli); }
+    }
+
+    private CliPlan? PlanForConnector(bool stop)
+    {
+        if (ports.Music is not { Available: true } music || simulated || detached || mode is null or "emote") return null;
+        if (stop) return new(null);
+        return ScoreTitleSource?.Invoke() is { Length: > 0 } title && music.TryIsPlayable(title) == true ? new(title) : null;
+    }
+
+    private LocalAction MapKeys(ScheduledAction action, bool stop)
+    {
         var value = stop ? modeBindings?.Stop : modeBindings?.Start;
         if (value is null) throw new RoomInputException("input.actionMappingUnavailable");
         var chat = !stop && (value.Kind.KnownValue == LocalBindingKind.ChatDraft || frozen!.StartInputKinds.GetValueOrDefault(mode!) == 2);
@@ -323,7 +449,7 @@ public sealed class RoomLocalInputController : IInputExecutor
     {
         var previous = lease; lease = null; detachedArmed = false; actions.Clear(); canStart = false; canStop = false;
         if (started) effect = EffectStatus.Unknown;
-        started = false; sessionId = null; state = id is null ? "unprepared" : "released"; reason = why; revision++;
+        started = false; cliInFlight = null; sessionId = null; state = id is null ? "unprepared" : "released"; reason = why; revision++;
         if (previous is not null) ports.Input.ReleaseRun(previous.Id);
     }
 }

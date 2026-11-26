@@ -23,6 +23,8 @@ public interface IInputExecutor
     InputOutcome Execute(ScheduledAction action, CancellationToken cancellationToken);
     /// <summary>到点前 <see cref="ActionScheduler.PrimeLeadMs"/> 调用一次：做执行前必须的准备（如把游戏窗口切到前台），到点时只剩发送输入。</summary>
     void Prime(ScheduledAction action) { }
+    /// <summary>该动作需要比目标时刻提前多少毫秒发出（经命令行开奏有进程调用耗时）；默认不提前。</summary>
+    double ExecutionLeadMs(ScheduledAction action) => 0;
     void Forget(string actionId) { }
     void CancelPendingForStop(string sessionId) => ReleaseAll();
     void ReleaseSession(string sessionId) => ReleaseAll();

@@ -1,0 +1,341 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:character="using:MabiTool.Desktop.Pages.Character"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Pages.Character.CharacterPage"
+             x:DataType="character:CharacterPageModel"
+             controls:Card.PageId="character">
+  <UserControl.Styles>
+    <!-- 图标磁贴：图标、数值、名称三层，评分、属性与周边的环境格共用。 -->
+    <Style Selector="Border.tile">
+      <Setter Property="Background" Value="{DynamicResource InsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource InsetEdgeBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="10,8" />
+    </Style>
+  </UserControl.Styles>
+  <UserControl.Resources>
+    <!-- 每张卡片顶部的来源说明：回落抓包、旧数据或未读取的原因，以及来源冲突时双方的值。 -->
+    <DataTemplate x:Key="NoteLines" DataType="character:BlockNote">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="note" Text="{Binding Detail}" IsVisible="{Binding HasDetail}" />
+        <TextBlock Classes="note unconfirmed" Text="{Binding Conflict}" IsVisible="{Binding HasConflict}" />
+      </StackPanel>
+    </DataTemplate>
+    <!-- 图标磁贴：图标在左，数值在上、名称在下；没读到的数值用次要色显示“未读取”。 -->
+    <DataTemplate x:Key="IconTileTemplate" DataType="character:StatLine">
+      <Border Classes="tile" ToolTip.Tip="{Binding Label}">
+        <DockPanel>
+          <controls:GameIcon DockPanel.Dock="Left" Icon="{Binding Icon}" Size="28" Margin="0,0,10,0" VerticalAlignment="Center" />
+          <StackPanel VerticalAlignment="Center" Spacing="1">
+            <TextBlock Classes="name" FontSize="17" FontWeight="Bold" Text="{Binding Value}" Classes.muted="{Binding Unread}" />
+            <TextBlock Classes="note name" Text="{Binding Label}" TextWrapping="NoWrap" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="MissionRow" DataType="character:MissionLine">
+      <StackPanel Margin="0,3" Spacing="1">
+        <controls:PairRow>
+          <TextBlock Classes="body name" FontWeight="Medium" Text="{Binding Title}" />
+          <TextBlock Classes="body" Text="{Binding Progress}" Classes.confirmed="{Binding Ready}" />
+        </controls:PairRow>
+        <TextBlock Classes="note" Text="{Binding Description}" IsVisible="{Binding HasDescription}" />
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.Resources>
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
+      <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
+      <DockPanel Margin="{DynamicResource TitleReserve}">
+        <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource CH.Title}" />
+        <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" />
+      </DockPanel>
+      <controls:ReflowPanel MinItemWidth="260" Spacing="12" Margin="0,4,0,0">
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <Button x:Name="RefreshButton" Classes="chip" Content="{DynamicResource CH.Refresh}" Command="{Binding IntentCommand}"
+                  CommandParameter="character.refresh" IsEnabled="{Binding CanRefresh}" AutomationProperties.Name="{DynamicResource CH.Refresh}" />
+          <TextBlock x:Name="StatusText" Classes="body muted" VerticalAlignment="Center" Text="{Binding Data.Status}" IsVisible="{Binding HasStatus}" />
+        </StackPanel>
+      </controls:ReflowPanel>
+      <TextBlock x:Name="CapabilityNotice" Margin="0,4,0,0" Classes="note" Text="{Binding CapabilityNotice}" IsVisible="{Binding HasCapabilityNotice}" />
+      <TextBlock x:Name="SampleNote" Margin="0,4,0,0" Classes="note unconfirmed" Text="{Binding SampleMark}" IsVisible="{Binding HasSampleMark}" />
+    </StackPanel>
+
+    <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <!-- 卡片网格：半宽随内容，两张一行；顺序与尺寸档在“编辑布局”里调整。货币在背包页的资源卡。 -->
+      <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
+        <!-- 概况：身份（昵称只取抓包识别的本机身份；服务器 RealmName 与称号各占一行）与四项评分磁贴。 -->
+        <controls:Card x:Name="OverviewPanel" CardId="overview" Title="{DynamicResource CH.Overview}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <controls:Card.Icon><controls:GameIcon Icon="character/nickname" Size="18" /></controls:Card.Icon>
+          <controls:Card.Status>
+            <TextBlock Classes="name muted" Text="{Binding Data.ProfileNote.Text}" />
+          </controls:Card.Status>
+          <StackPanel Spacing="8">
+            <ContentControl Content="{Binding Data.ProfileNote}" ContentTemplate="{StaticResource NoteLines}" />
+            <DockPanel ToolTip.Tip="{DynamicResource CH.NicknameTip}" Background="Transparent">
+              <controls:GameIcon DockPanel.Dock="Left" Icon="character/nickname" Size="30" Margin="0,0,10,0" VerticalAlignment="Center" />
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock x:Name="NicknameText" Classes="h2" Text="{Binding Data.Overview.Nickname}" Classes.muted="{Binding Data.Overview.NicknameUnread}" />
+                <TextBlock Classes="note" Text="{DynamicResource CH.Nickname}" />
+              </StackPanel>
+            </DockPanel>
+            <controls:ReflowPanel MinItemWidth="200" Spacing="12">
+              <StackPanel>
+                <DockPanel Margin="0,3">
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="character/server" Size="18" Margin="0,0,8,0" Foreground="{DynamicResource MutedBrush}" />
+                  <controls:PairRow>
+                    <TextBlock Classes="muted" Text="{DynamicResource CH.Server}" />
+                    <TextBlock x:Name="ServerText" Classes="body" Text="{Binding Data.Overview.Server}" Classes.muted="{Binding Data.Overview.ServerUnread}" />
+                  </controls:PairRow>
+                </DockPanel>
+                <DockPanel Margin="0,3">
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="character/title" Size="18" Margin="0,0,8,0" Foreground="{DynamicResource MutedBrush}" />
+                  <controls:PairRow>
+                    <TextBlock Classes="muted" Text="{DynamicResource CH.TitleLabel}" />
+                    <TextBlock x:Name="TitleText" Classes="body" Text="{Binding Data.Overview.Title}" Classes.muted="{Binding Data.Overview.TitleUnread}" />
+                  </controls:PairRow>
+                </DockPanel>
+              </StackPanel>
+              <StackPanel>
+                <DockPanel Margin="0,3">
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="character/level" Size="18" Margin="0,0,8,0" Foreground="{DynamicResource MutedBrush}" />
+                  <controls:PairRow>
+                    <TextBlock Classes="muted" Text="{DynamicResource CH.Level}" />
+                    <TextBlock Classes="body" FontWeight="Medium" Text="{Binding Data.Overview.Level}" Classes.muted="{Binding Data.Overview.LevelUnread}" />
+                  </controls:PairRow>
+                </DockPanel>
+                <DockPanel Margin="0,3">
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="character/job" Size="18" Margin="0,0,8,0" Foreground="{DynamicResource MutedBrush}" />
+                  <controls:PairRow>
+                    <TextBlock Classes="muted" Text="{DynamicResource CH.Job}" />
+                    <TextBlock Classes="body" FontWeight="Medium" Text="{Binding Data.Overview.Job}" Classes.muted="{Binding Data.Overview.JobUnread}" />
+                  </controls:PairRow>
+                </DockPanel>
+              </StackPanel>
+            </controls:ReflowPanel>
+            <ItemsControl x:Name="ScoreTiles" controls:StableItems.Source="{Binding Data.Scores}" ItemTemplate="{StaticResource IconTileTemplate}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="200" Spacing="8" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </StackPanel>
+        </controls:Card>
+
+        <!-- 状态：每项图标、名称与数值，体力、护盾、饱腹与背包重量带量表。 -->
+        <controls:Card x:Name="VitalsPanel" CardId="vitals" Title="{DynamicResource CH.Vitals}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <controls:Card.Icon><controls:GameIcon Icon="status/health" Size="18" /></controls:Card.Icon>
+          <controls:Card.Status>
+            <TextBlock Classes="name muted" Text="{Binding Data.ProfileNote.Text}" />
+          </controls:Card.Status>
+          <ItemsControl x:Name="VitalsList" controls:StableItems.Source="{Binding Data.Vitals}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="character:StatLine">
+                <DockPanel Margin="0,4">
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="{Binding Icon}" Size="24" Margin="0,0,10,0" VerticalAlignment="Center" />
+                  <StackPanel Spacing="3" VerticalAlignment="Center">
+                    <controls:PairRow>
+                      <TextBlock Classes="muted" Text="{Binding Label}" />
+                      <TextBlock Classes="body" FontWeight="Medium" Text="{Binding Value}" Classes.muted="{Binding Unread}" />
+                    </controls:PairRow>
+                    <controls:MeterBar Value="{Binding Progress}" Fill="{DynamicResource ConfirmedBrush}" Track="{DynamicResource TrackBrush}" IsVisible="{Binding HasFraction}" />
+                  </StackPanel>
+                </DockPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </controls:Card>
+
+        <!-- 属性：图标网格；圣职属性另起一组。四项评分在概况，不在这里重复。 -->
+        <controls:Card x:Name="StatsPanel" CardId="stats" Title="{DynamicResource CH.Stats}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <controls:Card.Icon><controls:GameIcon Icon="stat/STR" Size="18" /></controls:Card.Icon>
+          <controls:Card.Status>
+            <TextBlock Classes="name muted" Text="{Binding Data.ProfileNote.Text}" />
+          </controls:Card.Status>
+          <StackPanel Spacing="6">
+            <TextBlock x:Name="StatsUnread" Classes="body muted" Text="{Binding UnreadText}" IsVisible="{Binding NoStats}" />
+            <ItemsControl x:Name="StatList" controls:StableItems.Source="{Binding Data.Stats}" ItemTemplate="{StaticResource IconTileTemplate}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="130" Spacing="8" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+            <DockPanel Margin="0,6,0,0" IsVisible="{Binding HasPaladin}">
+              <controls:GameIcon DockPanel.Dock="Left" Icon="stat/paladin" Size="18" Margin="0,0,8,0" VerticalAlignment="Center" />
+              <TextBlock Classes="label" VerticalAlignment="Center" Text="{DynamicResource CH.Paladin}" />
+            </DockPanel>
+            <ItemsControl x:Name="PaladinList" controls:StableItems.Source="{Binding Data.PaladinStats}" IsVisible="{Binding HasPaladin}"
+                          ItemTemplate="{StaticResource IconTileTemplate}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="130" Spacing="8" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </StackPanel>
+        </controls:Card>
+
+        <!-- 生活技能：图标、名称、等级与经验条，满级（没有经验字段）只显示等级。 -->
+        <controls:Card x:Name="SkillsPanel" CardId="skills" Title="{DynamicResource CH.Skills}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <controls:Card.Icon><controls:GameIcon Icon="life/usualGathering" Size="18" /></controls:Card.Icon>
+          <controls:Card.Status>
+            <TextBlock Classes="name muted" Text="{Binding Data.ProfileNote.Text}" />
+          </controls:Card.Status>
+          <StackPanel Spacing="4">
+            <TextBlock x:Name="SkillsUnread" Classes="body muted" Text="{Binding UnreadText}" IsVisible="{Binding NoSkills}" />
+            <ItemsControl x:Name="SkillList" controls:StableItems.Source="{Binding Data.Skills}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="220" Spacing="14" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="character:SkillLine">
+                  <DockPanel Margin="0,3">
+                    <controls:GameIcon DockPanel.Dock="Left" Icon="{Binding Icon}" Size="26" Margin="0,0,10,0" VerticalAlignment="Center" />
+                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                      <controls:PairRow>
+                        <TextBlock Classes="body name" Text="{Binding Name}" />
+                        <TextBlock Classes="body" FontWeight="Bold" Text="{Binding Level}" Classes.muted="{Binding Unread}" />
+                      </controls:PairRow>
+                      <controls:MeterBar Value="{Binding Progress}" Fill="{DynamicResource ConfirmedBrush}" Track="{DynamicResource TrackBrush}" IsVisible="{Binding HasFraction}" />
+                      <TextBlock Classes="note" Text="{Binding Exp}" IsVisible="{Binding HasExp}" />
+                    </StackPanel>
+                  </DockPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </controls:Card>
+
+        <!-- 任务：日常与周常两个页签；未完成在前，已完成未领奖单列，已领奖只给个数；旧数据带标注。 -->
+        <controls:Card x:Name="MissionsPanel" CardId="missions" Title="{DynamicResource CH.Missions}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <controls:Card.Icon><controls:GameIcon Icon="mission/missions" Size="18" /></controls:Card.Icon>
+          <controls:Card.Status>
+            <TextBlock Classes="name muted" Text="{Binding SelectedMission.Note.Text}" />
+          </controls:Card.Status>
+          <StackPanel Spacing="8">
+            <controls:SelectionBorder Classes="segmented" HorizontalAlignment="Left">
+              <StackPanel Orientation="Horizontal">
+                <Button x:Name="DailyTab" Classes="segment" Classes.active="{Binding ShowDaily}" Command="{Binding SelectMissionCommand}" CommandParameter="daily">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <controls:GameIcon Icon="mission/daily" Size="16" VerticalAlignment="Center" />
+                    <TextBlock VerticalAlignment="Center" Text="{DynamicResource CH.Daily}" />
+                  </StackPanel>
+                </Button>
+                <Button x:Name="WeeklyTab" Classes="segment" Classes.active="{Binding ShowWeekly}" Command="{Binding SelectMissionCommand}" CommandParameter="weekly">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <controls:GameIcon Icon="mission/weekly" Size="16" VerticalAlignment="Center" />
+                    <TextBlock VerticalAlignment="Center" Text="{DynamicResource CH.Weekly}" />
+                  </StackPanel>
+                </Button>
+              </StackPanel>
+            </controls:SelectionBorder>
+            <ContentControl Content="{Binding SelectedMission.Note}" ContentTemplate="{StaticResource NoteLines}" />
+            <TextBlock x:Name="MissionSummary" Classes="note" Text="{Binding SelectedMission.Summary}" />
+            <TextBlock Classes="label" Text="{DynamicResource CH.Todo}" IsVisible="{Binding SelectedMission.HasTodo}" />
+            <ItemsControl x:Name="TodoList" controls:StableItems.Source="{Binding SelectedMission.Todo}" ItemTemplate="{StaticResource MissionRow}"
+                          IsVisible="{Binding SelectedMission.HasTodo}" />
+            <DockPanel IsVisible="{Binding SelectedMission.HasReady}">
+              <controls:GameIcon DockPanel.Dock="Left" Icon="mission/ready" Size="18" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource ConfirmedBrush}" />
+              <TextBlock Classes="label" VerticalAlignment="Center" Text="{DynamicResource CH.Ready}" />
+            </DockPanel>
+            <ItemsControl x:Name="ReadyList" controls:StableItems.Source="{Binding SelectedMission.Ready}" ItemTemplate="{StaticResource MissionRow}"
+                          IsVisible="{Binding SelectedMission.HasReady}" />
+            <TextBlock x:Name="ReceivedText" Classes="note" Text="{Binding SelectedMission.ReceivedText}" IsVisible="{Binding SelectedMission.HasReceived}" />
+          </StackPanel>
+        </controls:Card>
+
+        <!-- 成长指南：可选；游戏内的内容指南未解锁时写明原因与解锁条件。 -->
+        <controls:Card x:Name="GrowthPanel" CardId="growth" Title="{DynamicResource CH.Growth}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <controls:Card.Icon><controls:GameIcon Icon="mission/growth" Size="18" /></controls:Card.Icon>
+          <controls:Card.Status>
+            <TextBlock Classes="name muted" Text="{Binding Data.Growth.Note.Text}" />
+          </controls:Card.Status>
+          <StackPanel Spacing="4">
+            <ContentControl Content="{Binding Data.Growth.Note}" ContentTemplate="{StaticResource NoteLines}" />
+            <TextBlock x:Name="GrowthLocked" Classes="body" Text="{Binding Data.Growth.LockedText}" IsVisible="{Binding Data.Growth.HasLockedText}" />
+            <TextBlock x:Name="GrowthUnread" Classes="body muted" Text="{Binding UnreadText}" IsVisible="{Binding Data.Growth.Unread}" />
+            <ItemsControl x:Name="GrowthList" controls:StableItems.Source="{Binding Data.Growth.Items}" IsVisible="{Binding Data.Growth.HasItems}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="character:GrowthLine">
+                  <controls:PairRow Margin="0,3">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock Classes="body" Text="{Binding Target}" Classes.muted="{Binding Dim}" />
+                      <TextBlock Classes="note" VerticalAlignment="Center" Text="{Binding Kind}" />
+                    </StackPanel>
+                    <TextBlock Classes="body" Text="{Binding State}" Classes.muted="{Binding Dim}" />
+                  </controls:PairRow>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </controls:Card>
+
+        <!-- 周边：所在区域、频道、天气、游戏内时间、位置与住宅（环境）。附近玩家不在角色页显示（附近主题只供附近演奏字幕）。 -->
+        <controls:Card x:Name="SurroundingsPanel" CardId="surroundings" Title="{DynamicResource CH.Surroundings}" Size="FullWidth" AllowedSizes="HalfByAuto">
+          <controls:Card.Icon><controls:GameIcon Icon="surroundings/area" Size="18" /></controls:Card.Icon>
+          <controls:Card.Status>
+            <TextBlock Classes="name muted" Text="{Binding Data.Environment.Note.Text}" />
+          </controls:Card.Status>
+          <StackPanel Spacing="10">
+            <ContentControl Content="{Binding Data.Environment.Note}" ContentTemplate="{StaticResource NoteLines}" />
+            <controls:ReflowPanel x:Name="EnvironmentTiles" MinItemWidth="150" Spacing="8">
+              <Border Classes="tile">
+                <DockPanel>
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="surroundings/area" Size="26" Margin="0,0,10,0" VerticalAlignment="Center" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="EnvArea" Classes="name" FontWeight="Bold" Text="{Binding Data.Environment.Area}" ToolTip.Tip="{Binding Data.Environment.Area}" />
+                    <TextBlock Classes="note" Text="{DynamicResource CH.EnvArea}" />
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+              <Border Classes="tile">
+                <DockPanel>
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="surroundings/channel" Size="26" Margin="0,0,10,0" VerticalAlignment="Center" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="EnvChannel" Classes="name" FontWeight="Bold" Text="{Binding Data.Environment.Channel}" ToolTip.Tip="{Binding Data.Environment.Channel}" />
+                    <TextBlock Classes="note" Text="{DynamicResource CH.EnvChannel}" />
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+              <Border Classes="tile">
+                <DockPanel>
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="{Binding Data.Environment.WeatherIcon}" Size="26" Margin="0,0,10,0" VerticalAlignment="Center" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="EnvWeather" Classes="name" FontWeight="Bold" Text="{Binding Data.Environment.Weather}" />
+                    <TextBlock Classes="note" Text="{DynamicResource CH.EnvWeather}" />
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+              <Border Classes="tile">
+                <DockPanel>
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="surroundings/time" Size="26" Margin="0,0,10,0" VerticalAlignment="Center" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="EnvTime" Classes="name" FontWeight="Bold" Text="{Binding Data.Environment.Time}" ToolTip.Tip="{Binding Data.Environment.TimeTip}" />
+                    <TextBlock Classes="note" Text="{DynamicResource CH.EnvTime}" />
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+              <Border Classes="tile">
+                <DockPanel>
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="surroundings/position" Size="26" Margin="0,0,10,0" VerticalAlignment="Center" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Classes="name" FontWeight="Bold" Text="{Binding Data.Environment.Position}" />
+                    <TextBlock Classes="note" Text="{DynamicResource CH.EnvPosition}" />
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+              <Border Classes="tile">
+                <DockPanel>
+                  <controls:GameIcon DockPanel.Dock="Left" Icon="surroundings/housing" Size="26" Margin="0,0,10,0" VerticalAlignment="Center" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Classes="name" FontWeight="Bold" Text="{Binding Data.Environment.Housing}" ToolTip.Tip="{Binding Data.Environment.Housing}" />
+                    <TextBlock Classes="note" Text="{DynamicResource CH.EnvHousing}" />
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+            </controls:ReflowPanel>
+          </StackPanel>
+        </controls:Card>
+      </controls:CardGrid>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

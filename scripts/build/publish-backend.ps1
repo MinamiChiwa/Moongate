@@ -8,12 +8,16 @@
     [ValidateSet('stable', 'preview')]
     [string]$Channel = 'preview',
     [string]$OutputDirectory,
-    [string]$RuntimeVersion = '10.0.13',
+    [string]$RuntimeVersion = '10.0.15',
     [switch]$IncludeObservation,
     [switch]$IncludeColor,
     [string]$PythonExecutable = 'python',
     [string]$TesseractDirectory,
     [string]$TesseractLicenseDirectory,
+    # 台服游戏命令行工具 MabinogiMobile_CLI.exe 随发行包分发（components/game-cli）。省略时使用仓库内已入库的
+    # packaging/game-cli/MabinogiMobile_CLI.exe，也可指定另一份本机文件覆盖；文件名、长度与 SHA-256 一律按
+    # packaging/game-cli/game-cli.lock.json 核对，不符在发布步骤之前失败。
+    [string]$CliExecutable,
     # 增量更新的出发版本：旧完整包 zip 或其 .manifest.json，可给多个；省略时只生成文件清单。
     [string[]]$UpdateBase = @(),
     [switch]$NoRestore
@@ -35,6 +39,20 @@ if ($IncludeColor) {
     if ($missingInputs.Count) { throw "-TesseractDirectory 缺少 $($missingInputs.Count) 个锁定文件：$($missingInputs -join '、')" }
     if ($missingLicenses.Count) { throw "-TesseractLicenseDirectory 缺少 $($missingLicenses.Count) 份许可文字：$($missingLicenses -join '、')" }
 }
+# 命令行工具输入在创建工作区、发布 .NET 组件之前核对：文件存在、文件名与登记一致、路径无链接或联接、长度与 SHA-256 与登记一致。
+$cliLock = Get-Content -LiteralPath (Join-Path $repositoryRoot 'packaging/game-cli/game-cli.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$cliLabel = if ($CliExecutable) { '-CliExecutable' } else { '仓库内的命令行工具' }
+$cliSource = if ($CliExecutable) { [IO.Path]::GetFullPath($CliExecutable) } else { Join-Path $repositoryRoot "packaging/game-cli/$($cliLock.fileName)" }
+if (-not (Test-Path -LiteralPath $cliSource -PathType Leaf)) { throw "$cliLabel 指定的文件不存在：$cliSource" }
+if ([IO.Path]::GetFileName($cliSource) -ine $cliLock.fileName) { throw "$cliLabel 的文件名须为 $($cliLock.fileName)：$cliSource" }
+$cliItem = Get-Item -LiteralPath $cliSource -Force
+if ($cliItem.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$cliLabel 是链接：$cliSource" }
+for ($cliDirectory = $cliItem.Directory; $cliDirectory; $cliDirectory = $cliDirectory.Parent) {
+    if ($cliDirectory.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$cliLabel 路径包含链接或联接：$($cliDirectory.FullName)" }
+}
+if ($cliItem.Length -ne [long]$cliLock.length) { throw "$cliLabel 的长度 $($cliItem.Length) 与登记的 $($cliLock.length) 不符" }
+$cliHash = (Get-FileHash -LiteralPath $cliSource -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($cliHash -ne $cliLock.sha256) { throw "$cliLabel 的 SHA-256 $cliHash 与登记的 $($cliLock.sha256) 不符" }
 if (-not $ReleaseId) { $ReleaseId = "mabitool-$Version-win-x64" }
 if ($ReleaseId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') {
     throw '发行目录名无效'
@@ -104,10 +122,12 @@ try {
         'desktop' = 'frontends/desktop/src/MabiTool.Desktop/MabiTool.Desktop.csproj'
     }
     if ($IncludeObservation) { $projects['observation-worker'] = 'workers/game-observation/MabiTool.Observation.Worker.csproj' }
+    # 钓鱼识别 Worker 随包分发（含登记的模板图片，输出里的 templates/），宿主按需启动。
+    $projects['life-vision'] = 'workers/life-vision/MabiTool.LifeVision.Worker.csproj'
     foreach ($component in $projects.Keys) {
         $componentOutput = Join-Path $workRoot "components/$component"
         # 桌面前端保留 apphost（窗口程序，入口以随包运行时的 DOTNET_ROOT 启动它）。
-        $appHost = if ($component -in @('observation-worker', 'desktop')) { 'true' } else { 'false' }
+        $appHost = if ($component -in @('observation-worker', 'life-vision', 'desktop')) { 'true' } else { 'false' }
         $arguments = @('publish', $projects[$component], '-c', 'Release', '--nologo', '--self-contained', 'false',
             "-p:UseAppHost=$appHost", '-p:RestoreLockedMode=true', "-p:Version=$Version", "-p:RuntimeFrameworkVersion=$RuntimeVersion",
             "-p:ArtifactsPath=$(Join-Path $workRoot 'build')",
@@ -142,6 +162,11 @@ try {
         & $PythonExecutable -I -S -B -X utf8 scripts/build/package-color-runtime.py --python $PythonExecutable --output (Join-Path $workRoot 'components/color-engine') --tesseract-directory ([IO.Path]::GetFullPath($TesseractDirectory)) --tesseract-licenses ([IO.Path]::GetFullPath($TesseractLicenseDirectory))
         if ($LASTEXITCODE -ne 0) { throw '染色运行时构建失败' }
     }
+    # 核对过的命令行工具原样复制到组件目录并再核对一次；package-inventory.py 随后按登记复核，把来源与版权归属写入声明与 SBOM。
+    $cliTarget = Join-Path $workRoot "components/game-cli/$($cliLock.fileName)"
+    New-Item -ItemType Directory -Path (Split-Path $cliTarget -Parent) -Force | Out-Null
+    Copy-Item -LiteralPath $cliSource -Destination $cliTarget
+    if ((Get-FileHash -LiteralPath $cliTarget -Algorithm SHA256).Hash.ToLowerInvariant() -ne $cliLock.sha256) { throw '命令行工具复制后的 SHA-256 与登记不符' }
     # 包根入口 Moongate.exe：.NET Framework 4.8 窗口程序，只取单个 exe，构建中间输出随 build 目录回收。
     $launcherOutput = Join-Path $workRoot 'build/portable-launcher'
     $launcherArguments = @('publish', 'src/PortableLauncher/MabiTool.PortableLauncher.csproj', '-c', 'Release', '--nologo',
@@ -193,7 +218,7 @@ try {
         displayVersion = $displayVersion
         distribution = 'portable-zip'
         repository = $Repository
-        components = @($projects.Keys) + @('dotnet-runtime') + $(if ($IncludeColor) { @('color-engine') } else { @() })
+        components = @($projects.Keys) + @('dotnet-runtime') + $(if ($IncludeColor) { @('color-engine') } else { @() }) + @('game-cli')
         cleanWindowsVerification = 'pending'
     }
     New-Item -ItemType Directory -Path $packagesRoot -Force | Out-Null

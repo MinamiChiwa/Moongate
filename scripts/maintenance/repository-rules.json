@@ -72,6 +72,8 @@
     "docs/release-notes-0.1.6.zh-TW.md",
     "docs/release-notes-0.1.7.md",
     "docs/release-notes-0.1.7.zh-TW.md",
+    "docs/release-notes-0.1.8.md",
+    "docs/release-notes-0.1.8.zh-TW.md",
     "docs/user-guide.md",
     "docs/user-guide.zh-TW.md"
   ],
@@ -87,6 +89,23 @@
   ],
   "maxFileBytes": 5242880,
   "largeFileExceptions": [],
+  "thirdPartyBinaries": [
+    {
+      "path": "packaging/game-cli/MabinogiMobile_CLI.exe",
+      "lock": "packaging/game-cli/game-cli.lock.json"
+    }
+  ],
+  "thirdPartyAssets": [
+    {
+      "lock": "workers/life-vision/Assets/templates.lock.json"
+    },
+    {
+      "lock": "tests/Providers/MabiTool.LifeVision.Tests/Fixtures/fixtures.lock.json"
+    },
+    {
+      "lock": "frontends/desktop/src/MabiTool.Desktop/Assets/GameIcons/game-icons.lock.json"
+    }
+  ],
   "artifactPolicy": {
     "protectRecentHours": 2,
     "regenerable": [

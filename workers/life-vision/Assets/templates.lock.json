@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "id": "life-vision-templates",
+  "vendor": "Nexon / devCAT",
+  "copyright": "台服客户端界面裁图，版权归 Nexon / devCAT 所有，不适用 Moongate 的 MIT 许可；Moongate 是非商业的爱好者项目，与 NEXON、devCAT 无关。",
+  "source": "经 MabiAgent（82bc0ef）从台服 Mabinogi Mobile 客户端界面截图裁取。",
+  "distribution": "随 Moongate 仓库（workers/life-vision/Assets/templates/）与发行包（components/life-vision/templates/）分发，文件按字节原样保存。",
+  "files": [
+    {
+      "path": "templates/fishing_hook.png",
+      "sha256": "eba37e4406ef18854e84282fe5b0bf3e2c74e259f12a98f269f76d41354345d4",
+      "length": 1730,
+      "origin": "assets/templates/screen_ui/fishing/fishing_hook.png",
+      "role": "上钩图标"
+    },
+    {
+      "path": "templates/focused_dialog_title.png",
+      "sha256": "545fc50bfd24ecd0e428513300bd27f58f8089f53dc2ff19f3f4b921b7e0b869",
+      "length": 3245,
+      "origin": "assets/templates/screen_ui/fishing/focused_dialog_title.png",
+      "role": "“改为专注”弹窗标题"
+    },
+    {
+      "path": "templates/focused_dialog_title_current.png",
+      "sha256": "a6fd13875fd4bbfcb3540c729d5270d0d27042a4bd3e403fab18bb85cfbac5fe",
+      "length": 3469,
+      "origin": "assets/templates/screen_ui/fishing/focused_dialog_title_current.png",
+      "role": "“改为专注”弹窗标题（用户实采变体）"
+    },
+    {
+      "path": "templates/fishing_leisure_dialog_title.png",
+      "sha256": "eb08d1648e5422c686cb8a6e58c94768ddba97b73086513178182c63aaee34cf",
+      "length": 3387,
+      "origin": "assets/templates/screen_ui/fishing/fishing_leisure_dialog_title.png",
+      "role": "“改为悠闲”弹窗标题"
+    },
+    {
+      "path": "templates/scene_bag_core_current.png",
+      "sha256": "8293fb6eaac01387e2af8ab51f28b4949980bda9434d5481a6878838d110f488",
+      "length": 2352,
+      "origin": "assets/templates/screen_ui/runtime_hud/scene_bag_core_current.png",
+      "role": "场景背包图标"
+    },
+    {
+      "path": "templates/scene_map_key_core.png",
+      "sha256": "b4b9929e2732e67c182c6cff892d68551cf8ed96cafabefea427f1cfe83be18d",
+      "length": 541,
+      "origin": "assets/templates/maintenance_ui/scene_map_key_core.png",
+      "role": "场景地图键"
+    },
+    {
+      "path": "templates/maint_dismount.png",
+      "sha256": "49ec67937ce4a212030abe66c005bf90830bcff79e9046a0c3e3754c2e4091b3",
+      "length": 1840,
+      "origin": "assets/templates/maintenance_ui/maint_dismount.png",
+      "role": "下坐骑图标"
+    },
+    {
+      "path": "templates/backpack_full_toast.png",
+      "sha256": "fb89344f9190e4840282aeda202741ab17f8b4a8694b06f43daf824778f39e3c",
+      "length": 4556,
+      "origin": "assets/templates/screen_ui/runtime_hud/backpack_full_toast.png",
+      "role": "满包提示"
+    }
+  ]
+}

@@ -18,14 +18,15 @@ public static class BuiltInModules
             Register("core", true, []),
             Register("game-access", true, ["core"]),
             Register("music-library", true, ["core"]),
-            Register("performance", false, ["game-access", "music-library"]),
+            Register("performance", true, ["game-access", "music-library"]),
             Register("rooms", true, ["core"]),
             Register("synchronization", true, ["rooms", "game-access"]),
             Register("color", colorRuntime, ["game-access"]),
-            Register("environment", false, ["game-access"]),
+            Register("environment", true, ["game-access"]),
             Register("presentation", true, ["core"]),
             Register("combat-observation", true, ["game-access"]),
-            Register("inventory", true, ["game-access"])
+            Register("inventory", true, ["game-access"]),
+            Register("life", true, ["game-access"])
         ]);
     }
 
@@ -48,7 +49,8 @@ public static class BuiltInModules
         ["environment"] = ("环境信息", "環境資訊"),
         ["presentation"] = ("浮窗展示数据", "浮窗展示資料"),
         ["combat-observation"] = ("DPS检测", "DPS檢測"),
-        ["inventory"] = ("背包", "背包")
+        ["inventory"] = ("背包", "背包"),
+        ["life"] = ("生活", "生活")
     };
 
     private static readonly Dictionary<string, (string, string)> Descriptions = new(StringComparer.Ordinal)
@@ -63,7 +65,8 @@ public static class BuiltInModules
         ["environment"] = ("提供游戏内时间、天气、频道与区域等环境信息", "提供遊戲內時間、天氣、頻道與區域等環境資訊"),
         ["presentation"] = ("为游戏浮窗元件提供附近演奏、环境等展示数据", "為遊戲浮窗元件提供附近演奏、環境等展示資料"),
         ["combat-observation"] = ("被动观测本机战斗，统计伤害、DPS、技能与目标、效果和定时测量", "被動觀測本機戰鬥，統計傷害、DPS、技能與目標、效果和定時測量"),
-        ["inventory"] = ("读取各角色的背包与保管箱道具，汇总成透视表", "讀取各角色的背包與保管箱道具，彙總成樞紐表")
+        ["inventory"] = ("读取各角色的背包与保管箱道具，汇总成透视表", "讀取各角色的背包與保管箱道具，彙總成樞紐表"),
+        ["life"] = ("经游戏连接器采集、加工、制作，并提供原地专注钓鱼", "經遊戲連接器採集、加工、製作，並提供原地專注釣魚")
     };
 
     private sealed class CoreModule : IAsyncDisposable

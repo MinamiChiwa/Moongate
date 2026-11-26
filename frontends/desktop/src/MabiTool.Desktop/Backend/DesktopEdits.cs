@@ -34,6 +34,18 @@ public sealed record UpdatePolicyView(bool AutomaticChecks, int CheckIntervalHou
 }
 
 /// <summary>
+/// 可用更新的摘要，供“下载更新”前的确认窗口显示：<see cref="Release"/> 是版本，<see cref="DownloadKind"/> 为 <c>incremental</c>（增量）或
+/// <c>full</c>（完整下载），后端还没比对完本机文件时为空；<see cref="DownloadBytes"/> 是本次要下载的字节数，未知时为空。
+/// </summary>
+public sealed record UpdateOfferView(string Release, string? DownloadKind, ulong? DownloadBytes);
+
+/// <summary>某种界面语言（<c>zh-Hans</c>、<c>zh-Hant</c>）的更新说明，Markdown 文本。</summary>
+public sealed record UpdateNotesText(string Language, string Markdown);
+
+/// <summary>可用更新的更新说明；没有读到的语言不在 <see cref="Texts"/> 里。</summary>
+public sealed record UpdateNotesView(string Release, IReadOnlyList<UpdateNotesText> Texts);
+
+/// <summary>
 /// 读取合奏本机设置的回执：<see cref="Value"/> 是后端的完整设置（界面不显示的字段保存时原样带回），
 /// <see cref="ETag"/> 是读取时的修订标记，保存时作为 If-Match；读取失败时 <see cref="Value"/> 为空，<see cref="Message"/> 是错误码。
 /// </summary>

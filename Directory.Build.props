@@ -19,6 +19,7 @@
                             '$(MSBuildProjectName)' == 'MabiTool.Modules.Color' Or
                             '$(MSBuildProjectName)' == 'MabiTool.Modules.CombatObservation' Or
                             '$(MSBuildProjectName)' == 'MabiTool.Modules.Inventory' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Modules.Life' Or
                             '$(MSBuildProjectName)' == 'MabiTool.Modules.MusicLibrary' Or
                             '$(MSBuildProjectName)' == 'MabiTool.Modules.Rooms' Or
                             '$(MSBuildProjectName)' == 'MabiTool.ModuleSdk' Or
@@ -27,6 +28,7 @@
                             '$(MSBuildProjectName)' == 'MabiTool.Providers.Replay' Or
                             '$(MSBuildProjectName)' == 'MabiTool.Providers.Tunnels' Or
                             '$(MSBuildProjectName)' == 'MabiTool.Providers.TwObservation' Or
+                            '$(MSBuildProjectName)' == 'MabiTool.Providers.TwCli' Or
                             '$(MSBuildProjectName)' == 'MabiTool.RoomServer'">
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>

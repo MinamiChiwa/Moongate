@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="using:MabiTool.Desktop.Shell"
         xmlns:controls="using:MabiTool.Desktop.Controls"
+        xmlns:settings="using:MabiTool.Desktop.Pages.Settings"
         x:Class="MabiTool.Desktop.Shell.MainWindow"
         x:DataType="shell:ShellViewModel"
         Title="Moongate"
@@ -15,7 +16,7 @@
       <Button Classes="nav" Classes.selected="{Binding IsSelected}"
               Command="{Binding SelectCommand}" CommandParameter="{Binding}">
         <DockPanel>
-          <controls:IconTile DockPanel.Dock="Left" Margin="0,0,10,0" VerticalAlignment="Center"
+          <controls:IconTile DockPanel.Dock="Left" Width="26" Height="26" Margin="0,0,10,0" VerticalAlignment="Center"
                              Slot="{Binding Module.IconSlot}" Fallback="{Binding Glyph}"
                              Accent="{Binding Module.AccentBrush}" IsActive="{Binding IsSelected}" />
           <TextBlock Classes="name" VerticalAlignment="Center" Text="{Binding Title}" />
@@ -41,7 +42,7 @@
           <!-- 侧栏：模块入口与底部入口的选中底色在入口之间滑动（SlidingSelection）。 -->
           <controls:SelectionBorder x:Name="Sidebar" Classes="panel" Padding="12,16" Margin="0,0,14,0">
             <DockPanel>
-              <DockPanel DockPanel.Dock="Top" x:Name="BrandArea" Margin="8,0,8,14">
+              <DockPanel DockPanel.Dock="Top" x:Name="BrandArea" Margin="8,0,8,10">
                 <!-- 标志：星月门石柱上的月环符文（缺口圆环与三道刻痕），环中是月亮碎片；线条随主题取前景色，碎片固定为蓝色。 -->
                 <Viewbox DockPanel.Dock="Left" Width="28" Height="28" Margin="0,0,10,0">
                   <Canvas Width="100" Height="100">
@@ -57,7 +58,7 @@
 
               <!-- 全局抓包状态：未抓包及原因／抓包中但未识别角色／已识别的角色名（游戏原文）；点击前往设置页抓包区，Npcap 缺失时打开安装指引。 -->
               <Button DockPanel.Dock="Top" x:Name="CaptureChip" Classes="chip" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                      Margin="0,0,0,10" Command="{Binding OpenCaptureSettingsCommand}"
+                      Margin="0,0,0,8" Command="{Binding OpenCaptureSettingsCommand}"
                       ToolTip.Tip="{Binding CaptureTip}" AutomationProperties.Name="{Binding CaptureTip}">
                 <DockPanel>
                   <Panel DockPanel.Dock="Left" Width="8" Height="8" Margin="0,0,8,0" VerticalAlignment="Center">
@@ -81,8 +82,26 @@
                 </DockPanel>
               </Button>
 
+              <!-- 游戏连接器状态：未启用／已连接／已失效／未连接游戏等；点击打开弹出层，在里面启用、查看命令行文件与游戏状态、恢复原设置。 -->
+              <Button DockPanel.Dock="Top" x:Name="ConnectorChip" Classes="chip" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                      Margin="0,0,0,8" Command="{Binding Connector.ToggleLayerCommand}"
+                      ToolTip.Tip="{Binding Connector.ChipTip}" AutomationProperties.Name="{Binding Connector.ChipTip}">
+                <DockPanel>
+                  <Panel DockPanel.Dock="Left" Width="8" Height="8" Margin="0,0,8,0" VerticalAlignment="Center">
+                    <Border CornerRadius="4" Background="{DynamicResource MutedBrush}" IsVisible="{Binding Connector.DotMuted}" />
+                    <Border CornerRadius="4" Background="{DynamicResource ConfirmedBrush}" IsVisible="{Binding Connector.DotConnected}" />
+                    <Border CornerRadius="4" Background="{DynamicResource UnknownBrush}" IsVisible="{Binding Connector.DotWarning}" />
+                  </Panel>
+                  <StackPanel>
+                    <TextBlock Classes="note" FontSize="11" Text="{DynamicResource GC.Chip}" />
+                    <TextBlock x:Name="ConnectorChipText" Classes="name" Text="{Binding Connector.ChipText}"
+                               Classes.confirmed="{Binding Connector.DotConnected}" Classes.unconfirmed="{Binding Connector.DotWarning}" />
+                  </StackPanel>
+                </DockPanel>
+              </Button>
+
               <!-- 游戏绑定卡：点开选择游戏窗口的弹出层；未连接后端时停用。 -->
-              <Button DockPanel.Dock="Top" x:Name="BindingCard" Classes="bindingcard" Margin="0,0,0,14"
+              <Button DockPanel.Dock="Top" x:Name="BindingCard" Classes="bindingcard" Margin="0,0,0,10"
                       Command="{Binding GamePicker.OpenCommand}" IsEnabled="{Binding Binding.Connected}"
                       ToolTip.Tip="{DynamicResource S.PickWindow}" AutomationProperties.Name="{DynamicResource S.PickWindow}">
                 <StackPanel>
@@ -95,13 +114,13 @@
               </Button>
 
               <!-- 外壳自带的入口与语言选择：与模块入口同一种行样式。 -->
-              <Border DockPanel.Dock="Bottom" x:Name="ShellGroup" Classes="inset" Padding="4" Margin="0,14,0,0">
+              <Border DockPanel.Dock="Bottom" x:Name="ShellGroup" Classes="inset" Padding="4" Margin="0,10,0,0">
                 <StackPanel>
                   <ItemsControl ItemsSource="{Binding ShellEntries}" />
-                  <DockPanel MinHeight="32" Margin="9,7">
-                    <controls:IconTile DockPanel.Dock="Left" Margin="0,0,10,0" VerticalAlignment="Center"
+                  <DockPanel MinHeight="36" Margin="9,0">
+                    <controls:IconTile DockPanel.Dock="Left" Width="26" Height="26" Margin="0,0,10,0" VerticalAlignment="Center"
                                        Slot="shell.language" Fallback="文" Accent="{StaticResource ShellBrush}" />
-                    <controls:SelectionBorder DockPanel.Dock="Right" Classes="segmented" VerticalAlignment="Center" Margin="6,0,0,0">
+                    <controls:SelectionBorder DockPanel.Dock="Right" Classes="segmented compact" VerticalAlignment="Center" Margin="6,0,0,0">
                       <StackPanel Orientation="Horizontal">
                         <Button x:Name="LanguageSimplified" Classes="segment" Classes.active="{Binding IsSimplified}"
                                 Command="{Binding UseSimplifiedCommand}" Content="简"
@@ -255,7 +274,7 @@
                          Text="{DynamicResource S.NoWindows}" IsVisible="{Binding GamePicker.IsEmpty}" />
               <TextBlock DockPanel.Dock="Top" x:Name="GamePickerProblem" Classes="body unconfirmed" Margin="0,0,0,6"
                          Text="{Binding GamePicker.Problem}" IsVisible="{Binding GamePicker.HasProblem}" />
-              <ScrollViewer x:Name="GamePickerScroller" controls:EdgeFade.IsEnabled="True"
+              <ScrollViewer x:Name="GamePickerScroller" Classes="room" controls:EdgeFade.IsEnabled="True"
                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <ItemsControl x:Name="GameWindowList" ItemsSource="{Binding GamePicker.Rows}">
                   <ItemsControl.ItemTemplate>
@@ -311,6 +330,98 @@
                         Command="{Binding NpcapGuide.CopyAddressCommand}" AutomationProperties.Name="{DynamicResource S.NpcapCopy}" />
                 <Button x:Name="NpcapGuideOpen" Classes="primary" Content="{DynamicResource S.NpcapOpen}"
                         Command="{Binding NpcapGuide.OpenDownloadCommand}" AutomationProperties.Name="{DynamicResource S.NpcapOpen}" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </Panel>
+
+        <!-- 游戏连接器：叠在窗口内的弹出层，从状态胶囊下方展开，内容与设置页卡片相同；点外面或按 Esc 关闭，Tab 只在层内循环。 -->
+        <Panel x:Name="ConnectorLayer" IsVisible="{Binding Connector.IsOpen}">
+          <Border Background="Transparent" PointerPressed="OnConnectorOutsidePressed" />
+          <Border x:Name="ConnectorPanel" Classes="panel popup" Classes.open="{Binding Connector.IsOpen}"
+                  Width="380" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="26,150,14,14"
+                  KeyboardNavigation.TabNavigation="Cycle">
+            <DockPanel>
+              <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                <Button DockPanel.Dock="Right" x:Name="ConnectorClose" Classes="chip" Margin="6,0,0,0" VerticalAlignment="Center"
+                        Content="{DynamicResource S.ClosePicker}" Command="{Binding Connector.CloseCommand}"
+                        AutomationProperties.Name="{DynamicResource S.ClosePicker}" />
+                <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="h2" FontSize="17" Text="{DynamicResource GC.CardTitle}" /><controls:HelpTip Text="{DynamicResource GC.CardHint}" /></StackPanel>
+              </DockPanel>
+              <ScrollViewer x:Name="ConnectorScroller" Classes="room" controls:EdgeFade.IsEnabled="True"
+                            VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <settings:GameConnectorCardView x:Name="ConnectorLayerCard" DataContext="{Binding Connector}" />
+              </ScrollViewer>
+            </DockPanel>
+          </Border>
+        </Panel>
+
+        <!-- 首次启用游戏连接器前的风险确认：窗口级居中；点外面不关闭，Esc 等于取消，焦点落在确认按钮。
+             后端记住确认后（riskAcknowledged）不再出现；确认才发送启用请求，取消不发送。 -->
+        <Panel x:Name="ConnectorRiskLayer" IsVisible="{Binding Connector.RiskOpen}">
+          <Border Background="Transparent" PointerPressed="OnConnectorRiskOutsidePressed" />
+          <Border x:Name="ConnectorRiskPanel" Classes="panel popup" Classes.open="{Binding Connector.RiskOpen}"
+                  Width="480" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14"
+                  KeyboardNavigation.TabNavigation="Cycle">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+                <Button x:Name="ConnectorRiskCancel" Classes="chip" Content="{DynamicResource GC.RiskCancel}"
+                        Command="{Binding Connector.CancelRiskCommand}" AutomationProperties.Name="{DynamicResource GC.RiskCancel}" />
+                <Button x:Name="ConnectorRiskConfirm" Classes="primary" Content="{DynamicResource GC.RiskConfirm}"
+                        Command="{Binding Connector.ConfirmRiskCommand}" AutomationProperties.Name="{DynamicResource GC.RiskConfirm}" />
+              </StackPanel>
+              <ScrollViewer controls:EdgeFade.IsEnabled="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="10">
+                  <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource GC.RiskTitle}" />
+                  <TextBlock Classes="body" Text="{DynamicResource GC.RiskIntro}" />
+                  <Border Classes="inset" Padding="12,8">
+                    <StackPanel Spacing="6">
+                      <DockPanel><TextBlock DockPanel.Dock="Left" Margin="0,0,8,0" Text="•" /><TextBlock x:Name="ConnectorRiskItem1" Classes="body" Text="{DynamicResource GC.RiskItem1}" /></DockPanel>
+                      <DockPanel><TextBlock DockPanel.Dock="Left" Margin="0,0,8,0" Text="•" /><TextBlock x:Name="ConnectorRiskItem2" Classes="body" Text="{DynamicResource GC.RiskItem2}" /></DockPanel>
+                      <DockPanel><TextBlock DockPanel.Dock="Left" Margin="0,0,8,0" Text="•" /><TextBlock x:Name="ConnectorRiskItem3" Classes="body" Text="{DynamicResource GC.RiskItem3}" /></DockPanel>
+                      <DockPanel><TextBlock DockPanel.Dock="Left" Margin="0,0,8,0" Text="•" /><TextBlock x:Name="ConnectorRiskItem4" Classes="body" Text="{DynamicResource GC.RiskItem4}" /></DockPanel>
+                    </StackPanel>
+                  </Border>
+                  <TextBlock Classes="name strong" Text="{DynamicResource GC.RiskModules}" />
+                  <TextBlock x:Name="ConnectorRiskModulesNow" Classes="body" Text="{DynamicResource GC.RiskModulesNow}" />
+                  <TextBlock x:Name="ConnectorRiskModulesLater" Classes="body muted" Text="{DynamicResource GC.RiskModulesLater}" />
+                </StackPanel>
+              </ScrollViewer>
+            </DockPanel>
+          </Border>
+        </Panel>
+
+        <!-- 下载更新前的确认：与上面两个弹出层同一种窗口内弹出层，居中显示；点外面或按 Esc 等同取消，Tab 只在层内循环。
+             显示新版本、本次下载方式与大小和当前界面语言的更新说明（只有这一种语言），“下载”确认后才开始下载。 -->
+        <Panel x:Name="UpdateConfirmLayer" IsVisible="{Binding UpdateConfirm.IsOpen}">
+          <Border Background="Transparent" PointerPressed="OnUpdateConfirmOutsidePressed" />
+          <Border x:Name="UpdateConfirmPanel" Classes="panel popup" Classes.open="{Binding UpdateConfirm.IsOpen}"
+                  Width="520" MaxWidth="560" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14"
+                  KeyboardNavigation.TabNavigation="Cycle">
+            <StackPanel Spacing="10">
+              <StackPanel Spacing="2">
+                <TextBlock Classes="h2" FontSize="17" Text="{DynamicResource S.UpdateConfirmTitle}" />
+                <TextBlock x:Name="UpdateConfirmVersion" Classes="body strong" Text="{Binding UpdateConfirm.VersionLine}" />
+                <TextBlock x:Name="UpdateConfirmMethod" Classes="body muted" Text="{Binding UpdateConfirm.MethodLine}" />
+              </StackPanel>
+              <Border Classes="inset" Padding="12,8">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="note" Text="{DynamicResource S.UpdateConfirmNotes}" />
+                  <TextBlock x:Name="UpdateConfirmNotesStatus" Classes="body muted" Text="{Binding UpdateConfirm.NotesStatus}"
+                             IsVisible="{Binding UpdateConfirm.HasNotesStatus}" />
+                  <ScrollViewer x:Name="UpdateConfirmScroller" MaxHeight="300" controls:EdgeFade.IsEnabled="True"
+                                VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                IsVisible="{Binding UpdateConfirm.HasNotes}">
+                    <controls:MarkdownView x:Name="UpdateConfirmNotesView" Margin="0,0,10,0" Blocks="{Binding UpdateConfirm.Notes}"
+                                           LinkCommand="{Binding UpdateConfirm.OpenLinkCommand}" />
+                  </ScrollViewer>
+                </StackPanel>
+              </Border>
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button x:Name="UpdateConfirmCancel" Classes="chip" Content="{DynamicResource S.UpdateConfirmCancel}"
+                        Command="{Binding UpdateConfirm.CancelCommand}" AutomationProperties.Name="{DynamicResource S.UpdateConfirmCancel}" />
+                <Button x:Name="UpdateConfirmDownload" Classes="primary" Content="{DynamicResource S.UpdateConfirmDownload}"
+                        Command="{Binding UpdateConfirm.ConfirmCommand}" AutomationProperties.Name="{DynamicResource S.UpdateConfirmDownload}" />
               </StackPanel>
             </StackPanel>
           </Border>

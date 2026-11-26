@@ -28,8 +28,7 @@ public sealed class MusicScoreReader(ScoreCatalogStore catalogs, MusicLibrarySto
         var entry = new ScoreEntry(score.Id, score.RawTitle, display.Cleaned,
             settings.Assignments.GetValueOrDefault(score.Id), display.Tags,
             [new(source.Scope.Provider, source.Scope.Region, source.Scope.RealmId + ":" + source.Scope.CharacterId,
-                score.StableSourceId, null, source.Scope.Kind is ScoreSourceKind.ImportedMml or ScoreSourceKind.ImportedLibrary
-                    ? "none" : score.StableSourceId is null ? "ambiguous" : "stable-id", score.Ambiguous)],
+                score.StableSourceId, null, ScoreCatalog.Locator(source.Scope.Kind, score.StableSourceId), score.Ambiguous)],
             score.CandidateGroup, score.Availability.ToString().ToLowerInvariant(), new(source.Revision));
         var timeline = timelines.Resolve(owner, score.Id, selection.PartId) with { PartId = selection.PartId };
         var rawHash = timeline.SourceHash.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ? timeline.SourceHash[7..] : timeline.SourceHash;

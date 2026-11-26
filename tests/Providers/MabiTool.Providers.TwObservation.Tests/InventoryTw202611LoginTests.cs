@@ -314,7 +314,26 @@ public sealed class InventoryTw202611LoginTests
         Assert.Equal(60UL, full.Resources!.Single(r => r.Key == "silverCoin").Value!.Value.Value);
     }
 
-    private static byte[] WalletLoginBody(bool duplicateWallet, bool emptySkills = false, (uint Id, long Start, long Expire)[]? memberships = null)
+    /// <summary>
+    /// 台服 2026-11-25 构建的重新登录样本：JamItem 为空，空字典之前的字节错位读成一项 JamItem 也恰好止于钱包起点，且把真正的空字典包在里面。
+    /// 错位候选的表编号不合理（这里为 0），不算候选；此前按“取最前一个”选中它，整份登录数据以 inventory.typeIdentityMissing 丢弃。
+    /// </summary>
+    [Fact]
+    public void MisalignedJamCandidateWithImplausibleEntriesDoesNotDiscardTheLogin()
+    {
+        var frames = new List<InventoryFrame>(); ulong generation = 0;
+        var observer = new InventoryProtocolObserver("game", new("fixture", "1", "TW", "offline"), Layout() with { Schema = WalletSchema() }, frames.Add, () => ++generation);
+        observer.Accept((int)Login, WalletLoginBody(false, misalignedEmptyJam: true), 0, At);
+        observer.Accept((int)Profile, ProfileBody(Character, "本机角色"), 3000, At);
+        var full = frames.Single(f => f.Kind.KnownValue == InventoryFrameKind.Full);
+        Assert.Equal(988534UL, full.Gold!.Value.Value);
+        var jam = full.Coverage.Single(c => c.Category == "JamItem" && c.Container.KnownValue == InventoryContainer.Backpack);
+        Assert.Equal((true, (string?)null), (jam.Complete, jam.Reason));
+        Assert.DoesNotContain(full.Items, i => i.Category == "JamItem");
+    }
+
+    private static byte[] WalletLoginBody(bool duplicateWallet, bool emptySkills = false, (uint Id, long Start, long Expire)[]? memberships = null,
+        bool misalignedEmptyJam = false)
     {
         var values = new Dictionary<string, long> { ["goldFree"] = 988534, ["silverCoin"] = 60, ["passDeep"] = 1, ["heartToken"] = 529, ["guildCoin"] = 1410, ["decaFree"] = 5548,
             // 最后一个字段的低 4 字节作为集合长度非法，错位一个 int64 的候选读不通（实采里由真实字段分布排除）。
@@ -324,7 +343,9 @@ public sealed class InventoryTw202611LoginTests
         w.Write(1); w.Write(11L); w.Write(ScoreBody(11, 5));
         // 任务字段：文本长度非法，顺序读取停在这里。
         w.Write(-3); w.Write(Enumerable.Repeat((byte)0xEE, 40).ToArray());
-        w.Write(1); w.Write(7001u); w.Write(3L);
+        // 错位候选：从这里读成一项（表编号 0，数量取到真正的空字典长度为止），其后的预留字段读到真正的预留字段，恰好止于钱包起点。
+        if (misalignedEmptyJam) { w.Write(1); w.Write(0u); w.Write(5); w.Write(0); }
+        else { w.Write(1); w.Write(7001u); w.Write(3L); }
         w.Write(0);
         for (var copy = 0; copy < (duplicateWallet ? 2 : 1); copy++)
         {

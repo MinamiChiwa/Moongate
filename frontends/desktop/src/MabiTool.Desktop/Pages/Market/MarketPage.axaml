@@ -1,0 +1,143 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:market="using:MabiTool.Desktop.Pages.Market"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Pages.Market.MarketPage"
+             x:DataType="market:MarketPageModel"
+             controls:Card.PageId="market">
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
+      <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
+      <DockPanel Margin="{DynamicResource TitleReserve}">
+        <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{DynamicResource MK.Title}" />
+        <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" />
+      </DockPanel>
+      <TextBlock x:Name="ReadOnlyNote" Margin="0,4,0,0" Classes="body muted" Text="{DynamicResource MK.ReadOnly}" />
+      <TextBlock x:Name="BlockedNote" Margin="0,4,0,0" Classes="note unconfirmed" Text="{Binding Blocked}" IsVisible="{Binding HasBlocked}" />
+    </StackPanel>
+
+    <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
+        <!-- 查价：名称、分类、收藏三种模式；名称至少 2 个字，不足时只提示、不发查询。 -->
+        <controls:Card x:Name="QueryPanel" CardId="query" Title="{DynamicResource MK.Query}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="10">
+            <controls:SelectionBorder Classes="segmented" HorizontalAlignment="Left">
+              <StackPanel Orientation="Horizontal">
+                <Button x:Name="ModeNamesButton" Classes="segment" Classes.active="{Binding ModeNames}" Command="{Binding SetModeCommand}"
+                        CommandParameter="names" Content="{DynamicResource MK.ModeNames}" />
+                <Button x:Name="ModeCategoryButton" Classes="segment" Classes.active="{Binding ModeCategory}" Command="{Binding SetModeCommand}"
+                        CommandParameter="category" Content="{DynamicResource MK.ModeCategory}" />
+                <Button x:Name="ModeFavoritesButton" Classes="segment" Classes.active="{Binding ModeFavorites}" Command="{Binding SetModeCommand}"
+                        CommandParameter="favorites" Content="{DynamicResource MK.ModeFavorites}" />
+              </StackPanel>
+            </controls:SelectionBorder>
+            <StackPanel x:Name="NamesInput" Spacing="4" IsVisible="{Binding ModeNames}">
+              <TextBox x:Name="NamesBox" Classes="field" Text="{Binding NamesText}" PlaceholderText="{DynamicResource MK.NamesHint}"
+                       AutomationProperties.Name="{DynamicResource MK.ModeNames}" />
+              <TextBlock Classes="note" Text="{DynamicResource MK.NamesNote}" />
+            </StackPanel>
+            <StackPanel x:Name="CategoryInput" Spacing="6" IsVisible="{Binding ModeCategory}">
+              <TextBox x:Name="CategoryBox" Classes="field" Text="{Binding Category}" PlaceholderText="{DynamicResource MK.CategoryHint}"
+                       AutomationProperties.Name="{DynamicResource MK.ModeCategory}" />
+              <TextBox x:Name="SubCategoryBox" Classes="field" Text="{Binding SubCategory}" PlaceholderText="{DynamicResource MK.SubCategoryHint}"
+                       AutomationProperties.Name="{DynamicResource MK.SubCategoryHint}" />
+            </StackPanel>
+            <TextBlock x:Name="FavoritesNote" Classes="note" Text="{DynamicResource MK.FavoritesNote}" IsVisible="{Binding ModeFavorites}" />
+            <Button x:Name="QueryButton" Classes="chip" HorizontalAlignment="Left" Content="{Binding QueryLabel}" Command="{Binding QueryCommand}"
+                    IsEnabled="{Binding CanQuery}" />
+            <TextBlock x:Name="PriceMessageText" Classes="body unconfirmed" Text="{Binding PriceMessage}" IsVisible="{Binding HasPriceMessage}" />
+            <TextBlock x:Name="CandidatesLine" Classes="note" Text="{Binding CandidatesText}" IsVisible="{Binding HasCandidates}" />
+          </StackPanel>
+        </controls:Card>
+
+        <!-- 结果：每个结果块标注“交易所价格，单位德卡”与取价时刻；点一行选中，在明细里查看价位。 -->
+        <controls:Card x:Name="ResultsPanel" CardId="results" Title="{DynamicResource MK.Results}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="6">
+            <TextBlock x:Name="PriceNoteText" Classes="note" Text="{Binding PriceNote}" IsVisible="{Binding HasPriceNote}" />
+            <TextBlock x:Name="ResultsEmpty" Classes="body muted" Text="{DynamicResource MK.NoResults}" IsVisible="{Binding !HasGroups}" />
+            <ItemsControl x:Name="GroupList" controls:StableItems.Source="{Binding Groups}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="market:MarketGroupView">
+                  <StackPanel Spacing="4" Margin="0,0,0,6">
+                    <TextBlock Classes="label" Text="{Binding Title}" IsVisible="{Binding HasTitle}" />
+                    <TextBlock Classes="body muted" Text="{Binding Empty}" IsVisible="{Binding ShowEmpty}" />
+                    <ItemsControl controls:StableItems.Source="{Binding Rows}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="market:MarketRowView">
+                          <Button Classes="chip" Classes.active="{Binding Selected}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                  Margin="0,0,0,4" ToolTip.Tip="{Binding Tip}" CommandParameter="{Binding}"
+                                  Command="{Binding $parent[UserControl].((market:MarketPageModel)DataContext).SelectRowCommand}">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                              <TextBlock Classes="name" VerticalAlignment="Center" Text="{Binding Name}" />
+                              <TextBlock Grid.Column="1" Classes="note" Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding Grade}" IsVisible="{Binding HasGrade}" />
+                              <TextBlock Grid.Column="2" Classes="note" Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding Stock}" />
+                              <TextBlock Grid.Column="3" Margin="12,0,0,0" MinWidth="64" TextAlignment="Right" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Price}" />
+                            </Grid>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </controls:Card>
+
+        <!-- 明细：最低与最高挂单价、平均成交价、至多三档价位；按数量计算购买成本，超出三档数量时只给已定价小计（下限）。 -->
+        <controls:Card x:Name="DetailPanel" CardId="detail" Title="{DynamicResource MK.Detail}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <StackPanel Spacing="8">
+            <TextBlock x:Name="PickRow" Classes="body muted" Text="{DynamicResource MK.PickRow}" IsVisible="{Binding NoSelection}" />
+            <TextBlock x:Name="SelectedTitleText" Classes="body" FontWeight="Bold" Text="{Binding SelectedTitle}" IsVisible="{Binding HasSelection}" />
+            <controls:PairRow IsVisible="{Binding HasSelection}">
+              <TextBlock Classes="muted" Text="{DynamicResource MK.Quantity}" />
+              <TextBox x:Name="QuantityBox" Classes="field" MinWidth="90" Text="{Binding QuantityText}" AutomationProperties.Name="{DynamicResource MK.Quantity}" />
+            </controls:PairRow>
+            <Button x:Name="DetailButton" Classes="chip" HorizontalAlignment="Left" Content="{Binding DetailLabel}" Command="{Binding QueryDetailCommand}"
+                    IsEnabled="{Binding CanQueryDetail}" IsVisible="{Binding HasSelection}" />
+            <TextBlock x:Name="DetailMessageText" Classes="body unconfirmed" Text="{Binding DetailMessage}" IsVisible="{Binding HasDetailMessage}" />
+            <ItemsControl x:Name="DetailCandidateList" controls:StableItems.Source="{Binding DetailCandidates}" IsVisible="{Binding HasDetailCandidates}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="market:MarketRowView">
+                  <Button Classes="chip" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="0,0,0,4" CommandParameter="{Binding}"
+                          Command="{Binding $parent[UserControl].((market:MarketPageModel)DataContext).ChooseCandidateCommand}">
+                    <TextBlock Classes="name" Text="{Binding Title}" />
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <StackPanel x:Name="DetailBody" Spacing="4" IsVisible="{Binding HasDetail}">
+              <TextBlock x:Name="DetailNoteText" Classes="note" Text="{Binding DetailNote}" IsVisible="{Binding HasDetailNote}" />
+              <controls:PairRow Margin="0,3">
+                <TextBlock Classes="muted" Text="{DynamicResource MK.MinAsk}" />
+                <TextBlock x:Name="MinAskText" Classes="body" FontWeight="Medium" Text="{Binding DetailView.MinAsk}" />
+              </controls:PairRow>
+              <controls:PairRow Margin="0,3">
+                <TextBlock Classes="muted" Text="{DynamicResource MK.MaxAsk}" />
+                <TextBlock x:Name="MaxAskText" Classes="body" FontWeight="Medium" Text="{Binding DetailView.MaxAsk}" />
+              </controls:PairRow>
+              <controls:PairRow Margin="0,3">
+                <TextBlock Classes="muted" Text="{DynamicResource MK.Average}" />
+                <TextBlock x:Name="AverageText" Classes="body" FontWeight="Medium" Text="{Binding DetailView.Average}" />
+              </controls:PairRow>
+              <TextBlock Classes="label" Margin="0,4,0,0" Text="{DynamicResource MK.Tiers}" IsVisible="{Binding DetailView.HasTiers}" />
+              <ItemsControl x:Name="TierList" controls:StableItems.Source="{Binding DetailView.TierLines}" IsVisible="{Binding DetailView.HasTiers}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="market:MarketTierLine">
+                    <controls:PairRow Margin="0,2">
+                      <TextBlock Classes="body" Text="{Binding Price}" />
+                      <TextBlock Classes="note" VerticalAlignment="Center" Text="{Binding Count}" />
+                    </controls:PairRow>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock x:Name="CostTextBlock" Classes="body" Margin="0,4,0,0" FontWeight="Medium" Text="{Binding CostText}" IsVisible="{Binding HasCost}"
+                         Classes.unconfirmed="{Binding CostLowerBound}" />
+            </StackPanel>
+          </StackPanel>
+        </controls:Card>
+      </controls:CardGrid>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

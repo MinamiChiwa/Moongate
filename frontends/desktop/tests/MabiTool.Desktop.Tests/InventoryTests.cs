@@ -300,7 +300,7 @@ public sealed class InventoryTests
         Assert.Equal((string.Empty, 0), InventoryRefillText.Countdown(null, last));
     }
 
-    /// <summary>概况的金币、银币、魔族貢品与资源区读同一份资源视图、跟随同一个角色选择：一次刷新两处同时变化。</summary>
+    /// <summary>资源卡的主货币（金币、银币、魔族貢品）与角色资源读同一份资源视图、跟随同一个角色选择：一次刷新两处同时变化。</summary>
     [AvaloniaFact]
     public void SummaryAndResourceRowsUpdateTogetherFromOneResourceView()
     {
@@ -319,21 +319,76 @@ public sealed class InventoryTests
         var backend = new SampleBackend { ResourcesOverride = Resources(63, 526) };
         using var model = new InventoryPageModel(backend);
 
-        Assert.Equal(["1,020", "63", "1"], model.SummaryResources.Select(row => row.Value));
-        Assert.Equal(new InventoryRefill(last, 1800), model.SummaryResources[1].Refill);
+        Assert.Equal(["1,020", "63", "1"], model.MainCurrencies.Select(row => row.Value));
+        Assert.Equal(new InventoryRefill(last, 1800), model.MainCurrencies[1].Refill);
         Assert.Equal("526", model.CharacterResources.Single(row => row.Key == "heartToken").Value);
-        // 金币、银币、贡品只在概况，角色资源组不重复列出。
+        // 金币、银币、贡品只在主货币，角色资源组不重复列出。
         Assert.DoesNotContain(model.CharacterResources, row => row.Key is "goldTotal" or "silverCoin" or "passDeep");
 
         backend.ResourcesOverride = Resources(64, 528);
         backend.RaiseChanged();
-        Assert.Equal("64", model.SummaryResources[1].Value);
+        Assert.Equal("64", model.MainCurrencies[1].Value);
         Assert.Equal("528", model.CharacterResources.Single(row => row.Key == "heartToken").Value);
 
-        // 切换角色资源的角色：概况三项随之切换，该角色没有的项为未读取（不是 0）。
+        // 切换资源卡的角色：主货币三项随之切换，该角色没有的项为未读取（不是 0）。
         model.SelectResourceCharacterCommand.Execute("c2");
-        Assert.Equal(["7", "未读取", "未读取"], model.SummaryResources.Select(row => row.Value));
-        Assert.StartsWith("艾薇", model.SummaryCharacter);
+        Assert.Equal(["7", "未读取", "未读取"], model.MainCurrencies.Select(row => row.Value));
+        Assert.StartsWith("艾薇", model.ResourceCharacterLabel);
+        InventoryPreference.Restore(null, null, null);
+    }
+
+    /// <summary>
+    /// 命令行货币只对当前登录角色按游戏原文名称并入：一行对应时取命令行、免费与付费两行合成一行、命令行独有的追加；其他角色与读不到命令行时只取抓包。
+    /// 补充倒计时沿用抓包，悬停写明来源。
+    /// </summary>
+    [AvaloniaFact]
+    public void CliCurrenciesTakePriorityForTheLoggedInCharacterAndCaptureFillsTheRest()
+    {
+        InventoryPreference.Restore(null, null, null);
+        var last = DateTimeOffset.Now.AddMinutes(-10);
+        InventoryResourceView View(string key, string name, ulong value, string? character, InventoryResourceScope scope = InventoryResourceScope.Character,
+            DateTimeOffset? refilled = null, double? interval = null) =>
+            new(key, key, "observed", null, name, null, new(value), null, null, DateTimeOffset.Now, refilled, interval, null, null, true, true,
+                null, scope, character);
+        var resources = new InventoryResourcesView("account-1", "c1", "琉特", true, new(1),
+        [
+            View("goldFree", "金幣", 1000, "c1"), View("goldPaid", "金幣", 20, "c1"),
+            View("silverCoin", "銀幣", 63, "c1", refilled: last, interval: 1800),
+            View("wecaFree", "韋卡", 120, null, InventoryResourceScope.Account), View("wecaPaid", "韋卡", 30, null, InventoryResourceScope.Account),
+            View("silverCoin", "銀幣", 40, "c2")
+        ]);
+        GameCurrenciesData Cli(GameDataSource source) => new(new(source, null, DateTimeOffset.Now, false, []),
+            [new("銀幣", 64), new("韋卡", 150), new("喵幣", 9)]);
+        var backend = new SampleBackend { ResourcesOverride = resources, CurrenciesOverride = Cli(GameDataSource.Connector) };
+        using var model = new InventoryPageModel(backend);
+
+        var silver = model.MainCurrencies[1];
+        Assert.Equal(("64", GameDataSource.Connector), (silver.Value, silver.Source));
+        Assert.Equal(new InventoryRefill(last, 1800), silver.Refill);
+        Assert.Contains("来源：游戏连接器", silver.Tip);
+        Assert.Contains("抓包：63", silver.Tip);
+        // 金币命令行没给：照抓包合计，并写明来源。
+        Assert.Equal(("1,020", GameDataSource.Capture), (model.MainCurrencies[0].Value, model.MainCurrencies[0].Source));
+        Assert.EndsWith("来源：抓包", model.MainCurrencies[0].Tip);
+        // 免费与付费合成一行，分项写进悬停提示。
+        var weca = Assert.Single(model.AccountResources);
+        Assert.Equal(("韦卡", "150"), (weca.Name, weca.Value));
+        Assert.Contains("韦卡（免费）：120", weca.Tip);
+        Assert.Contains("韦卡（付费）：30", weca.Tip);
+        // 命令行独有的追加为当前角色的一项。
+        Assert.Equal("9", model.CharacterResources.Single(row => row.RawName == "喵幣").Value);
+
+        // 其他角色只取抓包。
+        model.SelectResourceCharacterCommand.Execute("c2");
+        Assert.Equal(("40", GameDataSource.Capture), (model.MainCurrencies[1].Value, model.MainCurrencies[1].Source));
+        Assert.DoesNotContain(model.CharacterResources, row => row.RawName == "喵幣");
+
+        // 命令行没读到（回落抓包的结果同样不算命令行）：全部取抓包。
+        backend.CurrenciesOverride = Cli(GameDataSource.Capture);
+        backend.RaiseChanged();
+        model.SelectResourceCharacterCommand.Execute("c1");
+        Assert.Equal(("63", GameDataSource.Capture), (model.MainCurrencies[1].Value, model.MainCurrencies[1].Source));
+        Assert.Equal(2, model.AccountResources.Count);
         InventoryPreference.Restore(null, null, null);
     }
 }

@@ -83,29 +83,31 @@ public static class FavoriteBoard
 }
 
 /// <summary>
-/// 觉醒监控浮窗（<c>combat.awakening</c>）：独立元件，固定两项“徽章觉醒”“职业觉醒”，状态取 <see cref="FavoriteEffectTracker"/>；
+/// 觉醒监控浮窗（<c>combat.awakening</c>）：独立元件，只有“徽章觉醒”一项（职业觉醒不监控），状态取 <see cref="FavoriteEffectTracker"/>；
 /// 横竖排存在摆放数据的 <see cref="WidgetPlacement.Horizontal"/>，提示设置在版面文件顶层（<see cref="OverlayLayoutStore.Awakening"/>）。
+/// DPS 元件打开“觉醒监控”（<see cref="WidgetPlacement.HideAwakening"/> 为假）时显示同一项、使用同一份提示设置。
 /// </summary>
 public static class AwakeningBoard
 {
     public const string Id = "combat.awakening";
-    public const string BadgeKey = "awakening:badge", ClassKey = "awakening:class";
+    public const string DpsId = "combat.dps";
+    public const string BadgeKey = "awakening:badge";
 
     public static string BadgeTitle => UiText.Pick("徽章觉醒", "徽章覺醒");
-    public static string ClassTitle => UiText.Pick("职业觉醒", "職業覺醒");
 
-    /// <summary>两项；显示内容在绘制时按本机时钟由 <see cref="FavoriteItem.Describe"/> 从觉醒状态算出。</summary>
+    /// <summary>“徽章觉醒”一项；显示内容在绘制时按本机时钟由 <see cref="FavoriteItem.Describe"/> 从觉醒状态算出。</summary>
     public static IReadOnlyList<FavoriteItem> Items() =>
-    [
-        new(BadgeKey, FavoriteItemKind.Badge, BadgeTitle, string.Empty, EffectPolarity.Positive, null, false),
-        new(ClassKey, FavoriteItemKind.Class, ClassTitle, string.Empty, EffectPolarity.Positive, null, false)
-    ];
+        [new(BadgeKey, FavoriteItemKind.Badge, BadgeTitle, string.Empty, EffectPolarity.Positive, null, false)];
 
-    /// <summary>当前版面有未关闭的觉醒监控浮窗：觉醒提示音只在这时播放。</summary>
-    public static bool Watched(OverlayLayoutStore store) => store.Active.Widgets.Any(widget => widget.WidgetId == Id && !widget.Closed);
+    /// <summary>
+    /// 觉醒提示音只在这时播放：当前版面有未关闭的觉醒监控浮窗，或有未关闭且打开了觉醒显示的 DPS 元件。
+    /// 两者同时存在时一次触发仍只通知一次（<see cref="FavoriteEffectTracker.Triggered"/> 每次触发只发一次）。
+    /// </summary>
+    public static bool Watched(OverlayLayoutStore store) => store.Active.Widgets.Any(widget => !widget.Closed
+        && (widget.WidgetId == Id || widget.WidgetId == DpsId && !widget.HideAwakening));
 }
 
-public enum FavoriteItemKind { Self, Target, Badge, Class }
+public enum FavoriteItemKind { Self, Target, Badge }
 
 /// <summary>
 /// 收藏浮窗的一项：键、种类、名称、标记（自身／目标）、极性与此刻的效果行（没有出现时为空）。
@@ -116,9 +118,9 @@ public sealed record FavoriteItem(string Key, FavoriteItemKind Kind, string Name
     /// <summary>此刻绘制的内容：名称、标记、层数、剩余文字、附注（推算、冷却）、进度（0–1，没有时为空）、是否警示、是否变暗、是否闪烁中、极性与觉醒项触发时刻。</summary>
     public FavoriteLook Describe(long now)
     {
-        if (Kind is FavoriteItemKind.Badge or FavoriteItemKind.Class)
+        if (Kind == FavoriteItemKind.Badge)
         {
-            var state = FavoriteEffectTracker.Describe(Kind == FavoriteItemKind.Badge ? FavoriteEffectTracker.Badge : FavoriteEffectTracker.Class, now);
+            var state = FavoriteEffectTracker.Describe(now);
             return state.Phase switch
             {
                 AwakeningPhase.Active => new(state.Badge is { Length: > 0 } badge ? $"{Name}·{badge}" : Name, string.Empty, string.Empty,
@@ -156,14 +158,15 @@ public readonly record struct AwakeningView(AwakeningPhase Phase, string? Badge,
 /// <list type="bullet">
 /// <item>自身收藏效果的到期时间：换地图后宿主清空效果（效果消失而没有收到到期移除、剩余还多于 1 秒），按记下的到期时间继续推算，
 /// 直到到期、收到该效果的到期移除或重新收到该效果；目标的项不保留。</item>
-/// <item>觉醒监控：按后端效果视图的觉醒标记（按 Buff Id 判定）识别徽章觉醒与职业觉醒的触发、觉醒剩余与冷却；
-/// 收到冷却效果时按它的实际时长，否则从触发时刻按徽章 90 秒、职业 60 秒推算。同一项 1 秒内的再次触发只算一次。</item>
+/// <item>徽章觉醒：按后端效果视图的觉醒标记（按 Buff Id 判定）识别触发、觉醒剩余与冷却；收到冷却效果时按它的实际时长，
+/// 否则从触发时刻按 90 秒推算。1 秒内的再次触发只算一次。后端的职业觉醒标记（class、class-cooldown）不监控。</item>
 /// </list>
 /// </summary>
 public static class FavoriteEffectTracker
 {
-    public const string Badge = "badge", Class = "class";
-    public const double BadgeCooldownMs = 90_000, ClassCooldownMs = 60_000;
+    /// <summary>后端给徽章觉醒效果的标记；徽章符文冷却效果为 <c>badge-cooldown</c>。</summary>
+    public const string Badge = "badge";
+    public const double BadgeCooldownMs = 90_000;
     /// <summary>同一项在这么短的时间里再次触发只算一次（觉醒效果与冷却效果先后到达、或同一效果的刷新）。</summary>
     public const double RepeatMs = 1000;
     /// <summary>效果消失时剩余多于这么久才按换图推算；更短的按到期处理。</summary>
@@ -177,9 +180,8 @@ public static class FavoriteEffectTracker
         public bool Predicted;
     }
 
-    private sealed class State(string kind)
+    private sealed class State
     {
-        public readonly string Kind = kind;
         public DateTimeOffset? Applied;
         public long TriggerTick, ActiveUntil, CooldownUntil;
         public double? ActiveTotalMs, CooldownTotalMs;
@@ -189,14 +191,14 @@ public static class FavoriteEffectTracker
 
     private static readonly object gate = new();
     private static readonly Dictionary<string, SelfMemory> self = new(StringComparer.Ordinal);
-    private static readonly State badge = new(Badge), klass = new(Class);
+    private static readonly State badge = new();
 
     /// <summary>测试用的时钟：本机 Stopwatch 时刻与墙上时间。</summary>
     internal static Func<long> Clock { get; set; } = Stopwatch.GetTimestamp;
     internal static Func<DateTimeOffset> WallClock { get; set; } = () => DateTimeOffset.UtcNow;
 
-    /// <summary>徽章觉醒（badge）或职业觉醒（class）新触发；1 秒内的再次触发不重复通知。可能在任一线程上触发。</summary>
-    public static event Action<string>? Triggered;
+    /// <summary>徽章觉醒新触发；1 秒内的再次触发不重复通知。可能在任一线程上触发。</summary>
+    public static event Action? Triggered;
 
     /// <summary>测试用：清空记忆并恢复时钟。</summary>
     internal static void Reset()
@@ -204,11 +206,8 @@ public static class FavoriteEffectTracker
         lock (gate)
         {
             self.Clear();
-            foreach (var state in new[] { badge, klass })
-            {
-                state.Applied = null; state.TriggerTick = state.ActiveUntil = state.CooldownUntil = 0;
-                state.ActiveTotalMs = state.CooldownTotalMs = null; state.CooldownActual = false; state.BadgeName = null;
-            }
+            badge.Applied = null; badge.TriggerTick = badge.ActiveUntil = badge.CooldownUntil = 0;
+            badge.ActiveTotalMs = badge.CooldownTotalMs = null; badge.CooldownActual = false; badge.BadgeName = null;
             Clock = Stopwatch.GetTimestamp;
             WallClock = () => DateTimeOffset.UtcNow;
         }
@@ -220,7 +219,7 @@ public static class FavoriteEffectTracker
 
     public static void Observe(CombatPageData data)
     {
-        var fired = new List<string>(2);
+        bool fired;
         lock (gate)
         {
             var now = Clock();
@@ -242,16 +241,14 @@ public static class FavoriteEffectTracker
                     self.Remove(id);
                 else memory.Predicted = true;
             }
-            if (Track(badge, data, now)) fired.Add(Badge);
-            if (Track(klass, data, now)) fired.Add(Class);
+            fired = Track(badge, data, now);
         }
-        foreach (var kind in fired) Triggered?.Invoke(kind);
+        if (fired) Triggered?.Invoke();
     }
 
     private static bool Track(State state, CombatPageData data, long now)
     {
-        var activeRole = state.Kind;
-        var cooldownRole = state.Kind + "-cooldown";
+        const string activeRole = Badge, cooldownRole = Badge + "-cooldown";
         var actives = data.AllSelfEffects.Where(row => row.Awakening == activeRole).ToList();
         var cooldowns = data.AllSelfEffects.Where(row => row.Awakening == cooldownRole).ToList();
         var fire = false;
@@ -275,8 +272,7 @@ public static class FavoriteEffectTracker
                 state.TriggerTick = trigger;
                 state.BadgeName = null;
                 state.ActiveUntil = 0; state.ActiveTotalMs = null;
-                var cooldown = state.Kind == Badge ? BadgeCooldownMs : ClassCooldownMs;
-                state.CooldownUntil = trigger + Ticks(cooldown); state.CooldownTotalMs = cooldown; state.CooldownActual = false;
+                state.CooldownUntil = trigger + Ticks(BadgeCooldownMs); state.CooldownTotalMs = BadgeCooldownMs; state.CooldownActual = false;
                 fire = elapsed < FreshMs;
             }
         }
@@ -284,7 +280,7 @@ public static class FavoriteEffectTracker
         {
             if (state.ActiveTotalMs is null || until > state.ActiveUntil + Ticks(RepeatMs)) state.ActiveTotalMs = active.RemainingMs;
             state.ActiveUntil = until;
-            if (state.Kind == Badge) state.BadgeName = active.Name;
+            state.BadgeName = active.Name;
         }
         if (cooldownRow is { } cooling && Expiry(cooling) is { } end)
         {
@@ -302,12 +298,12 @@ public static class FavoriteEffectTracker
                 ? memory.Row : null;
     }
 
-    /// <summary>觉醒项此刻的状态。</summary>
-    public static AwakeningView Describe(string kind, long now)
+    /// <summary>徽章觉醒此刻的状态。</summary>
+    public static AwakeningView Describe(long now)
     {
         lock (gate)
         {
-            var state = kind == Badge ? badge : klass;
+            var state = badge;
             if (state.TriggerTick == 0) return new(AwakeningPhase.Idle, null, null, null, false, 0);
             if (now < state.ActiveUntil)
             {
@@ -326,7 +322,7 @@ public static class FavoriteEffectTracker
     }
 }
 
-/// <summary>觉醒监控浮窗“徽章觉醒”或“职业觉醒”的提示设置：闪烁开关、颜色与时长，音效开关、声音（空为内置合成提示音）与音量。</summary>
+/// <summary>“徽章觉醒”的提示设置：闪烁开关、颜色与时长，音效开关、声音（空为内置合成提示音）与音量。</summary>
 public sealed class AwakeningAlert
 {
     public const double MinimumSeconds = 1, MaximumSeconds = 10, SecondsStep = 1, VolumeStep = 0.1;
@@ -351,24 +347,20 @@ public sealed class AwakeningAlert
         Flash && Color == defaultColor && FlashSeconds == 3 && !Sound && SoundFile is null && Volume == 0.8;
 }
 
-/// <summary>觉醒监控浮窗两项的提示设置，保存在版面文件顶层（全部为默认值时不写出）。</summary>
+/// <summary>
+/// 觉醒提示设置，保存在版面文件顶层（全部为默认值时不写出），格式与早期版本相同：只有 <c>Badge</c>。
+/// 觉醒监控浮窗与 DPS 元件的觉醒显示读写同一个实例。早期版本的 <c>Class</c>（职业觉醒）读取时忽略，保存时不再写出。
+/// </summary>
 public sealed class AwakeningSettings
 {
-    public const string BadgeColor = "#FFC14D", ClassColor = "#8AB4FF";
+    public const string BadgeColor = "#FFC14D";
     public AwakeningAlert Badge { get; set; } = new() { Color = BadgeColor };
-    public AwakeningAlert Class { get; set; } = new() { Color = ClassColor };
-
-    public AwakeningAlert Of(string kind) => kind == FavoriteEffectTracker.Badge ? Badge : Class;
-
-    public static string DefaultColor(string kind) => kind == FavoriteEffectTracker.Badge ? BadgeColor : ClassColor;
 
     public void Normalize()
     {
         Badge ??= new();
-        Class ??= new();
         Badge.Normalize(BadgeColor);
-        Class.Normalize(ClassColor);
     }
 
-    public bool IsDefault => Badge.IsDefault(BadgeColor) && Class.IsDefault(ClassColor);
+    public bool IsDefault => Badge.IsDefault(BadgeColor);
 }

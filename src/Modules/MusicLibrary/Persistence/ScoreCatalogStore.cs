@@ -40,7 +40,28 @@ public sealed class ScoreCatalogStore(SqliteStore database, string hostEpoch, Ti
         return json is null ? null : JsonSerializer.Deserialize<ScoreCatalogSnapshot>(json, ContractJson.Options)!;
     }
 
-    public bool IsCurrent(ScoreCatalogSnapshot snapshot) => snapshot.Scope.Kind is ScoreSourceKind.ImportedMml or ScoreSourceKind.ImportedLibrary
+    /// <summary>按乐谱 ID 取各来源里的原始标题（ID 为全局唯一 GUID）；找不到的 ID 不在结果里。</summary>
+    public IReadOnlyDictionary<string, string> FindRawTitles(IReadOnlyCollection<string> scoreIds)
+    {
+        var wanted = scoreIds.ToHashSet(StringComparer.Ordinal);
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (wanted.Count == 0) return result;
+        var json = database.ReadScalar("SELECT json_group_array(snapshot) FROM music_library_catalogs") as string ?? "[]";
+        using var document = JsonDocument.Parse(json);
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            var snapshot = JsonSerializer.Deserialize<ScoreCatalogSnapshot>(item.GetString()!, ContractJson.Options)!;
+            foreach (var entry in snapshot.Entries)
+                if (wanted.Contains(entry.Id)) result[entry.Id] = entry.RawTitle;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 导入、游戏列表与抓包（库存）来源按最后一次完整同步的内容视为当前，不随时间过期；
+    /// 其余来源是实时观察，宿主代次变化、局部或失败、超过一分钟都不再当前。
+    /// </summary>
+    public bool IsCurrent(ScoreCatalogSnapshot snapshot) => snapshot.Scope.Kind is ScoreSourceKind.ImportedMml or ScoreSourceKind.ImportedLibrary or ScoreSourceKind.GameList or ScoreSourceKind.Inventory
         ? snapshot.Status == ScoreRefreshStatus.Complete
         : !snapshot.IsStale(hostEpoch, clock.GetUtcNow(), TimeSpan.FromMinutes(1));
 

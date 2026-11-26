@@ -69,8 +69,10 @@ public sealed partial class LiveBackend
         Status = 64,
         Capture = 128,
         Room = 256,
+        Connector = 512,
+        Fishing = 1024,
         Combat = Snapshot | History | TargetEffects | Measurement | Auto | Recompute,
-        All = Combat | Status | Capture | Room
+        All = Combat | Status | Capture | Room | Connector | Fishing
     }
 
     private Due due = Due.All;
@@ -141,6 +143,10 @@ public sealed partial class LiveBackend
             appeared = count == 0 && next > 0;
             if (appeared && surface == "inventory") inventoryDue = true;
             if (appeared && surface is "main" or "mini" or "overlay" or "music" or "color" or "settings") pagesDue = true;
+            // 状态胶囊在主窗口里：窗口重新可见时补读连接器状态。
+            if (appeared && surface is "main" or "settings") due |= Due.Connector;
+            // 钓鱼区在生活页里：页面出现时补读钓鱼状态。
+            if (appeared && surface == "life") due |= Due.Fishing;
         }
         if (!appeared) return;
         MarkDue(surface == "overlay.combat" ? Due.Snapshot | Due.Recompute | Due.Status : Due.Status, immediate: true);
@@ -149,6 +155,8 @@ public sealed partial class LiveBackend
     // 调用方持有 gate。还没有窗口报告过可见性（测试、样本）时按全部可见处理。
     private bool Showing(string surface) => !surfacesReported || surfaces.GetValueOrDefault(surface) > 0;
     private bool AnySurface => !surfacesReported || surfaces.Values.Any(count => count > 0);
+    // 钓鱼状态只在生活页可见或有进行中的运行时读取。
+    private bool FishingWanted => !surfacesReported || surfaces.GetValueOrDefault("life") > 0 || fishing is { Running: true };
     private bool CombatWanted => !surfacesReported || combatPageVisible || combatDetailOpen || surfaces.GetValueOrDefault("overlay.combat") > 0;
 
     // ---- 等待下一项到期的工作 ----
@@ -173,6 +181,13 @@ public sealed partial class LiveBackend
             if ((due & Due.Room) != 0 || roomPreferencesDue) At(now);
             if (InRoom || AnySurface) At(lastRoomRead + Span(InRoom ? StatusInterval : SlowInterval));
             if (durations.HasWanted) At(now);
+            if ((due & Due.Connector) != 0 && !connectorUnsupported) At(now);
+            if (AnySurface && !connectorUnsupported) At(lastConnectorRead + Span(SlowInterval));
+            if ((due & Due.Fishing) != 0 && !fishingUnsupported) At(now);
+            if (FishingWanted && !fishingUnsupported) At(lastFishingRead + Span(SlowInterval));
+            if (LifeDueAt() is { } lifeAt) At(lifeAt);
+            if (SupportDueAt(now) is { } supportAt) At(supportAt);
+            if (GameDataDueAt(now) is { } dataAt) At(dataAt);
             if (ClientIconCatalogAt(now) is > 0 and var icons) At(icons);
             if (iconsInUse && PendingIcons().Count > 0) At(now);
             var wait = next - now;

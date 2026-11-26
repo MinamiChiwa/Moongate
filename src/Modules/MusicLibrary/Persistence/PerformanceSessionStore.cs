@@ -24,6 +24,9 @@ public sealed class PerformanceSessionStore(SqliteStore database, TimeProvider? 
         return json is null ? null : JsonSerializer.Deserialize<PerformanceQueueState>(json, ContractJson.Options);
     }
 
+    /// <summary>全部会话（所有归属），供宿主启动时清理上次运行遗留的非终态会话。</summary>
+    public IReadOnlyList<PerformanceQueueState> ListAll() => ReadMany("SELECT snapshot FROM performance_sessions ORDER BY id");
+
     public IReadOnlyList<PerformanceQueueState> List(string owner) =>
         ReadMany("SELECT snapshot FROM performance_sessions WHERE owner=$owner ORDER BY id", ("$owner", owner));
 

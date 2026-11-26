@@ -15,11 +15,27 @@ public static class InventoryPreference
     public const string StorageGroup = "storage";
     public const string SharedGroup = "shared";
 
+    /// <summary>估价列组的标识；估价默认关闭，只在本次运行里记住（不写入偏好文件），打开后才向交易所取价。</summary>
+    public const string ValuationGroup = "valuation";
+
     public static string? Account { get; private set; }
     public static IReadOnlyList<string> HiddenGroups { get; private set; } = [];
     public static WindowPlacement? Window { get; private set; }
 
     public static event EventHandler? Changed;
+
+    /// <summary>估价开关的变化（页面与背包窗口共用；不触发偏好保存）。</summary>
+    public static event EventHandler? ValuationChanged;
+
+    /// <summary>估价开关当前是否打开；默认关闭。</summary>
+    public static bool ValuationShown { get; private set; }
+
+    public static void SetValuationShown(bool shown)
+    {
+        if (ValuationShown == shown) return;
+        ValuationShown = shown;
+        ValuationChanged?.Invoke(null, EventArgs.Empty);
+    }
 
     public static void SetAccount(string? id)
     {

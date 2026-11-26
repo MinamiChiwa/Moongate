@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mabitool:worker:life-vision:v1",
+  "title": "Life Vision Worker v1",
+  "description": "life-vision Worker 的帧信封与业务正文。信封与其他 Worker 相同（4 字节小端长度 + UTF-8 JSON，握手、心跳与取消沿用 Worker v1）；业务只有一个长期请求 life.vision.fishing.watch，Worker 以 event 帧持续输出类型化观察，整帧图像不离开进程。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "messageId", "requestId", "kind", "runId", "bindingRevision", "fencingToken", "payload"],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "messageId": { "allOf": [{ "$ref": "#/$defs/uint64" }, { "not": { "const": "0" } }] },
+    "requestId": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+    "kind": { "enum": ["hello", "ready", "ping", "pong", "request", "accepted", "event", "result", "error", "cancel", "cancelled", "shutdown", "bye"] },
+    "runId": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+    "bindingRevision": { "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }] },
+    "fencingToken": { "oneOf": [{ "$ref": "#/$defs/uint64" }, { "type": "null" }] },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "request" } }, "required": ["kind"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/watchRequest" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "event" } }, "required": ["kind"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/watchEvent" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "error" } }, "required": ["kind"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/failure" } } }
+    }
+  ],
+  "$defs": {
+    "uint64": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,19})$" },
+    "id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "watchRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "arguments"],
+      "properties": {
+        "method": { "const": "life.vision.fishing.watch" },
+        "arguments": { "$ref": "#/$defs/watchArguments" }
+      }
+    },
+    "watchArguments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windowIdentity", "processId", "processStartTime", "client", "dpi", "periodMilliseconds", "profile"],
+      "properties": {
+        "windowIdentity": { "$ref": "#/$defs/uint64" },
+        "processId": { "type": "integer", "minimum": 1 },
+        "processStartTime": { "type": "string", "format": "date-time" },
+        "client": { "$ref": "#/$defs/rect" },
+        "dpi": { "type": "integer", "minimum": 48, "maximum": 768 },
+        "periodMilliseconds": { "type": "integer", "minimum": 50, "maximum": 500 },
+        "profile": { "const": "tw-fishing-1280x960-v1" }
+      }
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "width": { "const": 1280 },
+        "height": { "const": 960 }
+      }
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0, "maximum": 1279 },
+        "y": { "type": "integer", "minimum": 0, "maximum": 959 }
+      }
+    },
+    "watchEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation"],
+      "properties": { "observation": { "$ref": "#/$defs/observation" } }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frameId", "capturedAtMilliseconds", "sceneVisible", "dismountVisible", "backpackFull", "hook", "gauge", "dialog", "captureMilliseconds", "recognizeMilliseconds"],
+      "properties": {
+        "frameId": { "$ref": "#/$defs/uint64" },
+        "capturedAtMilliseconds": { "type": "number", "minimum": 0 },
+        "sceneVisible": { "type": "boolean" },
+        "dismountVisible": { "type": "boolean" },
+        "backpackFull": { "type": "boolean" },
+        "hook": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["center", "score"],
+              "properties": { "center": { "$ref": "#/$defs/point" }, "score": { "type": "number", "minimum": 0, "maximum": 1 } }
+            }
+          ]
+        },
+        "gauge": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value", "fillPixels", "trackPixels", "source"],
+              "properties": {
+                "value": { "type": "number", "minimum": 0, "maximum": 1 },
+                "fillPixels": { "type": "integer", "minimum": 0 },
+                "trackPixels": { "type": "integer", "minimum": 1 },
+                "source": { "enum": ["hook-track", "remembered", "located"] }
+              }
+            }
+          ]
+        },
+        "dialog": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "confirm", "cancel"],
+              "properties": {
+                "kind": { "enum": ["focused", "leisure"] },
+                "confirm": { "$ref": "#/$defs/point" },
+                "cancel": { "$ref": "#/$defs/point" }
+              }
+            }
+          ]
+        },
+        "captureMilliseconds": { "type": "number", "minimum": 0 },
+        "recognizeMilliseconds": { "type": "number", "minimum": 0 }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": { "enum": ["capture.sourceFailed", "input.bindingChanged", "capture.frameInvalid", "life.fishing.layoutUnsupported", "life.fishing.componentMissing", "worker.frameInvalid"] }
+      }
+    }
+  }
+}

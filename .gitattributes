@@ -1,3 +1,5 @@
 *.cmd text eol=crlf
 scripts/hooks/* text eol=lf
 packaging/licenses/*.txt text eol=lf
+# 第三方命令行工具按原样保存，Git 不做换行或过滤转换，哈希以 game-cli.lock.json 登记为准。
+packaging/game-cli/*.exe binary

@@ -249,6 +249,16 @@ public sealed class MusicEditorTests
         var invalid = valid with { PutPlaylists = [valid.PutPlaylists[0] with { DefaultInstrumentId = "unknown" }] };
         var error = Assert.Throws<OperationException>(() => MusicLibraryEditor.Apply(MusicLibraryState.Empty, invalid, known));
         Assert.Equal("resource.notFound", error.Code);
+
+        // 背包里的游戏乐器以 game: 加游戏原文名记录，演奏前按该名称换乐器；名称为空白时拒绝。
+        var game = valid with { PutPlaylists = [valid.PutPlaylists[0] with { DefaultInstrumentId = "game:3和弦魯特琴",
+            Items = [new PlaylistItem("i", "score-1", "game:大鼓", "1")] }] };
+        var applied = MusicLibraryEditor.Apply(MusicLibraryState.Empty, game, known).State.Playlists[0];
+        Assert.Equal(("game:3和弦魯特琴", "game:大鼓"), (applied.DefaultInstrumentId, applied.Items[0].InstrumentId));
+        Assert.Equal(("3和弦魯特琴", "長笛", (string?)null), (MusicLibraryEditor.InstrumentGameName("game:3和弦魯特琴"),
+            MusicLibraryEditor.InstrumentGameName("flute"), MusicLibraryEditor.InstrumentGameName("unknown")));
+        var blank = valid with { PutPlaylists = [valid.PutPlaylists[0] with { DefaultInstrumentId = "game: " }] };
+        Assert.Equal("request.invalid", Assert.Throws<OperationException>(() => MusicLibraryEditor.Apply(MusicLibraryState.Empty, blank, known)).Code);
     }
 
     [Fact]

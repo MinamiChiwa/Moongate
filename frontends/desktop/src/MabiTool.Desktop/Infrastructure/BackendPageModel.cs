@@ -29,6 +29,7 @@ public abstract class BackendPageModel<T> : ObservableObject, IDisposable, IPage
         });
         backend.Changed += OnBackendChanged;
         ReportShown();
+        NotifyShown(true);
     }
 
     /// <summary>页面在显示期间向后端报告的可见处（见 <see cref="IDesktopBackend.SetSurfaceVisible"/>）；为空时不报告。</summary>
@@ -45,6 +46,21 @@ public abstract class BackendPageModel<T> : ObservableObject, IDisposable, IPage
     private void ReportHidden()
     {
         if (Surface is { } surface && reported) { reported = false; Backend.SetSurfaceVisible(surface, false); }
+    }
+
+    /// <summary>
+    /// 页面开始显示（<paramref name="shown"/> 为真，含构造时）或被切走、释放（为假）：派生类在这里报告页面专属的可见处。
+    /// 成对调用，重复的显示或隐藏不会再次触发。
+    /// </summary>
+    protected virtual void OnShownChanged(bool shown) { }
+
+    private bool shownNotified;
+
+    private void NotifyShown(bool shown)
+    {
+        if (shownNotified == shown) return;
+        shownNotified = shown;
+        OnShownChanged(shown);
     }
 
     protected IDesktopBackend Backend { get; }
@@ -65,6 +81,7 @@ public abstract class BackendPageModel<T> : ObservableObject, IDisposable, IPage
         active = false;
         Backend.Changed -= OnBackendChanged;
         ReportHidden();
+        NotifyShown(false);
     }
 
     /// <summary>回到页面：重新订阅后端通知并读取一次最近结果（内存中的状态，不等待后端调用）。</summary>
@@ -74,6 +91,7 @@ public abstract class BackendPageModel<T> : ObservableObject, IDisposable, IPage
         active = true;
         Backend.Changed += OnBackendChanged;
         ReportShown();
+        NotifyShown(true);
         Reload();
     }
 
@@ -82,6 +100,7 @@ public abstract class BackendPageModel<T> : ObservableObject, IDisposable, IPage
         active = false;
         Backend.Changed -= OnBackendChanged;
         ReportHidden();
+        NotifyShown(false);
     }
 
     protected void Send(string intent, string? argument) =>

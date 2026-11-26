@@ -20,9 +20,9 @@
 ```
 
 - **Host** 是唯一的业务权威：模块状态机、队列、计划、停止条件与持久化都在后端。目录包里前端带 `--owner-process` 启动宿主，前端结束后宿主按正常停止流程退出；单独启动的宿主不随前端退出。只监听 `127.0.0.1`，默认端口 19998；该端口被其他软件占用或被系统保留时改用系统分配的端口，前端从 `runtime/instance.json` 取实际地址。
-- **模块**在同一进程内运行，通过公开应用接口协作，不读写其他模块的私有表。内置模块：core、game-access、music-library、performance、rooms、synchronization、color、environment、presentation、combat-observation、inventory。performance（游戏内演奏）与 environment（游戏内时间、天气等）当前返回 `module.notImplemented`。
-- **Provider** 把具体数据源（台服抓包、回放、GitHub Releases、隧道）适配为统一的观测、能力与操作接口。
-- **Worker** 隔离原生依赖和重计算：观察 Worker 负责 Npcap 共享抓包，绑定游戏窗口后在全部网卡上按游戏进程端口常驻抓包；染色 Worker 按任务启动。
+- **模块**在同一进程内运行，通过公开应用接口协作，不读写其他模块的私有表。内置模块：core、game-access、music-library、performance、rooms、synchronization、color、environment、presentation、combat-observation、inventory、life。performance（游戏内演奏）经游戏连接器驱动乐谱库队列；environment（游戏内时间、天气、频道与区域）经游戏连接器读取；life 经游戏连接器执行采集、加工、制作的总队列，并提供原地专注钓鱼。
+- **Provider** 把具体数据源（台服抓包、台服游戏命令行即游戏连接器、回放、GitHub Releases、隧道）适配为统一的观测、能力与操作接口。
+- **Worker** 隔离原生依赖和重计算：观察 Worker 负责 Npcap 共享抓包，绑定游戏窗口后在全部网卡上按游戏进程端口常驻抓包；染色 Worker 按任务启动；钓鱼识别 Worker 在专注钓鱼运行期间启动，识别游戏画面。
 - **Operation** 表示后端受理的异步工作，分别给出受理、执行／输入提交与观测到的效果，支持幂等键、取消与重启后的中断恢复。
 - **游戏输入**统一经过活动租约与紧急停止仲裁，输入热路径不等待界面、数据库、网络或重计算。
 - **RoomServer** 是可自托管的合奏房间服务，只协调房间与校时，不下发任意键码或坐标。
@@ -37,13 +37,14 @@ src/
   ModuleSdk/            模块生命周期、工具根、本机发现与握手
   Infrastructure/       存储（SQLite、写队列、outbox）、文件、备份、诊断
   Platform.Windows/     窗口、输入、快捷键等 Windows 平台服务
-  Modules/              MusicLibrary、Rooms、Color、CombatObservation、Inventory
-  Providers/            TwObservation（台服）、Replay、GitHubReleases、Tunnels
+  Modules/              MusicLibrary、Rooms、Color、CombatObservation、Inventory、Life
+  Providers/            TwObservation（台服抓包）、TwCli（台服游戏命令行）、Replay、GitHubReleases、Tunnels
   RoomServer/           合奏房间服务
   PortableLauncher/     解压版包根入口 Moongate.exe，兼作更新替换器
 workers/
   game-observation/     .NET 观察 Worker（Npcap）
   color-engine/         Python 染色引擎、Tesseract 锁定清单与测试
+  life-vision/          .NET 钓鱼识别 Worker（游戏画面截取与模板匹配）
 frontends/
   desktop/              Avalonia 桌面前端与无界面测试
   sdk/csharp/           生成的 C# 客户端 SDK 项目
@@ -67,7 +68,7 @@ docs/                   用户与开发文档
 
 | 工具 | 版本 | 用途 |
 |---|---|---|
-| .NET SDK | `global.json` 固定的 10.0.402 | 构建全部 .NET 项目 |
+| .NET SDK | `global.json` 固定的 10.0.404 | 构建全部 .NET 项目 |
 | PowerShell | 7 | 构建与打包脚本 |
 | Python | 3.12 | 染色引擎、仓库脚本与 Python 测试 |
 | Node.js | 24 | TypeScript 契约测试与前端示例 |
@@ -178,7 +179,7 @@ pwsh -NoProfile -File .\scripts\build\publish-backend.ps1 -Version 0.1.0 -Channe
 
 `-Channel` 省略时为 `preview`（预览渠道）：包名、`Moongate.exe` 的产品版本与前端版本都带 `-preview`，设置页版本后标注“预览版”；预览渠道的应用内更新会同时收到预发布与正式发行，正式渠道只收到正式发行。
 
-- 需要与 `-RuntimeVersion`（默认 10.0.13）一致的本机 .NET 与 ASP.NET Core 运行时，打包时复制进包内。
+- 需要与 `-RuntimeVersion`（默认 10.0.15）一致的本机 .NET 与 ASP.NET Core 运行时，打包时复制进包内。
 - 先在 `artifacts/packages/<ReleaseId>/` 生成目录包，再由 `scripts/build/package-archive.ps1` 打成 `artifacts/packages/Moongate-v<版本>-Windows-x64.zip` 与同名 `.sha256`（preview 渠道为 `Moongate-v<版本>-preview-Windows-x64.zip`）。
 - ZIP 解压后是单个 `Moongate` 文件夹：`Moongate.exe`（入口，源码在 `src/PortableLauncher`）、`components\`（各组件与随包运行时）、`licenses\`（第三方声明与 SPDX 清单）；首次运行生成 `userdata\`，保存全部数据、设置与版面。`components\core\launch-backend.cmd -Wait` 只启动后端并显示输出，用于排查启动失败。
 - `components\release.json` 是发行身份：版本、渠道、检查更新的仓库、入口与各组件的树哈希；宿主据此得知自己的版本，应用内更新用它核对下载包。
@@ -195,6 +196,7 @@ pwsh -NoProfile -File .\scripts\build\publish-backend.ps1 -Version 0.1.0 -Channe
   校验值与其他资产都以完整包的文件名为前缀，前缀在任何字符串比较（区分或不区分大小写、按区域规则）里都排在更长的名字前面，所以完整包总在第一个。发布脚本 `-AdditionalAssets` 接受其他资产，按这条规则核对文件名，并按序数、不区分大小写与区域规则各排序一次确认完整包在第一个，否则拒绝发布。应用内更新按这套命名拼出完整包、校验值与清单的下载地址，增量包的文件名写在清单里；0.1.0、0.1.1 只按完整包与校验值的确切文件名取用资产，附加资产不影响它们更新。
 - **发布说明。** 每个版本在 `docs/` 下有 `release-notes-<版本>.md`（简体）与 `release-notes-<版本>.zh-TW.md`（繁体），两份开头各有一段版本提示与下载指引。Release 正文依次放简体与繁体的这段开头，再放简体全文与繁体全文。
 - Tesseract 的版本、来源与文件哈希按 `workers/color-engine/tesseract-lock.json` 核对，各组件的许可文字在 `workers/color-engine/tesseract-licenses/`；不符或缺失时打包在发布 .NET 组件之前停止。
+- 台服游戏命令行工具 `MabinogiMobile_CLI.exe`（版权归 Nexon / devCAT，未修改）随仓库保存在 `packaging/game-cli/`，旁边的 `game-cli.lock.json` 登记文件名、长度与 SHA-256。`publish-backend.ps1` 默认使用该文件，也可用 `-CliExecutable <本机文件>` 指定另一份；脚本在发布 .NET 组件之前按登记核对，通过后复制到 `components/game-cli/`，并写入发行身份、第三方声明与 SBOM。`repository-rules.json` 的 `thirdPartyBinaries` 登记仓库内允许存在的二进制，目录检查与公开导出都按登记核对其内容。
 - 染色组件按引擎实际用到的模块瘦身：`scripts/build/package-color-runtime.py` 的 `SLIM_RULES` 逐条写明删除的文件与理由，删除后启动随包 Python 导入引擎全部模块并执行延迟导入，失败即停止打包；`tesseract.exe` 与 `libtesseract-5.dll` 移除调试信息，处理后哈希固定在锁定清单，识别输出须与原程序一致。
 - 发行物不带 `.pdb` 调试符号。
 
@@ -210,7 +212,7 @@ pwsh -NoProfile -File .\scripts\build\publish-backend.ps1 -Version 0.1.0 -Channe
   python scripts/maintenance/clean-artifacts.py --apply  # 回收，跳过 2 小时内的写入
   ```
 
-- **游戏客户端美术不进仓库**：战斗属性图标等游戏美术属于游戏的版权资源，仓库、测试夹具、文档与发行包都不包含从客户端导出的图片或其字节。工具在运行时从用户本机已安装的客户端读取图标、解码为 PNG，缓存在工具根的数据根 `cache/game-access/client-icons` 内；测试用代码合成的最小资源包与纹理块。公开导出的自检会阻断未登记的图片与 Unity 资源文件，以及路径带客户端资源目录或图标命名的文件。
+- **游戏客户端美术只随包分发登记过的文件**：游戏美术属于游戏的版权资源（Nexon / devCAT）。仓库与发行包只带登记过的几类：钓鱼识别模板与测试夹具，以及桌面的随包游戏图标（`frontends/desktop/src/MabiTool.Desktop/Assets/GameIcons/`，属性、角色、背包、生活技能与货币图标，由 `scripts/maintenance/GameIconExtractor` 从本机客户端只读取出，缺少的按同一风格自绘）；每个文件的来源、长度、SHA-256 与版权方登记在旁边的登记文件里，第三方声明写明归属。宿主仍可在运行时从本机客户端读取属性图标，作为随包图标缺键时的后备，缓存在工具根的数据根 `cache/game-access/client-icons` 内；测试用代码合成的最小资源包与纹理块。公开导出的自检会阻断未登记或内容与登记不符的图片与 Unity 资源文件，以及路径带客户端资源目录或图标命名的文件。
 - `scripts/maintenance/source-baselines.json` 登记移植来源的固定提交、文件哈希与功能映射，`python scripts/maintenance/check-source-baselines.py` 检查其结构；带 `--source <ID>=<检出目录>` 时核对对应上游仓库的固定 Git 对象。
 
 ## 10. 来源与许可

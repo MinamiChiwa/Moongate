@@ -35,6 +35,12 @@ public sealed partial class SqliteStore
             events.Add(new("color-" + run.Id + "-" + snapshot.Revision, "color-run", run.Id,
                 snapshot.Revision, "color.run.changed", snapshot.Result!.Value));
         }
+        if (snapshot.Kind == OperationStore.FishingKind)
+        {
+            var fishing = OperationStore.ReadFishing(snapshot);
+            events.Add(new("fishing-" + fishing.Id + "-" + snapshot.Revision, "fishing-run", fishing.Id,
+                snapshot.Revision, "life.fishing.changed", snapshot.Result!.Value));
+        }
         if (additionalEvents is not null) events.AddRange(additionalEvents);
         return new(snapshot, json, events.Select(PrepareEvent).ToArray());
     }

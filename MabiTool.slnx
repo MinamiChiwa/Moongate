@@ -4,6 +4,7 @@
     <Project Path="src/Providers/GitHubReleases/MabiTool.Providers.GitHubReleases.csproj" />
     <Project Path="src/Providers/Tunnels/MabiTool.Providers.Tunnels.csproj" />
     <Project Path="src/Providers/TwObservation/MabiTool.Providers.TwObservation.csproj" />
+    <Project Path="src/Providers/TwCli/MabiTool.Providers.TwCli.csproj" />
     <Project Path="src/Contracts/MabiTool.Contracts.csproj" />
     <Project Path="src/Platform.Windows/MabiTool.Platform.Windows.csproj" />
     <Project Path="src/ModuleSdk/MabiTool.ModuleSdk.csproj" />
@@ -16,6 +17,7 @@
     <Project Path="src/Modules/Rooms/MabiTool.Modules.Rooms.csproj" />
     <Project Path="src/Modules/CombatObservation/MabiTool.Modules.CombatObservation.csproj" />
     <Project Path="src/Modules/Inventory/MabiTool.Modules.Inventory.csproj" />
+    <Project Path="src/Modules/Life/MabiTool.Modules.Life.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Domain/MabiTool.Runtime.Tests/MabiTool.Runtime.Tests.csproj" />
@@ -23,9 +25,12 @@
     <Project Path="tests/Domain/MabiTool.Rooms.Tests/MabiTool.Rooms.Tests.csproj" />
     <Project Path="tests/Domain/MabiTool.CombatObservation.Tests/MabiTool.CombatObservation.Tests.csproj" />
     <Project Path="tests/Domain/MabiTool.Inventory.Tests/MabiTool.Inventory.Tests.csproj" />
+    <Project Path="tests/Domain/MabiTool.Life.Tests/MabiTool.Life.Tests.csproj" />
     <Project Path="tests/Providers/MabiTool.Providers.TwObservation.Tests/MabiTool.Providers.TwObservation.Tests.csproj" />
     <Project Path="tests/Providers/MabiTool.Updates.Tests/MabiTool.Updates.Tests.csproj" />
+    <Project Path="tests/Providers/MabiTool.TwCli.Tests/MabiTool.TwCli.Tests.csproj" />
     <Project Path="tests/Providers/MabiTool.InventoryCatalog.Tests/MabiTool.InventoryCatalog.Tests.csproj" />
+    <Project Path="tests/Providers/MabiTool.LifeVision.Tests/MabiTool.LifeVision.Tests.csproj" />
     <Project Path="tests/Contracts/MabiTool.Host.Tests/MabiTool.Host.Tests.csproj" />
     <Project Path="tests/EndToEnd/PersistenceProbe/MabiTool.PersistenceProbe.csproj" />
     <Project Path="tests/EndToEnd/RoomServerProbe/MabiTool.RoomServerProbe.csproj" />
@@ -43,9 +48,11 @@
   <Folder Name="/scripts/">
     <Project Path="scripts/build/ContractGenerator/MabiTool.ContractGenerator.csproj" />
     <Project Path="scripts/maintenance/CombatEvidenceInspector/MabiTool.CombatEvidenceInspector.csproj" />
+    <Project Path="scripts/maintenance/GameIconExtractor/MabiTool.GameIconExtractor.csproj" />
   </Folder>
   <Folder Name="/workers/">
     <Project Path="workers/game-observation/MabiTool.Observation.Worker.csproj" />
+    <Project Path="workers/life-vision/MabiTool.LifeVision.Worker.csproj" />
   </Folder>
   <Folder Name="/frontends/">
     <Project Path="frontends/sdk/csharp/MabiTool.Client.csproj" />

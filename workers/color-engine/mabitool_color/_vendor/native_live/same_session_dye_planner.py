@@ -17,6 +17,7 @@ from mabitool_color._vendor.native_palette_scoring import score_native_pose
 from mabitool_color._vendor.hex_refinement import score_codes
 from mabitool_color._vendor.input_gestures import PointerGesture
 from .compromise import predicted_quality,choose_compromise
+from .frame_verification import independently_verified
 from mabitool_color._vendor.native_periodic_search import search_periodic_targets
 from mabitool_color._vendor.native_periodic_route import compile_periodic_approach
 from mabitool_color._vendor.dye_regions import region_count, rule_region_count, session_region_count, validate_region_rules
@@ -202,14 +203,25 @@ def _fresh(now, frames, checkpoint=None):
     raise ValueError('Fresh checkpoint frames required for planning/revalidation')
 
 
+def screenshot_confirmed(checkpoint, frame, regions=None):
+    """这一帧截图是否确认了检查点色码：规则同本局放行（frame_verification.independently_verified）。
+
+    帧记录没有合并字段时按截图读出的完整色码处理，与原判定的缺省一致。
+    """
+    colors=list(checkpoint['client_hex']);count=len(colors)
+    normalized=dict(frame,screenshot_hex=frame.get('screenshot_hex',frame['hex']),
+        hex_source=frame.get('hex_source',['screenshot']*count),
+        screenshot_hex_verified=frame.get('screenshot_hex_verified',True))
+    return independently_verified(normalized,colors,regions)
+
+
 def assess_feedback(context, checkpoint, frames, rules, *, expected_pose=None):
     """Assess recorded observations; acceptance never means server confirmation."""
     _frames(checkpoint,frames)
     result=assess_native_feedback(context,checkpoint,rules,expected_pose=expected_pose)
-    result['screenshot_verified']=all(
-        frame.get('screenshot_hex',frame['hex'])[i]==checkpoint['client_hex'][i] and
-        frame.get('hex_source',['screenshot']*len(rules))[i]=='screenshot'
-        for frame in frames for i,rule in enumerate(rules) if rule['enabled'])
+    # 已启用规则的卡由色码文字或色块核验即算目视确认；色块核验要求本帧另有一卡文字一致。
+    enabled=[i for i,rule in enumerate(rules) if rule['enabled']]
+    result['screenshot_verified']=all(screenshot_confirmed(checkpoint,frame,enabled) for frame in frames)
     if result['observed_target_accepted'] and not result['screenshot_verified']:
         result.update(observed_target_accepted=False,stop_reason='target_visual_unconfirmed')
     return result

@@ -688,7 +688,9 @@ public sealed class OverlayCanvas : Panel
             {
                 model.Editing = editing;
                 model.ShowHealth = !slot.Placement.HideMonsterHealth;
-                if (store is not null && (FavoriteBoard.IsBoard(slot.Placement.WidgetId) || slot.Placement.WidgetId == AwakeningBoard.Id))
+                model.ShowAwakening = !slot.Placement.HideAwakening;
+                if (store is not null && (FavoriteBoard.IsBoard(slot.Placement.WidgetId)
+                        || slot.Placement.WidgetId is AwakeningBoard.Id or AwakeningBoard.DpsId))
                     model.SetFavoriteSource(slot.Placement, store);
             }
             // 在浮窗上关闭的元件只在编辑状态下留着（变淡），其余时候不显示。

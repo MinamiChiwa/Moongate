@@ -2,10 +2,13 @@ using Avalonia.Media;
 using MabiTool.Desktop.Backend;
 using MabiTool.Desktop.Localization;
 using MabiTool.Desktop.Overlay;
+using MabiTool.Desktop.Pages.Character;
+using MabiTool.Desktop.Pages.Market;
 using MabiTool.Desktop.Pages.Diagnostics;
 using MabiTool.Desktop.Pages.Dyeing;
 using MabiTool.Desktop.Pages.Combat;
 using MabiTool.Desktop.Pages.Inventory;
+using MabiTool.Desktop.Pages.Life;
 using MabiTool.Desktop.Pages.Modules;
 using MabiTool.Desktop.Pages.Music;
 using MabiTool.Desktop.Pages.Overlay;
@@ -25,20 +28,12 @@ public static class BuiltInModules
         catalog.Overlay = overlay;
         var mini = new MiniWindowController(backend);
         catalog.Mini = mini;
-        catalog.Register(new ModuleDescriptor("music-library", new("乐谱库", "樂譜庫"), new("谱", "譜"), Color.Parse("#C97A10"),
-            ModuleOrigin.BuiltIn, () => new MusicPage { DataContext = new MusicPageModel(backend, mini.Show) },
-            [
-                new("performance.now-playing", new("当前演奏", "目前演奏"), ["scale", "skin"]),
-                new("performance.nearby", new("附近演奏字幕", "附近演奏字幕"), ["holdSeconds", "skin"],
-                    PresentationTopic: PresentationTopics.Nearby)
-            ], pending: true));
         catalog.Register(new ModuleDescriptor("combat-observation", new("DPS检测", "DPS檢測"), new("战", "戰"),
             Color.Parse("#D9502F"), ModuleOrigin.BuiltIn,
             () => new CombatPage { DataContext = new CombatPageModel(backend) },
             [
-                new("combat.dps", new("每秒伤害", "每秒傷害"), ["scale", "skin"]),
+                new(AwakeningBoard.DpsId, new("每秒伤害", "每秒傷害"), ["scale", "skin", "awakening"]),
                 new("combat.skills", new("技能占比", "技能佔比"), ["scale", "skin", "rows"]),
-                new("combat.coverage", new("暴击、强击、连击覆盖率", "暴擊、強擊、連擊覆蓋率"), ["scale", "skin"]),
                 new("combat.self-effects", new("自身效果列", "自身效果列"), ["scale", "skin", "iconPack", "maxItems"]),
                 new("combat.target-effects", new("怪物效果列", "怪物效果列"), ["scale", "skin", "iconPack", "maxItems"]),
                 new("combat.measurement", new("定时测量", "定時測量"), ["scale", "skin"]),
@@ -50,11 +45,32 @@ public static class BuiltInModules
         catalog.Register(new ModuleDescriptor("rooms", "合奏", "奏", Color.Parse("#6F51E0"), ModuleOrigin.BuiltIn,
             () => new RoomsPage { DataContext = new RoomsPageModel(backend) },
             [new("rooms.readiness", new("信息浮窗", "資訊浮窗"), ["scale", "skin"])]));
+        // 乐谱库：本机乐谱、清单与演奏队列，经游戏连接器的游戏内演奏在“游戏内演奏”层；侧栏里排在合奏之后。
+        catalog.Register(new ModuleDescriptor("music-library", new("乐谱库", "樂譜庫"), new("谱", "譜"), Color.Parse("#C97A10"),
+            ModuleOrigin.BuiltIn, () => new MusicPage { DataContext = new MusicPageModel(backend, mini.Show) },
+            [
+                new("performance.now-playing", new("当前演奏", "目前演奏"), ["scale", "skin"]),
+                new("performance.nearby", new("附近演奏字幕", "附近演奏字幕"), ["holdSeconds", "skin"],
+                    PresentationTopic: PresentationTopics.Nearby)
+            ]));
         catalog.Register(new ModuleDescriptor("color", "染色", "染", Color.Parse("#D43D74"), ModuleOrigin.BuiltIn,
             () => new ColorPage { DataContext = new ColorPageModel(backend) },
             [new("color.current", new("当前颜色", "目前顏色"), ["scale", "skin"])]));
         catalog.Register(new ModuleDescriptor("inventory", "背包", "包", Color.Parse("#0E8C7D"), ModuleOrigin.BuiltIn,
             () => new InventoryPage { DataContext = new InventoryPageModel(backend) }));
+        // 角色：角色信息页（游戏连接器的属性、货币、任务、环境与附近玩家）与“环境信息”浮窗元件。
+        catalog.Register(new ModuleDescriptor("character", "角色", "角", Color.Parse("#2E9E4F"), ModuleOrigin.BuiltIn,
+            () => new CharacterPage { DataContext = new CharacterPageModel(backend) },
+            [new("environment.info", new("环境信息", "環境資訊"), ["scale", "skin"], PresentationTopic: PresentationTopics.Environment)]));
+        // 交易所：只查价的查价页。
+        catalog.Register(new ModuleDescriptor("market", "交易所", "市", Color.Parse("#B8860B"), ModuleOrigin.BuiltIn,
+            () => new MarketPage { DataContext = new MarketPageModel(backend) }));
+        catalog.Register(new ModuleDescriptor("life", "生活", "生", Color.Parse("#4F9A3A"), ModuleOrigin.BuiltIn,
+            () => new LifePage { DataContext = new LifePageModel(backend) },
+            [
+                new("life.facilities", new("加工设施", "加工設施"), ["scale", "skin"]),
+                new("life.queue", new("生活队列", "生活佇列"), ["scale", "skin"])
+            ]));
         catalog.Register(new ModuleDescriptor("presentation", new("浮窗版面", "浮窗版面"), "窗", Color.Parse("#2A6FD6"),
             ModuleOrigin.BuiltIn, () => OverlayPage.Create(new OverlayPageModel(catalog, overlay))));
         catalog.Register(new ModuleDescriptor("shell.modules", new("模块与扩展", "模組與擴充"), "模", Color.Parse("#5F6B85"),

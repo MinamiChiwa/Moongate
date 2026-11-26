@@ -8,7 +8,11 @@ namespace MabiTool.Platform.Windows;
 [SupportedOSPlatform("windows")]
 public sealed class WindowsDesktopCaptureSource : IDesktopCaptureSource
 {
-    public ValueTask<DesktopRgbFrame> CaptureAsync(int maximumPixels, CancellationToken cancellationToken)
+    /// <summary>
+    /// 在每显示器 DPI 感知 v2 上下文里按物理像素 BitBlt 指定区域（为空时整个虚拟桌面）。
+    /// 截屏前核对区域完整落在虚拟桌面内，截屏后再读一次虚拟桌面边界，期间变化视为显示布局变化。
+    /// </summary>
+    public ValueTask<DesktopRgbFrame> CaptureAsync(PhysicalWindowRect? region, int maximumPixels, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var previous = SetThreadDpiAwarenessContext(new(-4));
@@ -16,7 +20,10 @@ public sealed class WindowsDesktopCaptureSource : IDesktopCaptureSource
         nint screen = 0, memory = 0, bitmap = 0, selected = 0;
         try
         {
-            var bounds = Bounds();
+            var desktop = Bounds();
+            var bounds = region ?? desktop;
+            if (region is { } r && !Contains(desktop, r))
+                throw new ArgumentOutOfRangeException(nameof(region), "截屏区域没有完整落在当前虚拟桌面内");
             if (bounds.Width <= 0 || bounds.Height <= 0 || (long)bounds.Width * bounds.Height > maximumPixels)
                 throw new ArgumentException("桌面截图超出像素预算");
             screen = GetDC(0);
@@ -31,7 +38,7 @@ public sealed class WindowsDesktopCaptureSource : IDesktopCaptureSource
             if (selected == 0 || selected == new nint(-1)) throw new InvalidOperationException("无法选择截图缓冲区");
             if (!BitBlt(memory, 0, 0, bounds.Width, bounds.Height, screen, bounds.X, bounds.Y, 0x40CC0020) || !GdiFlush())
                 throw new InvalidOperationException("桌面截图失败");
-            if (Bounds() != bounds) throw new InvalidOperationException("截图期间显示器布局发生变化");
+            if (Bounds() != desktop) throw new InvalidOperationException("截图期间显示器布局发生变化");
             cancellationToken.ThrowIfCancellationRequested();
             var rgb = new byte[checked(bounds.Width * bounds.Height * 3)];
             var row = new byte[checked(bounds.Width * 4)];
@@ -54,6 +61,10 @@ public sealed class WindowsDesktopCaptureSource : IDesktopCaptureSource
             SetThreadDpiAwarenessContext(previous);
         }
     }
+
+    private static bool Contains(PhysicalWindowRect desktop, PhysicalWindowRect region) =>
+        region.Width > 0 && region.Height > 0 && region.X >= desktop.X && region.Y >= desktop.Y &&
+        (long)region.X + region.Width <= (long)desktop.X + desktop.Width && (long)region.Y + region.Height <= (long)desktop.Y + desktop.Height;
 
     private static PhysicalWindowRect Bounds() => new(GetSystemMetrics(76), GetSystemMetrics(77), GetSystemMetrics(78), GetSystemMetrics(79));
     [StructLayout(LayoutKind.Sequential)]

@@ -108,6 +108,39 @@ public sealed class CurrentCombatStreamTests
         Assert.Null(silent.Music.PersonalId); Assert.Null(silent.Music.Current.Identity);
     }
 
+    /// <summary>
+    /// 未登记构建里协议换了编号（按名称对应，签名与布局不变）：解析前换回基线编号，结果与基线编号的帧相同；
+    /// 占用基线旧编号的其他协议不再被当作该消息。
+    /// </summary>
+    [Fact]
+    public void RenumberedProtocolsAreTranslatedBeforeParsing()
+    {
+        var profile = new ObservationCombatProfile(Tw20261110CombatProtocol.Profile,
+            new("tw-combat-test", "1", "TW", "synthetic-current-layout"), Simulation: true);
+        var build = TwClientFingerprint.AdaptiveBuild(new string('a', 64), new string('b', 64));
+        const int Moved = 20999;
+        var renumbered = new TwBuildVerdict(build, false, null, TwCapabilityCheck.Ok, TwCapabilityCheck.Ok, TwCapabilityCheck.Ok,
+            Tw20261110CombatProtocol.StreamProfile.KnownProtocols.Append(Moved).ToHashSet(),
+            Translation: new(new Dictionary<int, int> { [Moved] = Tw20261110CombatProtocol.AppearingCharacter }));
+        using var fixture = JsonDocument.Parse(typeof(CurrentCombatStreamTests).Assembly.GetManifestResourceStream("MabiTool.CurrentCombatIdentity")!);
+        var personal = Frame(20590, Convert.FromBase64String(fixture.RootElement.GetProperty("personalBodyBase64").GetString()!), true);
+        var character = Convert.FromBase64String(fixture.RootElement.GetProperty("characterBodyBase64").GetString()!);
+        var at = new DateTimeOffset(2026, 11, 26, 0, 0, 0, TimeSpan.Zero);
+        ulong generation = 0;
+        GameIdentity? Identity(TwBuildVerdict? verdict, int characterCode)
+        {
+            using var stream = new SharedGameStream("fixture-current", new([profile], _ => { }, _ => { }), () => ++generation,
+                layout: CombatProtocolLayout.Tw20261110, build: verdict);
+            stream.Feed(0, personal.Concat(Frame(characterCode, character, true)).ToArray(), 0, 0, at);
+            return stream.Music.Current.Identity;
+        }
+        var expected = Identity(null, Tw20261110CombatProtocol.AppearingCharacter);
+        Assert.NotNull(expected);
+        Assert.Equal(expected, Identity(renumbered, Moved));
+        // 基线旧编号在新构建里属于别的协议：不当作角色出现解析。
+        Assert.Null(Identity(renumbered, Tw20261110CombatProtocol.AppearingCharacter));
+    }
+
     [Fact]
     public void IdentityDecodedWithoutInterestSeedsALaterCombatInterest()
     {

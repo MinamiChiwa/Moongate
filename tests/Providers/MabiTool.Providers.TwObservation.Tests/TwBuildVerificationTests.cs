@@ -30,9 +30,10 @@ public sealed class TwBuildVerificationTests
     [Fact]
     public void EachChangeDisablesOnlyTheCapabilitiesThatDependOnIt()
     {
-        var renumbered = TwBuildVerification.Verify(Build, Facts(baseline => baseline["protocols"]!["CHANNEL_ShowDamageFloater_NTF"] = 21197));
-        Assert.Equal((true, true), (renumbered.Identity.Enabled, renumbered.Music.Enabled));
-        Assert.Equal(new TwCapabilityCheck(false, TwBuildVerification.ProtocolChanged), renumbered.Combat);
+        // 所需协议缺失才按协议变化停用；只是编号挪位见 RenumberedProtocolsAreMatchedByName。
+        var missing = TwBuildVerification.Verify(Build, Facts(baseline => baseline["protocols"]!.AsObject().Remove("CHANNEL_ShowDamageFloater_NTF")));
+        Assert.Equal((true, true), (missing.Identity.Enabled, missing.Music.Enabled));
+        Assert.Equal(new TwCapabilityCheck(false, TwBuildVerification.ProtocolChanged), missing.Combat);
 
         var widened = TwBuildVerification.Verify(Build, Facts(baseline =>
             ((JsonArray)baseline["types"]!["Shared.GameLogic.Hits.DamageFloaterData"]!["fields"]!).Add(new JsonObject { ["name"] = "Extra", ["type"] = "int32" })));
@@ -48,6 +49,46 @@ public sealed class TwBuildVerificationTests
         Assert.Equal(new TwCapabilityCheck(false, TwBuildVerification.IdentityUnavailable), identity.Music);
         Assert.Equal(new TwCapabilityCheck(false, TwBuildVerification.IdentityUnavailable), identity.Combat);
         Assert.True(identity.CaptureUsable);
+    }
+
+    /// <summary>
+    /// 台服 2026-11-25 构建：治疗施放与受疗、伤害浮字、演奏开始与停止、主目标 6 个协议换了编号，签名与布局不变。
+    /// 各能力启用，换算表把新编号换回基线编号；占用基线旧编号的其他协议换算为 -1，不被当作战斗或演奏消息。
+    /// </summary>
+    [Fact]
+    public void RenumberedProtocolsAreMatchedByName()
+    {
+        var verdict = TwBuildVerification.Verify(Build, Facts(baseline =>
+        {
+            var protocols = baseline["protocols"]!;
+            protocols["CHANNEL_NotifyHealCasted_NTF"] = 20645; protocols["CHANNEL_NotifyHealReceived_NTF"] = 20646;
+            protocols["CHANNEL_ShowDamageFloater_NTF"] = 21198; protocols["REPLICATION_InstrumentPlayer_PlayInstrument_REPL"] = 170700;
+            protocols["REPLICATION_InstrumentPlayer_Stop_REPL"] = 170701; protocols["REPLICATION_MainTarget_SetTarget_REPL"] = 170736;
+        }));
+        Assert.Equal((true, true, true, true), (verdict.Identity.Enabled, verdict.Music.Enabled, verdict.Combat.Enabled, verdict.Health.Enabled));
+        var translation = verdict.ProtocolTranslation;
+        Assert.Equal(6, translation.Map.Count);
+        Assert.Equal((Tw20261110CombatProtocol.HealCasted, Tw20261110CombatProtocol.HealReceived, Tw20261110CombatProtocol.DamageFloater),
+            (translation.ToBaseline(20645), translation.ToBaseline(20646), translation.ToBaseline(21198)));
+        Assert.Equal((TwMusicProtocolMap.Tw20261110.Play, TwMusicProtocolMap.Tw20261110.Stop, Tw20261110CombatProtocol.SetMainTarget),
+            (translation.ToBaseline(170700), translation.ToBaseline(170701), translation.ToBaseline(170736)));
+        // 基线旧编号在新构建里属于别的协议：不进入战斗与演奏解析；没换编号的协议原样。
+        Assert.Equal((-1, -1, -1), (translation.ToBaseline(21196), translation.ToBaseline(170703), translation.ToBaseline(20644)));
+        Assert.Equal((Tw20261110CombatProtocol.HitPresentation, Tw20261110CombatProtocol.PersonalData),
+            (translation.ToBaseline(Tw20261110CombatProtocol.HitPresentation), translation.ToBaseline(Tw20261110CombatProtocol.PersonalData)));
+
+        // 缓存带换算表：读回后同样换算。
+        var root = Path.Combine(Path.GetTempPath(), "mabitool-build-verdict-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var hashes = new TwClientHashes(new string('a', 64), new string('b', 64), new string('c', 64));
+            TwBuildVerdictCache.Write(root, hashes, verdict);
+            var cached = TwBuildVerdictCache.Read(root, hashes)!;
+            Assert.True(cached.Combat.Enabled);
+            Assert.Equal(translation.Map.OrderBy(pair => pair.Key), cached.ProtocolTranslation.Map.OrderBy(pair => pair.Key));
+            Assert.Equal(-1, cached.ProtocolTranslation.ToBaseline(21196));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
     /// <summary>以登记基线与前缀 schema 资源构造客户端事实，修改后交给核对。</summary>

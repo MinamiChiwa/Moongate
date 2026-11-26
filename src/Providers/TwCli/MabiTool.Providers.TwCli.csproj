@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <InternalsVisibleTo Include="MabiTool.Host" />
+    <InternalsVisibleTo Include="MabiTool.Host.Tests" />
+    <InternalsVisibleTo Include="MabiTool.TwCli.Tests" />
+    <ProjectReference Include="../../ModuleSdk/MabiTool.ModuleSdk.csproj" />
+    <ProjectReference Include="../../Infrastructure/MabiTool.Infrastructure.csproj" />
+    <ProjectReference Include="../../Platform.Windows/MabiTool.Platform.Windows.csproj" />
+  </ItemGroup>
+</Project>

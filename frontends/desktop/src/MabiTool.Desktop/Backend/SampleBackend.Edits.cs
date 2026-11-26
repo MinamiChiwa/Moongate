@@ -88,6 +88,18 @@ public sealed partial class SampleBackend
         return Task.FromResult(new BackendReply(true, notice));
     }
 
+    /// <summary>测试用：返回的更新说明；<see cref="PendingUpdateNotes"/> 非空时等它完成再返回（模拟读取中）。</summary>
+    internal UpdateNotesView? UpdateNotes { get; set; }
+    internal TaskCompletionSource<UpdateNotesView?>? PendingUpdateNotes { get; set; }
+    internal int UpdateNotesLoads { get; private set; }
+
+    public Task<UpdateNotesView?> LoadUpdateNotesAsync(CancellationToken cancellationToken)
+    {
+        UpdateNotesLoads++;
+        if (Offline) return Task.FromResult<UpdateNotesView?>(null);
+        return PendingUpdateNotes?.Task ?? Task.FromResult(UpdateNotes);
+    }
+
     public Task<BackendReply> SaveUpdatePolicyAsync(UpdatePolicyView policy, CancellationToken cancellationToken)
     {
         SavedPolicies.Add(policy);

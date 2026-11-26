@@ -40,11 +40,12 @@ public sealed record FavoriteChoice(string Id, string Name, Pages.Combat.EffectP
     public string Tip => $"{Name}（{Id}）";
 }
 
-/// <summary>觉醒提示一项的设置：种类（badge、class）、标题、闪烁开关与颜色、闪烁时长、音效开关、声音与音量。</summary>
-public sealed record AlertView(string Kind, string Title, bool Flash, ColorEntry Color, string Seconds, bool Sound, string SoundText, bool HasFile, string Volume)
+/// <summary>
+/// “徽章觉醒”的提示设置：标题、闪烁开关与颜色、闪烁时长、音效开关、声音与音量。
+/// 选中觉醒监控浮窗或 DPS 元件时卡片里显示的是同一份（<see cref="OverlayLayoutStore.Awakening"/>）。
+/// </summary>
+public sealed record AlertView(string Title, bool Flash, ColorEntry Color, string Seconds, bool Sound, string SoundText, bool HasFile, string Volume)
 {
-    public string StepDown => Kind + ":-";
-    public string StepUp => Kind + ":+";
     public string FlashState => Flash ? Localization.UiText.Pick("已打开", "已打開") : Localization.UiText.Pick("已关闭", "已關閉");
     public string SoundState => Sound ? Localization.UiText.Pick("已打开", "已打開") : Localization.UiText.Pick("已关闭", "已關閉");
 }
@@ -176,23 +177,22 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
             if (Selected is { } placement) Store.ResetPosition(placement);
         });
         HealthCommand = new RelayCommand(choice => Edit(placement => placement.HideMonsterHealth = choice is "hide"));
+        DpsAwakeningCommand = new RelayCommand(choice => Edit(placement => placement.HideAwakening = choice is "hide"));
         FavoriteItemCommand = new RelayCommand(value =>
         {
             if (Selected is { } placement && value is string key) Store.SetFavoriteItem(placement, key, !FavoriteBoard.Effective(placement).Contains(key));
         });
         FavoriteLayoutCommand = new RelayCommand(choice => Edit(placement => placement.Horizontal = choice is "horizontal"));
-        AlertFlashCommand = new RelayCommand(kind => EditAlert(kind, alert => alert.Flash = !alert.Flash));
-        AlertSoundCommand = new RelayCommand(kind => EditAlert(kind, alert => alert.Sound = !alert.Sound));
-        AlertBuiltinCommand = new RelayCommand(kind => EditAlert(kind, alert => alert.SoundFile = null));
-        AlertSecondsCommand = new RelayCommand(value =>
+        AlertFlashCommand = new RelayCommand(_ => EditAlert(alert => alert.Flash = !alert.Flash));
+        AlertSoundCommand = new RelayCommand(_ => EditAlert(alert => alert.Sound = !alert.Sound));
+        AlertBuiltinCommand = new RelayCommand(_ => EditAlert(alert => alert.SoundFile = null));
+        AlertSecondsCommand = new RelayCommand(step =>
         {
-            if (value is string text && text.Split(':') is [var kind, var step])
-                EditAlert(kind, alert => alert.FlashSeconds += step == "+" ? AwakeningAlert.SecondsStep : -AwakeningAlert.SecondsStep);
+            if (step is "+" or "-") EditAlert(alert => alert.FlashSeconds += step is "+" ? AwakeningAlert.SecondsStep : -AwakeningAlert.SecondsStep);
         });
-        AlertVolumeCommand = new RelayCommand(value =>
+        AlertVolumeCommand = new RelayCommand(step =>
         {
-            if (value is string text && text.Split(':') is [var kind, var step])
-                EditAlert(kind, alert => alert.Volume += step == "+" ? AwakeningAlert.VolumeStep : -AwakeningAlert.VolumeStep);
+            if (step is "+" or "-") EditAlert(alert => alert.Volume += step is "+" ? AwakeningAlert.VolumeStep : -AwakeningAlert.VolumeStep);
         });
         ResetColorsCommand = new RelayCommand(value =>
         {
@@ -259,7 +259,7 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
         WidgetPlacement? target = null;
         if (entry.Scope == "widget" && (target = Selected) is null) return null;
         var key = entry.Key;
-        var alert = entry.Scope == "alert" ? Store.Awakening.Of(key) : null;
+        var alert = entry.Scope == "alert" ? Store.Awakening.Badge : null;
         var model = new ColorPickerModel(
             () => alert?.Color ?? OverlayColors.Resolve(key, Store.Colors, target?.Colors),
             hex =>
@@ -309,7 +309,7 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     private static string Hint(OverlayColorGroup group) => group switch
     {
         OverlayColorGroup.Plate => UiText.Pick("玻璃与纯色外观的底色；透明度由背景不透明度调整", "玻璃與純色外觀的底色；透明度由背景不透明度調整"),
-        OverlayColorGroup.Bars => UiText.Pick("乐谱进度、覆盖率与定时测量的进度条；轨道按 25% 不透明画在底板上", "樂譜進度、覆蓋率與定時測量的進度條；軌道按 25% 不透明畫在底板上"),
+        OverlayColorGroup.Bars => UiText.Pick("乐谱进度与定时测量的进度条；轨道按 25% 不透明画在底板上", "樂譜進度與定時測量的進度條；軌道按 25% 不透明畫在底板上"),
         OverlayColorGroup.Effects => UiText.Pick("只改浮窗上的效果条目，DPS检测页不变", "只改浮窗上的效果條目，DPS檢測頁不變"),
         OverlayColorGroup.Icons => UiText.Pick("只改浮窗上的图标；没改过的沿用客户端给出的颜色", "只改浮窗上的圖示；沒改過的沿用用戶端給出的顏色"),
         _ => string.Empty
@@ -504,10 +504,10 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     }
 
     /// <summary>
-    /// 所选元件里以客户端图标显示的标签（DPS、定时测量与覆盖率元件的暴击、强击、连击、追击）：图标与名称的对照。
+    /// 所选元件里以客户端图标显示的标签（DPS 与定时测量元件的暴击、强击、连击、追击）：图标与名称的对照。
     /// 浮窗上锁时鼠标穿透、看不到图标的悬浮提示，这里给出每个图标的含义。
     /// </summary>
-    public IReadOnlyList<IconLegendItem> SelectedIcons => Selected is { WidgetId: "combat.dps" or "combat.measurement" or "combat.coverage" }
+    public IReadOnlyList<IconLegendItem> SelectedIcons => Selected is { WidgetId: "combat.dps" or "combat.measurement" }
         ? new[] { Backend.ClientIconNames.Critical, Backend.ClientIconNames.PowerfulHit, Backend.ClientIconNames.RapidHit, Backend.ClientIconNames.DoubleHit }
             .Select(icon => new IconLegendItem(icon, Backend.ClientIconNames.Name(icon))).ToList()
         : [];
@@ -526,6 +526,17 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     public string HideLabel => UiText.Pick("隐藏", "隱藏");
     /// <summary>参数 show 或 hide：DPS 元件的怪物血量区块显示或隐藏，立即保存。</summary>
     public ICommand HealthCommand { get; }
+
+    /// <summary>所选元件是 DPS 元件：详情里有“觉醒监控”开关，打开时下方显示与觉醒监控浮窗同一份的觉醒提示设置。</summary>
+    public bool HasDpsAwakeningSetting => Selected is { WidgetId: AwakeningBoard.DpsId };
+    /// <summary>DPS 元件内显示徽章觉醒（默认显示）。</summary>
+    public bool DpsAwakeningShown => Selected is { HideAwakening: false };
+    public bool DpsAwakeningHidden => !DpsAwakeningShown;
+    public string DpsAwakeningLabel => UiText.Pick("觉醒监控", "覺醒監控");
+    public string DpsAwakeningHint => UiText.Pick("在 DPS 数值下方显示徽章觉醒：觉醒中亮起并按设定颜色闪烁，冷却中显示冷却剩余；提示设置与觉醒监控浮窗共用",
+        "在 DPS 數值下方顯示徽章覺醒：覺醒中亮起並按設定顏色閃爍，冷卻中顯示冷卻剩餘；提示設定與覺醒監控浮窗共用");
+    /// <summary>参数 show 或 hide：DPS 元件内的徽章觉醒显示或隐藏，立即保存。</summary>
+    public ICommand DpsAwakeningCommand { get; }
 
     // 元件实际使用的尺寸（缩放前）：保存的宽高或元件的默认尺寸，不小于最小尺寸。
     private Avalonia.Size? SizeOf(WidgetPlacement placement) =>
@@ -596,15 +607,15 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
         controller.Backend.Changed -= OnChanged;
     }
 
-    private void EditAlert(object? kind, Action<AwakeningAlert> change)
+    // 觉醒监控浮窗与 DPS 元件的卡片都改版面顶层的同一份设置，保存后两处元件与两张卡片随 Changed 一起更新。
+    private void EditAlert(Action<AwakeningAlert> change)
     {
-        if (kind is not (FavoriteEffectTracker.Badge or FavoriteEffectTracker.Class)) return;
-        change(Store.Awakening.Of((string)kind));
+        change(Store.Awakening.Badge);
         Store.Commit();
     }
 
     /// <summary>觉醒提示改用本机声音文件（wav 或 mp3）并打开音效。</summary>
-    public void SetAlertFile(string kind, string path) => EditAlert(kind, alert => { alert.SoundFile = path; alert.Sound = true; });
+    public void SetAlertFile(string path) => EditAlert(alert => { alert.SoundFile = path; alert.Sound = true; });
 
     // ---- 收藏浮窗 ----
 
@@ -641,14 +652,15 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     public string HorizontalLabel => UiText.Pick("横排", "橫排");
     public bool FavoritesHorizontal => Selected?.Horizontal == true;
     public bool FavoritesVertical => !FavoritesHorizontal;
-    /// <summary>所选元件是觉醒监控浮窗：卡片里有横竖排与两项提示设置。</summary>
+    /// <summary>所选元件是觉醒监控浮窗：卡片里有横竖排与“徽章觉醒”的提示设置。</summary>
     public bool HasAwakeningSetting => Selected is { WidgetId: AwakeningBoard.Id };
     /// <summary>收藏浮窗与觉醒监控浮窗都可切换竖排与横排。</summary>
     public bool HasLayoutSetting => HasFavoritesSetting || HasAwakeningSetting;
-    public bool ShowAlerts => HasAwakeningSetting;
+    /// <summary>觉醒提示设置：选中觉醒监控浮窗，或选中打开了觉醒显示的 DPS 元件时显示。</summary>
+    public bool ShowAlerts => HasAwakeningSetting || HasDpsAwakeningSetting && DpsAwakeningShown;
     public string AlertsLabel => UiText.Pick("觉醒提示", "覺醒提示");
-    public string AlertsHint => UiText.Pick("徽章觉醒与职业觉醒按效果编号识别；触发时按这里的设置闪烁，打开音效时播放提示音",
-        "徽章覺醒與職業覺醒按效果編號識別；觸發時按這裡的設定閃爍，打開音效時播放提示音");
+    public string AlertsHint => UiText.Pick("徽章觉醒按效果编号识别；触发时按这里的设置闪烁，打开音效时播放提示音。觉醒监控浮窗与 DPS 元件的觉醒显示共用这组设置",
+        "徽章覺醒按效果編號識別；觸發時按這裡的設定閃爍，打開音效時播放提示音。覺醒監控浮窗與 DPS 元件的覺醒顯示共用這組設定");
     public string FlashLabel => UiText.Pick("闪烁", "閃爍");
     public string FlashSecondsLabel => UiText.Pick("闪烁时长", "閃爍時長");
     public string SoundLabel => UiText.Pick("音效", "音效");
@@ -656,20 +668,22 @@ public sealed class OverlayPageModel : ObservableObject, IDisposable, IPageLifec
     public string PickSoundLabel => UiText.Pick("选择声音文件", "選擇聲音檔案");
     public string BuiltinSoundLabel => UiText.Pick("改用内置提示音", "改用內建提示音");
 
-    /// <summary>“徽章觉醒”“职业觉醒”的提示设置。</summary>
-    public IReadOnlyList<AlertView> Alerts => ShowAlerts
-        ? new[] { FavoriteEffectTracker.Badge, FavoriteEffectTracker.Class }.Select(kind =>
+    /// <summary>“徽章觉醒”的提示设置；不显示提示设置时为空。</summary>
+    public AlertView? Alert
+    {
+        get
         {
-            var alert = Store.Awakening.Of(kind);
-            var title = kind == FavoriteEffectTracker.Badge ? AwakeningBoard.BadgeTitle : AwakeningBoard.ClassTitle;
-            var color = new ColorEntry("alert", kind, UiText.Pick($"{title}闪烁色", $"{title}閃爍色"), alert.Color);
+            if (!ShowAlerts) return null;
+            var alert = Store.Awakening.Badge;
+            var title = AwakeningBoard.BadgeTitle;
+            var color = new ColorEntry("alert", FavoriteEffectTracker.Badge, UiText.Pick($"{title}闪烁色", $"{title}閃爍色"), alert.Color);
             var sound = alert.SoundFile is { } file
                 ? File.Exists(file) ? Path.GetFileName(file) : UiText.Pick("文件不存在，改用内置提示音", "檔案不存在，改用內建提示音")
                 : UiText.Pick("内置提示音", "內建提示音");
-            return new AlertView(kind, title, alert.Flash, color, $"{alert.FlashSeconds:0} 秒", alert.Sound, sound, alert.SoundFile is not null,
+            return new AlertView(title, alert.Flash, color, $"{alert.FlashSeconds:0} 秒", alert.Sound, sound, alert.SoundFile is not null,
                 $"{alert.Volume:P0}");
-        }).ToList()
-        : [];
+        }
+    }
 
     public ICommand FavoriteItemCommand { get; }
     public ICommand FavoriteLayoutCommand { get; }

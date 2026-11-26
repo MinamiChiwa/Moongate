@@ -59,6 +59,7 @@ my-pack/
 | `module.rooms` | 侧栏“合奏”入口 |
 | `module.color` | 侧栏“染色”入口 |
 | `module.inventory` | 侧栏“背包”入口 |
+| `module.life` | 侧栏“生活”入口 |
 | `module.presentation` | 侧栏“浮窗版面”入口 |
 | `module.music-library` | 侧栏“乐谱库”入口 |
 | `module.shell.modules` | 侧栏“模块与扩展”入口 |

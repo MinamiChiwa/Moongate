@@ -25,7 +25,10 @@ public sealed partial class LiveBackend
         IReadOnlyList<CapabilitySnapshot>? Capabilities = null, string? Nickname = null, UpdatePolicySnapshot? Policy = null,
         ObservedGameIdentity? Identity = null, IReadOnlyList<PresentationSourceStatus>? Sources = null,
         IReadOnlyList<InventoryAccountView>? InventoryAccounts = null, InventoryPivotCache? Pivot = null,
-        InventoryResourcesView? InventoryResources = null);
+        InventoryResourcesView? InventoryResources = null, GameMusicLibrarySync? MusicSync = null,
+        IReadOnlyList<MusicFolder>? Folders = null, UInt64String? ListsRevision = null, string? OwnedScopeKey = null,
+        MusicOwnedSync? OwnedSync = null, IReadOnlyDictionary<string, string>? ScoreTitles = null, int ScoreCount = 0,
+        IReadOnlyList<string>? OwnedInstruments = null, string? OwnedInstrumentsNote = null);
 
     /// <summary>所选账号的透视表；账号修订与名称目录修订都不变时沿用同一份行对象，表格不必重排。名称目录变化（自动提取完成）时重读，名称随之更新。</summary>
     private sealed record InventoryPivotCache(string AccountId, string Revision, string CatalogRevision, IReadOnlyList<InventoryCharacter> Characters,
@@ -37,11 +40,19 @@ public sealed partial class LiveBackend
     private string? inventoryAccount;
     private long pagesReadAt;
     private bool pagesDue = true;
+    // 页面状态（能力表、模块等）需要提前重读，但不涉及背包快照：游戏连接器状态变化时置位。pagesDue 还代表用户操作，会连带重读背包快照。
+    private bool pageStateDue;
+    // 乐谱库的游戏乐谱同步：打开乐谱页、点“重新同步”、连接器状态变化与每分钟各同步一次；旧宿主没有该接口（404）时不再尝试。
+    private static readonly TimeSpan MusicSyncInterval = TimeSpan.FromSeconds(60);
+    private bool musicSyncForced, musicShown, musicSyncUnsupported;
+    private long musicSyncAt;
+    private string? musicSyncStamp;
     // 背包快照（含全部条目）只在后端发出背包事件、用户操作或重新连接后重读；五秒例行刷新沿用上次结果。
     private bool inventoryDue = true;
 
     public Task SendIntentAsync(string intent, string? argument, CancellationToken cancellationToken)
     {
+        if (intent == "character.refresh") { RequestCharacterRefresh(); return Task.CompletedTask; }
         if (intent.StartsWith("rooms.", StringComparison.Ordinal)) return SendRoomIntentAsync(intent, argument, cancellationToken);
         if (intent.StartsWith("combat.", StringComparison.Ordinal)) return SendCombatPageIntentAsync(intent, argument, cancellationToken);
         switch (intent)
@@ -69,7 +80,7 @@ public sealed partial class LiveBackend
             switch (intent)
             {
                 case "music.resync":
-                    lock (gate) pagesDue = true;
+                    lock (gate) { pagesDue = true; musicSyncForced = true; }
                     return null;
                 case "update.check":
                     await api.CreateUpdateCheckAsync(new(), key, token);
@@ -87,7 +98,7 @@ public sealed partial class LiveBackend
     public MusicPageData GetMusic()
     {
         var (current, page, search, playlist) = ReadPages();
-        return musicMemo.Get([current.Connected, current.Binding?.Binding is null, page, search, playlist, durations.KnownCount, Localization.UiText.Language],
+        return musicMemo.Get([current.Connected, current.Binding?.Binding is null, page, search, playlist, durations.KnownCount, Localization.UiText.Language, SupportVersion],
             MapMusic);
     }
 
@@ -98,48 +109,50 @@ public sealed partial class LiveBackend
         var artists = page.Library?.NameSettings.Artists.ToDictionary(artist => artist.Id, artist => artist.Name) ?? [];
         var selected = page.Playlists.FirstOrDefault(item => item.Id == playlist);
         var allowed = selected?.Items.Select(item => item.ScoreId).ToHashSet();
+        var folderPaths = FolderPaths(page.Folders ?? []);
         var canQueue = current.Connected && current.Binding?.Binding is not null;
+        // 同一候选组里有两条以上条目才算同名乐谱（每条条目都带候选组标识，有标识不等于重名）。
+        var duplicated = page.Scores.Where(score => score.DuplicateGroup is not null).GroupBy(score => score.DuplicateGroup!)
+            .Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet(StringComparer.Ordinal);
         var playing = page.Session is { Phase: PerformancePhase.Performing or PerformancePhase.Executing } ? page.Session.CurrentScoreId : null;
-        // 指定乐器来自所选清单的条目，条目没有写时取清单的默认乐器；“全部乐谱”不属于任何清单，显示未指定。
-        var assigned = selected?.Items.GroupBy(item => item.ScoreId)
-            .ToDictionary(group => group.Key, group => group.First().InstrumentId ?? selected.DefaultInstrumentId);
         string Length(string scoreId) =>
             durations.TryGet(scoreId, out var ms) && ms is { } known ? $"{(int)(known / 60000)}:{(int)(known / 1000) % 60:00}" : unknown;
         var scores = page.Scores.Where(score => allowed is null || allowed.Contains(score.Id)).Select(score =>
         {
-            var instrumentId = assigned?.GetValueOrDefault(score.Id);
-            var available = score.Availability == "available";
-            var tag = score.Id == playing
-                ? Pick("演奏中", "演奏中")
-                : !available
-                    ? Pick($"游戏无法选取：{score.Availability}", $"遊戲無法選取：{score.Availability}")
-                    : score.DuplicateGroup is null ? string.Empty : Pick("有同名乐谱", "有同名樂譜");
+            var (available, tag, blocked) = ScoreAvailabilityView(score.Availability, score.Id == playing,
+                score.DuplicateGroup is { } group && duplicated.Contains(group), canQueue);
             return new ScoreRow(score.Id, score.RawTitle, tag,
                 score.ArtistId is { } artist && artists.TryGetValue(artist, out var name) ? name : Pick("未识别", "未辨識"),
-                InstrumentName(page, instrumentId), Length(score.Id), score.Id == playing, canQueue && available, instrumentId);
+                Length(score.Id), score.Id == playing, canQueue && available,
+                GameScoreSupportOf(score.Id).State, blocked, ScoreSourceLabel(score), ScoreSourceKey(score));
         }).ToList();
 
-        var titles = page.Scores.ToDictionary(score => score.Id, score => score.RawTitle);
+        // 队列与清单条目的标题取全部乐谱的标题表，不受搜索词影响。队列每项的乐器写在条目上，没有时演奏前不换乐器（游戏当前乐器）；
+        // 演奏进行中（准备、待命、执行、演奏阶段）各项乐器都不能改：后端在执行与演奏阶段拒绝队列编辑，其余阶段的编辑会把队列重置到开头。
+        var titles = page.ScoreTitles ?? page.Scores.ToDictionary(score => score.Id, score => score.RawTitle);
+        var starting = page.Session is { Phase: PerformancePhase.Preparing or PerformancePhase.Armed or PerformancePhase.Executing or PerformancePhase.Performing };
         var queue = page.Session is not { } session ? [] : session.Order.Select((sourceIndex, position) =>
         {
             var item = session.Items[sourceIndex].Item;
+            var current = position == session.CurrentPosition;
             return new QueueRow(item.Id, (position + 1).ToString(CultureInfo.InvariantCulture),
-                titles.GetValueOrDefault(item.ScoreId, item.ScoreId), InstrumentName(page, item.InstrumentId), Length(item.ScoreId),
-                position == session.CurrentPosition);
+                titles.GetValueOrDefault(item.ScoreId, item.ScoreId),
+                item.InstrumentId is null ? Pick("游戏当前乐器", "遊戲目前樂器") : InstrumentName(page, item.InstrumentId), Length(item.ScoreId),
+                current, GameScoreSupportOf(item.ScoreId).State, item.InstrumentId, starting);
         }).ToList();
 
         var status = !current.Connected
             ? Pick("未连接后端", "未連接後端")
             : page.Library is not { } library
                 ? Pick("后端没有提供乐谱库", "後端沒有提供樂譜庫")
-                : library.Sources.Count == 0
-                    ? Pick($"{library.ItemCount} 张乐谱，尚未从游戏同步", $"{library.ItemCount} 張樂譜，尚未從遊戲同步")
-                    : Pick($"{library.ItemCount} 张乐谱，", $"{library.ItemCount} 張樂譜，") + SourceStatus(library.Sources[0].RefreshStatus);
+                : MusicSourceLine(page, library);
+        var ordered = OrderedPlaylists(page.Folders ?? [], page.Playlists);
         return new(status, search,
             [
-                new("all", Pick("全部乐谱", "全部樂譜"), Pick($"{page.Scores.Count} 张", $"{page.Scores.Count} 張"), "#161A26", selected is null),
-                .. page.Playlists.Select((item, index) => new PlaylistChip(item.Id, item.Name,
-                    Pick($"{item.Items.Count} 首", $"{item.Items.Count} 首"), index % 2 == 0 ? "#E7A23A" : "#7C96FF", item.Id == selected?.Id))
+                new("all", Pick("全部乐谱", "全部樂譜"), Pick($"{page.ScoreCount} 张", $"{page.ScoreCount} 張"), "#161A26", selected is null),
+                .. ordered.Select((item, index) => new PlaylistChip(item.Id, item.Name,
+                    Pick($"{item.Items.Count} 首", $"{item.Items.Count} 首") + (item.FolderId is { } folder && folderPaths.TryGetValue(folder, out var path) ? " · " + path : string.Empty),
+                    index % 2 == 0 ? "#E7A23A" : "#7C96FF", item.Id == selected?.Id))
             ],
             scores,
             page.Session is { } active
@@ -153,14 +166,72 @@ public sealed partial class LiveBackend
             ],
             new(current.Connected, canQueue, page.Session is { Phase: PerformancePhase.Idle, Items.Count: > 0 },
                 page.Session is { } running && ActivePhases.Contains(running.Phase) && running.Items.Count > 1,
-                page.Session is { } stoppable && ActivePhases.Contains(stoppable.Phase)));
+                page.Session is { } stoppable && ActivePhases.Contains(stoppable.Phase)),
+            page.Session?.LastError, MapLists(page, titles, folderPaths, ordered, selected, current.Connected));
+    }
+
+    /// <summary>文件夹到“甲 / 乙”路径的映射（沿父级逐层拼接，循环或缺失的父级在该处截断）。</summary>
+    internal static IReadOnlyDictionary<string, string> FolderPaths(IReadOnlyList<MusicFolder> folders)
+    {
+        var byId = folders.ToDictionary(folder => folder.Id, StringComparer.Ordinal);
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var folder in folders)
+        {
+            var names = new List<string>(); var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (var current = folder; current is not null && seen.Add(current.Id); current = current.ParentId is { } parent && byId.TryGetValue(parent, out var up) ? up : null)
+                names.Insert(0, current.Name);
+            result[folder.Id] = string.Join(" / ", names);
+        }
+        return result;
+    }
+
+    /// <summary>清单栏的次序：根目录的清单在前，随后按文件夹层级（深度优先）逐个文件夹的清单；同级按排序键。</summary>
+    internal static IReadOnlyList<MusicPlaylist> OrderedPlaylists(IReadOnlyList<MusicFolder> folders, IReadOnlyList<MusicPlaylist> playlists)
+    {
+        var result = new List<MusicPlaylist>();
+        var known = folders.Select(folder => folder.Id).ToHashSet(StringComparer.Ordinal);
+        void Add(string? parent)
+        {
+            result.AddRange(playlists.Where(item => item.FolderId == parent).OrderBy(item => item.SortKey, StringComparer.Ordinal).ThenBy(item => item.Id, StringComparer.Ordinal));
+            foreach (var folder in folders.Where(item => item.ParentId == parent).OrderBy(item => item.SortKey, StringComparer.Ordinal).ThenBy(item => item.Id, StringComparer.Ordinal))
+                Add(folder.Id);
+        }
+        Add(null);
+        // 所在文件夹已读不到的清单仍显示在最后，不丢失。
+        result.AddRange(playlists.Where(item => item.FolderId is { } folder && !known.Contains(folder)));
+        return result;
+    }
+
+    private MusicListsView MapLists(PageState page, IReadOnlyDictionary<string, string> titles, IReadOnlyDictionary<string, string> folderPaths,
+        IReadOnlyList<MusicPlaylist> ordered, MusicPlaylist? selected, bool connected)
+    {
+        PlaylistDetail Detail(MusicPlaylist item) => new(item.Id, item.Name, item.Notes, item.FolderId,
+            item.FolderId is { } folder && folderPaths.TryGetValue(folder, out var path) ? path : string.Empty, item.DefaultInstrumentId,
+            item.DefaultInstrumentId is null ? Pick("未指定", "未指定") : InstrumentName(page, item.DefaultInstrumentId),
+            [.. item.Items.OrderBy(entry => entry.SortKey, StringComparer.Ordinal).ThenBy(entry => entry.Id, StringComparer.Ordinal).Select(entry => new PlaylistItemRow(
+                entry.Id, entry.ScoreId, titles.GetValueOrDefault(entry.ScoreId, entry.ScoreId), entry.InstrumentId,
+                entry.InstrumentId is null ? Pick("沿用清单", "沿用清單") : InstrumentName(page, entry.InstrumentId), !titles.ContainsKey(entry.ScoreId)))]);
+        var folders = new List<FolderRow>();
+        void Walk(string? parent, int depth)
+        {
+            foreach (var folder in (page.Folders ?? []).Where(item => item.ParentId == parent).OrderBy(item => item.SortKey, StringComparer.Ordinal).ThenBy(item => item.Id, StringComparer.Ordinal))
+            {
+                folders.Add(new(folder.Id, folder.Name, folderPaths.GetValueOrDefault(folder.Id, folder.Name), depth));
+                if (depth < 32) Walk(folder.Id, depth + 1);
+            }
+        }
+        Walk(null, 0);
+        var blocked = !connected ? Pick("未连接后端", "未連接後端") : page.Library is null ? Pick("后端没有提供乐谱库", "後端沒有提供樂譜庫") : null;
+        // 乐器选项是当前角色背包里实际拥有的乐器（游戏原文名）；读不到背包时没有选项并写明原因。
+        return new(folders, [.. ordered.Select(Detail)], selected is null ? null : Detail(selected),
+            InstrumentChoices(page.OwnedInstruments), blocked, page.OwnedInstruments is { Count: > 0 } ? null : page.OwnedInstrumentsNote);
     }
 
     public InventoryPageData GetInventory()
     {
         var (current, page, _, _) = ReadPages();
         object?[] key;
-        lock (gate) key = [current.Connected, page, captureRuntime, captureSnapshot, Localization.UiText.Language];
+        lock (gate) key = [current.Connected, page, captureRuntime, captureSnapshot, gameData?.Currencies, Localization.UiText.Language];
         return inventoryMemo.Get(key, MapInventory);
     }
 
@@ -176,19 +247,22 @@ public sealed partial class LiveBackend
             _ => Localization.CodeText.Unknown("container", container.RawValue, "未知位置", "未知位置")
         };
         var status = InventorySyncText.Status(current.Connected, GetCaptureStatus(), workspace);
+        GameCurrenciesData? currencies;
+        lock (gate) currencies = gameData?.Currencies;
         var pivot = page.Pivot;
         var accounts = page.InventoryAccounts ?? [];
         return new(status,
-            // 概况的角色与金币、银币、魔族貢品由页面模型按资源区所选角色取自 Resources；这里只给道具种数，未读取时写明，行数固定。
-            [new(Pick("道具", "道具"), pivot is null ? Pick("未读取", "未讀取") : Pick($"{pivot.Rows.Count} 种", $"{pivot.Rows.Count} 種"))],
+            // 背包页不设概况卡；货币在资源卡，主货币由页面模型按所选角色取自 Resources。
             accounts.Select(account => new InventoryAccountOption(account.AccountId, InventoryAccountText.Label(account.AccountId, account.Label))).ToList(),
             pivot?.AccountId, pivot?.Characters ?? [], pivot?.Rows ?? [],
             workspace?.Coverage.Select(coverage => new CoverageRow($"{Container(coverage.Container)}：{InventoryCategoryNames.Display(coverage.Category)}",
                 coverage.Complete ? Pick("完整", "完整") : Pick("不完整：", "不完整：") + Localization.CodeText.Reason(coverage.Reason),
                 coverage.Complete)).ToList() ?? [],
             CatalogRows(page),
-            InventoryResourceText.Rows(page.InventoryResources,
+            // 命令行货币（背包页可见时读取的货币主题）按名称并入当前登录角色与它所在账户的资源，读不到时全部取抓包。
+            InventoryResourceText.Merge(InventoryResourceText.Rows(page.InventoryResources,
                 pivot?.Characters.DistinctBy(character => character.Id).ToDictionary(character => character.Id, character => character.Name)),
+                currencies, page.InventoryResources?.CharacterId),
             page.InventoryResources?.CharacterId);
     }
 
@@ -275,7 +349,9 @@ public sealed partial class LiveBackend
             current.Connected && page.Policy?.Policy is { } policy
                 ? new UpdatePolicyView(policy.AutomaticChecks, policy.CheckIntervalHours, policy.DownloadConcurrency, policy.MaximumBytesPerSecond)
                 : null,
-            current.Connected ? page.Update?.Available?.ReleaseId : null, current.Connected);
+            current.Connected ? page.Update?.Available?.ReleaseId : null, current.Connected,
+            current.Connected && page.Update?.Available is { } offer
+                ? new UpdateOfferView(offer.ReleaseId, offer.DownloadKind, offer.DownloadBytes?.Value) : null);
     }
 
     // 更新卡片固定六行，状态变化只改文字：当前版本、状态、可用更新、下载进度、上次检查、上次安装。
@@ -409,6 +485,67 @@ public sealed partial class LiveBackend
     };
 
     // 乐谱来源的同步状态（ScoreRefreshStatus）。
+    /// <summary>
+    /// 乐谱库状态行的来源部分。游戏乐谱来源（能力 <c>music.inventory</c>）不可用时写明原因与去处：没有任何来源时说明没有乐谱的原因，
+    /// 已有来源时说明列表是上次同步的结果；可用时按同步结果写正在同步、已同步或同步失败。本机已有的乐谱、清单与队列不受影响。
+    /// </summary>
+    /// <summary>状态行说明的游戏列表来源；曲库里没有时为空。</summary>
+    private static MusicScoreSource? GameListSource(MusicLibraryInfo? library) =>
+        library?.Sources.FirstOrDefault(item => IsKind(item, "GameList"));
+
+    private string MusicSourceLine(PageState page, MusicLibraryInfo library) => MusicSourceLine(page.ScoreCount,
+        CapabilityNotice.Describe(page.Capabilities?.FirstOrDefault(item => item.Id == CapabilityIds.MusicInventory)),
+        GameListSource(library)?.RefreshStatus, page.MusicSync, page.OwnedSync);
+
+    /// <summary>
+    /// 在游戏列表部分之后补充抓包来源：背包里有被跳过的游戏提供的乐谱而曲库还没有游戏列表来源时，说明它们要经游戏连接器同步后显示；
+    /// 抓包同步不可用或失败时写明原因（来源保持上次内容）。
+    /// </summary>
+    internal static string MusicSourceLine(int itemCount, string? notice, string? sourceStatus, GameMusicLibrarySync? sync, MusicOwnedSync? owned)
+    {
+        var line = MusicSourceLine(itemCount, notice, sourceStatus, sync);
+        if (owned is null) return line;
+        if (owned.Status.KnownValue != MusicOwnedSyncStatus.Synced)
+            return line + Pick("；背包乐谱来源暂不可用：", "；背包樂譜來源暫不可用：") + Localization.CodeText.Reason(owned.Reason ?? "inventory.sourceUnavailable");
+        return owned.GameProvidedSkipped > 0 && sourceStatus is null
+            ? line + Pick($"；背包里另有 {owned.GameProvidedSkipped} 张游戏提供的乐谱，经游戏连接器同步后显示",
+                $"；背包裡另有 {owned.GameProvidedSkipped} 張遊戲提供的樂譜，經遊戲連接器同步後顯示")
+            : line;
+    }
+
+    internal static string MusicSourceLine(int itemCount, string? notice, string? sourceStatus, GameMusicLibrarySync? sync)
+    {
+        var count = Pick($"{itemCount} 张乐谱", $"{itemCount} 張樂譜");
+        if (sourceStatus is null)
+        {
+            if (notice is not null) return count + Pick("，游戏乐谱来源", "，遊戲樂譜來源") + notice;
+            return sync is { Status.KnownValue: GameMusicSyncStatus.Failed or GameMusicSyncStatus.Unavailable } failed
+                ? count + Pick("，同步失败：", "，同步失敗：") + Localization.CodeText.Reason(failed.Reason ?? "gameCli.failed")
+                : count + Pick("，正在从游戏同步", "，正在從遊戲同步");
+        }
+        var line = count + Pick("，", "，") + SourceStatus(sourceStatus);
+        if (notice is not null) return line + Pick("；游戏乐谱来源", "；遊戲樂譜來源") + notice;
+        return sync is { Status.KnownValue: GameMusicSyncStatus.Failed } problem
+            ? line + Pick("；本次同步失败：", "；本次同步失敗：") + Localization.CodeText.Reason(problem.Reason ?? "gameCli.failed")
+            : line;
+    }
+
+    /// <summary>
+    /// 乐谱的可选状态与标签。后端的可用性：present（在背包或游戏列表里）、observed、imported、uncertain（同名无法区分副本，按标题演奏不受影响）可选，
+    /// missing 是游戏里已经没有；可选但游戏窗口没有绑定时仍不能加入队列，悬浮提示写明原因。
+    /// </summary>
+    internal static (bool Available, string Tag, string? Blocked) ScoreAvailabilityView(string availability, bool playing, bool duplicated, bool canQueue)
+    {
+        var available = availability is "present" or "observed" or "imported" or "uncertain";
+        var tag = playing ? Pick("演奏中", "演奏中")
+            : availability == "missing" ? Pick("游戏里已没有", "遊戲裡已沒有")
+            : !available ? Pick($"游戏无法选取：{availability}", $"遊戲無法選取：{availability}")
+            : duplicated ? Pick("有同名乐谱", "有同名樂譜") : string.Empty;
+        var blocked = !available ? Pick("这首乐谱已不在游戏里，不能加入队列", "這首樂譜已不在遊戲裡，不能加入佇列")
+            : !canQueue ? Pick("需要先启动并绑定游戏才能加入队列", "需要先啟動並綁定遊戲才能加入佇列") : null;
+        return (available, tag, blocked);
+    }
+
     private static string SourceStatus(string status) => status switch
     {
         "complete" => Pick("已同步", "已同步"),
@@ -428,9 +565,19 @@ public sealed partial class LiveBackend
     // 后端状态码换成界面文字，统一经共用映射；没有收录的写成中文概括并括注原文。
     private static string Code(string raw) => Localization.CodeText.State(raw);
 
+    /// <summary>游戏乐器标识的前缀（与后端 <c>MusicLibraryEditor.GameInstrumentPrefix</c> 相同）：<c>game:</c> 加游戏乐器原文名。</summary>
+    internal const string GameInstrumentPrefix = "game:";
+
+    /// <summary>背包乐器名换成乐器选项：标识为 <c>game:</c> 加名称，同名只列一次，按名称排序。</summary>
+    internal static IReadOnlyList<InstrumentChoice> InstrumentChoices(IReadOnlyList<string>? owned) =>
+        [.. (owned ?? []).Where(name => !string.IsNullOrWhiteSpace(name)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+            .Select(name => new InstrumentChoice(GameInstrumentPrefix + name, name))];
+
     private static string InstrumentName(PageState page, string? instrumentId)
     {
         if (instrumentId is null) return Pick("未指定", "未指定");
+        if (instrumentId.StartsWith(GameInstrumentPrefix, StringComparison.Ordinal) && instrumentId.Length > GameInstrumentPrefix.Length)
+            return instrumentId[GameInstrumentPrefix.Length..];
         var definition = page.Instruments.FirstOrDefault(item => item.Id == instrumentId);
         // 乐器名称取游戏地区的原文，目录里没有时显示标识。
         return definition?.DisplayNames.GetValueOrDefault("zh-TW") ?? definition?.DisplayNames.Values.FirstOrDefault()
@@ -449,13 +596,13 @@ public sealed partial class LiveBackend
     private byte[]? pagesContent;
 
     // 调用方持有 gate。没有任何可见界面时不读页面状态；背包只在背包页或背包表格窗口可见时读取。
-    private bool PagesDue(long now) => AnySurface && (pagesDue || inventoryDue && Showing("inventory")
+    private bool PagesDue(long now) => AnySurface && (pagesDue || pageStateDue || inventoryDue && Showing("inventory")
         || now - pagesReadAt >= Span(TimeSpan.FromSeconds(5)));
 
     private async Task RefreshPagesAsync(MabiToolClient api, CancellationToken token)
     {
         string search;
-        bool readInventory, readMusic, readColor, readSettings;
+        bool readInventory, readMusic, readColor, readSettings, syncMusic, syncOwned;
         InventorySnapshot? previousInventory;
         PageState previous;
         lock (gate)
@@ -464,27 +611,50 @@ public sealed partial class LiveBackend
             // 各页专用的读取只在对应页面（或用到它的浮窗元件、迷你窗）显示时进行；不显示时沿用上次结果。
             previous = pages;
             readMusic = Showing("music");
+            // 进入乐谱页与点“重新同步”立即同步；连接器状态变化（启用、换游戏会话）后与每分钟再同步；连接器不可用时不调用。
+            var enteredMusic = readMusic && !musicShown;
+            musicShown = readMusic;
+            syncMusic = readMusic && !musicSyncUnsupported && connector is { State: ConnectorState.Connected, Read: ConnectorRead.Loaded }
+                && (musicSyncForced || enteredMusic || musicSyncAt == 0 || musicSyncStamp != connectorStamp || Now - musicSyncAt >= Span(MusicSyncInterval));
+            // 抓包来源不需要连接器：打开乐谱页、点“重新同步”与每分钟各同步一次。
+            syncOwned = readMusic && !ownedSyncUnsupported && (musicSyncForced || enteredMusic || ownedSyncAt == 0 || Now - ownedSyncAt >= Span(OwnedSyncInterval));
+            if (readMusic) musicSyncForced = false;
             readColor = Showing("color");
             readSettings = Showing("settings");
             readInventory = Showing("inventory") && (pagesDue || inventoryDue || inventoryFailed || pages.Inventory is null);
-            pagesDue = false;
+            pagesDue = pageStateDue = false;
             if (readInventory) { inventoryDue = false; inventoryFailed = false; }
             search = musicSearch;
             previousInventory = pages.Inventory;
             pagesReadAt = Now;
         }
 
+        var musicSync = syncMusic ? await SyncGameMusicLibraryAsync(api, token) ?? previous.MusicSync : previous.MusicSync;
+        var ownedSync = syncOwned ? await SyncOwnedMusicScoresAsync(api, token) ?? previous.OwnedSync : previous.OwnedSync;
+        var ownedScopeKey = ownedSync?.ScopeKey ?? previous.OwnedScopeKey;
         var library = readMusic ? await Try(() => api.GetMusicLibraryAsync(token)) : previous.Library;
-        var playlists = readMusic
-            ? (await Try(() => api.QueryMusicLibraryAsync(new(MusicCollection.Playlists, null, null, null, string.Empty, 200, null), token)))?.Playlists ?? []
-            : previous.Playlists;
-        var scope = library?.Sources.FirstOrDefault()?.ScopeKey;
-        var scores = !readMusic ? previous.Scores : scope is null ? []
-            : (await Try(() => api.QueryMusicLibraryAsync(new(MusicCollection.Scores, null, null, scope, search, 200, null), token)))?.Scores ?? [];
+        // 清单（含全部文件夹层级与条目）按曲库修订缓存：修订变化才重读；读取失败沿用上次结果。
+        var folders = previous.Folders; var playlists = previous.Playlists; var listsRevision = previous.ListsRevision;
+        if (readMusic && library is not null && (previous.Folders is null || previous.ListsRevision != library.Revision)
+            && await ReadMusicListsAsync(api, library.Revision, token) is { } lists)
+        {
+            (folders, playlists) = lists;
+            listsRevision = library.Revision;
+        }
+        // 乐谱表合并各来源（来源修订不变沿用缓存，有搜索词时另读命中）；读取失败沿用上次结果。
+        var scores = previous.Scores; var titles = previous.ScoreTitles; var scoreCount = previous.ScoreCount;
+        if (readMusic)
+        {
+            if (library is null) { scores = []; titles = null; scoreCount = 0; }
+            else if (await ReadMusicScoresAsync(api, library, ownedScopeKey, search, token) is { } read) (scores, titles, scoreCount) = read;
+        }
         SystemInfo? system;
         lock (gate) system = systemInfo;
         system ??= await Try(() => api.GetSystemInfoAsync(token));
         lock (gate) systemInfo = system;
+        // 乐器选项：当前角色背包里的乐器（抓包）；读取失败沿用上次结果。
+        var (ownedInstruments, ownedInstrumentsNote) = readMusic ? await ReadOwnedInstrumentsAsync(api, token) ?? (previous.OwnedInstruments, previous.OwnedInstrumentsNote)
+            : (previous.OwnedInstruments, previous.OwnedInstrumentsNote);
         var next = new PageState(library, playlists, scores,
             readMusic ? (await Try(() => api.GetMusicInstrumentsAsync(token)))?.Items ?? [] : previous.Instruments,
             readMusic ? (await Try(() => api.ListPerformanceSessionsAsync(token)))?.Items.FirstOrDefault(IsLive) : previous.Session,
@@ -496,7 +666,9 @@ public sealed partial class LiveBackend
             readSettings ? await Try(() => api.GetShortcutSettingsAsync(token)) : previous.ShortcutSettings,
             WithCombatCapabilities((await Try(() => api.GetCapabilitiesAsync(token)))?.Items,
                 await Try(() => api.GetCombatCapabilitiesAsync(token))),
-            null, await Try(() => api.GetUpdatePolicyAsync(token)));
+            null, await Try(() => api.GetUpdatePolicyAsync(token)), MusicSync: musicSync,
+            Folders: folders, ListsRevision: listsRevision, OwnedScopeKey: ownedScopeKey, OwnedSync: ownedSync, ScoreTitles: titles, ScoreCount: scoreCount,
+            OwnedInstruments: ownedInstruments, OwnedInstrumentsNote: ownedInstrumentsNote);
         if (readInventory)
         {
             next = await ReadInventoryPivotAsync(api, next, token);
@@ -547,7 +719,8 @@ public sealed partial class LiveBackend
     {
         try
         {
-            return JsonSerializer.SerializeToUtf8Bytes(value with { Inventory = null, Pivot = null }, ContractJson.Options);
+            // 乐谱标题表由各来源的乐谱与修订得出，不重复序列化。
+            return JsonSerializer.SerializeToUtf8Bytes(value with { Inventory = null, Pivot = null, ScoreTitles = null }, ContractJson.Options);
         }
         catch (Exception error) when (error is JsonException or NotSupportedException) { return Guid.NewGuid().ToByteArray(); }
     }
@@ -583,6 +756,45 @@ public sealed partial class LiveBackend
         if (items is null) return next with { InventoryAccounts = accounts, Pivot = previous.Pivot?.AccountId == selected.AccountId ? previous.Pivot : null };
         var (characters, rows) = InventoryPivotBuilder.Build(items);
         return next with { InventoryAccounts = accounts, Pivot = new(selected.AccountId, selected.Revision.ToString(), catalog, characters, rows) };
+    }
+
+    /// <summary>
+    /// 当前角色背包里的乐器名（游戏原文，逐页读完，只取当前背包里数量大于 0 的）；背包不是当前或读不到身份时名单为空并写明原因。
+    /// 接口被拒绝时为空（沿用上次结果）。
+    /// </summary>
+    private async Task<(IReadOnlyList<string>? Names, string? Note)?> ReadOwnedInstrumentsAsync(MabiToolClient api, CancellationToken token)
+    {
+        var names = new List<string>();
+        string? cursor = null;
+        for (var pageIndex = 0; pageIndex < 20; pageIndex++)
+        {
+            var page = await Try(() => api.QueryOwnedMusicInstrumentsAsync(new(null, 100, cursor, true), token));
+            if (page is null) return null;
+            if (!page.Current)
+                return ([], Pick("背包没有同步，读不到已有的乐器", "背包沒有同步，讀不到已有的樂器")
+                    + (page.Reasons.FirstOrDefault() is { } reason ? "（" + Localization.CodeText.Reason(reason) + "）" : string.Empty));
+            names.AddRange(page.Items.Select(item => item.Name.DisplayName ?? item.Name.RawName).Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name!));
+            cursor = page.NextCursor;
+            if (cursor is not { Length: > 0 }) break;
+        }
+        return (names, names.Count == 0 ? Pick("背包里没有乐器", "背包裡沒有樂器") : null);
+    }
+
+    /// <summary>把游戏提供的乐谱列表同步进乐谱库；被拒绝（模块未启用等）时按间隔再试，旧宿主没有该接口时不再尝试。</summary>
+    private async Task<GameMusicLibrarySync?> SyncGameMusicLibraryAsync(MabiToolClient api, CancellationToken token)
+    {
+        string? stamp;
+        lock (gate) stamp = connectorStamp;
+        GameMusicLibrarySync? result = null;
+        var unsupported = false;
+        try { result = await api.SyncGameMusicLibraryAsync(token); }
+        catch (MabiToolApiException error) { unsupported = error.Status == 404; }
+        lock (gate)
+        {
+            if (unsupported) musicSyncUnsupported = true;
+            else { musicSyncAt = Now; musicSyncStamp = stamp; }
+        }
+        return result;
     }
 
     // 单个接口被拒绝（例如模块未启用或权限不足）不影响其他页面；连接类错误交给外层重连。

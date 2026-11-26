@@ -1,3 +1,4 @@
+using Avalonia;
 using MabiTool.Desktop.Pages.Dyeing;
 
 namespace MabiTool.Desktop.Backend;
@@ -24,8 +25,8 @@ public partial interface IDesktopBackend
     /// </summary>
     Task<ColorAtlasReply> GetColorAtlasAsync(string targetHex, string matchMode, double tolerance, bool full, CancellationToken cancellationToken);
 
-    /// <summary>请后端冻结整个虚拟桌面（物理像素），读回 RGB24 画面供吸管取色。</summary>
-    Task<CaptureReply> CaptureScreenAsync(CancellationToken cancellationToken);
+    /// <summary>请后端冻结一块显示器的物理像素区域 <paramref name="region"/>（可为负原点），读回 RGB24 画面供吸管取色。</summary>
+    Task<CaptureReply> CaptureScreenAsync(PixelRect region, CancellationToken cancellationToken);
 
     /// <summary>释放冻结画面。</summary>
     Task ReleaseCaptureAsync(string captureId, CancellationToken cancellationToken);

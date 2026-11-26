@@ -1,0 +1,1484 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop-game-icons",
+  "vendor": "Nexon / devCAT",
+  "copyright": "author 为 Nexon / devCAT 的图标取自台服 Mabinogi Mobile 客户端，版权归 Nexon / devCAT 所有，不适用 Moongate 的 MIT 许可；Moongate 是非商业的爱好者项目，与 NEXON、devCAT 无关。author 为“自绘”的图标由 Moongate 按客户端图标风格绘制，随项目以 MIT 许可发布。",
+  "source": "由 scripts/maintenance/GameIconExtractor 从本机台服客户端（只读）按固定清单提取；属性图标的路径与着色取客户端 ParameterInfo 表，生活技能与货币的路径和名称取 LivingSkill、MoneyInfo 表；边长大于 64 的图标按面积平均缩到 64×64，其余按解码结果原样编码为 PNG。",
+  "distribution": "随 Moongate 仓库（frontends/desktop/src/MabiTool.Desktop/Assets/GameIcons/）与发行包（桌面前端程序集内嵌资源）分发。",
+  "clientId": "ee4671a65b5fb632844231e517cc553d6680fda009963866bef996b8a90ac8b5",
+  "files": [
+    {
+      "path": "attribute/critical.png",
+      "key": "critical",
+      "group": "attribute",
+      "role": "暴击",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 786,
+      "sha256": "d904657b9cbdac30d7c826572d12d48da120471339984d56410a83b2f0042cd8",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_SubStat_Critical.png",
+      "author": "Nexon / devCAT",
+      "tint": "#6CF08F",
+      "displayName": "暴擊"
+    },
+    {
+      "path": "attribute/powerfulHit.png",
+      "key": "powerfulHit",
+      "group": "attribute",
+      "role": "强击",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 560,
+      "sha256": "ffd607120c01a3246d8a9959b94f521b53e5649133e323f6cb05c0b34f2c5c99",
+      "origin": "UI/Sprites/Common/Icon64/ICON64_Smite_UP.png",
+      "author": "Nexon / devCAT",
+      "tint": "#FF5D42",
+      "displayName": null
+    },
+    {
+      "path": "attribute/rapidHit.png",
+      "key": "rapidHit",
+      "group": "attribute",
+      "role": "连击",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 853,
+      "sha256": "f85db3e9339e2ba0744de423afa3841545b2dd2673e7897961923d1e680582c5",
+      "origin": "UI/Sprites/Common/Icon64/ICON64_Blow_After_Blow_UP.png",
+      "author": "Nexon / devCAT",
+      "tint": "#FFB64F",
+      "displayName": null
+    },
+    {
+      "path": "attribute/doubleHit.png",
+      "key": "doubleHit",
+      "group": "attribute",
+      "role": "追击",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 1046,
+      "sha256": "66116e05ef75531f34978e01832f75dbaabc7e9764d37f89cea031d7ada0385a",
+      "origin": "UI/Sprites/Common/Icon64/ICON64_An_Additional_Hit.png",
+      "author": "Nexon / devCAT",
+      "tint": "#6CF09F",
+      "displayName": "追擊"
+    },
+    {
+      "path": "attribute/breakedHit.png",
+      "key": "breakedHit",
+      "group": "attribute",
+      "role": "无防备",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 612,
+      "sha256": "5ab8a10fcd9206f6590f914f7101d5d91e88f91d762201e1aee440adcf99b5c3",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Stat_Brake.png",
+      "author": "Nexon / devCAT",
+      "tint": null,
+      "displayName": null
+    },
+    {
+      "path": "attribute/breakOccurred.png",
+      "key": "breakOccurred",
+      "group": "attribute",
+      "role": "破防",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 612,
+      "sha256": "5ab8a10fcd9206f6590f914f7101d5d91e88f91d762201e1aee440adcf99b5c3",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Stat_Brake.png",
+      "author": "Nexon / devCAT",
+      "tint": "#FF5D41",
+      "displayName": "破防"
+    },
+    {
+      "path": "attribute/multiHit.png",
+      "key": "multiHit",
+      "group": "attribute",
+      "role": "多重打击",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 655,
+      "sha256": "2fed84e10f92f3241bbcf40e281a87cefe31739232e204dbbb03a241e4001684",
+      "origin": "UI/Sprites/Common/Icon64/ICON64_Wide_Area_Reinforcement.png",
+      "author": "Nexon / devCAT",
+      "tint": "#3CCBFF",
+      "displayName": null
+    },
+    {
+      "path": "attribute/element-bleed.png",
+      "key": "element.bleed",
+      "group": "attribute",
+      "role": "出血",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 429,
+      "sha256": "574660591ab1f573afe1a1d2702520e830a621fe608248771efee60d8d4aedcc",
+      "origin": "UI/Sprites/BuffIcon/DamageFloater_ElementalDoT_Bleed.png",
+      "author": "Nexon / devCAT",
+      "tint": null,
+      "displayName": null
+    },
+    {
+      "path": "attribute/element-dark.png",
+      "key": "element.dark",
+      "group": "attribute",
+      "role": "暗黑",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 552,
+      "sha256": "4dfadef71bbf5b9ef685fd4bc768b25f459f7f4042ddef9f8ba4fab530207949",
+      "origin": "UI/Sprites/BuffIcon/DamageFloater_ElementalDoT_Dark.png",
+      "author": "Nexon / devCAT",
+      "tint": null,
+      "displayName": null
+    },
+    {
+      "path": "attribute/element-fire.png",
+      "key": "element.fire",
+      "group": "attribute",
+      "role": "火焰",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 584,
+      "sha256": "5e67150fa3f1eb31740efb4fd12dcb0ab34bf4bb34ed3ac083853e3e7a3a641d",
+      "origin": "UI/Sprites/BuffIcon/DamageFloater_ElementalDoT_Fire.png",
+      "author": "Nexon / devCAT",
+      "tint": null,
+      "displayName": null
+    },
+    {
+      "path": "attribute/element-holy.png",
+      "key": "element.holy",
+      "group": "attribute",
+      "role": "神圣",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 522,
+      "sha256": "88ebd4d9ebe96d26821957c33b3e632b9ae167df38e29d03bcc3c1baffa7d7b3",
+      "origin": "UI/Sprites/BuffIcon/DamageFloater_ElementalDoT_Holy.png",
+      "author": "Nexon / devCAT",
+      "tint": null,
+      "displayName": null
+    },
+    {
+      "path": "attribute/element-ice.png",
+      "key": "element.ice",
+      "group": "attribute",
+      "role": "冰冻",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 760,
+      "sha256": "124a6a054dca2df31daaf7bb755716ded2e8cbeddb6f7eb385f4a1a0799ec822",
+      "origin": "UI/Sprites/BuffIcon/DamageFloater_ElementalDoT_Ice.png",
+      "author": "Nexon / devCAT",
+      "tint": null,
+      "displayName": null
+    },
+    {
+      "path": "attribute/element-lightning.png",
+      "key": "element.lightning",
+      "group": "attribute",
+      "role": "触电",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 704,
+      "sha256": "f2e30bd38f6a9f08c6fa4eed07c86428b0f13e34722797fd672e04f033f29df8",
+      "origin": "UI/Sprites/BuffIcon/DamageFloater_ElementalDoT_Lightning.png",
+      "author": "Nexon / devCAT",
+      "tint": null,
+      "displayName": null
+    },
+    {
+      "path": "attribute/element-poison.png",
+      "key": "element.poison",
+      "group": "attribute",
+      "role": "毒",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 645,
+      "sha256": "2ac0c264956d300eb754f84c5f450585185641d83eb11cc53e4d409aafef7c70",
+      "origin": "UI/Sprites/BuffIcon/DamageFloater_ElementalDoT_Poison.png",
+      "author": "Nexon / devCAT",
+      "tint": null,
+      "displayName": null
+    },
+    {
+      "path": "attribute/element-soul.png",
+      "key": "element.soul",
+      "group": "attribute",
+      "role": "精神",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 596,
+      "sha256": "0ea2bd5c16f4008a8fe097ab4092ec747fd70de527fca43d693190cbc0d6c854",
+      "origin": "UI/Sprites/BuffIcon/DamageFloater_ElementalDoT_Soul.png",
+      "author": "Nexon / devCAT",
+      "tint": null,
+      "displayName": null
+    },
+    {
+      "path": "character/nickname.png",
+      "key": "nickname",
+      "group": "character",
+      "role": "昵称",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 520,
+      "sha256": "fa05269e3827fc62512167775d4cf68c53c89f9730136f68cf1961fab273f319",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Profile.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "character/server.png",
+      "key": "server",
+      "group": "character",
+      "role": "服务器",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 346,
+      "sha256": "9ed6eae50f0b1b12704bdc18af0eedab129783bdfff42db17a808c69ccd7869f",
+      "origin": null,
+      "author": "自绘"
+    },
+    {
+      "path": "character/title.png",
+      "key": "title",
+      "group": "character",
+      "role": "称号",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 879,
+      "sha256": "bea968dbfd0f0a6cc4d43229ec502ae816568ab0a8e59aa2dbedfb45efd36ca1",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_TitleMedal.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "character/level.png",
+      "key": "level",
+      "group": "character",
+      "role": "等级",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 584,
+      "sha256": "61fa845915c79caca0272994b927f611a26ba704af9f2946d29bd929d18a0431",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Level.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "character/job.png",
+      "key": "job",
+      "group": "character",
+      "role": "战斗职业",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 835,
+      "sha256": "c865ee31648548b66bf2a91f4c9390f8fc78320f6e7bf5c7ade14edee287554e",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Weapon.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "character/combatScore.png",
+      "key": "combatScore",
+      "group": "character",
+      "role": "战斗力",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 671,
+      "sha256": "635e39d56843eb479886df08eb5c48459a33c535c7c6b9d9ac5a5c8e522ca036",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Combat.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "character/livingScore.png",
+      "key": "livingScore",
+      "group": "character",
+      "role": "生活力",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 595,
+      "sha256": "5fdef37e6f78e49cbb7c5f54eb7c02d35c5bedbae8ae44da525217d1a07794bb",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Sprout.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "character/attractivenessScore.png",
+      "key": "attractivenessScore",
+      "group": "character",
+      "role": "魅力",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 670,
+      "sha256": "4962b7fa42e8ff09a969ffe5c8bb7fdc66c15b59dd1d1bfbf92f470c1e941e7d",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Like_line.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "character/decorScore.png",
+      "key": "decorScore",
+      "group": "character",
+      "role": "装饰分数",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 941,
+      "sha256": "5fc611168806b26f3efb456a102d8ea58af0338b28fc8685b87fa5897f3abf71",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_DecoScore.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "stat/HealthMax.png",
+      "key": "HealthMax",
+      "group": "stat",
+      "role": "最大体力",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 793,
+      "sha256": "7837fe61a66c6426e29ffce8541240c84379a81e19003955f5b004a1c228e32d",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_State_Health.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "stat/AttackPower.png",
+      "key": "AttackPower",
+      "group": "stat",
+      "role": "攻击力",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 582,
+      "sha256": "a8169c5c20be0acf7e708f8187854b2203a0f4c92e9df45b5e12f1116f6ffe12",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Buff_Damage.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "stat/DefencePower.png",
+      "key": "DefencePower",
+      "group": "stat",
+      "role": "防御力",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 806,
+      "sha256": "5f4cebe9369bea1b9c8d093e61e027c0b111e6e04cb749ea07f3b7dc28ba4201",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Shield_B.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "stat/STR.png",
+      "key": "STR",
+      "group": "stat",
+      "role": "力量",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 743,
+      "sha256": "b37da161d56a8b6e3e954e5e6a45c01e4bc1f729781a88809355e17b34ecdf4e",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_State_Strength.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "stat/DEX.png",
+      "key": "DEX",
+      "group": "stat",
+      "role": "敏捷",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 780,
+      "sha256": "ec37bae92f5a30330e04a859c797e6bced476bcf64898bd9840d37686b95278d",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_State_Dexterity.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "stat/INT.png",
+      "key": "INT",
+      "group": "stat",
+      "role": "智力",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 817,
+      "sha256": "8f3480305eb79804ea84c3e0544d175d4ddbe569b53b7914fee62f85243fbe8a",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_State_Intellect.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "stat/LUCK.png",
+      "key": "LUCK",
+      "group": "stat",
+      "role": "幸运",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 783,
+      "sha256": "c6a9d8a10c2e139662fdde12af5549f80db02aa71b4389a44ce9108ca5c0dc50",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_State_Luck.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "stat/WILL.png",
+      "key": "WILL",
+      "group": "stat",
+      "role": "意志",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 660,
+      "sha256": "f46171856d6272339803392f8b63ca37d79bfce5f4bb02544314c6dce88aa46b",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_State_Will.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "stat/ArcaneResistance.png",
+      "key": "ArcaneResistance",
+      "group": "stat",
+      "role": "魔法抗性",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 574,
+      "sha256": "43a82a3adc5c64f290fb0c56546018a5fefcd2f72ff36d7ce5c277b7348a5cc0",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_MagicDefense.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "stat/paladin.png",
+      "key": "paladin",
+      "group": "stat",
+      "role": "圣职属性",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 1233,
+      "sha256": "d933067b6754192a0969724b9e010e9c3af62e9db9b0e4d50e5499470c0e1b71",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Paladin.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "status/health.png",
+      "key": "health",
+      "group": "status",
+      "role": "体力",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 1333,
+      "sha256": "26ad76c5613279a9d7af26a412b0769df8b60f958136654cbf6d4886da1224c8",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_HPDrop.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "status/shield.png",
+      "key": "shield",
+      "group": "status",
+      "role": "护盾",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 534,
+      "sha256": "ce20d75f6177558fb76d82e6ba8e4ac294b85b4a7916bd003aa73bd94b2bd44c",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Buff_Shield.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "status/satiety.png",
+      "key": "satiety",
+      "group": "status",
+      "role": "饱腹",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 771,
+      "sha256": "29f74caf2a9c755424336471e59da36294cd6b4b4f54edc066453a6ecb8f792b",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Stomach.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "status/weight.png",
+      "key": "weight",
+      "group": "status",
+      "role": "背包重量",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 532,
+      "sha256": "e354c6e84618e546092411169583d7ca8eb5fd4380e0238cc4f8f504f2269f63",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Weight_B.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "status/buffs.png",
+      "key": "buffs",
+      "group": "status",
+      "role": "生效 Buff",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 683,
+      "sha256": "dc6ad038c3552d167750b5dea939f7a76f5319edcc125ed43660613fd2ad3f38",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Buff_PotionEffect.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "mission/missions.png",
+      "key": "missions",
+      "group": "mission",
+      "role": "任务",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 377,
+      "sha256": "45055ef30dfaa9b62574a9e13636fee7f0c0e45dd5f9007974dd315073e6f5fd",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Mission.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "mission/daily.png",
+      "key": "daily",
+      "group": "mission",
+      "role": "日常",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 376,
+      "sha256": "84f6fa18ad6ceeb43e9b98e5238e72ed789532afe4e32c5ca878fcbf729d601c",
+      "origin": null,
+      "author": "自绘"
+    },
+    {
+      "path": "mission/weekly.png",
+      "key": "weekly",
+      "group": "mission",
+      "role": "周常",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 662,
+      "sha256": "7c5886a4ddebc4df5da9be75e705591cd00ac0a599cea47749dfac802f2b542b",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Calendar_W.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "mission/ready.png",
+      "key": "ready",
+      "group": "mission",
+      "role": "已完成待领奖",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 698,
+      "sha256": "59aa57d6771604e8561fdaef3af26de7c3ebed9a81a8bdee199b392d68861134",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_GiftSelect.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "mission/growth.png",
+      "key": "growth",
+      "group": "mission",
+      "role": "成长指南",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 574,
+      "sha256": "679b76bab8bfa18ca4ccd0390a14d21226e7146ac1bff6fd461e1b8f65241d2e",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_LevelUp2.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "surroundings/area.png",
+      "key": "area",
+      "group": "surroundings",
+      "role": "区域",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 430,
+      "sha256": "7f22de4b08a184d5c79680c276e9696411d401b82a210fb0896cb26d8e447140",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_MapTown.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "surroundings/channel.png",
+      "key": "channel",
+      "group": "surroundings",
+      "role": "频道",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 538,
+      "sha256": "e708c1e75c99c4397728d64d933c2da169f01d3b655d44fbbdc6adfcc852592d",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_ChatChannelSelect.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "surroundings/position.png",
+      "key": "position",
+      "group": "surroundings",
+      "role": "位置",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 711,
+      "sha256": "4b63e965499a0f7909a31eb2d491ab129345ac1b3f9019dd619316e288dc33a0",
+      "origin": "UI/Sprites/Common/Icon/Icon_Locate.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "surroundings/time.png",
+      "key": "time",
+      "group": "surroundings",
+      "role": "游戏内时间",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 766,
+      "sha256": "6b8f8f77537bbd26876bef09f151081db984fde90012125e7d070fe46cfc8bea",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_ClockLine.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "surroundings/housing.png",
+      "key": "housing",
+      "group": "surroundings",
+      "role": "住宅",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 627,
+      "sha256": "d26fde73c6fc82806373ca1d3d39688e3173b33f06062fc1e1cd2c87d027e375",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Sofa.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "surroundings/players.png",
+      "key": "players",
+      "group": "surroundings",
+      "role": "附近玩家",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 754,
+      "sha256": "58a97beb8e7e34d00dd9b495b2bf81bcc95c8d3b460e778b698d3f794e3a067b",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Community.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "surroundings/performing.png",
+      "key": "performing",
+      "group": "surroundings",
+      "role": "演奏中",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 711,
+      "sha256": "aa07e0fc69be3665a270b8bc3fe349cfa9628afe862726e8928ebd3ed8e825cb",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_MusicPlaying.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "weather/sunny.png",
+      "key": "sunny",
+      "group": "weather",
+      "role": "晴",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 610,
+      "sha256": "e2062ff69b6746b1501c797dc79941d16b08c23cbed9c503011807beb0103a6f",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Weather_Sunny.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "weather/cloudy.png",
+      "key": "cloudy",
+      "group": "weather",
+      "role": "多云",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 392,
+      "sha256": "2f37057925dc12c58301f9f066f6d3f4bbdad27d0e9d342fc6e379df2efd2559",
+      "origin": null,
+      "author": "自绘"
+    },
+    {
+      "path": "weather/fog.png",
+      "key": "fog",
+      "group": "weather",
+      "role": "雾",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 391,
+      "sha256": "af1b7944d3bfcb64446ab6a15a74c145a4d96a1dc7b083210b4e87795b7bac52",
+      "origin": null,
+      "author": "自绘"
+    },
+    {
+      "path": "weather/rain.png",
+      "key": "rain",
+      "group": "weather",
+      "role": "雨",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 559,
+      "sha256": "151ddb5b20cf4218098d919c29b3263c05dabae9be84263d5a7a0435ef8b48db",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Weather_Rainy.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "weather/drizzle.png",
+      "key": "drizzle",
+      "group": "weather",
+      "role": "小雨",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 429,
+      "sha256": "574660591ab1f573afe1a1d2702520e830a621fe608248771efee60d8d4aedcc",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Weather_Drizzle.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "weather/storm.png",
+      "key": "storm",
+      "group": "weather",
+      "role": "雷雨",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 469,
+      "sha256": "4f009ac004760aa004e5a922506b1e595001bede76a4244a409d460d45edb746",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Weather_HeavyRain.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "weather/snow.png",
+      "key": "snow",
+      "group": "weather",
+      "role": "雪",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 716,
+      "sha256": "29c30379ab3de9f529ebf469a638b0197124b03ffc745d4747512a68217ab4c4",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Weather_Snowflake.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "weather/night.png",
+      "key": "night",
+      "group": "weather",
+      "role": "夜晚",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 601,
+      "sha256": "eed58ef1b13007814e86b00b809b812c3e532e9121df6240daca911895f6c884",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Weather_Night.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "inventory/items.png",
+      "key": "items",
+      "group": "inventory",
+      "role": "道具种类",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 720,
+      "sha256": "8ef9a664d7cfd8bd474d70737b1464731dbcc480d38511b5dd8beffe365ef04e",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Bag.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "inventory/quantity.png",
+      "key": "quantity",
+      "group": "inventory",
+      "role": "总件数",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 645,
+      "sha256": "7536fc3fb3b33c1a7c7f8d03d3ec56accc6b1dcdaff91baeaf18c5bcc65e06d8",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Stack.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "inventory/valuation.png",
+      "key": "valuation",
+      "group": "inventory",
+      "role": "估价",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 646,
+      "sha256": "43b99ce15fc36547c729b0802e2fe50683546c5e7a108a4c27a268aa3b188f3b",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_TradeMarket_Circle.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "inventory/coverage.png",
+      "key": "coverage",
+      "group": "inventory",
+      "role": "读取范围",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 529,
+      "sha256": "abe126e086ea6145d1445d17e1cbc394298c5aa0645e777bf03ad689f2232f12",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Contents.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "inventory/catalog.png",
+      "key": "catalog",
+      "group": "inventory",
+      "role": "道具名称目录",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 501,
+      "sha256": "dea114b7ad29c0762b0df2a55fa8a2fc8ee7d3d849649aa0de07650f8544d40a",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Book.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "inventory/currency.png",
+      "key": "currency",
+      "group": "inventory",
+      "role": "货币（其他）",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 898,
+      "sha256": "a745ab02acbc7f3e366a0a1b13c04a8fb35f05e0d7a4bc9841f53b566603dabe",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_GoldBag.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "inventory/membership.png",
+      "key": "membership",
+      "group": "inventory",
+      "role": "会员",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 404,
+      "sha256": "3d79bfdc10099df76bf19e6d8c5dc632e905a3e86016ff9ebf1a551780536ca6",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_Membership.png",
+      "author": "Nexon / devCAT"
+    },
+    {
+      "path": "life/usualGathering.png",
+      "key": "usualGathering",
+      "group": "life",
+      "role": "日常采集",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 790,
+      "sha256": "24711efd238b2c8e85df58586506158573a612bd7670fd95a8f391b694bf0444",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_UsualGathering.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "日常採集"
+      ]
+    },
+    {
+      "path": "life/logging.png",
+      "key": "logging",
+      "group": "life",
+      "role": "伐木",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 676,
+      "sha256": "f3c02d000a21fba470931c152f8614c3c18b61fd647bcc5a2c739c1066dcbf00",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Logging.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "伐木"
+      ]
+    },
+    {
+      "path": "life/mining.png",
+      "key": "mining",
+      "group": "life",
+      "role": "采矿",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 692,
+      "sha256": "02eb59612453b2a610d8ed660fe5a50dc5e59687068cfd18e39bfe4aebc43fb9",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Mining.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "採礦"
+      ]
+    },
+    {
+      "path": "life/herbGathering.png",
+      "key": "herbGathering",
+      "group": "life",
+      "role": "采集药草",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 964,
+      "sha256": "cc45491ec5df6b824ae4bbb7913d6d3d764485559f767d107277aaf424005fb3",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_HerbGathering.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "採集藥草"
+      ]
+    },
+    {
+      "path": "life/sheepShearing.png",
+      "key": "sheepShearing",
+      "group": "life",
+      "role": "剪羊毛",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 834,
+      "sha256": "42d7839d0b75755b6a40f72b51dea9b317c364b5f7e71324eea0a17e30a1fde1",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_SheepShearing.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "剪羊毛"
+      ]
+    },
+    {
+      "path": "life/sickling.png",
+      "key": "sickling",
+      "group": "life",
+      "role": "收割",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 660,
+      "sha256": "9ff399abd94a2be84b3badf71ab044a53be40e0eb87b24f261908e25767d3758",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Sickling.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "收割"
+      ]
+    },
+    {
+      "path": "life/hoeing.png",
+      "key": "hoeing",
+      "group": "life",
+      "role": "锄地",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 694,
+      "sha256": "ff5eac80ec478d7fe4dd44ef3e3e0c4940020c96d09c61dfd2027a5bda0ae91a",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Hoeing.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "鋤地"
+      ]
+    },
+    {
+      "path": "life/insect.png",
+      "key": "insect",
+      "group": "life",
+      "role": "昆虫采集",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 844,
+      "sha256": "e6916b9358c7d0dc09f521ff83e44fb82bfbd7b7a306bbf6d04974178fded6e7",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Insect.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "昆蟲採集"
+      ]
+    },
+    {
+      "path": "life/fishing.png",
+      "key": "fishing",
+      "group": "life",
+      "role": "钓鱼",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 755,
+      "sha256": "f7bf32bf7d2b3bd6b500c045890b66263a2e1d786b986be8dcd4eb4b5723b3ff",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Fishing.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "釣魚"
+      ]
+    },
+    {
+      "path": "life/blacksmithing.png",
+      "key": "blacksmithing",
+      "group": "life",
+      "role": "锻造技术",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 558,
+      "sha256": "c5b245f6fb0359e499a5d14781efc5fe5e0fd94b85c6188cc9776735c1683e91",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Blacksmithing.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "鍛造技術"
+      ]
+    },
+    {
+      "path": "life/carpentry.png",
+      "key": "carpentry",
+      "group": "life",
+      "role": "木工",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 762,
+      "sha256": "aa545524a8b80d688910ade88d0ee19b905e99f78cfdfeae83aec7d8946c0057",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Carpentry.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "木工"
+      ]
+    },
+    {
+      "path": "life/magicCraft.png",
+      "key": "magicCraft",
+      "group": "life",
+      "role": "魔法工艺",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 923,
+      "sha256": "6daa91c9f83e64747db43bffd96d3818e96a56a26204edf3d012ed8024b16218",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_MagicCraft.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "魔法工藝"
+      ]
+    },
+    {
+      "path": "life/heavyArmoring.png",
+      "key": "heavyArmoring",
+      "group": "life",
+      "role": "重甲制作",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 1035,
+      "sha256": "36ec28b49f5b966cc8ab50c9a3ddb094e4e130d4df70f4b80e4934063eb95da7",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_HeavyArmoring.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "重甲製作"
+      ]
+    },
+    {
+      "path": "life/lightArmoring.png",
+      "key": "lightArmoring",
+      "group": "life",
+      "role": "轻甲制作",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 762,
+      "sha256": "d43ad69c50e9f0b0342e123fb6d6c253709d239957004f01c8a33d88b82f872a",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_LightArmoring.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "輕甲製作"
+      ]
+    },
+    {
+      "path": "life/tailoring.png",
+      "key": "tailoring",
+      "group": "life",
+      "role": "布衣制作",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 832,
+      "sha256": "7689c5c13b884d07d62f60953ae156ffa42da80eaf0ea118420adf7bf0120936",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Tailoring.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "布衣製作"
+      ]
+    },
+    {
+      "path": "life/potionMaking.png",
+      "key": "potionMaking",
+      "group": "life",
+      "role": "药水调制",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 820,
+      "sha256": "fa1a05ba4a54bcbff8284381e9c3297866802c1ba8608f15eed187b5a5d45e34",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_PotionMaking.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "藥水調製"
+      ]
+    },
+    {
+      "path": "life/cooking.png",
+      "key": "cooking",
+      "group": "life",
+      "role": "料理",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 779,
+      "sha256": "86089b2ebb20f267455ed9b785ea2d373c973dc4d82a56a9deaf89fdbd6fb5c4",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Cooking.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "料理"
+      ]
+    },
+    {
+      "path": "life/handicraft.png",
+      "key": "handicraft",
+      "group": "life",
+      "role": "手工艺",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 938,
+      "sha256": "092e0d00f7f6223990c85a31d08597319c6f9c998d362c826ac0fa3888371ee3",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Handicraft.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "手工藝"
+      ]
+    },
+    {
+      "path": "life/alchemy.png",
+      "key": "alchemy",
+      "group": "life",
+      "role": "炼金术",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 360,
+      "sha256": "2a104a6905e4ad5697c6bfc41637af253a8927cd3c0f513adc2939ee2f95738f",
+      "origin": "UI/Sprites/LivingSkill/LivingSkill_Alchemy.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "鍊金術"
+      ]
+    },
+    {
+      "path": "life/arbeit.png",
+      "key": "arbeit",
+      "group": "life",
+      "role": "兼职",
+      "style": "glyph",
+      "width": 64,
+      "height": 64,
+      "length": 898,
+      "sha256": "a745ab02acbc7f3e366a0a1b13c04a8fb35f05e0d7a4bc9841f53b566603dabe",
+      "origin": "UI/Sprites/Common/Icon64/Icon64_GoldBag.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "兼職"
+      ]
+    },
+    {
+      "path": "currency/gold.png",
+      "key": "gold",
+      "group": "currency",
+      "role": "金币",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 4478,
+      "sha256": "1733fd0227847dbc4880c2b3207a57e4b9958c383ec2ba1e5b6be3cc47205faf",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_Gold_Textures/Coin_Gold_128.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "金幣"
+      ],
+      "moneyTypes": [
+        "Gold"
+      ]
+    },
+    {
+      "path": "currency/silverCoin.png",
+      "key": "silverCoin",
+      "group": "currency",
+      "role": "银币",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 5667,
+      "sha256": "f205d977a140ad895a4a07ed48779629080e53e6140cb00796bb51e3c887ed50",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_SilverCoin_Textures/Coin_SilverCoin_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "銀幣"
+      ],
+      "moneyTypes": [
+        "SilverCoin"
+      ]
+    },
+    {
+      "path": "currency/passDeep.png",
+      "key": "passDeep",
+      "group": "currency",
+      "role": "魔族贡品",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 7935,
+      "sha256": "76813a2904b171b65670467073732784f1c5771f8f5f139e6f6cc65b05fe1bec",
+      "origin": "Icons/CommonIcon/Item_Icon/Item_PassDeep_Textures/Item_PassDeep_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "魔族貢品"
+      ],
+      "moneyTypes": [
+        "Pass_Deep"
+      ]
+    },
+    {
+      "path": "currency/heartToken.png",
+      "key": "heartToken",
+      "group": "currency",
+      "role": "爱心币",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 5850,
+      "sha256": "00579ab21952f8990a0fd0e94c83dcc0616b0407b60fccea9b986850cec507b9",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_SouthRegionToken_Textures/Coin_SouthRegionToken_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "愛心幣"
+      ],
+      "moneyTypes": [
+        "Coin_SouthRegionToken"
+      ]
+    },
+    {
+      "path": "currency/guildCoin.png",
+      "key": "guildCoin",
+      "group": "currency",
+      "role": "公会币",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 6999,
+      "sha256": "bdcada9478d840045af66de869af0122c7663a4ee638993a202ee1c3caed6bf5",
+      "origin": "Icons/CommonIcon/Item_Icon/Token_Guild_Textures/Token_Guild_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "公會幣"
+      ],
+      "moneyTypes": [
+        "GuildCoin"
+      ]
+    },
+    {
+      "path": "currency/catToken.png",
+      "key": "catToken",
+      "group": "currency",
+      "role": "喵币",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 5064,
+      "sha256": "daf41297efc3b8485af17b488ea2b466936867fa585c9401071e4c57d142ec8c",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_CatToken_Textures/Coin_CatToken_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "喵幣"
+      ],
+      "moneyTypes": [
+        "Coin_CatToken"
+      ]
+    },
+    {
+      "path": "currency/renewalTicket.png",
+      "key": "renewalTicket",
+      "group": "currency",
+      "role": "刷新券",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 8110,
+      "sha256": "611e29c5fc8bc1248d5cc8a95ab0f1c03f0c25cdc815e52dbad357e69f3517f0",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_RenewalTicket_Textures/Coin_RenewalTicket_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "刷新券"
+      ],
+      "moneyTypes": [
+        "RenewalTicket"
+      ]
+    },
+    {
+      "path": "currency/monsterKillToken.png",
+      "key": "monsterKillToken",
+      "group": "currency",
+      "role": "魔物讨伐证明",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 6369,
+      "sha256": "905da2bfba16e6d0acfc435042c456ad3c20f3c9e5e7302ce267be51c35dacd0",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_MonsterKillToken_Textures/Coin_MonsterKillToken_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "魔物討伐證明"
+      ],
+      "moneyTypes": [
+        "Coin_MonsterKillToken"
+      ]
+    },
+    {
+      "path": "currency/weca.png",
+      "key": "weca",
+      "group": "currency",
+      "role": "韦卡",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 9044,
+      "sha256": "455b954df6c0cec1ad1f3d6d48de3d9f19c42f4348becd0f9e18fcc208d915ff",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_Weka_Textures/Coin_Weka_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "韋卡"
+      ],
+      "moneyTypes": [
+        "Weca"
+      ]
+    },
+    {
+      "path": "currency/deca.png",
+      "key": "deca",
+      "group": "currency",
+      "role": "德卡",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 9119,
+      "sha256": "5bcdfb96e02d213d89e0f7d7cae39fe2d0403ee98212e1ecb8d5d389bd19baa2",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_Deka_Textures/Coin_Deka_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "德卡"
+      ],
+      "moneyTypes": [
+        "RedCrystal"
+      ]
+    },
+    {
+      "path": "currency/mCash.png",
+      "key": "mCash",
+      "group": "currency",
+      "role": "M币",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 8261,
+      "sha256": "8e422d28261f6755f9f60d3d41364fce438c49de972675f9ae4bda912e318891",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_MMCash_Textures/Coin_MMCash_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "M幣",
+        "M幣(免費)"
+      ],
+      "moneyTypes": [
+        "Crystal",
+        "FreeCrystal"
+      ]
+    },
+    {
+      "path": "currency/cashShopPoint.png",
+      "key": "cashShopPoint",
+      "group": "currency",
+      "role": "商城点数",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 5422,
+      "sha256": "a9a7054f7f1fcd3c0845686a0d5d24b34f725179eb7cda5f0de502babe8d5f9d",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_CashShopPoint_Textures/Coin_CashShopPoint_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "商城點數"
+      ],
+      "moneyTypes": [
+        "Mileage"
+      ]
+    },
+    {
+      "path": "currency/packagePoint.png",
+      "key": "packagePoint",
+      "group": "currency",
+      "role": "套组点数",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 8040,
+      "sha256": "82d80b6cdf539cf55905d3340cc24f190385766a2e52ebf79687e0cea105d435",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_PackagePoint_Textures/Coin_PackagePoint_64.png",
+      "author": "Nexon / devCAT",
+      "names": [
+        "套組點數"
+      ],
+      "moneyTypes": [
+        "SpecialCoin"
+      ]
+    },
+    {
+      "path": "currency/memorialSagaCoin.png",
+      "key": "memorialSagaCoin",
+      "group": "currency",
+      "role": "纪念传说货币",
+      "style": "color",
+      "width": 64,
+      "height": 64,
+      "length": 8095,
+      "sha256": "5f00f0642229296f513918a8aa4e700020c3e6de7e44cae1848d26cb6901b48c",
+      "origin": "Icons/CommonIcon/Item_Icon/Coin_MemorialSaga_Textures/Coin_MemorialSaga_64.png",
+      "author": "Nexon / devCAT",
+      "moneyTypes": [
+        "MemorialSagaCoin"
+      ]
+    }
+  ]
+}

@@ -156,11 +156,23 @@ internal static class LoginWalletLocator
                     var value = reader.Value(root[i].Type, 1, i == jam);
                     if (i == jam) captured = value;
                 }
-                if (reader.Offset == walletAt) found.Add(captured!);
+                if (reader.Offset == walletAt && PlausibleJam(captured!)) found.Add(captured!);
             }
             catch (InvalidDataException) { }
         }
         return found;
+    }
+
+    /// <summary>
+    /// JamItem 字典的每一项表编号为正、数量在 [0, 10^12]。错位处也可能整段读通并止于钱包起点（台服 2026-11-25 构建的重新登录样本里，
+    /// 最前一个候选读出 4 项负编号、负数量），这类位置不算候选。
+    /// </summary>
+    private static bool PlausibleJam(InventoryWireValue jam)
+    {
+        foreach (var field in jam.Fields?.Values ?? [])
+            foreach (var (key, value, _) in field.Pairs ?? [])
+                if (key.Unsigned() is not > 0 || value.Unsigned() is not { } amount || amount > ValueLimit) return false;
+        return true;
     }
 
     /// <summary>会员字典：键为 MembershipSheetId（按线上 4 字节读成无符号），值里的 ExpireTime 为 Unix 毫秒；形状不符时整体为空（未知）。</summary>

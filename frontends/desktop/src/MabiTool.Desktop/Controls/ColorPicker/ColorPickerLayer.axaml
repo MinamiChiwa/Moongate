@@ -109,7 +109,7 @@
             </StackPanel>
             <TextBlock Classes="name strong" FontSize="13" VerticalAlignment="Center" Text="{Binding $parent[controls:ColorPickerLayer].Title}" />
           </DockPanel>
-      <ScrollViewer x:Name="PickerScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <ScrollViewer x:Name="PickerScroller" Classes="room" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Spacing="10">
           <Grid ColumnDefinitions="184,*" Height="184">
             <controls:HsvWheel x:Name="PickerWheel" Width="184" Height="184"

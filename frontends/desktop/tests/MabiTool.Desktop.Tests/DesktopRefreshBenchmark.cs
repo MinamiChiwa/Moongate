@@ -24,7 +24,7 @@ namespace MabiTool.Desktop.Tests;
 public sealed class DesktopRefreshBenchmark
 {
     private static readonly string[] WidgetIds =
-        ["combat.dps", "combat.skills", "combat.self-effects", "combat.target-effects", "combat.measurement", "combat.coverage"];
+        ["combat.dps", "combat.skills", "combat.self-effects", "combat.target-effects", "combat.measurement"];
 
     [AvaloniaFact]
     public async Task MeasuresRefreshCostUnderRealisticCadence()

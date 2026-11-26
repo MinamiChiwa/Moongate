@@ -337,11 +337,11 @@ public sealed class PortableUpdateTests : IDisposable
         // 从未检查：最近检查为空（前端写“尚未检查”），不报告已是最新。
         Assert.Equal(("idle", null), (Api(old).State().State, Api(old).State().LastCheck));
 
-        // 宿主启动后 60 秒自动检查一次，检查结果进入状态。
+        // 宿主启动后自动检查一次，检查结果进入状态。
         var checker = new FixedChecker(new UpdateCheckResult(true, "0.3.0-preview", plan.Sha256, plan.PlanId, plan.ExpiresAt,
             UpdateSourceKind.GithubDirect, 10, "full", 10));
         var executor = new UpdateCheckOperations(operations, policy, checker, clock);
-        // 宿主启动：排定 60 秒后检查，到期后调度循环自行发起检查。
+        // 宿主启动：排定启动延迟后检查，到期后调度循环自行发起检查。
         await policy.ScheduleStartupAsync();
         clock.Now += UpdatePolicyStore.StartupDelay;
         await executor.StartAsync(CancellationToken.None);
@@ -362,6 +362,118 @@ public sealed class PortableUpdateTests : IDisposable
         // 计划被回收（更新后启动的残留回收）后旧版本也不再显示；计划仍在时（安装失败回退）旧版本照常显示可用更新。
         File.Delete(Path.Combine(UpdateLayout.Plans(toolRoot), plan.PlanId + ".json"));
         Assert.Null(Api(old).State().Available);
+    }
+
+    [Fact]
+    public async Task ScheduledCheckWaitsForTheDueTimeInsteadOfAThirtySecondFloor()
+    {
+        var package = Package("Moongate", "0.2.0-preview", "old");
+        var toolRoot = ToolRoot(package);
+        var storage = new StorageOptions(Path.Combine(toolRoot, "bootstrap"), true, DataRoot: Path.Combine(toolRoot, "data"));
+        var clock = new ManualClock();
+        using var lease = DataRootLease.Open(storage);
+        await using var database = SqliteStore.Open(lease, UpdatePolicyStore.Migrations);
+        var operations = new OperationStore(database, clock);
+        var policy = new UpdatePolicyStore(database, clock);
+        var checker = new FixedChecker(new UpdateCheckResult(false, "0.2.0-preview", "", null, null, UpdateSourceKind.GithubDirect));
+        var executor = new UpdateCheckOperations(operations, policy, checker, clock);
+        // 启动后第一次检查还差 100 毫秒到期（计时器比墙钟早醒的情形）：调度循环等到到期时刻，不能再多等 30 秒。
+        await policy.ScheduleStartupAsync();
+        var due = clock.Now + UpdatePolicyStore.StartupDelay;
+        clock.Now = due - TimeSpan.FromMilliseconds(100);
+        await executor.StartAsync(CancellationToken.None);
+        try
+        {
+            await Task.Delay(150);
+            clock.Now = due + TimeSpan.FromMilliseconds(10);
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (checker.Calls == 0 && DateTime.UtcNow < deadline) await Task.Delay(20);
+        }
+        finally { await executor.StopAsync(CancellationToken.None); }
+        Assert.Equal(1, checker.Calls);
+    }
+
+    private const string NotesRaw = "https://github.com/MinamiChiwa/Moongate/raw/v0.3.0-preview/docs/";
+    private const string NotesBlob = "https://github.com/MinamiChiwa/Moongate/blob/v0.3.0-preview/";
+    private const string NotesApi = "https://api.github.com/repos/MinamiChiwa/Moongate/releases/tags/v0.3.0-preview";
+
+    private static HttpResponseMessage Redirect(string location) => new(HttpStatusCode.Redirect) { Headers = { Location = new Uri(location) } };
+
+    // 发布脚本合成的 Release 正文：两份 release-header（简体在前）、分隔线、简体与繁体各一段；繁体正文里还有一条自己的分隔线。
+    private static readonly string ReleaseBody = string.Join("\n",
+        "> **测试版**：简体提示", "", "**下载**：简体下载", "", "> **測試版**：繁體提示", "", "**下載**：繁體下載", "", "---", "",
+        "## Moongate 0.3.0 更新说明", "", "### 新增", "", "- 简体正文", "", "---", "",
+        "## Moongate 0.3.0 更新說明", "", "### 新增", "", "- 繁體正文 [說明](" + NotesBlob + "docs/user-guide.zh-TW.md)", "", "---", "", "分隔線之後仍是繁體正文", "");
+
+    [Fact]
+    public async Task NotesComeFromTheRepositoryFilesAndFallBackPerLanguageToTheReleaseBody()
+    {
+        var package = Package("installed", "0.2.0-preview", "old");
+        var installation = new PortableInstallation(package, ToolRoot(package), ReleaseIdentity.Read(package)!);
+        var plan = Plan("0.3.0-preview", 10, new string('a', 64));
+        await UpdatePlanStore.SaveAsync(installation.ToolRoot, plan);
+        var simplified = string.Join("\n", "# Moongate 0.3.0 更新说明", "",
+            "[简体中文](release-notes-0.3.0.md) · [繁體中文](release-notes-0.3.0.zh-TW.md) · [返回首页](../README.md)", "",
+            "<!-- release-header:start -->", "> **测试版**", "", "**下载**：见 [首页](../README.md)", "<!-- release-header:end -->", "",
+            "## 新增", "", "- 简体正文 **加粗** 与 [邮件](mailto:a@b.c)", "");
+        var handler = new FakeHandler(request => request.RequestUri!.AbsoluteUri switch
+        {
+            NotesRaw + "release-notes-0.3.0-preview.md" => Redirect("https://raw.githubusercontent.com/MinamiChiwa/Moongate/v0.3.0-preview/docs/release-notes-0.3.0-preview.md"),
+            "https://raw.githubusercontent.com/MinamiChiwa/Moongate/v0.3.0-preview/docs/release-notes-0.3.0-preview.md" => Text(simplified),
+            NotesApi => Json(JsonSerializer.Serialize(new { body = ReleaseBody })),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound)
+        });
+        using var source = new GitHubReleaseSource(handler, retryCount: 0);
+        var service = new UpdateNotesService(installation, source);
+
+        // 检查之后的预取：简体取公开仓库的文件（去掉标题、导航行与注释标记，相对链接换成绝对地址，非 http 链接只留文字），
+        // 繁体文件不存在，改取 Release 正文里繁体的那一段（含自己的分隔线之后的内容，不混入简体）。
+        await service.PrefetchAsync(CancellationToken.None);
+        var notes = await service.GetAsync(plan.PlanId);
+        Assert.Equal(("0.3.0-preview", plan.PlanId), (notes.ReleaseId, notes.PlanId));
+        Assert.Equal([("zh-Hans", "repository"), ("zh-Hant", "release")], notes.Entries.Select(entry => (entry.Language, entry.Source)));
+        Assert.Equal("> **测试版**\n\n**下载**：见 [首页](" + NotesBlob + "README.md)\n\n## 新增\n\n- 简体正文 **加粗** 与 邮件", notes.Entries[0].Markdown);
+        Assert.Equal("> **測試版**：繁體提示\n\n**下載**：繁體下載\n\n### 新增\n\n- 繁體正文 [說明](" + NotesBlob + "docs/user-guide.zh-TW.md)\n\n---\n\n分隔線之後仍是繁體正文",
+            notes.Entries[1].Markdown);
+
+        // 两种语言都取到后缓存在计划旁，再读不访问网络。
+        var requests = handler.Requests.Count;
+        Assert.Equal(notes.Entries.Select(entry => entry.Markdown), (await service.GetAsync(plan.PlanId)).Entries.Select(entry => entry.Markdown));
+        Assert.Equal(requests, handler.Requests.Count);
+        Assert.True(File.Exists(UpdatePlanStore.NotesPath(installation.ToolRoot, plan.PlanId)));
+        // 读取只发往 GitHub，只带固定的 User-Agent。
+        Assert.All(handler.Requests, request => Assert.Equal("Moongate-Update/1", request.Headers.UserAgent.ToString()));
+        Assert.All(handler.Requests, request => Assert.Contains(request.RequestUri!.Host, new[] { "github.com", "raw.githubusercontent.com", "api.github.com" }));
+    }
+
+    [Fact]
+    public async Task NotesThatCannotBeReadAreEmptyNotCachedAndReadAgainNextTime()
+    {
+        var package = Package("installed", "0.2.0-preview", "old");
+        var installation = new PortableInstallation(package, ToolRoot(package), ReleaseIdentity.Read(package)!);
+        var plan = Plan("0.3.0-preview", 10, new string('a', 64));
+        await UpdatePlanStore.SaveAsync(installation.ToolRoot, plan);
+        var online = false;
+        var handler = new FakeHandler(request =>
+        {
+            if (!online) throw new HttpRequestException("offline");
+            return request.RequestUri!.AbsoluteUri == NotesApi ? Json(JsonSerializer.Serialize(new { body = ReleaseBody })) : new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        using var source = new GitHubReleaseSource(handler, retryCount: 0);
+        var service = new UpdateNotesService(installation, source);
+
+        // 公开仓库与 Release 正文都读不到：没有任何一份，窗口写明未能读取，不缓存失败。
+        var offline = await service.GetAsync(plan.PlanId);
+        Assert.Empty(offline.Entries);
+        Assert.False(File.Exists(UpdatePlanStore.NotesPath(installation.ToolRoot, plan.PlanId)));
+
+        // 恢复后下一次请求重新读取（仓库文件不存在，两种语言都取 Release 正文里对应的段）并缓存。
+        online = true;
+        var recovered = await service.GetAsync(plan.PlanId);
+        Assert.Equal([("zh-Hans", "release"), ("zh-Hant", "release")], recovered.Entries.Select(entry => (entry.Language, entry.Source)));
+        Assert.StartsWith("> **测试版**：简体提示", recovered.Entries[0].Markdown);
+        Assert.DoesNotContain("繁", recovered.Entries[0].Markdown);
+        Assert.True(File.Exists(UpdatePlanStore.NotesPath(installation.ToolRoot, plan.PlanId)));
     }
 
     [Fact]

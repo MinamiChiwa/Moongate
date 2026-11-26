@@ -375,7 +375,7 @@ test('color capture SDK sends JSON for empty POST and preserves pixel and releas
     assert.deepEqual(JSON.parse(options.body), {});
     return Response.json(capture);
   });
-  valid(ajv.compile({ $ref: 'urn:mabitool:openapi#/components/schemas/ColorScreenCapture' }), await sdk.captureColorScreen());
+  valid(ajv.compile({ $ref: 'urn:mabitool:openapi#/components/schemas/ColorScreenCapture' }), await sdk.captureColorScreen({ region: null }));
   valid(ajv.compile({ $ref: 'urn:mabitool:openapi#/components/schemas/ColorPickedPixel' }), await sdk.pickColorPixel(capture.id, { x: -2, y: -1 }));
   assert.equal((await sdk.releaseColorCapture(capture.id)).released, true);
 });

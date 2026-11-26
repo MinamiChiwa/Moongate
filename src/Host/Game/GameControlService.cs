@@ -1,13 +1,18 @@
 using MabiTool.Contracts;
 using MabiTool.Host.Color;
+using MabiTool.Host.GameCli;
+using MabiTool.Host.Life;
 using MabiTool.Host.Rooms;
 using MabiTool.Infrastructure;
 using MabiTool.ModuleSdk;
+using MabiTool.Modules.MusicLibrary.Application;
 
 namespace MabiTool.Host.Game;
 
 public sealed class GameControlService(GameControlContext controls, SystemInfo info, TimeProvider clock,
-    LocalAuthService auth, RoomSessionManager? rooms = null, ColorRunOperations? color = null)
+    LocalAuthService auth, RoomSessionManager? rooms = null, ColorRunOperations? color = null,
+    GameConnectorService? connector = null, PerformanceRunner? performance = null,
+    FishingRunOperations? fishing = null)
 {
     public const int MaximumReceipts = 256;
     public static readonly TimeSpan MaximumRequestLifetime = TimeSpan.FromMinutes(5);
@@ -69,6 +74,17 @@ public sealed class GameControlService(GameControlContext controls, SystemInfo i
             try { rooms.EmergencyStop(); }
             catch { failures.Add(new("rooms", "game.activityCancellationFailed")); }
         }
+        // 游戏连接器：演奏队列驱动先取消并撤销租约，再中断命令行进程；游戏动作状态保持未知，随后重查一次演奏状态。
+        if (performance is not null)
+        {
+            try { performance.EmergencyStop(); }
+            catch { failures.Add(new("performance", "game.activityCancellationFailed")); }
+        }
+        if (connector is not null)
+        {
+            try { connector.EmergencyStop(); }
+            catch { failures.Add(new("game-connector", "game.activityCancellationFailed")); }
+        }
         try { released = controls.Input.EmergencyStop(); }
         catch { failures.Add(new("input", "input.releaseFailed")); }
         // 后台输入通道与前台输入共用紧急停止：撤销其租约并释放按下的触点与按键。
@@ -81,9 +97,15 @@ public sealed class GameControlService(GameControlContext controls, SystemInfo i
             try { color.EmergencyStop(); }
             catch { failures.Add(new("color", "game.activityCancellationFailed")); }
         }
+        // 钓鱼：租约与按下的输入已在上面撤销与释放，这里取消运行，识别进程随之结束。
+        if (fishing is not null)
+        {
+            try { fishing.EmergencyStop(); }
+            catch { failures.Add(new("life", "game.activityCancellationFailed")); }
+        }
         var remaining = controls.Leases.Snapshot().Select(lease => lease.Id).ToHashSet(StringComparer.Ordinal);
         return new(info.InstanceId, controls.Simulation, clock.GetUtcNow(), before.Count(lease => !remaining.Contains(lease.Id)),
-            released?.ReleasedControls, released is null ? "failed" : "released", rooms is not null || color is not null,
+            released?.ReleasedControls, released is null ? "failed" : "released", rooms is not null || color is not null || performance is not null || connector is not null || fishing is not null,
             EffectStatus.Unknown, Array.AsReadOnly(failures.ToArray()));
     }
 

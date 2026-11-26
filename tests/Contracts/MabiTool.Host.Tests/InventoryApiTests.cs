@@ -123,12 +123,12 @@ public sealed class InventoryApiTests
     public async Task FullActualCatalogAndLargeCsvConflictsCommitWithBoundedOperationEvents()
     {
         var catalog=MabiTool.Providers.TwObservation.ItemCatalog.ClientItemCatalogExtractor.Extract(InstalledTwCatalogFactAttribute.ClientDirectory);
-        Assert.Equal(12486,catalog.Entries.Count);Assert.Equal(192,catalog.Entries.Count(e=>e.IsInstrument==true));
+        Assert.Equal(12716,catalog.Entries.Count);Assert.Equal(192,catalog.Entries.Count(e=>e.IsInstrument==true));
         using var area=new Workspace();await using var app=Build(area);await app.StartAsync();using var http=Client(app);using var sdk=Sdk(app);
         var before=await Get<InventorySnapshot>(http,InventoryApi.Snapshot.Path);
         var catalogPath=Path.Combine(area.Root,"full-catalog.json");var original=Encoding.UTF8.GetBytes(Json(catalog));Assert.True(original.Length>65536);await File.WriteAllBytesAsync(catalogPath,original);
         var selection=await Selected(app,catalogPath);var imported=await Post<OperationSnapshot>(http,InventoryApi.ImportCatalog.Path,new InventoryCatalogImportRequest(selection),"inventory-full-catalog-import",await ETag(http,InventoryApi.Catalog.Path));var directoryResult=await Complete(http,imported.Id);
-        Assert.Equal(OperationState.Succeeded,directoryResult.State.KnownValue);Assert.True(Encoding.UTF8.GetByteCount(directoryResult.Result!.Value.GetRawText())<65536);Assert.Equal(12486,directoryResult.Result.Value.Deserialize<InventoryCatalogSummary>(ContractJson.Options)!.Entries);Assert.Equal(original,await File.ReadAllBytesAsync(catalogPath));
+        Assert.Equal(OperationState.Succeeded,directoryResult.State.KnownValue);Assert.True(Encoding.UTF8.GetByteCount(directoryResult.Result!.Value.GetRawText())<65536);Assert.Equal(12716,directoryResult.Result.Value.Deserialize<InventoryCatalogSummary>(ContractJson.Options)!.Entries);Assert.Equal(original,await File.ReadAllBytesAsync(catalogPath));
         const int count=5000;var inventory=new StringBuilder("account_id,character_id,character,container,item_id,quantity,observed_at,source\r\n");var associations=new StringBuilder("item_id,name,association,source\r\n");
         for(var n=0;n<count;n++) {var id=n+10000;inventory.Append($"conflict-account,conflict-character,历史角色,backpack,{id},1,2026-01-01T00:00:00Z,full\r\n");associations.Append($"{id},共用名称,user_confirmed,user\r\n");}
         var archivePath=Path.Combine(area.Root,"conflicts.zip");
@@ -142,7 +142,7 @@ public sealed class InventoryApiTests
         var commit=await Post<OperationSnapshot>(http,InventoryApi.CommitImport.Path.Replace("{id}",preview.Id),new InventoryImportCommitRequest(preview.Issues.Select(i=>new InventoryImportResolution(i.Id,"replace")).ToArray()),"inventory-large-conflict-commit",await ETag(http,InventoryApi.ImportPreview.Path.Replace("{id}",preview.Id)));
         var final=await Complete(http,commit.Id);Assert.Equal(OperationState.Succeeded,final.State.KnownValue);Assert.True(Encoding.UTF8.GetByteCount(final.Result!.Value.GetRawText())<65536);var receipt=final.Result.Value.Deserialize<InventoryImportReceipt>(ContractJson.Options)!;Assert.Equal(count,receipt.Items);Assert.Equal(count,receipt.Associations);
         var eventRecord=await FirstSnapshotEvent(sdk,new(["inventory.snapshot.changed","inventory.catalog.changed","inventory.observation.degraded"],[],before.EventCursor));Assert.True(Encoding.UTF8.GetByteCount(eventRecord)<65536);
-        Assert.Equal(12486,(await Get<InventoryCatalogSummary>(http,InventoryApi.Catalog.Path)).Entries);await app.StopAsync();
+        Assert.Equal(12716,(await Get<InventoryCatalogSummary>(http,InventoryApi.Catalog.Path)).Entries);await app.StopAsync();
     }
     private static async Task<string> FirstSnapshotEvent(MabiToolClient sdk,EventStreamOptions options)
     {

@@ -42,6 +42,37 @@ def tree_sha256(directory):
     return hashlib.sha256(text.encode("utf-8")).hexdigest(), len(entries)
 
 
+def verify_game_cli(repository, component):
+    """组件 game-cli：目录里只有登记的命令行工具，长度与 SHA-256 等于 packaging/game-cli/game-cli.lock.json。
+    发行构建总是带该组件；清单检查对不带的包（此前的发行包）同样放行。"""
+    lock = read(repository / "packaging/game-cli/game-cli.lock.json")
+    names = sorted(path.relative_to(component).as_posix() for path in component.rglob("*"))
+    if names != [lock["fileName"]]:
+        raise ValueError(f"命令行工具组件内容与登记不符，应只含 {lock['fileName']}：" + "、".join(names))
+    executable = component / lock["fileName"]
+    if (executable.is_symlink() or executable.is_junction() or not executable.is_file()
+            or executable.stat().st_size != lock["length"] or digest(executable) != lock["sha256"]):
+        raise ValueError(f"随包命令行工具的长度或 SHA-256 与 packaging/game-cli/game-cli.lock.json 的登记不符：{lock['fileName']}")
+    return lock
+
+
+def verify_life_vision(repository, component):
+    """组件 life-vision：templates/ 里只有登记的模板图片与登记文件，长度与 SHA-256 等于 workers/life-vision/Assets/templates.lock.json。"""
+    lock_path = repository / "workers/life-vision/Assets/templates.lock.json"
+    lock = read(lock_path)
+    expected = {item["path"]: item for item in lock["files"]}
+    shipped = sorted(path.relative_to(component).as_posix() for path in (component / "templates").rglob("*") if path.is_file())
+    if shipped != sorted([*expected, "templates/templates.lock.json"]):
+        raise ValueError("钓鱼识别组件的模板与登记不符：" + "、".join(shipped))
+    for relative, item in expected.items():
+        image = component / relative
+        if image.is_symlink() or image.is_junction() or image.stat().st_size != item["length"] or digest(image) != item["sha256"]:
+            raise ValueError(f"随包模板图片的长度或 SHA-256 与 templates.lock.json 的登记不符：{relative}")
+    if digest(component / "templates/templates.lock.json") != digest(lock_path):
+        raise ValueError("随包 templates.lock.json 与仓库登记文件不一致")
+    return lock
+
+
 def write_release_identity(package, components_root, component_ids, arguments):
     """components/release.json：宿主据此得知自己的版本，更新时用它核对下载包与暂存目录。"""
     components = []
@@ -79,8 +110,10 @@ def inventory(repository, package, arguments):
         raise ValueError("发行目录根有多余内容：" + "、".join(extra))
     component_ids = sorted(path.name for path in components_root.iterdir() if path.is_dir())
     required = {"core", "room-server", "dotnet-runtime", "desktop"}
-    if not required.issubset(component_ids) or set(component_ids) - required - {"observation-worker", "color-engine"}:
+    if not required.issubset(component_ids) or set(component_ids) - required - {"observation-worker", "color-engine", "game-cli", "life-vision"}:
         raise ValueError("发行组件闭包无效")
+    game_cli = verify_game_cli(repository, components_root / "game-cli") if "game-cli" in component_ids else None
+    life_vision = verify_life_vision(repository, components_root / "life-vision") if "life-vision" in component_ids else None
     nuget = Path(arguments.nuget_packages).expanduser()
     licenses = components_root / "core/licenses"
     licenses.mkdir(exist_ok=True)
@@ -241,6 +274,29 @@ def inventory(repository, package, arguments):
             notices.append(f"{distribution['name']} {distribution['version'] or ''}\nLicense: {distribution['license']}\n"
                            f"Source: {distribution['source']}\n" + (f"Modified: {modification}\n" if stripped else "") + text)
 
+    if game_cli:
+        # 专有二进制：权利归 Nexon / devCAT，由发行者原样随包分发；没有随附的许可文字，声明正文取自登记文件。
+        cli_text = (f"{game_cli['fileName']} {game_cli['version']}\n来源：{game_cli['source']}\nSHA-256：{game_cli['sha256']}\n"
+                    f"长度：{game_cli['length']} 字节\n版权归属：{game_cli['vendor']}\n{game_cli['copyright']}\n{game_cli['distribution']}\n")
+        cli_license = license_reference("Nexon-devCAT-Proprietary", cli_text)
+        cli_ref = add_package(game_cli["fileName"], game_cli["version"], cli_license, location="NOASSERTION",
+                              copyright=f"Copyright {game_cli['vendor']}",
+                              comment=f"{game_cli['source']}{game_cli['distribution']}",
+                              checksums=[dict(algorithm="SHA256", checksumValue=game_cli["sha256"])])
+        relationships.append(dict(spdxElementId=own_ref, relationshipType="DEPENDS_ON", relatedSpdxElement=cli_ref))
+        notices.append(cli_text)
+
+    if life_vision:
+        # 钓鱼识别模板是台服客户端界面裁图，权利归 Nexon / devCAT，由发行者原样随包分发；声明正文取自登记文件，逐张列出哈希。
+        templates_text = (f"钓鱼识别模板（{len(life_vision['files'])} 张）\n来源：{life_vision['source']}\n版权归属：{life_vision['vendor']}\n"
+                          f"{life_vision['copyright']}\n{life_vision['distribution']}\n"
+                          + "".join(f"{item['path']}  SHA-256 {item['sha256']}  {item['length']} 字节  {item['role']}\n" for item in life_vision["files"]))
+        templates_license = license_reference("Nexon-devCAT-FishingTemplates", templates_text)
+        templates_ref = add_package("life-vision-templates", "NOASSERTION", templates_license, location="NOASSERTION",
+                                    copyright=f"Copyright {life_vision['vendor']}", comment=f"{life_vision['source']}{life_vision['distribution']}")
+        relationships.append(dict(spdxElementId=own_ref, relationshipType="DEPENDS_ON", relatedSpdxElement=templates_ref))
+        notices.append(templates_text)
+
     if "desktop" in component_ids:
         # 桌面前端内嵌 Noto Sans SC/TC 子集字体（SIL OFL 1.1），许可文字随包保存并写入声明。
         fonts_license = repository / "frontends/desktop/src/MabiTool.Desktop/Assets/Fonts/OFL.txt"
@@ -251,6 +307,20 @@ def inventory(repository, package, arguments):
                                 comment="桌面前端内嵌的三字重子集，由 scripts/build/subset-desktop-fonts.py 从可变字体生成")
         relationships.append(dict(spdxElementId=own_ref, relationshipType="DEPENDS_ON", relatedSpdxElement=fonts_ref))
         notices.append("Noto Sans SC / Noto Sans TC (desktop frontend fonts)\nLicense: OFL-1.1\n" + fonts_text)
+        # 桌面前端内嵌的游戏图标：取自台服客户端的权利归 Nexon / devCAT，自绘的随 Moongate 以 MIT 发布；登记文件随包保存，声明逐个列出哈希。
+        icons_lock = repository / "frontends/desktop/src/MabiTool.Desktop/Assets/GameIcons/game-icons.lock.json"
+        icons = read(icons_lock)
+        shutil.copy2(icons_lock, licenses / "game-icons.lock.json")
+        game_icons = [item for item in icons["files"] if item["author"] != "自绘"]
+        icons_text = (f"桌面游戏图标（{len(icons['files'])} 个，其中取自客户端 {len(game_icons)} 个、自绘 {len(icons['files']) - len(game_icons)} 个）\n"
+                      f"来源：{icons['source']}\n版权归属：{icons['vendor']}\n{icons['copyright']}\n{icons['distribution']}\n"
+                      + "".join(f"{item['path']}  SHA-256 {item['sha256']}  {item['length']} 字节  {item['author']}  {item['role']}\n" for item in icons["files"]))
+        icons_license = license_reference("Nexon-devCAT-GameIcons", icons_text)
+        icons_ref = add_package("desktop-game-icons", "NOASSERTION", icons_license, location="NOASSERTION",
+                                copyright=f"Copyright {icons['vendor']}（自绘图标 Copyright (c) 2026 MinamiChiwa（南千和），MIT）",
+                                comment=f"{icons['source']}{icons['distribution']}")
+        relationships.append(dict(spdxElementId=own_ref, relationshipType="DEPENDS_ON", relatedSpdxElement=icons_ref))
+        notices.append(icons_text)
 
     notices_text = "\n\n".join(notices) + "\n"
     # 包根的这份在解压版里位于 licenses/，components/core 内另存一份随组件发行。

@@ -3,8 +3,10 @@ using Avalonia.Threading;
 using MabiTool.Desktop.Backend;
 using MabiTool.Desktop.Infrastructure;
 using MabiTool.Desktop.Localization;
+using MabiTool.Desktop.Pages.Character;
 using MabiTool.Desktop.Pages.Combat;
 using MabiTool.Desktop.Pages.Dyeing;
+using MabiTool.Desktop.Pages.Life;
 using MabiTool.Desktop.Pages.Music;
 using MabiTool.Desktop.Pages.Rooms;
 
@@ -100,24 +102,33 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
 
     public bool IsNowPlaying => Live && WidgetId == "performance.now-playing";
     public bool IsNearby => Live && WidgetId == "performance.nearby";
+    public bool IsEnvironment => Live && WidgetId == "environment.info";
     public bool IsReadiness => Live && WidgetId == "rooms.readiness";
     public bool IsColor => Live && WidgetId == "color.current";
     public bool IsDps => Live && WidgetId == "combat.dps";
     public bool IsSkills => Live && WidgetId == "combat.skills";
-    public bool IsCoverage => Live && WidgetId == "combat.coverage";
     public bool IsSelfEffects => Live && WidgetId == "combat.self-effects";
     public bool IsTargetEffects => Live && WidgetId == "combat.target-effects";
     public bool IsMeasurement => Live && WidgetId == "combat.measurement";
     public bool IsHealing => Live && WidgetId == "combat.healing";
     public bool IsFavorites => Live && FavoriteBoard.IsBoard(WidgetId);
     public bool IsAwakening => Live && WidgetId == AwakeningBoard.Id;
+    public bool IsLifeFacilities => Live && WidgetId == "life.facilities";
+    public bool IsLifeQueue => Live && WidgetId == "life.queue";
 
-    // 收藏浮窗：选择、顺序、横竖排与觉醒监控取版面里这个元件的摆放数据（画布按摆放数据写入），内容取同一份战斗数据里不受筛选的部分。
+    // 生活浮窗元件（加工设施、生活队列）的数据：与生活页读同一份快照，交互发出与页面相同的请求。只为生活元件建立。
+    private LifeOverlayData? life;
+
+    /// <summary>生活浮窗元件的数据；其他元件为空。</summary>
+    public LifeOverlayData? Life => WidgetId.StartsWith("life.", StringComparison.Ordinal) ? life ??= new LifeOverlayData(backend) : null;
+
+    // 收藏浮窗：选择、顺序与横竖排取版面里这个元件的摆放数据（画布按摆放数据写入），内容取同一份战斗数据里不受筛选的部分。
+    // 觉醒监控浮窗与 DPS 元件的觉醒显示取版面顶层的同一份提示设置。
     private WidgetPlacement? favoritePlacement;
     private OverlayLayoutStore? favoriteStore;
     private string favoriteSignature = string.Empty;
 
-    /// <summary>画布写入收藏浮窗或觉醒监控浮窗的摆放数据与版面；选择、顺序或排列变了才通知界面。</summary>
+    /// <summary>画布写入收藏浮窗、觉醒监控浮窗或 DPS 元件的摆放数据与版面；选择、顺序或排列变了才通知界面。</summary>
     public void SetFavoriteSource(WidgetPlacement placement, OverlayLayoutStore store)
     {
         favoritePlacement = placement;
@@ -130,11 +141,33 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
             Raise(name);
     }
 
-    /// <summary>收藏浮窗的各项（没有摆放数据，即单独使用模型时为空）；觉醒监控浮窗为固定的两项。</summary>
+    /// <summary>收藏浮窗的各项（没有摆放数据，即单独使用模型时为空）；觉醒监控浮窗为固定的“徽章觉醒”一项。</summary>
     public IReadOnlyList<FavoriteItem> FavoriteItems => IsAwakening ? AwakeningBoard.Items()
         : IsFavorites && favoritePlacement is { } placement ? FavoriteBoard.Items(placement, Combat) : [];
     public bool FavoritesHorizontal => favoritePlacement?.Horizontal == true;
+    /// <summary>觉醒提示设置：版面顶层的同一个实例，觉醒监控浮窗与 DPS 元件的觉醒显示绘制时都从这里读取闪烁开关、颜色与时长。</summary>
     public AwakeningSettings? AwakeningAlerts => favoriteStore?.Awakening;
+
+    /// <summary>
+    /// 版面里 DPS 元件的“觉醒监控”开关（画布按摆放数据写入）；默认显示。
+    /// </summary>
+    public bool ShowAwakening
+    {
+        get => showAwakening;
+        set
+        {
+            if (!Set(ref showAwakening, value)) return;
+            Raise(nameof(DpsAwakeningShown));
+            Raise(nameof(AwakeningItems));
+        }
+    }
+    private bool showAwakening = true;
+
+    /// <summary>DPS 元件内显示徽章觉醒：觉醒中亮起并按提示设置闪烁，冷却中显示冷却剩余，未觉醒时变暗。</summary>
+    public bool DpsAwakeningShown => IsDps && showAwakening;
+
+    /// <summary>DPS 元件觉醒显示的项（“徽章觉醒”一项）；不显示时为空，绘制控件不随效果节拍重绘。</summary>
+    public IReadOnlyList<FavoriteItem> AwakeningItems => DpsAwakeningShown ? AwakeningBoard.Items() : [];
     /// <summary>没有勾选任何项时的说明。</summary>
     public string FavoritesHint => CombatEffectFavorites.Favorites.Count == 0
         ? UiText.Pick("在 DPS 页收藏效果后，到浮窗版面页勾选", "在 DPS 頁收藏效果後，到浮窗版面頁勾選")
@@ -197,6 +230,22 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     public MusicPageData Music { get; private set; } = null!;
     public RoomsPageData Rooms { get; private set; } = null!;
     public ColorPageData Color { get; private set; } = null!;
+
+    // 环境信息元件：频道、区域、天气、游戏内时间（游戏返回的原文，天气换成中文）；读不到的项显示“未读取”，来源与读取时刻在悬停提示里。
+    public EnvironmentView Environment { get; private set; } = null!;
+    public string EnvironmentArea => Environment.Area;
+    public string EnvironmentChannelLine => UiText.Pick($"频道 {Environment.Channel} · {Environment.Weather}", $"頻道 {Environment.Channel} · {Environment.Weather}");
+    public string EnvironmentTimeLine => UiText.Pick($"游戏内时间 {Environment.Time}", $"遊戲內時間 {Environment.Time}");
+    public string EnvironmentTip => Environment.TimeTip == Environment.Time ? Environment.Tip : Environment.Tip + "\n" + Environment.TimeTip;
+
+    // 附近演奏字幕元件：新出现的曲目提示一次并停留一段时间（同一曲目只提示一次，停奏后重置）；平时显示一句说明。
+    public NearbyView Nearby { get; private set; } = null!;
+    private readonly NearbyCaptionState nearbyCaption = new(TimeSpan.FromSeconds(NearbyCaptionState.DefaultHoldSeconds));
+    public string NearbyCaption => nearbyCaption.Current ?? string.Empty;
+    public bool HasNearbyCaption => nearbyCaption.Active;
+    public bool NoNearbyCaption => !nearbyCaption.Active;
+    public string NearbyIdle => Nearby.Unread ? CharacterText.Unread : UiText.Pick("附近没有新的演奏", "附近沒有新的演奏");
+    public string NearbyTip => Nearby.Tip;
 
     // 染色元件的剩余与已用时间：与染色页运行栏同一份进度锚点，按本机时钟重算，元件显示且寻色进行中时每 200 ms 刷新。
     public string ColorRemaining => Color.Progress?.RemainingText(DateTimeOffset.Now) ?? string.Empty;
@@ -356,6 +405,7 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
             shown = value;
             backend.SetSurfaceVisible("overlay", value);
             if (DataSurface is { } surface) backend.SetSurfaceVisible(surface, value);
+            Life?.SetShown(value);
             if (value && stale && Read()) Raise(string.Empty);
         }
         UpdateClock();
@@ -366,7 +416,10 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     // 元件所需数据对应的可见处：战斗元件要战斗数据，演奏中与合奏元件要乐谱与队列，染色元件要染色状态。
     private string? DataSurface => Combatant ? "overlay.combat"
         : WidgetId is "performance.now-playing" or "rooms.readiness" ? "music"
-        : WidgetId == "color.current" ? "color" : null;
+        : WidgetId == "color.current" ? "color"
+        : WidgetId == "environment.info" ? "overlay.environment"
+        : WidgetId == "performance.nearby" ? "overlay.nearby"
+        : WidgetId.StartsWith("life.", StringComparison.Ordinal) ? "overlay.life" : null;
     private bool stale, shownReported;
     private TopicNotice? shownNotice;
 
@@ -379,6 +432,7 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
         CombatEffectFavorites.Changed -= OnChanged;
         SetShown(false);
         clockTimer.Stop();
+        life?.Dispose();
     }
 
     // 隐藏的元件只记下有变化；显示的元件只重读自己用到的数据，数据对象没变（后端适配层对同一状态返回同一对象）时不通知。
@@ -398,6 +452,8 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
         if (first || WidgetId == "performance.now-playing") changed |= Swap<MusicPageData>(Music!, backend.GetMusic(), value => Music = value);
         if (first || WidgetId == "rooms.readiness") changed |= Swap<RoomsPageData>(Rooms!, backend.GetRooms(), value => Rooms = value);
         if (first || WidgetId == "color.current") changed |= Swap<ColorPageData>(Color!, backend.GetColor(), value => Color = value);
+        if (first || WidgetId == "environment.info") changed |= Swap<EnvironmentView>(Environment!, backend.GetEnvironment(), value => Environment = value);
+        if (first || WidgetId == "performance.nearby") changed |= Swap<NearbyView>(Nearby!, backend.GetNearby(), value => { Nearby = value; nearbyCaption.Observe(value); });
         var notice = Notice;
         changed |= !Equals(notice, shownNotice);
         shownNotice = notice;
@@ -421,7 +477,7 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
     private void UpdateClock()
     {
         var run = shown && (IsReadiness && Rooms.Room?.Round is { Active: true } || IsMeasurement && MeasureRunning ||
-            IsColor && Color.Progress is not null);
+            IsColor && Color.Progress is not null || WidgetId == "performance.nearby" && nearbyCaption.Active);
         if (run && !clockTimer.IsEnabled) clockTimer.Start();
         else if (!run && clockTimer.IsEnabled) clockTimer.Stop();
     }
@@ -439,6 +495,7 @@ public sealed class OverlayWidgetModel : ObservableObject, IDisposable
         nameof(RoomStatus), nameof(HasRoomCountdown), nameof(RoomCountdownLabel), nameof(RoomCountdownValue), nameof(RoomCountdownFraction),
         nameof(RoomCountdownStarting), nameof(RoomCountdownStopping), nameof(HasRoomScoreProgress), nameof(HasRoomScoreFraction),
         nameof(RoomScoreFraction), nameof(RoomScoreProgressText), nameof(MeasureRunningText), nameof(MeasureProgress),
-        nameof(ColorRemaining), nameof(HasColorRemaining), nameof(ColorLowTime), nameof(ColorElapsed), nameof(HasColorElapsed)
+        nameof(ColorRemaining), nameof(HasColorRemaining), nameof(ColorLowTime), nameof(ColorElapsed), nameof(HasColorElapsed),
+        nameof(NearbyCaption), nameof(HasNearbyCaption), nameof(NoNearbyCaption)
     ];
 }

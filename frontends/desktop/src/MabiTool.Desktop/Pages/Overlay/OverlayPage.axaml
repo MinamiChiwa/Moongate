@@ -258,6 +258,21 @@
                   </StackPanel>
                 </controls:SelectionBorder>
               </controls:PairRow>
+              <!-- DPS 元件内的徽章觉醒：显示或隐藏，立即保存；显示时下方是与觉醒监控浮窗同一份的觉醒提示设置。 -->
+              <controls:PairRow IsVisible="{Binding HasDpsAwakeningSetting}">
+                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                  <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding DpsAwakeningLabel}" />
+                  <controls:HelpTip Text="{Binding DpsAwakeningHint}" />
+                </StackPanel>
+                <controls:SelectionBorder x:Name="DpsAwakeningSwitch" Classes="segmented" HorizontalAlignment="Right">
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="DpsAwakeningShowButton" Classes="segment" Classes.active="{Binding DpsAwakeningShown}" Content="{Binding ShowLabel}"
+                            Command="{Binding DpsAwakeningCommand}" CommandParameter="show" />
+                    <Button x:Name="DpsAwakeningHideButton" Classes="segment" Classes.active="{Binding DpsAwakeningHidden}" Content="{Binding HideLabel}"
+                            Command="{Binding DpsAwakeningCommand}" CommandParameter="hide" />
+                  </StackPanel>
+                </controls:SelectionBorder>
+              </controls:PairRow>
               <!-- 收藏浮窗：勾选要显示的收藏（每个收藏可勾自身与目标，只勾选不排序）；改动立即保存。 -->
               <StackPanel x:Name="FavoriteSettings" Spacing="8" IsVisible="{Binding HasFavoritesSetting}">
                 <StackPanel Orientation="Horizontal" Spacing="4">
@@ -302,59 +317,54 @@
                   <TextBlock Classes="muted" Text="{Binding AlertsLabel}" />
                   <controls:HelpTip Text="{Binding AlertsHint}" />
                 </StackPanel>
-                <!-- 觉醒监控浮窗的提示设置：闪烁的颜色与时长、音效开关、声音（内置合成或本机 wav／mp3）与音量。 -->
-                <ItemsControl x:Name="AlertList" controls:StableItems.Source="{Binding Alerts}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="page:AlertView">
-                      <Border Classes="inset" Margin="0,0,0,8">
-                        <StackPanel Spacing="6">
-                          <TextBlock Classes="strong" Text="{Binding Title}" />
-                          <controls:PairRow>
-                            <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).FlashLabel}" />
-                            <Button Classes="chip" HorizontalAlignment="Right" Classes.active="{Binding Flash}"
-                                    Content="{Binding FlashState}"
-                                    Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertFlashCommand}" CommandParameter="{Binding Kind}" />
-                          </controls:PairRow>
-                          <ContentControl Content="{Binding Color}" ContentTemplate="{StaticResource ColorEntryTemplate}" />
-                          <controls:PairRow>
-                            <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).FlashSecondsLabel}" />
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                              <Button Classes="chip" Width="34" Padding="0" Content="−"
-                                      Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertSecondsCommand}" CommandParameter="{Binding StepDown}" />
-                              <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding Seconds}" />
-                              <Button Classes="chip" Width="34" Padding="0" Content="+"
-                                      Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertSecondsCommand}" CommandParameter="{Binding StepUp}" />
-                            </StackPanel>
-                          </controls:PairRow>
-                          <controls:PairRow>
-                            <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).SoundLabel}" />
-                            <Button Classes="chip" HorizontalAlignment="Right" Classes.active="{Binding Sound}"
-                                    Content="{Binding SoundState}"
-                                    Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertSoundCommand}" CommandParameter="{Binding Kind}" />
-                          </controls:PairRow>
-                          <TextBlock Classes="note" TextTrimming="CharacterEllipsis" Text="{Binding SoundText}" />
-                          <WrapPanel>
-                            <Button Classes="chip" Margin="0,0,6,6" Tag="{Binding Kind}" Content="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).PickSoundLabel}"
-                                    Click="OnPickSound" />
-                            <Button Classes="chip" Margin="0,0,0,6" IsVisible="{Binding HasFile}"
-                                    Content="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).BuiltinSoundLabel}"
-                                    Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertBuiltinCommand}" CommandParameter="{Binding Kind}" />
-                          </WrapPanel>
-                          <controls:PairRow>
-                            <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).VolumeLabel}" />
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                              <Button Classes="chip" Width="34" Padding="0" Content="−"
-                                      Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertVolumeCommand}" CommandParameter="{Binding StepDown}" />
-                              <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding Volume}" />
-                              <Button Classes="chip" Width="34" Padding="0" Content="+"
-                                      Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertVolumeCommand}" CommandParameter="{Binding StepUp}" />
-                            </StackPanel>
-                          </controls:PairRow>
-                        </StackPanel>
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <!-- “徽章觉醒”的提示设置：闪烁的颜色与时长、音效开关、声音（内置合成或本机 wav／mp3）与音量。
+                     选中觉醒监控浮窗或 DPS 元件时编辑的是版面顶层的同一份设置。 -->
+                <Border x:Name="AlertPanel" Classes="inset" Margin="0,0,0,8" DataContext="{Binding Alert}" x:DataType="page:AlertView">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="strong" Text="{Binding Title}" />
+                    <controls:PairRow>
+                      <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).FlashLabel}" />
+                      <Button Classes="chip" HorizontalAlignment="Right" Classes.active="{Binding Flash}"
+                              Content="{Binding FlashState}"
+                              Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertFlashCommand}" />
+                    </controls:PairRow>
+                    <ContentControl Content="{Binding Color}" ContentTemplate="{StaticResource ColorEntryTemplate}" />
+                    <controls:PairRow>
+                      <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).FlashSecondsLabel}" />
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Classes="chip" Width="34" Padding="0" Content="−"
+                                Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertSecondsCommand}" CommandParameter="-" />
+                        <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding Seconds}" />
+                        <Button Classes="chip" Width="34" Padding="0" Content="+"
+                                Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertSecondsCommand}" CommandParameter="+" />
+                      </StackPanel>
+                    </controls:PairRow>
+                    <controls:PairRow>
+                      <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).SoundLabel}" />
+                      <Button Classes="chip" HorizontalAlignment="Right" Classes.active="{Binding Sound}"
+                              Content="{Binding SoundState}"
+                              Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertSoundCommand}" />
+                    </controls:PairRow>
+                    <TextBlock Classes="note" TextTrimming="CharacterEllipsis" Text="{Binding SoundText}" />
+                    <WrapPanel>
+                      <Button Classes="chip" Margin="0,0,6,6" Content="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).PickSoundLabel}"
+                              Click="OnPickSound" />
+                      <Button Classes="chip" Margin="0,0,0,6" IsVisible="{Binding HasFile}"
+                              Content="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).BuiltinSoundLabel}"
+                              Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertBuiltinCommand}" />
+                    </WrapPanel>
+                    <controls:PairRow>
+                      <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).VolumeLabel}" />
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Classes="chip" Width="34" Padding="0" Content="−"
+                                Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertVolumeCommand}" CommandParameter="-" />
+                        <TextBlock VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Text="{Binding Volume}" />
+                        <Button Classes="chip" Width="34" Padding="0" Content="+"
+                                Command="{Binding $parent[UserControl].((page:OverlayPageModel)DataContext).AlertVolumeCommand}" CommandParameter="+" />
+                      </StackPanel>
+                    </controls:PairRow>
+                  </StackPanel>
+                </Border>
               </StackPanel>
               <!-- 所选元件移到另一块显示器：比例位置不变，立即保存；只有一块显示器时不显示。 -->
               <controls:PairRow IsVisible="{Binding HasMonitorChoice}">
@@ -533,7 +543,7 @@
                   AutomationProperties.Name="{DynamicResource S.ClosePicker}" />
           <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="h2" FontSize="17" Text="{DynamicResource O.GameDataTitle}" /><controls:HelpTip Text="{DynamicResource O.GameDataHint}" /></StackPanel>
         </DockPanel>
-        <ScrollViewer controls:EdgeFade.IsEnabled="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer Classes="room" controls:EdgeFade.IsEnabled="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <ItemsControl x:Name="GameDataList" controls:StableItems.Source="{Binding GameDataLibrary}" ItemTemplate="{StaticResource LibraryTile}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate><StackPanel Spacing="8" Margin="0,0,0,8" /></ItemsPanelTemplate>

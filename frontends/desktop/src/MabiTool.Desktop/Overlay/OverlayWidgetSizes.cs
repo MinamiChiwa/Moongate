@@ -16,13 +16,13 @@ public static class OverlayWidgetSizes
     {
         ["performance.now-playing"] = (new(272, 104), new(176, 104)),
         ["performance.nearby"] = (new(304, 48), new(168, 48)),
+        ["environment.info"] = (new(256, 104), new(176, 92)),
         ["rooms.readiness"] = (new(312, 344), new(248, 232)),
         ["color.current"] = (new(288, 232), new(200, 120)),
-        // 默认与最小高度都含底部的怪物血量区块（三行约 48）：最小尺寸下标题、主 DPS 与区块正好放下，其余指标在元件内滚动；
-        // 区块收起时腾出的高度给上方指标。
-        ["combat.dps"] = (new(240, 160), new(168, 152)),
+        // 默认与最小高度都含主 DPS 下方的徽章觉醒一行（约 28）与底部的怪物血量区块（三行约 48）：最小尺寸下标题、主 DPS、觉醒行与区块正好放下，
+        // 其余指标在元件内滚动；觉醒行关闭或区块收起时腾出的高度给上方指标。
+        ["combat.dps"] = (new(240, 188), new(168, 180)),
         ["combat.skills"] = (new(240, 136), new(160, 80)),
-        ["combat.coverage"] = (new(256, 136), new(176, 88)),
         ["combat.self-effects"] = (new(352, 96), new(112, 96)),
         ["combat.target-effects"] = (new(352, 120), new(136, 120)),
         ["combat.measurement"] = (new(248, 168), new(184, 144)),
@@ -30,8 +30,11 @@ public static class OverlayWidgetSizes
         // 收藏浮窗：默认竖排约 5 项；最小一项加“+N”。
         [FavoriteBoard.First] = (new(256, 128), new(136, 64)),
         [FavoriteBoard.Second] = (new(256, 128), new(136, 64)),
-        // 觉醒监控：竖排两项；横排时放宽即并排。
-        [AwakeningBoard.Id] = (new(256, 72), new(136, 64))
+        // 觉醒监控：“徽章觉醒”一项。
+        [AwakeningBoard.Id] = (new(256, 72), new(136, 64)),
+        // 生活：加工设施默认放下六个设施（每个设施名称一行、圆点一行）；生活队列放下状态、当前与下一项和一行按钮。
+        ["life.facilities"] = (new(288, 280), new(200, 120)),
+        ["life.queue"] = (new(280, 168), new(200, 132))
     };
 
     /// <summary>元件的默认尺寸；扩展元件没有声明时为空（按内容的自然尺寸显示）。</summary>

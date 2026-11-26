@@ -39,7 +39,7 @@ internal static class UpdateRetention
             foreach (var file in Directory.EnumerateFiles(plans))
             {
                 var name = Path.GetFileName(file);
-                if (keep is not null && (name == keep.PlanId + ".json" || name == keep.PlanId + ".estimate.json" ||
+                if (keep is not null && (name == keep.PlanId + ".json" || name == keep.PlanId + ".estimate.json" || name == keep.PlanId + ".notes.json" ||
                     keep.Ranges is { } ranges && name == "manifest-" + ranges.ManifestSha256 + ".json")) continue;
                 if (transaction is not null && name == transaction + ".json") continue;
                 File.Delete(file);

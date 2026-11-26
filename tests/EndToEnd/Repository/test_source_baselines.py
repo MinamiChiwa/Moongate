@@ -22,7 +22,7 @@ class SourceBaselineTests(unittest.TestCase):
 
     def test_registry_is_complete_and_mapped(self):
         self.assertEqual([], audit.validate(self.data, self.tasks))
-        self.assertEqual({"mobifolio", "mabisync", "color-studio", "synccue", "mabiagent"},
+        self.assertEqual({"mobifolio", "mabisync", "color-studio", "synccue", "mabiagent", "mabiagent-fishing", "mabiagent-life"},
                          {s["id"] for s in self.data["sources"]})
         self.assertGreaterEqual(len(self.data["features"]), 36)
 

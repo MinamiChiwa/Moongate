@@ -25,11 +25,12 @@ public sealed record ShortcutLine(ShortcutRow Row, bool Recording, bool CanStart
 /// <summary>
 /// 设置页数据。<see cref="Policy"/> 是后端的更新策略，未连接或后端没有提供时为空，此时策略三项停用。
 /// <see cref="AvailableRelease"/> 是后端更新状态里发现的新版本标识，没有新版本或未连接时为空。
+/// <see cref="Offer"/> 是点“下载更新”前确认窗口显示的可用更新摘要，没有新版本或未连接时为空。
 /// <see cref="Connected"/> 表示已连接后端。
 /// </summary>
 public sealed record SettingsPageData(IReadOnlyList<KeyValue> Backend, IReadOnlyList<ShortcutRow> Shortcuts,
     IReadOnlyList<KeyValue> Update, bool CanCheckUpdate, bool CanDownloadUpdate = false, bool CanInstallUpdate = false,
-    UpdatePolicyView? Policy = null, string? AvailableRelease = null, bool Connected = false);
+    UpdatePolicyView? Policy = null, string? AvailableRelease = null, bool Connected = false, UpdateOfferView? Offer = null);
 
 /// <summary>更新策略的一个固定档位；<see cref="Active"/> 表示它是当前值。</summary>
 public sealed record PolicyChoice(string Label, int Value, bool Active, string AccessibleName);
@@ -69,6 +70,8 @@ public sealed partial class SettingsPageModel : BackendPageModel<SettingsPageDat
             Raise(nameof(IsRecording));
         });
         CancelRecordCommand = new RelayCommand(_ => StopRecording());
+        // “下载更新”先弹出确认窗口（版本、下载方式与大小、更新说明），确认后才开始下载。
+        DownloadUpdateCommand = new RelayCommand(_ => ShellRequests.RequestUpdateDownload());
         AutoCheckCommand = new RelayCommand(choice =>
         {
             if (Policy is { } policy) _ = SavePolicyAsync(policy with { AutomaticChecks = choice as string == "on" });
@@ -142,6 +145,7 @@ public sealed partial class SettingsPageModel : BackendPageModel<SettingsPageDat
     private bool limitInvalid;
     private bool resetLimit;
 
+    public ICommand DownloadUpdateCommand { get; }
     public ICommand AutoCheckCommand { get; }
     public ICommand IntervalCommand { get; }
     public ICommand LimitUnitCommand { get; }

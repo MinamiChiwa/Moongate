@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shell="using:MabiTool.Desktop.Shell"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Pages.Settings.GameConnectorCardView"
+             x:DataType="shell:GameConnectorModel">
+  <!-- 游戏连接器的内容：设置页卡片与侧栏胶囊的弹出层共用这一份，都绑定同一种模型（GameConnectorModel）。 -->
+  <StackPanel Spacing="10">
+    <StackPanel Spacing="2">
+      <TextBlock x:Name="ConnectorStatusText" Classes="body strong" TextWrapping="Wrap" Text="{Binding StatusLine}"
+                 Classes.confirmed="{Binding DotConnected}" Classes.unconfirmed="{Binding DotWarning}" />
+      <TextBlock x:Name="ConnectorHintText" Classes="note" TextWrapping="Wrap" Text="{Binding Hint}" IsVisible="{Binding HasHint}" />
+    </StackPanel>
+
+    <!-- 启用开关：能否点取自后端的写操作许可；游戏运行中、命令行文件缺失或不符时停用并在下方写明原因。 -->
+    <controls:PairRow>
+      <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource GC.Switch}" />
+      <controls:SelectionBorder Classes="segmented" IsEnabled="{Binding CanToggle}">
+        <StackPanel Orientation="Horizontal">
+          <Button x:Name="ConnectorOnButton" Classes="segment" Classes.active="{Binding Enabled}"
+                  Command="{Binding EnableCommand}" Content="{DynamicResource T.On}" />
+          <Button x:Name="ConnectorOffButton" Classes="segment" Classes.active="{Binding !Enabled}"
+                  Command="{Binding DisableCommand}" Content="{DynamicResource T.Off}" />
+        </StackPanel>
+      </controls:SelectionBorder>
+    </controls:PairRow>
+    <TextBlock x:Name="ConnectorBlockedText" Classes="note unconfirmed" TextWrapping="Wrap" Text="{Binding ToggleBlocked}"
+               IsVisible="{Binding HasToggleBlocked}" />
+
+    <controls:PairRow>
+      <TextBlock Classes="muted" Text="{DynamicResource GC.Cli}" />
+      <TextBlock x:Name="ConnectorCliText" Classes="body" TextWrapping="Wrap" Text="{Binding CliLine}" ToolTip.Tip="{Binding CliTip}" />
+    </controls:PairRow>
+    <controls:PairRow>
+      <TextBlock Classes="muted" Text="{DynamicResource GC.Game}" />
+      <TextBlock x:Name="ConnectorGameText" Classes="body" Text="{Binding GameLine}" />
+    </controls:PairRow>
+
+    <!-- 台服游戏目录：自动识别的目录直接显示，找不到或识别错误时在“更改”里手动指定。 -->
+    <StackPanel Spacing="4">
+      <DockPanel>
+        <Button x:Name="ConnectorDirectoryChange" DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
+                Content="{DynamicResource GC.ChangeDirectory}" Command="{Binding ChangeDirectoryCommand}"
+                IsEnabled="{Binding CanEditDirectory}" IsVisible="{Binding NotEditingDirectory}" />
+        <TextBlock Classes="muted" VerticalAlignment="Center" Text="{DynamicResource GC.Directory}" />
+      </DockPanel>
+      <TextBlock x:Name="ConnectorDirectoryText" Classes="body" TextWrapping="Wrap" Text="{Binding DirectoryLine}" ToolTip.Tip="{Binding DirectoryTip}" />
+      <StackPanel x:Name="ConnectorDirectoryEditor" Spacing="6" IsVisible="{Binding EditingDirectory}">
+        <TextBox x:Name="ConnectorDirectoryBox" Classes="field" Text="{Binding DirectoryInput, Mode=TwoWay}"
+                 PlaceholderText="{DynamicResource GC.DirectoryPlaceholder}"
+                 AutomationProperties.Name="{DynamicResource GC.Directory}" />
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+          <Button x:Name="ConnectorDirectoryCancel" Classes="chip" Content="{DynamicResource GC.DirectoryCancel}"
+                  Command="{Binding CancelDirectoryCommand}" />
+          <Button x:Name="ConnectorDirectoryApply" Classes="primary" Content="{DynamicResource GC.DirectoryApply}"
+                  Command="{Binding ApplyDirectoryCommand}" IsEnabled="{Binding CanApplyDirectory}" />
+        </StackPanel>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- 恢复原设置：游戏正常退出后，把台服客户端设置恢复到首次启用之前。 -->
+    <StackPanel Spacing="4">
+      <Button x:Name="ConnectorRestoreButton" HorizontalAlignment="Left" Content="{DynamicResource GC.Restore}"
+              Command="{Binding RestoreCommand}" IsEnabled="{Binding CanRestore}" ToolTip.Tip="{DynamicResource GC.RestoreHint}" />
+      <TextBlock x:Name="ConnectorRestoreBlockedText" Classes="note unconfirmed" TextWrapping="Wrap" Text="{Binding RestoreBlocked}"
+                 IsVisible="{Binding HasRestoreBlocked}" />
+    </StackPanel>
+
+    <!-- 最近一次操作的结果：启用成功后提示从 Nexon Launcher 重新启动台服。 -->
+    <TextBlock x:Name="ConnectorMessageText" Classes="note" TextWrapping="Wrap" Text="{Binding Message}" IsVisible="{Binding HasMessage}"
+               Classes.confirmed="{Binding MessageSucceeded}" Classes.error="{Binding MessageFailed}" />
+  </StackPanel>
+</UserControl>

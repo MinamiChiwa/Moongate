@@ -597,39 +597,91 @@ public sealed class DyeingTests
     }
 
     [AvaloniaFact]
-    public void MixedDpiDesktopsMapEveryPhysicalPixelAndMismatchesNameTheCause()
+    public void MixedDpiMonitorsMapEveryPhysicalPixelAndMismatchesNameTheCause()
     {
         // 混合缩放：左边 1920×1080（100%）在 (-1920, 360)，主屏 2560×1440（150%）在 (0, 0)，右边 1920×1200（125%）在 (2560, -200)。
-        // 物理虚拟桌面 = (-1920, -200) 6400×1640；两块屏的交界与四角都落在正确的画面像素上。
-        var desktop = new PixelRect(-1920, -200, 6400, 1640);
-        Assert.Null(ScreenPickMath.CheckCapture(desktop, desktop, desktop));
-        Assert.Equal(new PixelPoint(0, 560), ScreenPickMath.ImagePoint(new(-1920, 360), desktop));
-        Assert.Equal(new PixelPoint(1919, 1639), ScreenPickMath.ImagePoint(new(-1, 1439), desktop));
-        Assert.Equal(new PixelPoint(1920, 200), ScreenPickMath.ImagePoint(new(0, 0), desktop));
-        Assert.Equal(new PixelPoint(4480, 0), ScreenPickMath.ImagePoint(new(2560, -200), desktop));
-        Assert.Equal(new PixelPoint(6399, 1639), ScreenPickMath.ImagePoint(new(4479, 1439), desktop));
-        Assert.Null(ScreenPickMath.ImagePoint(new(4480, 0), desktop));
-        Assert.Null(ScreenPickMath.ImagePoint(new(0, -201), desktop));
+        // 每块显示器各自一张画面；交界、四角与显示器之间的空隙都落在正确的显示器与画面像素上。
+        PixelRect[] monitors = [new(-1920, 360, 1920, 1080), new(0, 0, 2560, 1440), new(2560, -200, 1920, 1200)];
+        Assert.Equal(0, ScreenPickMath.MonitorAt(monitors, new(-1920, 360)));
+        Assert.Equal(0, ScreenPickMath.MonitorAt(monitors, new(-1, 1439)));
+        Assert.Equal(1, ScreenPickMath.MonitorAt(monitors, new(0, 0)));
+        Assert.Equal(1, ScreenPickMath.MonitorAt(monitors, new(2559, 1439)));
+        Assert.Equal(2, ScreenPickMath.MonitorAt(monitors, new(2560, -200)));
+        Assert.Equal(2, ScreenPickMath.MonitorAt(monitors, new(4479, 999)));
+        Assert.Equal(-1, ScreenPickMath.MonitorAt(monitors, new(4480, 0)));
+        Assert.Equal(-1, ScreenPickMath.MonitorAt(monitors, new(-1, 359)));
+        Assert.Equal(-1, ScreenPickMath.MonitorAt(monitors, new(0, -1)));
+        Assert.Equal(new PixelPoint(1919, 1079), ScreenPickMath.ImagePoint(new(-1, 1439), monitors[0]));
+        Assert.Equal(new PixelPoint(0, 0), ScreenPickMath.ImagePoint(new(2560, -200), monitors[2]));
+        Assert.Equal(new PixelPoint(1919, 1199), ScreenPickMath.ImagePoint(new(4479, 999), monitors[2]));
+        // 单块显示器上限 16,777,216 像素：5K 可截，6K（6016×3384）超限。
+        Assert.False(ScreenPickMath.ExceedsLimit(new(0, 0, 5120, 2880)));
+        Assert.True(ScreenPickMath.ExceedsLimit(new(0, 0, 6016, 3384)));
 
         UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
-        // 后端在按缩放虚拟化的上下文里读桌面：150% 单屏 2560×1440 读成 1707×960。
-        Assert.Equal(1.5, ScreenPickMath.LogicalScale(new(0, 0, 2560, 1440), new(0, 0, 1707, 960)));
-        Assert.Equal(1.25, ScreenPickMath.LogicalScale(new(0, 0, 1920, 1080), new(0, 0, 1536, 864)));
-        Assert.Null(ScreenPickMath.LogicalScale(desktop, new(-1920, -200, 6400, 1080)));
-        Assert.Contains("DPI", ScreenPickMath.CheckCapture(new(0, 0, 2560, 1440), new(0, 0, 2560, 1440), new(0, 0, 1707, 960)));
-        // 截屏前后边界不同：显示布局在截屏期间变化。
-        Assert.Contains("显示布局变化", ScreenPickMath.CheckCapture(desktop, new(-1920, 0, 6400, 1440), desktop));
-        // 其他不一致：两边的实际边界都写进原因。
-        var other = ScreenPickMath.CheckCapture(desktop, desktop, new(-160, 0, 160, 90));
-        Assert.Contains("(-160, 0) 160×90", other);
-        Assert.Contains("(-1920, -200) 6400×1640", other);
+        Assert.Null(ScreenPickMath.CheckCapture(monitors, monitors.ToList(), monitors[1], monitors[1]));
+        // 截屏后读到的显示器布局与开始时不同或读不到：显示布局在取色期间变化。
+        Assert.Contains("显示布局变化", ScreenPickMath.CheckCapture(monitors, [monitors[0], monitors[1]], monitors[1], monitors[1]));
+        Assert.Contains("显示布局变化", ScreenPickMath.CheckCapture(monitors, null, monitors[1], monitors[1]));
+        // 画面与请求的区域不一致（如按缩放后的逻辑像素截取）：两边的实际边界都写进原因。
+        var other = ScreenPickMath.CheckCapture(monitors, monitors, monitors[1], new(0, 0, 1707, 960));
+        Assert.Contains("(0, 0) 1707×960", other);
+        Assert.Contains("(0, 0) 2560×1440", other);
     }
 
-    /// <summary>记录吸管流程调用顺序的桌面实现；<paramref name="desktops"/> 依次是每次读取的物理桌面边界，最后一个重复使用。</summary>
-    private sealed class FakePickHost(Func<ScreenCapture, PickLayerResult> layer, params PixelRect?[] desktops) : IScreenPickHost
+    [AvaloniaTheory]
+    [InlineData(1.0, 0, 0, 1920, 1080)]
+    [InlineData(1.25, -1920, 0, 1920, 1200)]
+    [InlineData(1.5, 0, -1620, 2880, 1620)]
+    [InlineData(1.75, -2560, -1440, 2560, 1440)]
+    [InlineData(1.75, 1920, -200, 2880, 1620)]
+    public void FrozenPixelsStayOneToOneOnEachMonitorScale(double scale, int x, int y, int width, int height)
+    {
+        // 每块显示器的冻结画面按“物理 ÷ 当前界面缩放”换成逻辑尺寸，乘回缩放正好是物理宽高：不放大、不裁切。
+        var monitor = new PixelRect(x, y, width, height);
+        var frozen = new ScreenCapture("c", x, y, width, height, new byte[width * height * 3]);
+        var logical = ScreenPickMath.LogicalSize(monitor.Size, scale);
+        var shown = ScreenPickMath.FrozenRect(frozen, scale);
+        Assert.Equal(new Rect(logical), shown);
+        Assert.Equal(width, shown.Width * scale, 9);
+        Assert.Equal(height, shown.Height * scale, 9);
+        Assert.False(ScreenPickMath.ExceedsLimit(monitor));
+
+        // 物理光标落在哪个物理像素，采样格就从那个像素左上角起、边长 1 物理像素；四角都对齐，屏外为空。
+        var first = ScreenPickMath.CursorCell(new(x, y), monitor, scale)!.Value;
+        Assert.Equal(new Rect(0, 0, 1 / scale, 1 / scale), first);
+        var last = ScreenPickMath.CursorCell(new(x + width - 1, y + height - 1), monitor, scale)!.Value;
+        Assert.Equal(width - 1, last.X * scale, 9);
+        Assert.Equal(height - 1, last.Y * scale, 9);
+        Assert.Equal(width, last.Right * scale, 9);
+        Assert.Equal(height, last.Bottom * scale, 9);
+        var middle = ScreenPickMath.CursorCell(new(x + 701, y + 333), monitor, scale)!.Value;
+        Assert.Equal(701, middle.X * scale, 9);
+        Assert.Equal(333, middle.Y * scale, 9);
+        Assert.Null(ScreenPickMath.CursorCell(new(x - 1, y), monitor, scale));
+        Assert.Null(ScreenPickMath.CursorCell(new(x, y + height), monitor, scale));
+
+        // 采样格与取到的颜色是同一个画面像素。
+        var rgb = frozen.Rgb;
+        var offset = (333 * width + 701) * 3;
+        (rgb[offset], rgb[offset + 1], rgb[offset + 2]) = (0x12, 0x34, 0x56);
+        Assert.Equal("#123456", ScreenPickMath.HexAt(frozen, new(x + 701, y + 333)));
+
+        // 界面缩放等于窗口 DPI 才算就位；读不到 DPI（0）不算。
+        Assert.True(ScreenPickMath.SameScaling(scale, (uint)Math.Round(scale * 96)));
+        Assert.False(ScreenPickMath.SameScaling(scale, (uint)Math.Round(scale * 96) + 24));
+        Assert.False(ScreenPickMath.SameScaling(scale, 0));
+    }
+
+    /// <summary>
+    /// 记录吸管流程调用顺序的桌面实现：<paramref name="layouts"/> 依次是每次读取的显示器布局（最后一个重复使用），
+    /// 取色层按 <paramref name="script"/> 依次给出事件。
+    /// </summary>
+    private sealed class FakePickHost(IReadOnlyList<PickEvent> script, params IReadOnlyList<PixelRect>?[] layouts) : IScreenPickHost
     {
         private int reads;
         public List<string> Calls { get; } = [];
+        public List<string> Notices { get; } = [];
         public IDisposable HideWindows()
         {
             Calls.Add("hide");
@@ -640,11 +692,26 @@ public sealed class DyeingTests
             Calls.Add("settle");
             return Task.CompletedTask;
         }
-        public PixelRect? DesktopBounds() => desktops[Math.Min(reads++, desktops.Length - 1)];
-        public Task<PickLayerResult> ShowLayerAsync(ScreenCapture capture, CancellationToken cancellationToken)
+        public IReadOnlyList<PixelRect>? Monitors() => layouts[Math.Min(reads++, layouts.Length - 1)];
+        public IPickLayers ShowLayers(IReadOnlyList<PixelRect> monitors)
         {
-            Calls.Add("layer");
-            return Task.FromResult(layer(capture));
+            Calls.Add("layers:" + monitors.Count);
+            return new Layers(this, script);
+        }
+        private sealed class Layers(FakePickHost host, IReadOnlyList<PickEvent> script) : IPickLayers
+        {
+            private int next;
+            public ValueTask<PickEvent> NextAsync(CancellationToken cancellationToken) =>
+                ValueTask.FromResult(next < script.Count ? script[next++] : new PickEvent.Failed("脚本已结束"));
+            public void ShowCapturing(int monitor) => host.Calls.Add("capturing:" + monitor);
+            public void ShowFrozen(int monitor, ScreenCapture capture) =>
+                host.Calls.Add("frozen:" + monitor + "@" + ScreenPickMath.Describe(ScreenPickMath.Bounds(capture)));
+            public void ShowNotice(int monitor, string message)
+            {
+                host.Calls.Add("notice:" + monitor);
+                host.Notices.Add(message);
+            }
+            public void Dispose() => host.Calls.Add("close");
         }
         private sealed class Restore(Action action) : IDisposable
         {
@@ -652,76 +719,120 @@ public sealed class DyeingTests
         }
     }
 
-    private static readonly PixelRect SampleDesktop = new(-160, 0, 160, 90);
+    // 左边一块 160×90（负原点），右边游戏所在的一块 200×100。样本画面在每块区域里分四色：左上 #1F3A6B、右上 #F2E9D8、左下 #8C2F45、右下 #0E8C7D。
+    private static readonly PixelRect LeftMonitor = new(-160, 0, 160, 90);
+    private static readonly PixelRect GameMonitor = new(0, 0, 200, 100);
+    private static readonly PixelRect[] TwoMonitors = [LeftMonitor, GameMonitor];
 
-    private static SampleBackend PickBackend() => new() { SampleCaptureBounds = SampleDesktop };
+    private static PickEvent Entered(int monitor) => new PickEvent.Entered(monitor);
+    private static PickEvent Confirmed(int x, int y) => new PickEvent.Confirmed(new PixelPoint(x, y));
+
+    /// <summary>每次截屏后紧接着释放同一张画面，且没有留下未释放的画面；返回截屏的画面 ID。</summary>
+    private static List<string> AssertEachCaptureReleasedRightAway(SampleBackend backend)
+    {
+        var captures = new List<string>();
+        for (var index = 0; index < backend.UiIntents.Count; index++)
+        {
+            if (backend.UiIntents[index].Intent != "color.capture") continue;
+            captures.Add(backend.UiIntents[index].Argument!);
+            Assert.Equal(("color.release", backend.UiIntents[index].Argument), backend.UiIntents[index + 1]);
+        }
+        Assert.Equal(0, backend.UnreleasedCaptures);
+        return captures;
+    }
 
     [AvaloniaFact]
-    public async Task EyedropperActivatesTheGameHidesCapturesPicksReleasesAndRestores()
+    public async Task EyedropperFreezesOnlyTheCursorMonitorThenEachNewMonitorOnceAndPicksOnTheSecond()
     {
         UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
-        var backend = PickBackend();
-        backend.Activation = new GameWindowActivation(true, true, true, true, null, string.Empty);
-        var host = new FakePickHost(_ => new PickLayerResult(new PixelPoint(-30, 60)), SampleDesktop);
+        var backend = new SampleBackend { Activation = new GameWindowActivation(true, true, true, true, null, string.Empty) };
+        // 光标从游戏所在的屏开始，移到左边一块，再来回移动，最后在左边一块的右下区域确认。
+        var host = new FakePickHost([Entered(1), Entered(0), Entered(1), Entered(0), Confirmed(-30, 60)], TwoMonitors);
         var result = await EyedropperSession.RunAsync(backend, host, CancellationToken.None);
         Assert.Equal(new ScreenPickResult("#0E8C7D", null), result);
-        Assert.Equal(["hide", "settle", "layer", "restore"], host.Calls);
-        // 先激活游戏窗口（Moongate 仍在前台），再截屏；用完释放画面。
+        // 先只截光标所在的游戏屏，移到左边一块时补截一次，回到截过的屏不重截。
+        Assert.Equal(["hide", "layers:2", "settle", "capturing:1", "frozen:1@(0, 0) 200×100", "capturing:0", "frozen:0@(-160, 0) 160×90",
+            "close", "restore"], host.Calls);
+        Assert.Equal(2, AssertEachCaptureReleasedRightAway(backend).Count);
+        // 先激活游戏窗口（Moongate 仍在前台），再截屏。
         var intents = backend.UiIntents.Select(item => item.Intent).ToList();
         Assert.True(intents.IndexOf("game.activate") < intents.IndexOf("color.capture"));
-        var captureId = backend.UiIntents.Single(item => item.Intent == "color.capture").Argument;
-        Assert.Equal(("color.release", captureId), backend.UiIntents[^1]);
 
         // 没能切到游戏窗口：照常取色，结果注明原因。
-        var missed = PickBackend();
-        var picked = await EyedropperSession.RunAsync(missed, new FakePickHost(_ => new PickLayerResult(new PixelPoint(-150, 10)), SampleDesktop),
-            CancellationToken.None);
+        var missed = new SampleBackend();
+        var picked = await EyedropperSession.RunAsync(missed, new FakePickHost([Entered(0), Confirmed(-150, 10)], TwoMonitors), CancellationToken.None);
         Assert.Equal("#1F3A6B", picked.Hex);
         Assert.Equal("未能切到游戏窗口（模拟宿主没有真实的游戏窗口）", picked.Note);
+    }
+
+    [AvaloniaFact]
+    public async Task EyedropperExplainsAnOversizedMonitorOnlyThereAndKeepsOtherMonitorsUsable()
+    {
+        UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
+        var backend = new SampleBackend();
+        PixelRect big = new(0, 0, 4097, 4096);
+        // 超限的屏上点击不结束取色；回到超限的屏不再重复说明；左边一块照常截取并取色。
+        var host = new FakePickHost([Entered(1), Confirmed(10, 10), Entered(0), Entered(1), Confirmed(-150, 10)], [LeftMonitor, big]);
+        var result = await EyedropperSession.RunAsync(backend, host, CancellationToken.None);
+        Assert.Equal("#1F3A6B", result.Hex);
+        Assert.Equal(["hide", "layers:2", "settle", "notice:1", "capturing:0", "frozen:0@(-160, 0) 160×90", "close", "restore"], host.Calls);
+        Assert.Equal(ScreenPickMath.TooLarge(big), Assert.Single(host.Notices));
+        Assert.Contains("16,777,216", host.Notices[0]);
+        Assert.Single(AssertEachCaptureReleasedRightAway(backend));
     }
 
     [AvaloniaTheory]
     [InlineData("cancel")]
     [InlineData("layer-error")]
-    [InlineData("outside")]
-    [InlineData("too-large")]
-    [InlineData("moved")]
+    [InlineData("capture-refused")]
     [InlineData("layout-changed")]
-    [InlineData("no-bounds")]
-    public async Task EyedropperRestoresWindowsOnEveryOtherPath(string path)
+    [InlineData("layout-changed-at-confirm")]
+    [InlineData("no-monitors")]
+    public async Task EyedropperClosesLayersReleasesAndRestoresOnEveryOtherPath(string path)
     {
-        var backend = PickBackend();
-        PixelRect?[] desktops = path switch
+        UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
+        var backend = new SampleBackend();
+        if (path == "capture-refused") backend.CaptureRefusal = region => region == LeftMonitor ? "请求未完成：功能不可用" : null;
+        IReadOnlyList<PixelRect> changed = [LeftMonitor, new(0, 0, 200, 120)];
+        IReadOnlyList<PickEvent> script = path switch
         {
-            "too-large" => [new PixelRect(0, 0, 4097, 4096)],
-            "moved" => [new PixelRect(0, 0, 160, 90)],
-            "layout-changed" => [SampleDesktop, new PixelRect(-160, 0, 160, 120)],
-            "no-bounds" => [null],
-            _ => [SampleDesktop]
+            "cancel" => [Entered(1), Entered(0), PickEvent.Cancelled.Instance],
+            "layer-error" => [Entered(1), new PickEvent.Failed("取色視窗與螢幕不一致，請重試。")],
+            "layout-changed-at-confirm" => [Entered(1), Confirmed(10, 10)],
+            _ => [Entered(1), Entered(0), Confirmed(-150, 10)]
         };
-        var host = new FakePickHost(_ => path switch
+        IReadOnlyList<PixelRect>?[] layouts = path switch
         {
-            "layer-error" => new PickLayerResult(null, "取色視窗與螢幕像素不一致，請重試。"),
-            "outside" => new PickLayerResult(new PixelPoint(5, 5)),
-            _ => PickLayerResult.Cancelled
-        }, desktops);
+            "no-monitors" => [null],
+            // 开始时、第一块屏截好后各读一次，第二块屏截好后（layout-changed）或确认时（layout-changed-at-confirm）读到的布局变了。
+            "layout-changed" or "layout-changed-at-confirm" => [TwoMonitors, TwoMonitors, changed],
+            _ => [TwoMonitors]
+        };
+        var host = new FakePickHost(script, layouts);
         var result = await EyedropperSession.RunAsync(backend, host, CancellationToken.None);
         Assert.Null(result.Hex);
         Assert.Equal(path == "cancel", result.Error is null);
+        if (path is "layout-changed" or "layout-changed-at-confirm") Assert.Equal(ScreenPickMath.LayoutChanged, result.Error);
+        if (path == "capture-refused") Assert.Equal("请求未完成：功能不可用", result.Error);
         Assert.Equal("restore", host.Calls[^1]);
         Assert.Single(host.Calls, call => call == "restore");
-        if (path is "moved" or "layout-changed" or "too-large" or "no-bounds") Assert.DoesNotContain("layer", host.Calls);
-        var captured = backend.UiIntents.Where(item => item.Intent == "color.capture").ToList();
-        if (path is "too-large" or "no-bounds") Assert.Empty(captured);
-        else Assert.Equal(("color.release", captured.Single().Argument), backend.UiIntents[^1]);
+        if (path == "no-monitors")
+        {
+            Assert.Equal(["hide", "restore"], host.Calls);
+            Assert.DoesNotContain(backend.UiIntents, item => item.Intent == "color.capture");
+        }
+        else Assert.Equal("close", host.Calls[^2]);
+        // 已截取的画面全部释放；拒绝或出错的那一块不留画面。
+        var captures = AssertEachCaptureReleasedRightAway(backend);
+        Assert.Equal(path switch { "no-monitors" => 0, "layer-error" or "capture-refused" or "layout-changed-at-confirm" => 1, _ => 2 }, captures.Count);
     }
 
     [AvaloniaFact]
     public async Task EyedropperWritesTheCardTargetOrShowsTheFailure()
     {
         UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
-        var backend = PickBackend();
-        var host = new FakePickHost(_ => new PickLayerResult(new PixelPoint(-150, 10)), SampleDesktop);
+        var backend = new SampleBackend();
+        var host = new FakePickHost([Entered(0), Confirmed(-150, 10)], TwoMonitors);
         var (window, model) = Open(backend, host);
         try
         {
@@ -731,7 +842,7 @@ public sealed class DyeingTests
             Assert.True(model.CanPick);
             Assert.StartsWith("未能切到游戏窗口", model.StatusText);
 
-            var failing = new FakePickHost(_ => PickLayerResult.Cancelled, (PixelRect?)null);
+            var failing = new FakePickHost([], (IReadOnlyList<PixelRect>?)null);
             var (_, second) = (window, new ColorPageModel(backend, failing));
             await second.PickFromScreenAsync(second.Cards[0]);
             Assert.StartsWith("屏幕取色失败：", second.StatusText);

@@ -5,6 +5,7 @@
              xmlns:color="using:MabiTool.Desktop.Pages.Dyeing"
              xmlns:infra="using:MabiTool.Desktop.Infrastructure"
              xmlns:controls="using:MabiTool.Desktop.Controls"
+             xmlns:life="using:MabiTool.Desktop.Pages.Life"
              x:Class="MabiTool.Desktop.Overlay.OverlayWidgetView"
              x:DataType="overlay:OverlayWidgetModel"
              Foreground="{DynamicResource OverlayTextBrush}" FontSize="13" ClipToBounds="False">
@@ -93,10 +94,19 @@
       <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding NowPlayingNote}" />
     </StackPanel>
 
-    <DockPanel IsVisible="{Binding IsNearby}" VerticalAlignment="Center">
-      <TextBlock DockPanel.Dock="Left" Classes="dim" Margin="0,0,8,0" VerticalAlignment="Center" Text="{DynamicResource O.Next}" />
-      <TextBlock FontSize="15" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding UpcomingTitle}" />
-    </DockPanel>
+    <!-- 附近演奏字幕：新出现的曲目显示“昵称 正在演奏《曲名》”并停留一段时间，平时显示一句说明；来源与读取时刻在悬停提示里。 -->
+    <Panel IsVisible="{Binding IsNearby}" VerticalAlignment="Center" ToolTip.Tip="{Binding NearbyTip}">
+      <TextBlock x:Name="NearbyCaptionText" FontSize="15" FontWeight="Bold" TextTrimming="CharacterEllipsis" Text="{Binding NearbyCaption}"
+                 IsVisible="{Binding HasNearbyCaption}" />
+      <TextBlock x:Name="NearbyIdleText" Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding NearbyIdle}" IsVisible="{Binding NoNearbyCaption}" />
+    </Panel>
+
+    <!-- 环境信息：区域、频道与天气、游戏内时间（原文）；读不到的项显示“未读取”，来源与读取时刻在悬停提示里。 -->
+    <StackPanel Spacing="2" VerticalAlignment="Center" IsVisible="{Binding IsEnvironment}" ToolTip.Tip="{Binding EnvironmentTip}">
+      <TextBlock x:Name="EnvironmentAreaText" FontSize="16" FontWeight="Black" TextTrimming="CharacterEllipsis" Text="{Binding EnvironmentArea}" />
+      <TextBlock x:Name="EnvironmentChannelText" Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding EnvironmentChannelLine}" />
+      <TextBlock x:Name="EnvironmentTimeText" Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding EnvironmentTimeLine}" />
+    </StackPanel>
 
     <!--
       合奏信息浮窗：标题行（房间码与连接状态）、阶段、倒计时进度、总指挥乐谱与播放进度、按组分块的成员（放不下时在元件内滚动）、
@@ -282,6 +292,10 @@
         <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{DynamicResource O.Dps}" />
       </DockPanel>
       <TextBlock DockPanel.Dock="Top" FontSize="34" FontWeight="Black" TextTrimming="CharacterEllipsis" Text="{Binding PrimaryDps}" />
+      <!-- 徽章觉醒（版面页“觉醒监控”开关，默认显示）：紧贴主 DPS 下方的加大一行，与觉醒监控浮窗同一份状态与提示设置；
+           未觉醒变暗，觉醒中亮起、显示徽章名与剩余时间并按设定颜色闪烁，冷却中显示冷却剩余。不排序，按在上面照常拖动元件。 -->
+      <overlay:FavoriteBoardView x:Name="DpsAwakening" DockPanel.Dock="Top" Margin="0,2,0,0" Prominent="True" VerticalAlignment="Top"
+                                 Items="{Binding AwakeningItems}" Alerts="{Binding AwakeningAlerts}" IsVisible="{Binding DpsAwakeningShown}" />
       <!-- 当前攻击目标的血量：停靠在底部、位于比率行之下，始终可见；没有当前目标或在版面页关闭时收起，外框尺寸不变。
            收起过程中仍显示最后一次的内容。 -->
       <controls:ExpandPanel x:Name="DpsHealthExpander" DockPanel.Dock="Bottom" IsExpanded="{Binding HealthExpanded, Mode=OneWay}">
@@ -404,24 +418,6 @@
       </ScrollViewer>
     </DockPanel>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding IsCoverage}">
-      <ItemsControl controls:StableItems.Source="{Binding Combat.Coverage}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate DataType="combat:CoverageTile">
-            <StackPanel Margin="0,0,0,5" Spacing="2">
-              <DockPanel>
-                <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Text="{Binding Percent}" />
-                <controls:ClientIconSlot Icon="{Binding Icon}" Label="{Binding Name}" Outline="True" VerticalAlignment="Center">
-                  <TextBlock TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
-                </controls:ClientIconSlot>
-              </DockPanel>
-              <controls:MeterBar Value="{Binding Ratio}" Fill="{DynamicResource OverlayBarFillBrush}" Track="{DynamicResource OverlayBarTrackBrush}" />
-            </StackPanel>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </ScrollViewer>
-
     <!-- 效果列：跟随 DPS 页对应卡片的“只显示收藏”，单列紧凑行，收藏在前；放不下时末行标“+N”（上锁时不能滚动，收藏总是可见）。 -->
     <DockPanel IsVisible="{Binding IsSelfEffects}">
       <TextBlock DockPanel.Dock="Top" Classes="dim" TextWrapping="Wrap" Text="{DynamicResource O.FavoriteEffectsHint}" IsVisible="{Binding SelfFavoriteHint}" />
@@ -453,8 +449,16 @@
                                  Alerts="{Binding AwakeningAlerts}" Reorder="{Binding ReorderFavorite}" />
     </Panel>
 
-    <!-- 觉醒监控：固定两项（徽章觉醒、职业觉醒），未觉醒变暗，觉醒时按提示设置闪烁，之后显示冷却；不排序，按住任意处拖动元件。 -->
+    <!-- 觉醒监控：只有“徽章觉醒”一项，未觉醒变暗，觉醒时按提示设置闪烁，之后显示冷却；不排序，按住任意处拖动元件。 -->
     <overlay:FavoriteBoardView x:Name="AwakeningBoard" IsVisible="{Binding IsAwakening}" VerticalAlignment="Top" Items="{Binding FavoriteItems}"
                                Horizontal="{Binding FavoritesHorizontal}" Alerts="{Binding AwakeningAlerts}" />
+
+    <!-- 生活：加工设施（各设施的槽位圆点、领取、元件内的配方菜单）与生活队列（状态、当前与下一项、暂停/继续/停止当前），见 LifeOverlayView。 -->
+    <Panel IsVisible="{Binding IsLifeFacilities}">
+      <life:LifeOverlayView x:Name="LifeFacilitiesWidget" Mode="facilities" DataContext="{Binding Life}" />
+    </Panel>
+    <Panel IsVisible="{Binding IsLifeQueue}">
+      <life:LifeOverlayView x:Name="LifeQueueWidget" Mode="queue" DataContext="{Binding Life}" />
+    </Panel>
   </Panel>
 </UserControl>

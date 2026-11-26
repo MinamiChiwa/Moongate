@@ -36,10 +36,11 @@ public static class ColorBitmaps
 /// <summary>
 /// 吸管的坐标换算、画面核对与取像素（原工具 screen_mapping.frozen_image_point 与 eyedropper.pixel_hex）。
 /// 全程使用物理像素：物理光标坐标减去冻结画面左上角（可为负）即画面像素，不经过任何界面缩放。
+/// 画面按显示器逐块冻结，每块显示器一张画面。
 /// </summary>
 public static class ScreenPickMath
 {
-    /// <summary>后端单张截屏的像素上限（ColorCaptureService.MaximumPixels，4096×4096）。</summary>
+    /// <summary>后端单张截屏的像素上限（ColorCaptureService.MaximumPixels，4096×4096），按单块显示器计算。</summary>
     public const long MaximumPixels = 16_777_216;
 
     /// <summary>物理光标坐标对应的冻结画面像素；在画面外时为空（不取边缘颜色）。</summary>
@@ -63,51 +64,99 @@ public static class ScreenPickMath
 
     public static PixelRect Bounds(ScreenCapture capture) => new(capture.X, capture.Y, capture.Width, capture.Height);
 
-    public static bool ExceedsLimit(PixelRect desktop) => (long)desktop.Width * desktop.Height > MaximumPixels;
+    /// <summary>物理像素尺寸在界面缩放 <paramref name="scaling"/> 下的逻辑尺寸（物理 ÷ 缩放）。</summary>
+    public static Size LogicalSize(PixelSize size, double scaling) => new(size.Width / scaling, size.Height / scaling);
+
+    /// <summary>冻结画面在取色层上的逻辑矩形：从客户区左上角起，按当前界面缩放换算，使每个画面像素正好占一个物理像素。</summary>
+    public static Rect FrozenRect(ScreenCapture capture, double scaling) => new(LogicalSize(new PixelSize(capture.Width, capture.Height), scaling));
+
+    /// <summary>物理光标所在的那个物理像素在取色层上的逻辑矩形（边长 1 物理像素）；光标不在这块显示器上时为空。</summary>
+    public static Rect? CursorCell(PixelPoint cursor, PixelRect monitor, double scaling) =>
+        ImagePoint(cursor, monitor) is { } pixel ? new Rect(pixel.X / scaling, pixel.Y / scaling, 1 / scaling, 1 / scaling) : null;
+
+    /// <summary>界面缩放是否等于窗口 DPI（96 DPI 对应 1.0）。</summary>
+    public static bool SameScaling(double scaling, uint dpi) => dpi > 0 && Math.Abs(scaling - dpi / 96.0) < 1e-9;
+
+    public static bool ExceedsLimit(PixelRect monitor) => (long)monitor.Width * monitor.Height > MaximumPixels;
+
+    /// <summary>物理光标所在的显示器序号；不在任何显示器上时为 -1。</summary>
+    public static int MonitorAt(IReadOnlyList<PixelRect> monitors, PixelPoint cursor)
+    {
+        for (var index = 0; index < monitors.Count; index++)
+            if (ImagePoint(cursor, monitors[index]) is not null) return index;
+        return -1;
+    }
+
+    /// <summary>两次读到的显示器布局（物理像素矩形，顺序固定）是否相同；读不到时视为不同。</summary>
+    public static bool SameLayout(IReadOnlyList<PixelRect> before, IReadOnlyList<PixelRect>? after) =>
+        after is not null && before.SequenceEqual(after);
+
+    public static string LayoutChanged => UiText.Pick("取色期间显示布局变化，请重新取色。", "取色期間顯示配置變化，請重新取色。");
 
     /// <summary>
-    /// 核对冻结画面与本机按物理像素读到的虚拟桌面（截屏前 <paramref name="before"/>、截屏后 <paramref name="after"/>）。
-    /// 一致时为空；截屏期间显示布局变化、画面按缩放后的逻辑像素截取（DPI 感知不一致）或其他不一致时给出原因，
-    /// 原因里带两边的实际边界，便于对照。
+    /// 核对一块显示器的冻结画面：取色开始时的显示器布局 <paramref name="before"/> 与截屏后重新读到的 <paramref name="after"/> 相同，
+    /// 且后端画面的原点与宽高等于请求的显示器区域 <paramref name="requested"/>。一致时为空，否则给出原因（带两边的实际边界）。
     /// </summary>
-    public static string? CheckCapture(PixelRect before, PixelRect after, PixelRect capture)
+    public static string? CheckCapture(IReadOnlyList<PixelRect> before, IReadOnlyList<PixelRect>? after, PixelRect requested, PixelRect capture)
     {
-        if (before != after)
-            return UiText.Pick($"截屏期间显示布局变化（{Describe(before)} → {Describe(after)}），请重新取色。",
-                $"截圖期間顯示配置變化（{Describe(before)} → {Describe(after)}），請重新取色。");
-        if (capture == before) return null;
-        if (LogicalScale(before, capture) is { } scale)
-            return UiText.Pick($"后端画面 {Describe(capture)} 是按 {scale:0.##} 倍缩放后的逻辑像素，本机物理桌面是 {Describe(before)}（DPI 感知不一致），无法按物理像素取色。",
-                $"後端畫面 {Describe(capture)} 是按 {scale:0.##} 倍縮放後的邏輯像素，本機實體桌面是 {Describe(before)}（DPI 感知不一致），無法依實體像素取色。");
-        return UiText.Pick($"后端画面 {Describe(capture)} 与本机物理桌面 {Describe(before)} 不一致，请重新取色。",
-            $"後端畫面 {Describe(capture)} 與本機實體桌面 {Describe(before)} 不一致，請重新取色。");
+        if (!SameLayout(before, after)) return LayoutChanged;
+        if (capture == requested) return null;
+        return UiText.Pick($"后端画面 {Describe(capture)} 与请求的屏幕区域 {Describe(requested)} 不一致，请重新取色。",
+            $"後端畫面 {Describe(capture)} 與請求的螢幕區域 {Describe(requested)} 不一致，請重新取色。");
     }
 
-    /// <summary>画面宽高按同一比例（大于 1，误差 1% 内）小于物理桌面时，返回这个比例：后端在 DPI 虚拟化的上下文里读取了桌面。</summary>
-    public static double? LogicalScale(PixelRect physical, PixelRect capture)
-    {
-        if (capture.Width <= 0 || capture.Height <= 0) return null;
-        var x = (double)physical.Width / capture.Width;
-        var y = (double)physical.Height / capture.Height;
-        return x > 1.01 && Math.Abs(x - y) <= 0.01 * x ? Math.Round(x * 4) / 4 : null;
-    }
+    /// <summary>显示器超过截屏上限时在这块显示器上显示的说明。</summary>
+    public static string TooLarge(PixelRect monitor) =>
+        UiText.Pick($"这块屏幕 {Describe(monitor)} 超过截屏上限 16,777,216 像素，请移到其他屏幕取色，或按右键、Esc 取消。",
+            $"這塊螢幕 {Describe(monitor)} 超過截圖上限 16,777,216 像素，請移到其他螢幕取色，或按右鍵、Esc 取消。");
 
     /// <summary>边界的文字：原点与宽×高。</summary>
     public static string Describe(PixelRect rect) =>
         string.Create(System.Globalization.CultureInfo.InvariantCulture, $"({rect.X}, {rect.Y}) {rect.Width}×{rect.Height}");
 }
 
-/// <summary>取色层的结果：确认时带物理光标位置；失败时带原因。</summary>
-public sealed record PickLayerResult(PixelPoint? Cursor, string? Error = null)
+/// <summary>取色层上发生的事：光标进入某块显示器、左键确认（物理光标位置）、取消或出错。</summary>
+public abstract record PickEvent
 {
-    public static PickLayerResult Cancelled { get; } = new((PixelPoint?)null);
+    private PickEvent() { }
+
+    /// <summary>物理光标移到序号为 <paramref name="Monitor"/> 的显示器上（取色开始时报告光标所在的显示器）。</summary>
+    public sealed record Entered(int Monitor) : PickEvent;
+
+    public sealed record Confirmed(PixelPoint Cursor) : PickEvent;
+
+    public sealed record Cancelled : PickEvent
+    {
+        public static Cancelled Instance { get; } = new();
+    }
+
+    public sealed record Failed(string Reason) : PickEvent;
+}
+
+/// <summary>
+/// 每块显示器一层的取色层。显示后各层都接收点击（不落到下面的程序），还没冻结的显示器上的层不进入截图；
+/// 某层报告 <see cref="PickEvent.Entered"/> 时它已经避开截图，可以截取这块显示器。释放时关闭全部层。
+/// </summary>
+public interface IPickLayers : IDisposable
+{
+    /// <summary>等待下一件事。</summary>
+    ValueTask<PickEvent> NextAsync(CancellationToken cancellationToken);
+
+    /// <summary>在这块显示器上显示“正在截取这块屏幕”（提示不进入截图）。</summary>
+    void ShowCapturing(int monitor);
+
+    /// <summary>在这块显示器上按物理像素 1:1 显示冻结画面，画十字线、采样框与跟随标签。</summary>
+    void ShowFrozen(int monitor, ScreenCapture capture);
+
+    /// <summary>在这块显示器上显示说明（如超过截屏上限）；这层继续接收点击。</summary>
+    void ShowNotice(int monitor, string message);
 }
 
 /// <summary>一次吸管的结果：取到的颜色、取消（两者都为空）或失败原因；<see cref="Note"/> 是没能切到游戏窗口等不影响取色的说明。</summary>
 public sealed record ScreenPickResult(string? Hex, string? Error, string? Note = null);
 
 /// <summary>
-/// 吸管需要的桌面能力：隐藏与恢复 Moongate 的窗口、读取虚拟桌面的物理边界、显示全屏取色层。
+/// 吸管需要的桌面能力：隐藏与恢复 Moongate 的窗口、按物理像素列出显示器、在每块显示器上显示取色层。
 /// 真实实现见 <see cref="DesktopScreenPickHost"/>；测试替换成记录调用的实现。
 /// </summary>
 public interface IScreenPickHost
@@ -115,24 +164,26 @@ public interface IScreenPickHost
     /// <summary>隐藏当前可见的全部 Moongate 窗口；释放返回值时恢复它们。</summary>
     IDisposable HideWindows();
 
-    /// <summary>等隐藏与游戏窗口前置生效再截屏（原工具 150 ms），避免把自己的窗口冻结进画面。</summary>
+    /// <summary>等隐藏、游戏窗口前置与取色层避开截图生效再截屏（原工具 150 ms），避免把自己的窗口冻结进画面。</summary>
     Task SettleAsync(CancellationToken cancellationToken);
 
-    /// <summary>虚拟桌面的物理像素边界（含负原点）；读不到或进不了物理像素上下文时为空。</summary>
-    PixelRect? DesktopBounds();
+    /// <summary>各显示器的物理像素矩形（含负原点，顺序固定）；读不到或进不了物理像素上下文时为空。</summary>
+    IReadOnlyList<PixelRect>? Monitors();
 
-    /// <summary>显示覆盖整个虚拟桌面的取色层，直到确认、取消或出错。</summary>
-    Task<PickLayerResult> ShowLayerAsync(ScreenCapture capture, CancellationToken cancellationToken);
+    /// <summary>在每块显示器上显示取色层。</summary>
+    IPickLayers ShowLayers(IReadOnlyList<PixelRect> monitors);
 }
 
 /// <summary>
-/// 吸管流程（原工具 qt_ui/eyedropper.py）：有绑定时先激活游戏窗口 → 隐藏 Moongate 全部窗口 → 等待生效 → 读物理桌面边界 →
-/// 后端冻结整个虚拟桌面 → 再读一次边界并核对画面 → 取色层 → 确认或取消 → 释放画面 → 恢复窗口。
-/// 激活失败不阻止取色，结果里注明没能切到游戏窗口。任何路径（确认、取消、出错、超时）都释放冻结画面并恢复隐藏的窗口。
+/// 吸管流程（原工具 qt_ui/eyedropper.py，改为按显示器逐块冻结）：有绑定时先激活游戏窗口 → 隐藏 Moongate 全部窗口 →
+/// 按物理像素列出显示器 → 每块显示器铺一层取色层 → 等待生效 → 光标所在的显示器报告进入时只冻结这一块，移到还没冻结的显示器时再冻结那一块，
+/// 冻结过的显示器保留画面。每块画面读回后立即释放后端画面（画面已在本地）；超过单张上限的显示器只在这块显示器上说明。
+/// 左键确认、右键或 Esc 取消结束整个取色。激活失败不阻止取色，结果里注明没能切到游戏窗口。
+/// 任何路径（确认、取消、出错、超时）都关闭全部取色层、释放画面并恢复隐藏的窗口。
 /// </summary>
 public static class EyedropperSession
 {
-    /// <summary>截屏请求的超时。</summary>
+    /// <summary>每块显示器截屏请求的超时。</summary>
     public static readonly TimeSpan CaptureTimeout = TimeSpan.FromSeconds(15);
 
     public static async Task<ScreenPickResult> RunAsync(IDesktopBackend backend, IScreenPickHost host, CancellationToken cancellationToken)
@@ -142,30 +193,56 @@ public static class EyedropperSession
         var note = activation.Missed
             ? UiText.Pick("未能切到游戏窗口", "未能切到遊戲視窗") + (activation.Message.Length > 0 ? "（" + activation.Message + "）" : string.Empty)
             : null;
-        ScreenCapture? capture = null;
+        var frozen = new Dictionary<int, ScreenCapture>();
+        var refused = new HashSet<int>();
+        IPickLayers? layers = null;
         var hidden = host.HideWindows();
         try
         {
+            if (host.Monitors() is not { Count: > 0 } monitors || monitors.Any(rect => rect.Width <= 0 || rect.Height <= 0))
+                return Failed(UiText.Pick("无法按物理像素读取显示器边界，请重试。", "無法依實體像素讀取顯示器邊界，請重試。"), note);
+            layers = host.ShowLayers(monitors);
             await host.SettleAsync(cancellationToken);
-            if (host.DesktopBounds() is not { } desktop || desktop.Width <= 0 || desktop.Height <= 0)
-                return Failed(UiText.Pick("无法按物理像素读取屏幕边界，请重试。", "無法依實體像素讀取螢幕邊界，請重試。"), note);
-            if (ScreenPickMath.ExceedsLimit(desktop))
-                return Failed(UiText.Pick($"屏幕总像素超过后端截屏上限（{ScreenPickMath.Describe(desktop)}）", $"螢幕總像素超過後端截圖上限（{ScreenPickMath.Describe(desktop)}）"), note);
-            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            while (true)
             {
-                timeout.CancelAfter(CaptureTimeout);
-                var reply = await backend.CaptureScreenAsync(timeout.Token);
-                capture = reply.Capture;
-                if (capture is null) return Failed(reply.Message, note);
+                switch (await layers.NextAsync(cancellationToken))
+                {
+                    case PickEvent.Entered(var index) when index >= 0 && index < monitors.Count && !frozen.ContainsKey(index) && !refused.Contains(index):
+                        var monitor = monitors[index];
+                        if (ScreenPickMath.ExceedsLimit(monitor))
+                        {
+                            refused.Add(index);
+                            layers.ShowNotice(index, ScreenPickMath.TooLarge(monitor));
+                            break;
+                        }
+                        layers.ShowCapturing(index);
+                        ScreenCapture capture;
+                        using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                        {
+                            timeout.CancelAfter(CaptureTimeout);
+                            var reply = await backend.CaptureScreenAsync(monitor, timeout.Token);
+                            if (reply.Capture is null) return Failed(reply.Message, note);
+                            capture = reply.Capture;
+                        }
+                        // 画面已完整读回本地，后端画面立即释放；下一块显示器的截屏不会替换掉仍需释放的画面。
+                        await backend.ReleaseCaptureAsync(capture.Id, CancellationToken.None);
+                        if (ScreenPickMath.CheckCapture(monitors, host.Monitors(), monitor, ScreenPickMath.Bounds(capture)) is { } mismatch)
+                            return Failed(mismatch, note);
+                        frozen[index] = capture;
+                        layers.ShowFrozen(index, capture);
+                        break;
+                    case PickEvent.Confirmed(var cursor):
+                        if (!ScreenPickMath.SameLayout(monitors, host.Monitors())) return Failed(ScreenPickMath.LayoutChanged, note);
+                        // 光标不在已冻结的显示器上（还在截取或超过上限）时不结束，继续等待。
+                        foreach (var picked in frozen.Values)
+                            if (ScreenPickMath.HexAt(picked, cursor) is { } hex) return new(hex, null, note);
+                        break;
+                    case PickEvent.Cancelled:
+                        return new(null, null, note);
+                    case PickEvent.Failed(var reason):
+                        return Failed(reason, note);
+                }
             }
-            var after = host.DesktopBounds() ?? desktop;
-            if (ScreenPickMath.CheckCapture(desktop, after, ScreenPickMath.Bounds(capture)) is { } mismatch) return Failed(mismatch, note);
-            var result = await host.ShowLayerAsync(capture, cancellationToken);
-            if (result.Error is { } error) return Failed(error, note);
-            if (result.Cursor is not { } cursor) return new(null, null, note);
-            return ScreenPickMath.HexAt(capture, cursor) is { } hex
-                ? new(hex, null, note)
-                : Failed(UiText.Pick("鼠标已超出冻结画面，请重新取色。", "滑鼠已超出凍結畫面，請重新取色。"), note);
         }
         catch (OperationCanceledException)
         {
@@ -177,7 +254,7 @@ public static class EyedropperSession
         }
         finally
         {
-            if (capture is not null) await backend.ReleaseCaptureAsync(capture.Id, CancellationToken.None);
+            layers?.Dispose();
             hidden.Dispose();
         }
     }

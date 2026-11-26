@@ -106,10 +106,38 @@ public static class DiagnosticEvents
     public static readonly DiagnosticEventDefinition ChannelClosed = new("worker.channel.closed", null, "worker.channel", DiagnosticLevel.Debug,
         ["exitCode", "terminatedByHost"]);
 
+    /// <summary>游戏连接器（台服命令行）调用：command 为指令名，exitCode 为进程退出码（被中断为 -1），kind 为结果类别
+    /// （Ok、Rejected、NotConnected、UnknownCommand、Usage、Cancelled、ProcessFailure、Unparseable、Interrupted、Unavailable），
+    /// error 与 reason 为游戏或命令行给出的原因，elapsedMs 为往返耗时。成功与游戏拒绝只在调试采集里记录，原始响应只进调试详情。</summary>
+    public static readonly DiagnosticEventDefinition GameCliCall = new("gamecli.call", Observation, "game.cli", DiagnosticLevel.Debug,
+        ["command", "exitCode", "kind", "error", "reason", "elapsedMs", "stdoutChars", "stderrChars"]);
+    /// <summary>游戏连接器调用失败（未连接、未知指令、用法错误、进程失败、无法解析、被中断、没有命令行工具），字段同 <see cref="GameCliCall"/>。</summary>
+    public static readonly DiagnosticEventDefinition GameCliCallFailed = new("gamecli.call.failed", Observation, "game.cli", DiagnosticLevel.Info,
+        ["command", "exitCode", "kind", "error", "reason", "elapsedMs", "stdoutChars", "stderrChars"]);
+    /// <summary>游戏连接器状态变化：status 为 Checking/Unavailable/Disabled/GameNotRunning/Connected/Expired，reason 为原因码，
+    /// preference 为偏好是否启用（true/false/unknown），running 为游戏是否运行，commands 为当前目录的指令数（未取得为 -1）。</summary>
+    public static readonly DiagnosticEventDefinition GameCliState = new("gamecli.state.changed", Observation, "game.cli", DiagnosticLevel.Info,
+        ["status", "reason", "preference", "running", "commands"]);
+    /// <summary>游戏连接器的偏好写入与部署：action 为 enable/disable/restore/deploy/set-directory，result 为 ok 或 failed，code 为失败原因码。不含路径。</summary>
+    public static readonly DiagnosticEventDefinition GameCliAction = new("gamecli.action", Observation, "game.cli", DiagnosticLevel.Info,
+        ["action", "result", "code"]);
+    /// <summary>乐谱库演奏队列的游戏内驱动：event 为 dispatch/playing/stopped/failure/lost，code 为原因码，phase 为队列阶段。</summary>
+    public static readonly DiagnosticEventDefinition GameCliPerformance = new("gamecli.performance", "music-library", "game.cli", DiagnosticLevel.Info,
+        ["event", "phase", "code", "position"]);
+    /// <summary>合奏经连接器的本机动作：event 为 instrument/start/stop，outcome 为 Accepted/Rejected/Unavailable/Failed/Interrupted，code 为原因码。</summary>
+    public static readonly DiagnosticEventDefinition GameCliRoom = new("gamecli.room", "rooms", "game.cli", DiagnosticLevel.Info,
+        ["event", "outcome", "code"]);
+
+    /// <summary>游戏数据读取的来源变化：topic 为 profile/currencies/missions/growth-guide/environment/nearby，source 为 connector/capture/none/error，
+    /// reason 为原因码（来源为抓包或没有时是连接器原因，读取失败时是失败原因，其余为 -）。只在来源或原因变化时记录。</summary>
+    public static readonly DiagnosticEventDefinition GameCliData = new("gamecli.data.source", Observation, "game.cli", DiagnosticLevel.Info,
+        ["topic", "source", "reason"]);
+
     public static IReadOnlyList<DiagnosticEventDefinition> All { get; } = [BindingChanged, GameBuildChecked, AutomationChanged, ChannelSelected, CaptureSummary, CaptureParse, CaptureReassembly, CaptureDevice, WorkerStarted, WorkerStopped, WorkerFaulted, CaptureStarted,
         CaptureEnded, InventorySynced, InventoryFrameState, InventoryFrameRejected, SegmentStarted, SegmentEnded, CombatFrameRejected, CombatDisplayLatency, HostLog, ColorRunStarted, ColorRunEnded, RoomConnection, DebugCaptureStarted, DebugCaptureEnded, LegacyDataImported, HostPortFallback,
         FrameRejected, CaptureGap, InterestsChanged, SubscriptionChanged, ConnectionChanged, InventoryFrame,
-        ChannelConnected, ChannelRequest, ChannelFault, ChannelClosed];
+        ChannelConnected, ChannelRequest, ChannelFault, ChannelClosed,
+        GameCliCall, GameCliCallFailed, GameCliState, GameCliAction, GameCliPerformance, GameCliRoom, GameCliData];
     private static readonly Dictionary<string, DiagnosticEventDefinition> ByCode = All.ToDictionary(x => x.Code, StringComparer.Ordinal);
     public static DiagnosticEventDefinition? Find(string code) => ByCode.GetValueOrDefault(code);
     public static string LevelName(DiagnosticLevel level) => level switch

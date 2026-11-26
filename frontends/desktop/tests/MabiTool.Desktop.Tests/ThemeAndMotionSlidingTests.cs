@@ -314,7 +314,20 @@ public sealed class ThemeAndMotionSlidingTests
     [AvaloniaFact]
     public void FirstShowResizeLanguageAndProgrammaticChangesDoNotSlide()
     {
-        var window = OpenWithMotion(new SampleBackend(), "combat-observation", 900, 700);
+        // 内建模块都已实现：侧栏里的“未实现模块”分组由一个登记为未实现的示例模块提供。
+        var backend = new SampleBackend();
+        var catalog = MabiTool.Desktop.Modules.BuiltInModules.CreateCatalog(backend);
+        catalog.Register(new MabiTool.Desktop.Modules.ModuleDescriptor("ext.pending", "未实现模块（示例）", "未", Avalonia.Media.Colors.Gray,
+            MabiTool.Desktop.Modules.ModuleOrigin.BuiltIn,
+            () => new MabiTool.Desktop.Pages.PendingPage { DataContext = new MabiTool.Desktop.Pages.PendingPageModel("未实现模块", "示例") }, pending: true));
+        UiText.Apply(Application.Current!, UiLanguage.SimplifiedChinese);
+        UiTheme.Apply(Application.Current!, UiThemeChoice.Light);
+        UiMotion.Enabled = false;
+        var window = new MainWindow { DataContext = new ShellViewModel(catalog, backend), Width = 900, Height = 700 };
+        window.Show();
+        LayoutProbe.Select(window, "combat-observation");
+        UiMotion.Enabled = true;
+        LayoutProbe.Settle();
         try
         {
             var host = Sidebar(window);

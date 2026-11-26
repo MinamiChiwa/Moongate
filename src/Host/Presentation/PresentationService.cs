@@ -1,10 +1,12 @@
 using System.Text.Json;
 using MabiTool.Contracts;
+using MabiTool.Host.GameCli;
 using MabiTool.Infrastructure;
 
 namespace MabiTool.Host.Presentation;
 
-public sealed class PresentationService(StateEventHub hub, PresentationStateFeed feed, SystemInfo system, TimeProvider? clock = null)
+public sealed class PresentationService(StateEventHub hub, PresentationStateFeed feed, SystemInfo system, TimeProvider? clock = null,
+    GameDataService? gameData = null)
 {
     private readonly TimeProvider time = clock ?? TimeProvider.System;
     private static readonly IReadOnlyDictionary<string, string[]> TopicEvents = new Dictionary<string, string[]>(StringComparer.Ordinal)
@@ -26,7 +28,10 @@ public sealed class PresentationService(StateEventHub hub, PresentationStateFeed
         var filter = EventFilter.Create(topics.SelectMany(topic => TopicEvents[topic]), query.ResourceIds);
         if (topics.Contains("room", StringComparer.Ordinal)) await feed.EnsureRoomAsync(session.ClientId, ct);
         var snapshot = await hub.SnapshotAsync(session, filter, ct);
-        var sources = topics.Select(topic => new PresentationSourceStatus(topic,
+        // 附近与环境的状态随游戏连接器的状态与目录得出，不依赖此刻是否有人在读取；其余主题按资源是否存在判断。
+        var sources = topics.Select(topic => gameData?.TopicStatus(topic) is { } connector
+            ? new PresentationSourceStatus(topic, connector.Status, connector.Reason)
+            : new PresentationSourceStatus(topic,
             topic is "room" or "color" || snapshot.Resources.Any(resource => TopicEvents[topic].Contains(resource.Type, StringComparer.Ordinal))
                 ? CapabilityStatus.Available : CapabilityStatus.Unavailable,
             topic is "room" or "color" || snapshot.Resources.Any(resource => TopicEvents[topic].Contains(resource.Type, StringComparer.Ordinal))

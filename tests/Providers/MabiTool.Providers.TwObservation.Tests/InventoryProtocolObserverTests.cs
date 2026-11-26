@@ -109,6 +109,20 @@ public sealed class InventoryProtocolObserverTests
         Assert.Equal(2UL, frames[^1].Generation.Value); Assert.Equal(InventoryFrameKind.Full, frames[^1].Kind.KnownValue);
     }
     [Fact]
+    public void UndecodableLoginEmitsAnInvalidationInsteadOfStayingSilent()
+    {
+        var frames = new List<InventoryFrame>(); ulong generation = 0;
+        var observer = new InventoryProtocolObserver("game", new("test", "1", "TW", "offline"), Layout(), frames.Add, () => ++generation);
+        var utc = DateTimeOffset.UtcNow;
+        observer.Accept(1, [1, 2, 3], 1, utc);
+        Assert.Equal(["inventory.awaitingIdentity", "inventory.protocolInvalid"], frames.Select(f => f.Reason));
+        Assert.All(frames, f => Assert.Equal(InventoryFrameKind.Invalidated, f.Kind.KnownValue));
+        observer.Tick(1 + InventoryProtocolObserver.IdentityWindowMs + 1, utc);
+        Assert.Equal(2, frames.Count);
+        observer.Accept(1, Login(), 40000, utc); observer.Accept(2, Profile(9007199254740993), 40001, utc);
+        Assert.Equal(InventoryFrameKind.Full, frames[^1].Kind.KnownValue);
+    }
+    [Fact]
     public void ProfileCopiesTimeoutAndPreIdentityChangesWaitForTheFull()
     {
         var frames = new List<InventoryFrame>(); ulong generation = 0;

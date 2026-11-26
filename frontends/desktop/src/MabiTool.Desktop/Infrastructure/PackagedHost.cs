@@ -77,6 +77,12 @@ internal static class PackagedHost
         // 与 components/core/launch-backend.ps1 相同：组件存在时把可选 Worker 固定为包内路径。
         var observation = Path.Combine(components, "observation-worker", "MabiTool.Observation.Worker.exe");
         if (File.Exists(observation)) environment["MABITOOL_OBSERVATION_EXECUTABLE"] = observation;
+        // 钓鱼识别 Worker 随包分发时固定为包内路径，宿主按需启动；没有该文件时钓鱼能力写明组件缺失。
+        var lifeVision = Path.Combine(components, "life-vision", "MabiTool.LifeVision.Worker.exe");
+        if (File.Exists(lifeVision)) environment["MABITOOL_LIFE_VISION_EXECUTABLE"] = lifeVision;
+        // 命令行工具随包分发时固定为包内路径，宿主据此部署到台服游戏目录；包内没有该文件时不设置，宿主回落本机韩服目录。
+        var gameCli = Path.Combine(components, "game-cli", "MabinogiMobile_CLI.exe");
+        if (File.Exists(gameCli)) environment["MABITOOL_GAME_CLI_EXECUTABLE"] = gameCli;
         var color = Path.Combine(components, "color-engine");
         if (File.Exists(Path.Combine(color, "python", "python.exe")))
         {

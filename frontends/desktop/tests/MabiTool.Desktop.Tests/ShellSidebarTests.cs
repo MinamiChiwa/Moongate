@@ -62,28 +62,67 @@ public sealed class ShellSidebarTests : IDisposable
         UiThemeChoice theme = UiThemeChoice.Light, IDesktopBackend? backend = null) =>
         LayoutProbe.Open(backend ?? new SampleBackend(), width, height, null, language, theme);
 
+    private const string PendingId = "ext.pending";
+
+    /// <summary>主窗口，侧栏多一个登记为“未实现”的模块：乐谱库已实现，内建模块里没有未实现的，分组由这个示例模块提供。</summary>
+    private static Window OpenWithPending(UiLanguage language = UiLanguage.SimplifiedChinese, IDesktopBackend? backend = null)
+    {
+        UiText.Apply(Application.Current!, language);
+        UiTheme.Apply(Application.Current!, UiThemeChoice.Light);
+        UiMotion.Enabled = false;
+        backend ??= new SampleBackend();
+        var catalog = BuiltInModules.CreateCatalog(backend);
+        // 内建来源：扩展来源的条目会在后端扩展列表变化时被整体替换掉。
+        catalog.Register(new ModuleDescriptor(PendingId, "未实现模块（示例）", "未", Color.Parse("#4B5563"), ModuleOrigin.BuiltIn,
+            () => new Pages.PendingPage { DataContext = new Pages.PendingPageModel("未实现模块", "示例") }, pending: true));
+        var window = new MainWindow { DataContext = new ShellViewModel(catalog, backend), Width = 1280, Height = 860 };
+        window.Show();
+        LayoutProbe.Settle();
+        return window;
+    }
+
     [AvaloniaFact]
-    public void SidebarCollapsesPendingModulesAndStartsOnTheFirstImplementedOne()
+    public void MusicLibraryIsARegularBuiltInModuleRightAfterRoomsAndNoPendingGroupAppears()
     {
         ResetPreference();
         var window = OpenDefault();
         try
         {
             var shell = (ShellViewModel)window.DataContext!;
-            Assert.Equal(["music-library"], shell.PendingModules.Select(item => item.Module.Id));
-            Assert.DoesNotContain(shell.BuiltIn, item => item.Module.Id == "music-library");
-            // 默认页不是乐谱库：取第一个未标记的内建模块。
-            Assert.Equal(shell.BuiltIn[0].Module.Id, shell.Selected.Module.Id);
-            Assert.NotEqual("music-library", shell.Selected.Module.Id);
+            Assert.Empty(shell.PendingModules);
+            Assert.False(shell.HasPending);
+            Assert.False(Named<StackPanel>(window, "PendingGroup").IsEffectivelyVisible);
+            var order = shell.BuiltIn.Select(item => item.Module.Id).ToList();
+            Assert.Equal(order.IndexOf("rooms") + 1, order.IndexOf("music-library"));
+            Assert.False(shell.BuiltIn[order.IndexOf("music-library")].Module.Pending);
+            Assert.True(Entry(window, "music-library").IsEffectivelyVisible);
+            Assert.Equal("combat-observation", shell.Selected.Module.Id);
+        }
+        finally { window.Close(); }
+    }
 
-            // 侧栏上有收起的分组，没有乐谱库入口。
+    [AvaloniaFact]
+    public void SidebarCollapsesPendingModulesAndStartsOnTheFirstImplementedOne()
+    {
+        ResetPreference();
+        var window = OpenWithPending();
+        try
+        {
+            var shell = (ShellViewModel)window.DataContext!;
+            Assert.Equal([PendingId], shell.PendingModules.Select(item => item.Module.Id));
+            Assert.DoesNotContain(shell.BuiltIn, item => item.Module.Id == PendingId);
+            // 默认页不是未实现模块：取第一个未标记的内建模块。
+            Assert.Equal(shell.BuiltIn[0].Module.Id, shell.Selected.Module.Id);
+            Assert.NotEqual(PendingId, shell.Selected.Module.Id);
+
+            // 侧栏上有收起的分组，没有该入口。
             var group = Named<StackPanel>(window, "PendingGroup");
             Assert.True(group.IsEffectivelyVisible);
             var toggle = Named<ToggleButton>(window, "PendingToggle");
             Assert.False(toggle.IsChecked);
             Assert.False(Named<ItemsControl>(window, "PendingList").IsEffectivelyVisible);
             Assert.DoesNotContain(window.GetVisualDescendants().OfType<Button>(),
-                button => button.IsEffectivelyVisible && button.DataContext is NavigationItem { Module.Id: "music-library" });
+                button => button.IsEffectivelyVisible && button.DataContext is NavigationItem { Module.Id: PendingId });
             Assert.False(string.IsNullOrEmpty(AutomationProperties.GetName(toggle)));
             Assert.Empty(LayoutProbe.FindTextOverflow(window));
         }
@@ -96,7 +135,7 @@ public sealed class ShellSidebarTests : IDisposable
     public void ExpandingTheGroupListsTheModuleAndOpensItsPage(UiLanguage language, string title)
     {
         ResetPreference();
-        var window = OpenDefault(language: language);
+        var window = OpenWithPending(language);
         try
         {
             var shell = (ShellViewModel)window.DataContext!;
@@ -107,23 +146,20 @@ public sealed class ShellSidebarTests : IDisposable
             Assert.True(toggle.IsChecked);
             Assert.True(shell.IsPendingOpen);
             Assert.True(Named<ItemsControl>(window, "PendingList").IsEffectivelyVisible);
-            var entry = Entry(window, "music-library");
+            var entry = Entry(window, PendingId);
             Assert.True(entry.IsEffectivelyVisible);
 
-            // 入口与普通入口同样式，可进入页面，页面内容照常。
+            // 入口与普通入口同样式，可进入页面。
             Assert.Contains("nav", entry.Classes);
             Click(window, entry);
-            Assert.Equal("music-library", shell.Selected.Module.Id);
-            var page = window.GetVisualDescendants().OfType<MusicPage>().Single();
-            Assert.True(Named<Button>(page, "GameLayerButton").IsEffectivelyVisible);
-            Assert.True(Named<Button>(page, "OpenMiniButton").IsEffectivelyVisible);
+            Assert.Equal(PendingId, shell.Selected.Module.Id);
             Assert.Empty(LayoutProbe.FindTextOverflow(window));
 
             // 再按一次标题收起：选中的模块在分组内，分组仍保持展开。
             Click(window, toggle);
             Assert.True(shell.IsPendingOpen);
             Assert.True(toggle.IsChecked);
-            Assert.True(Entry(window, "music-library").IsEffectivelyVisible);
+            Assert.True(Entry(window, PendingId).IsEffectivelyVisible);
         }
         finally
         {
@@ -136,12 +172,12 @@ public sealed class ShellSidebarTests : IDisposable
     public void SelectingAModuleInTheGroupKeepsItOpenWithoutChangingTheSavedChoice()
     {
         ResetPreference();
-        var window = OpenDefault();
+        var window = OpenWithPending();
         try
         {
             var shell = (ShellViewModel)window.DataContext!;
             Assert.False(shell.IsPendingOpen);
-            LayoutProbe.Select(window, "music-library");
+            LayoutProbe.Select(window, PendingId);
             Assert.True(shell.IsPendingOpen);
             Assert.True(Named<ItemsControl>(window, "PendingList").IsEffectivelyVisible);
             Assert.False(SidebarPreference.PendingExpanded);
@@ -158,7 +194,7 @@ public sealed class ShellSidebarTests : IDisposable
     public void ToggleWorksFromTheKeyboardAndExposesItsState()
     {
         ResetPreference();
-        var window = OpenDefault();
+        var window = OpenWithPending();
         try
         {
             var toggle = Named<ToggleButton>(window, "PendingToggle");
@@ -188,7 +224,7 @@ public sealed class ShellSidebarTests : IDisposable
     {
         var path = Path.Combine(Path.GetTempPath(), $"moongate-prefs-{Guid.NewGuid():N}.json");
         ResetPreference();
-        var window = OpenDefault();
+        var window = OpenWithPending();
         try
         {
             var store = new DesktopPreferenceStore(path);
@@ -206,9 +242,9 @@ public sealed class ShellSidebarTests : IDisposable
             // 重新启动：读取偏好后分组直接展开。
             ResetPreference();
             SidebarPreference.Restore(store.Load().PendingExpanded);
-            window = OpenDefault();
+            window = OpenWithPending();
             Assert.True(Named<ToggleButton>(window, "PendingToggle").IsChecked);
-            Assert.True(Entry(window, "music-library").IsEffectivelyVisible);
+            Assert.True(Entry(window, PendingId).IsEffectivelyVisible);
         }
         finally
         {
@@ -225,7 +261,7 @@ public sealed class ShellSidebarTests : IDisposable
         var saved = 0;
         void Count(object? sender, EventArgs e) => saved++;
         SidebarPreference.Changed += Count;
-        var window = OpenDefault();
+        var window = OpenWithPending();
         try
         {
             Click(window, Named<ToggleButton>(window, "PendingToggle"));
@@ -312,7 +348,7 @@ public sealed class ShellSidebarTests : IDisposable
         var window = LayoutProbe.Open(new SampleBackend(), 1280, 860);
         try
         {
-            Assert.Equal(["combat-observation", "rooms", "color", "inventory", "presentation"], Order(window));
+            Assert.Equal(["combat-observation", "rooms", "music-library", "color", "inventory", "character", "market", "life", "presentation"], Order(window));
             Assert.Equal("combat-observation", Shell(window).Selected.Module.Id);
             Assert.Equal("DPS检测", Shell(window).BuiltIn[0].Title);
         }
@@ -341,7 +377,7 @@ public sealed class ShellSidebarTests : IDisposable
                 var list = new Rect(List(window).Bounds.Size);
                 Assert.True(Drawn(window, lifted).Width > lifted.Bounds.Width + 1, "拽起的入口没有放大");
                 Assert.Contains("dragging", Nav(window, "color").Classes);
-                foreach (var id in new[] { "combat-observation", "rooms" })
+                foreach (var id in new[] { "combat-observation", "rooms", "music-library" })
                 {
                     var drawn = Drawn(window, Container(window, id));
                     Assert.True(drawn.Y > Container(window, id).Bounds.Y + 1, $"{id} 没有让位");
@@ -355,7 +391,7 @@ public sealed class ShellSidebarTests : IDisposable
             finally { SidebarReorder.DragStateChanged -= watch; }
 
             Assert.Equal([true, false], states);
-            Assert.Equal(["color", "combat-observation", "rooms", "inventory", "presentation"], Order(window));
+            Assert.Equal(["color", "combat-observation", "rooms", "music-library", "inventory", "character", "market", "life", "presentation"], Order(window));
             Assert.StartsWith("color,combat-observation,rooms", string.Join(',', SidebarPreference.ModuleOrder));
             // 拖动不是点击：页面不切换，选中项仍是 DPS检测，选中底色在它的新位置上。
             Assert.Equal("combat-observation", Shell(window).Selected.Module.Id);
@@ -381,7 +417,7 @@ public sealed class ShellSidebarTests : IDisposable
             var start = Center(window, "inventory");
             // 拖到窗口右侧的页面区再松开。
             DragTo(window, start, new Point(start.X + 600, start.Y - 80));
-            Assert.Equal(["combat-observation", "rooms", "color", "inventory", "presentation"], Order(window));
+            Assert.Equal(["combat-observation", "rooms", "music-library", "color", "inventory", "character", "market", "life", "presentation"], Order(window));
             Assert.Empty(SidebarPreference.ModuleOrder);
             foreach (var id in Order(window))
                 Assert.True(Math.Abs(Drawn(window, Container(window, id)).Y - Container(window, id).Bounds.Y) < 0.5);
@@ -403,7 +439,7 @@ public sealed class ShellSidebarTests : IDisposable
             window.MouseUp(new Point(rooms.X + 2, rooms.Y + 3), MouseButton.Left);
             LayoutProbe.Settle();
             Assert.Equal("rooms", Shell(window).Selected.Module.Id);
-            Assert.Equal(["combat-observation", "rooms", "color", "inventory", "presentation"], Order(window));
+            Assert.Equal(["combat-observation", "rooms", "music-library", "color", "inventory", "character", "market", "life", "presentation"], Order(window));
 
             // 拖到列表上方很远处：拽起的入口停在首位，不越出分组；松开后排在首位。
             var last = Center(window, "presentation");
@@ -429,14 +465,14 @@ public sealed class ShellSidebarTests : IDisposable
             window.KeyPress(Key.Down, RawInputModifiers.Alt, PhysicalKey.ArrowDown, null);
             window.KeyRelease(Key.Down, RawInputModifiers.Alt, PhysicalKey.ArrowDown, null);
             LayoutProbe.Render(window);
-            Assert.Equal(["combat-observation", "color", "rooms", "inventory", "presentation"], Order(window));
+            Assert.Equal(["combat-observation", "music-library", "rooms", "color", "inventory", "character", "market", "life", "presentation"], Order(window));
             Assert.Same(Nav(window, "rooms"), window.FocusManager!.GetFocusedElement());
             window.KeyPress(Key.Up, RawInputModifiers.Alt, PhysicalKey.ArrowUp, null);
             window.KeyRelease(Key.Up, RawInputModifiers.Alt, PhysicalKey.ArrowUp, null);
             window.KeyPress(Key.Up, RawInputModifiers.Alt, PhysicalKey.ArrowUp, null);
             window.KeyRelease(Key.Up, RawInputModifiers.Alt, PhysicalKey.ArrowUp, null);
             LayoutProbe.Render(window);
-            Assert.Equal(["rooms", "combat-observation", "color", "inventory", "presentation"], Order(window));
+            Assert.Equal(["rooms", "combat-observation", "music-library", "color", "inventory", "character", "market", "life", "presentation"], Order(window));
             // 首位再往上不动；键盘移动不切换页面。
             window.KeyPress(Key.Up, RawInputModifiers.Alt, PhysicalKey.ArrowUp, null);
             LayoutProbe.Render(window);
@@ -469,7 +505,7 @@ public sealed class ShellSidebarTests : IDisposable
             SidebarPreference.Restore(false, ["inventory", "combat-observation", "ext.first"]);
             var shell = new ShellViewModel(catalog, backend);
             // 保存过的排在前面，其余保持注册顺序排在末尾；扩展分组同样处理。
-            Assert.Equal(["inventory", "combat-observation", "rooms", "color", "presentation"], shell.BuiltIn.Select(item => item.Module.Id));
+            Assert.Equal(["inventory", "combat-observation", "rooms", "music-library", "color", "character", "market", "life", "presentation"], shell.BuiltIn.Select(item => item.Module.Id));
             Assert.Equal(["ext.first", "ext.later"], shell.Extensions.Select(item => item.Module.Id));
             // 启动默认页取排在第一位的已实现内建模块。
             Assert.Equal("inventory", shell.Selected.Module.Id);
@@ -522,13 +558,14 @@ public sealed class ShellSidebarTests : IDisposable
             Assert.Equal(expected, SidebarPreference.ModuleOrder.Where(id => expected.Contains(id)));
             Assert.True(Entry(window, "rooms").IsEffectivelyVisible);
 
-            // “未实现模块”分组里的模块同样按启用状态显示；分组空了就整个隐藏。
+            // 乐谱库同样按启用状态显示：停用后离开侧栏，启用后回到原来的位置。
+            var musicIndex = shell.BuiltIn.Select(item => item.Module.Id).ToList().IndexOf("music-library");
             backend.SendIntentAsync("modules.toggle", "music-library", token).GetAwaiter().GetResult();
             LayoutProbe.Render(window);
-            Assert.Empty(shell.PendingModules);
-            Assert.False(Named<StackPanel>(window, "PendingGroup").IsVisible);
+            Assert.DoesNotContain(shell.BuiltIn, item => item.Module.Id == "music-library");
             backend.SendIntentAsync("modules.toggle", "music-library", token).GetAwaiter().GetResult();
-            Assert.Equal(["music-library"], shell.PendingModules.Select(item => item.Module.Id));
+            LayoutProbe.Render(window);
+            Assert.Equal(musicIndex, shell.BuiltIn.Select(item => item.Module.Id).ToList().IndexOf("music-library"));
         }
         finally
         {
@@ -544,13 +581,15 @@ public sealed class ShellSidebarTests : IDisposable
         var catalog = BuiltInModules.CreateCatalog(backend);
         catalog.Register(new ModuleDescriptor("ext.pending", "未实现扩展", "扩", Avalonia.Media.Color.Parse("#4B5563"),
             ModuleOrigin.Extension, () => new TextBlock(), pending: true));
+        catalog.Register(new ModuleDescriptor("ext.pending.two", "另一个未实现扩展", "扩", Avalonia.Media.Color.Parse("#4B5563"),
+            ModuleOrigin.Extension, () => new TextBlock(), pending: true));
         var shell = new ShellViewModel(catalog, backend);
         try
         {
-            Assert.Equal(["music-library", "ext.pending"], shell.PendingModules.Select(item => item.Module.Id));
+            Assert.Equal(["ext.pending", "ext.pending.two"], shell.PendingModules.Select(item => item.Module.Id));
             Assert.True(shell.MoveModule(shell.PendingModules[1], 0));
-            Assert.Equal(["ext.pending", "music-library"], shell.PendingModules.Select(item => item.Module.Id));
-            Assert.Equal(5, shell.BuiltIn.Count);
+            Assert.Equal(["ext.pending.two", "ext.pending"], shell.PendingModules.Select(item => item.Module.Id));
+            Assert.Equal(9, shell.BuiltIn.Count);
             Assert.DoesNotContain(shell.BuiltIn, item => item.Module.Pending);
         }
         finally { shell.Dispose(); }

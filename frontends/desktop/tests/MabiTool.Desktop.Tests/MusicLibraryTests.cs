@@ -10,6 +10,7 @@ using Avalonia.VisualTree;
 using MabiTool.Contracts;
 using MabiTool.Desktop.Backend;
 using MabiTool.Desktop.Controls;
+using MabiTool.Desktop.Controls.Tables;
 using MabiTool.Desktop.Infrastructure;
 using MabiTool.Desktop.Localization;
 using MabiTool.Desktop.Modules;
@@ -34,6 +35,39 @@ namespace MabiTool.Desktop.Tests;
 /// <summary>乐谱库：曲库与队列、“游戏内演奏”层与能力停用、迷你窗、乐谱表分页与时长查询。</summary>
 public sealed class MusicLibraryTests
 {
+    [AvaloniaFact]
+    public void BackendAvailabilityDecidesSelectionAndTheLibraryLineExplainsTheScoreSource()
+    {
+        // 后端从不报告 "available"：在游戏列表里（present）、观察到、导入的和同名无法区分的乐谱都可加入队列，只有游戏里已没有的不行。
+        foreach (var state in new[] { "present", "observed", "imported", "uncertain" })
+            Assert.True(LiveBackend.ScoreAvailabilityView(state, false, false, true).Available, state);
+        var missing = LiveBackend.ScoreAvailabilityView("missing", false, false, true);
+        Assert.Equal((false, "游戏里已没有"), (missing.Available, missing.Tag));
+        Assert.Contains("不在游戏里", missing.Blocked);
+        // 没有绑定游戏：仍是可选的乐谱，但不能加入队列，提示写明原因。
+        var unbound = LiveBackend.ScoreAvailabilityView("present", false, false, false);
+        Assert.True(unbound.Available);
+        Assert.Contains("绑定游戏", unbound.Blocked);
+        // “有同名乐谱”只在候选组里有多条时出现，其余没有标签也没有阻止原因。
+        var plain = LiveBackend.ScoreAvailabilityView("present", false, false, true);
+        Assert.Equal((string.Empty, (string?)null), (plain.Tag, plain.Blocked));
+        Assert.Equal("有同名乐谱", LiveBackend.ScoreAvailabilityView("present", false, true, true).Tag);
+
+        // 曲库没有任何来源：写明游戏乐谱来源不可用的原因与去处，不写“尚未从游戏同步”。
+        var notice = CapabilityNotice.Describe(new("music.inventory", "music-library", CapabilityStatus.Unavailable, null, null, null, null,
+            "gameCli.disabled", DateTimeOffset.UnixEpoch, []));
+        var empty = LiveBackend.MusicSourceLine(0, notice, null, null);
+        Assert.StartsWith("0 张乐谱，游戏乐谱来源暂不可用：", empty);
+        Assert.Contains("游戏连接器", empty);
+        Assert.DoesNotContain("尚未从游戏同步", empty);
+        // 能力可用、还没有同步结果：正在同步；同步失败带原因；已有来源时连接器不可用只说明列表是上次同步的结果。
+        Assert.Equal("0 张乐谱，正在从游戏同步", LiveBackend.MusicSourceLine(0, null, null, null));
+        var failed = new GameMusicLibrarySync("e", GameMusicSyncStatus.Failed, "gameCli.readFailed", 0, null);
+        Assert.StartsWith("0 张乐谱，同步失败：", LiveBackend.MusicSourceLine(0, null, null, failed));
+        Assert.StartsWith("12 张乐谱，已同步；游戏乐谱来源暂不可用：", LiveBackend.MusicSourceLine(12, notice, "complete", null));
+        Assert.Equal("12 张乐谱，已同步", LiveBackend.MusicSourceLine(12, null, "complete", null));
+    }
+
     [AvaloniaFact]
     public void MusicPageEnqueuesSearchesAndBlocksUnselectableScores()
     {
@@ -67,12 +101,13 @@ public sealed class MusicLibraryTests
         window.Close();
     }
 
-    private static string PlayNotice(UiLanguage language) =>
-        language == UiLanguage.TraditionalChinese ? "台服暫不支援遊戲內選曲演奏" : "台服暂不支持游戏内选曲演奏";
+    // 游戏连接器未启用时的说明：写明原因并指向侧栏的“游戏连接器”胶囊。
+    private static string PlayNotice(UiLanguage language) => language == UiLanguage.TraditionalChinese
+        ? "暫不可用：遊戲連接器未啟用（點左上角「遊戲連接器」查看）" : "暂不可用：游戏连接器未启用（点左上角“游戏连接器”查看）";
 
     private static string? Unavailable(string id) => id == CapabilityIds.PerformancePlay
         ? CapabilityNotice.Describe(new(id, "performance", CapabilityStatus.Unavailable, null, null, null, null,
-            "module.notImplemented", DateTimeOffset.UnixEpoch, []))
+            "gameCli.disabled", DateTimeOffset.UnixEpoch, []))
         : null;
 
     private static int Intents(SampleBackend backend, string name) => backend.UiIntents.Count(intent => intent.Item1 == name);
@@ -123,14 +158,25 @@ public sealed class MusicLibraryTests
     [AvaloniaFact]
     public void QueuePanelKeepsOnlyQueueContentAndSettingsLiveInTheLayer()
     {
-        var window = LayoutProbe.Open(new SampleBackend(), 1280, 860, "music-library");
+        var backend = new SampleBackend();
+        var window = LayoutProbe.Open(backend, 1280, 860, "music-library");
         try
         {
             var page = window.GetVisualDescendants().OfType<MusicPage>().Single();
             var model = (MusicPageModel)page.DataContext!;
-            // 队列行只有乐器名或“未指定”，没有游戏内换装之类的说明。
+            // 队列行只有乐器名或“游戏当前乐器”，没有游戏内换装之类的说明。
             Assert.All(model.Data.Queue, row => Assert.DoesNotContain("换装", row.Note));
             Assert.All(model.Data.Queue, row => Assert.DoesNotContain("沿用", row.Note));
+            // 演奏进行中各项乐器选择都停用并写明原因；停止后可选，选择发出 music.instrument（条目 ID 换行 乐器 ID），队列随后端改变。
+            Assert.All(model.QueueEntries, entry => Assert.Equal((false, "演奏进行中不能改乐器，停止后再改"), (entry.CanPickInstrument, entry.InstrumentHint)));
+            model.IntentCommand.Execute("music.stop");
+            LayoutProbe.Settle();
+            Assert.True(model.QueueEntries[0].CanPickInstrument && model.QueueEntries[2].CanPickInstrument);
+            Assert.Equal("游戏当前乐器", model.Data.Queue[2].Note);
+            model.SetQueueInstrument("2", "flute");
+            LayoutProbe.Settle();
+            Assert.Equal(("music.instrument", "2\nflute"), backend.UiIntents[^1]);
+            Assert.Equal(("長笛", "flute"), (model.Data.Queue[2].Note, model.Data.Queue[2].InstrumentId));
             // 主页面的队列面板没有播放顺序、曲间等待等设置。
             Assert.NotEmpty(model.Data.QueueSettings);
             var queue = Named<Card>(page, "QueuePanel");
@@ -185,14 +231,18 @@ public sealed class MusicLibraryTests
             Click(window, start);
             Assert.Equal(0, Intents(backend, "music.start"));
 
-            // 四项功能的状态行跟随 performance.play：不可用。
+            // 四项功能的状态行：选曲演奏与自动连续播放跟随 performance.play（不可用），自动换乐器跟随 performance.instrument
+            // （这里能力表只让 play 不可用，所以可用），读取乐谱内容固定为不可用。
+            var names = language == UiLanguage.TraditionalChinese
+                ? new[] { "遊戲內選曲演奏", "自動連續播放", "演奏前自動換樂器", "從遊戲讀取樂譜內容" }
+                : ["游戏内选曲演奏", "自动连续播放", "演奏前自动换乐器", "从游戏读取乐谱内容"];
+            Assert.Equal(names, model.GameFeatures.Select(row => row.Name));
+            Assert.Equal(new[] { "不可用", "不可用", "可用", "不可用" }, model.GameFeatures.Select(row => row.Status));
             var rows = Named<ItemsControl>(page, "GameFeatureList").GetVisualDescendants().OfType<TextBlock>()
                 .Where(text => text.IsEffectivelyVisible).Select(text => text.Text).ToList();
-            Assert.Equal(4, rows.Count(text => text == "不可用"));
-            Assert.Equal(language == UiLanguage.TraditionalChinese
-                ? new[] { "遊戲內選曲演奏", "自動連續播放", "演奏前自動換樂器", "從遊戲讀取樂譜內容" }
-                : ["游戏内选曲演奏", "自动连续播放", "演奏前自动换乐器", "从游戏读取乐谱内容"],
-                rows.Where(text => text != "不可用").ToArray());
+            Assert.Equal(3, rows.Count(text => text == "不可用"));
+            Assert.Equal(1, rows.Count(text => text == "可用"));
+            Assert.Equal(names, rows.Where(text => text is not ("不可用" or "可用")).ToArray());
 
             // 能力恢复：说明消失，按钮按页面数据放开，点按发出意图。
             backend.CapabilityNotices = null;
@@ -228,7 +278,8 @@ public sealed class MusicLibraryTests
                 Assert.Equal(model.Data.Actions.CanStop, Named<Button>(page, "StopButton").IsEffectivelyEnabled);
                 var statuses = Named<ItemsControl>(page, "GameFeatureList").GetVisualDescendants().OfType<TextBlock>()
                     .Where(row => row.IsEffectivelyVisible && row.FontWeight == Avalonia.Media.FontWeight.Bold).Select(row => row.Text).ToList();
-                Assert.Equal(Enumerable.Repeat(text, 4), statuses);
+                // 选曲演奏、自动连续播放跟随 performance.play，自动换乐器跟随 performance.instrument；读取乐谱内容固定为不可用。
+                Assert.Equal(new[] { text, text, text, "不可用" }, statuses);
             }
             finally { window.Close(); }
         }
@@ -335,6 +386,95 @@ public sealed class MusicLibraryTests
         }
     }
 
+    private static string UserComposedTip(UiLanguage language) =>
+        language == UiLanguage.TraditionalChinese ? "台服連接器不支援播放玩家自製樂譜" : "台服连接器不支持播放玩家自制乐谱";
+
+    [AvaloniaTheory]
+    [InlineData(UiLanguage.SimplifiedChinese)]
+    [InlineData(UiLanguage.TraditionalChinese)]
+    public async Task MiniStartIsGreyWithATipForUserComposedScoresAndOnlyWhenTheSupportIsKnown(UiLanguage language)
+    {
+        // 连接器已连接：“月光下的艾明馬夏”（s4）是玩家自制乐谱，其余可演奏。
+        var backend = new SampleBackend { ConnectorView = SampleBackend.SampleConnector(ConnectorState.Connected, riskAcknowledged: true) };
+        var window = OpenMini(backend, 440, 920, UiThemeChoice.Light, language);
+        try
+        {
+            var model = (MiniWindowModel)window.DataContext!;
+            await backend.SendIntentAsync("music.stop", null, TestContext.Current.CancellationToken);
+            LayoutProbe.Settle();
+            var start = Named<Button>(window, "StartButton");
+            // 乐谱表当前页登记给后端查询可演奏性。
+            Assert.Equal(model.Tiles.Select(tile => tile.Id), backend.ScoreSupportRequests[^1]);
+
+            // 可演奏的乐谱：开始演奏可用，没有提示。
+            model.SelectCommand.Execute("s2");
+            LayoutProbe.Settle();
+            Assert.True(start.IsEffectivelyEnabled);
+            Assert.Null(ToolTip.GetTip(start));
+
+            // 玩家自制乐谱：开始演奏灰色，停用的按钮也带提示，点按不发出意图。
+            model.SelectCommand.Execute("s4");
+            LayoutProbe.Settle();
+            Assert.False(start.IsEffectivelyEnabled);
+            Assert.Equal(UserComposedTip(language), ToolTip.GetTip(start));
+            Assert.True(ToolTip.GetShowOnDisabled(start));
+            Click(window, start);
+            Assert.DoesNotContain(backend.UiIntents, intent => intent.Item1 == "music.start");
+
+            // 可演奏性未知（连接器没有连上游戏）：不因乐谱类型停用。
+            backend.ConnectorView = SampleBackend.SampleConnector(ConnectorState.GameNotRunning, riskAcknowledged: true);
+            backend.RaiseChanged();
+            LayoutProbe.Settle();
+            Assert.True(start.IsEffectivelyEnabled);
+            Assert.Null(ToolTip.GetTip(start));
+        }
+        finally
+        {
+            window.Close();
+            ResetAppearance();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task GameLayerStartFollowsTheQueueHeadAndShowsTheLastPlayError()
+    {
+        var backend = new SampleBackend { ConnectorView = SampleBackend.SampleConnector(ConnectorState.Connected, riskAcknowledged: true) };
+        var window = LayoutProbe.Open(backend, 1280, 860, "music-library");
+        try
+        {
+            var page = window.GetVisualDescendants().OfType<MusicPage>().Single();
+            var model = (MusicPageModel)page.DataContext!;
+            // 队列只剩玩家自制乐谱 s4，并处于已停止。
+            for (var index = 0; index < 3; index++)
+                await backend.SendIntentAsync("music.dequeue", "0", TestContext.Current.CancellationToken);
+            await backend.SendIntentAsync("music.stop", null, TestContext.Current.CancellationToken);
+            LayoutProbe.Settle();
+            Click(window, Named<Button>(page, "GameLayerButton"));
+            var start = Named<Button>(page, "StartButton");
+            Assert.True(model.Data.Actions.CanStart);
+            Assert.False(start.IsEffectivelyEnabled);
+            Assert.Equal(UserComposedTip(UiLanguage.SimplifiedChinese), ToolTip.GetTip(start));
+            Assert.True(ToolTip.GetShowOnDisabled(start));
+            Click(window, start);
+            Assert.DoesNotContain(backend.UiIntents, intent => intent.Item1 == "music.start");
+
+            // 演奏会话的最近错误显示在当前曲目下方：已收录的换成中文，未收录的原样显示。
+            var error = Named<TextBlock>(page, "PlayErrorText");
+            Assert.False(error.IsEffectivelyVisible);
+            backend.PlayError = "gameCli.notAvailableOnCombat";
+            backend.RaiseChanged();
+            LayoutProbe.Settle();
+            Assert.True(error.IsEffectivelyVisible);
+            Assert.Equal("战斗中不能演奏", error.Text);
+            backend.PlayError = "gameCli.somethingNew";
+            backend.RaiseChanged();
+            LayoutProbe.Settle();
+            Assert.Equal("gameCli.somethingNew", error.Text);
+            Assert.Empty(LayoutProbe.FindTextOverflow(window));
+        }
+        finally { window.Close(); }
+    }
+
     [AvaloniaFact]
     public void MiniSharesStateWithMainWindowAndSendsLibraryIntents()
     {
@@ -431,7 +571,7 @@ public sealed class MusicLibraryTests
         Named<ItemsControl>(window, "TileList").GetVisualDescendants().OfType<Button>().Single(button => button.CommandParameter as string == id);
 
     [AvaloniaFact]
-    public void ScoreTableShowsInstrumentAndLengthAndRequestsOnlyTheVisiblePage()
+    public void ScoreTableFitsTheCardShowsLengthAndRequestsOnlyTheVisiblePage()
     {
         var backend = new ManyScoresBackend(75);
         var window = LayoutProbe.Open(backend, 1280, 860, "music-library");
@@ -442,8 +582,10 @@ public sealed class MusicLibraryTests
             Assert.Equal("第 1／3 页，共 75 张", model.PageLabel);
             // 登记给后端查询的只有这一页。
             Assert.Equal(Enumerable.Range(0, 30).Select(Id), backend.Requests[^1]);
-            Assert.Equal("魯特琴", model.VisibleScores[0].Instrument);
-            Assert.Equal("未指定", model.VisibleScores[1].Instrument);
+            // 乐谱表只列名称、编曲、时长与操作（乐器在演奏队列里指定）；1280×860 下各列合计不超出表格可见宽度，不被横向裁切。
+            var table = Named<DataTable>(window, "ScoreList");
+            Assert.Equal(["title", "arranger", "length", "actions"], table.VisibleColumns.Select(column => column.Id));
+            Assert.True(table.TotalWidth <= table.Bounds.Width - ScrollGutter.Width(table) + 0.5, $"{table.TotalWidth} > {table.Bounds.Width}");
             Assert.Equal("未知", model.VisibleScores[1].Length);
             Assert.Equal("2:00", model.VisibleScores[0].Length);
 
@@ -459,6 +601,40 @@ public sealed class MusicLibraryTests
             Assert.All(backend.Requests, request => Assert.True(request.Count <= MusicPageModel.PageSize));
             Assert.Empty(LayoutProbe.FindTextOverflow(window));
             LayoutProbe.SaveScreenshot(window, "music-library-paged-1280x860");
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void ScoreTableFiltersBySourceAndCopiesOnlyTheScoreNames()
+    {
+        var backend = new SampleBackend();
+        var window = LayoutProbe.Open(backend, 1280, 860, "music-library");
+        try
+        {
+            var page = window.GetVisualDescendants().OfType<MusicPage>().Single();
+            var model = (MusicPageModel)page.DataContext!;
+            Button Filter(string key) => Named<ItemsControl>(page, "SourceFilterList").GetVisualDescendants().OfType<Button>()
+                .Single(button => button.CommandParameter as string == key);
+
+            // 来源筛选：“全部”之后是当前存在的来源，各带张数；选“自制乐谱”只剩自制乐谱，选“全部”恢复；只在前端筛选，不发送意图。
+            Assert.Equal(["全部 8", "游戏乐谱 4", "自制乐谱 3", "导入 1"], model.SourceFilters.Select(chip => chip.Text));
+            var intents = backend.UiIntents.Count;
+            Click(window, Filter(ScoreSources.Composed));
+            Assert.Equal(["s4", "s5", "s6"], model.VisibleScores.Select(row => row.Id));
+            Assert.All(model.VisibleScores, row => Assert.Equal(("自制乐谱", true), (row.Source, row.IsComposedSource)));
+            Assert.Equal(intents, backend.UiIntents.Count);
+            Click(window, Filter(string.Empty));
+            Assert.Equal(8, model.VisibleScores.Count);
+
+            // 复制：选中两行按 Ctrl+C，剪贴板里只有两张乐谱的名称，各占一行，没有表头、编曲、时长与来源。
+            var table = Named<DataTable>(page, "ScoreList");
+            var copied = new List<string>();
+            table.Copied += (_, text) => copied.Add(text);
+            Click(window, table.List.ContainerFromIndex(0)!);
+            TestUi.PressKey(window, Key.Down, PhysicalKey.ArrowDown, RawInputModifiers.Shift);
+            TestUi.PressKey(window, Key.C, PhysicalKey.C, RawInputModifiers.Control);
+            Assert.Equal("夜風與營火\r\n提爾科納的雨", Assert.Single(copied));
         }
         finally { window.Close(); }
     }
@@ -500,7 +676,7 @@ public sealed class MusicLibraryTests
 
     private static string Id(int index) => $"score-{index}";
 
-    /// <summary>有很多乐谱的样本：前一半在清单里指定了魯特琴、时长已知，其余未指定、未知。</summary>
+    /// <summary>有很多乐谱的样本：隔一张时长已知（2:00），其余未知。</summary>
     private sealed class ManyScoresBackend(int count) : IDesktopBackend
     {
         public event EventHandler<string>? ShortcutTriggered { add { } remove { } }
@@ -520,7 +696,7 @@ public sealed class MusicLibraryTests
         public MusicPageData GetMusic() => sample.GetMusic() with
         {
             Scores = Enumerable.Range(0, count).Select(index => new ScoreRow(Id(index), $"第 {index + 1} 首練習曲", string.Empty, "芙蕾雅",
-                index % 2 == 0 ? "魯特琴" : "未指定", index % 2 == 0 ? "2:00" : "未知", false, true, index % 2 == 0 ? "lute" : null)).ToList()
+                index % 2 == 0 ? "2:00" : "未知", false, true, Source: "游戏乐谱", SourceKey: ScoreSources.Game)).ToList()
         };
 
         public void RequestScoreDetails(IReadOnlyList<string> scoreIds) => Requests.Add(scoreIds);
@@ -553,7 +729,7 @@ public sealed class MusicLibraryTests
         public Task<ColorAtlasReply> GetColorAtlasAsync(string targetHex, string matchMode, double tolerance, bool full, CancellationToken cancellationToken) =>
             sample.GetColorAtlasAsync(targetHex, matchMode, tolerance, full, cancellationToken);
         public Task<GameWindowActivation> ActivateGameWindowAsync(CancellationToken cancellationToken) => sample.ActivateGameWindowAsync(cancellationToken);
-        public Task<CaptureReply> CaptureScreenAsync(CancellationToken cancellationToken) => sample.CaptureScreenAsync(cancellationToken);
+        public Task<CaptureReply> CaptureScreenAsync(PixelRect region, CancellationToken cancellationToken) => sample.CaptureScreenAsync(region, cancellationToken);
         public Task ReleaseCaptureAsync(string captureId, CancellationToken cancellationToken) => sample.ReleaseCaptureAsync(captureId, cancellationToken);
         public Task<BackendReply> ChangeShortcutAsync(string actionId, KeyChord chord, CancellationToken cancellationToken) =>
             sample.ChangeShortcutAsync(actionId, chord, cancellationToken);

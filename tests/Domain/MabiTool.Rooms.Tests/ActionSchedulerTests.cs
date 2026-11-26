@@ -92,6 +92,30 @@ public sealed class ActionSchedulerTests
         lock (input.Primed) Assert.Equal(["prime-stop"], input.Primed);
     }
 
+    [Fact]
+    public void ExecutorLeadMovesTheDeadlineEarlierAndSurvivesCommitWithoutAffectingOtherActions()
+    {
+        var clock = new FakeClock(100); var roomClock = new RoomClock(clock);
+        var input = new RecordingInput { Lead = 150 };
+        using var scheduler = new ActionScheduler(clock, roomClock, input);
+        scheduler.ChangeEpoch("epoch-1"); Assert.True(roomClock.AddSample(100, 100, 100, 100));
+        scheduler.TimingOffsetMs = 20;
+        var start = new ScheduledAction("lead-start", "round-1", "start", 10000, "epoch-1") { Mode = "ensemble" };
+        Assert.True(scheduler.Prepare(start).Ready);
+        Assert.Equal(10020d - 150, scheduler.LocalDeadline(start.Id));
+        Assert.True(scheduler.Commit(start));
+        Assert.Equal(10020d - 150, scheduler.LocalDeadline(start.Id));
+        input.Lead = 5000;
+        var late = start with { Id = "lead-late", SessionId = "round-2" };
+        Assert.True(scheduler.Prepare(late).Ready);
+        Assert.Equal(10020d - 1000, scheduler.LocalDeadline(late.Id));
+        input.Lead = 0;
+        var stop = new ScheduledAction("lead-stop", "round-1", "stop", 14000, "epoch-1") { Mode = "ensemble" };
+        Assert.True(scheduler.Prepare(stop).Ready);
+        Assert.Equal(14020d, scheduler.LocalDeadline(stop.Id));
+        scheduler.CancelAll();
+    }
+
     private sealed class FakeClock(double nowMs) : IMonotonicClock
     {
         private double now = nowMs;
@@ -103,6 +127,8 @@ public sealed class ActionSchedulerTests
         public List<string> Executed { get; } = [];
         public List<string> Forgotten { get; } = [];
         public List<string> Primed { get; } = [];
+        public double Lead { get; set; }
+        public double ExecutionLeadMs(ScheduledAction action) => Lead;
         public void Prime(ScheduledAction action) { lock (Primed) Primed.Add(action.Id); }
         public InputPreparation Prepare(ScheduledAction action) => new(true, null);
         public InputOutcome Execute(ScheduledAction action, CancellationToken cancellationToken)

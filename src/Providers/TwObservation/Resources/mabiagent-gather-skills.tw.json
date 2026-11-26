@@ -1,0 +1,280 @@
+{
+  "schemaVersion": 1,
+  "description": "采集物到生活技能的归类，移植自用户 MabiAgent 的采集路线与材料来源（技能名已换成台服客户端 LivingSkill 的繁体显示名）。来源与授权见 scripts/maintenance/source-baselines.json 的 mabiagent-life-gathering。",
+  "source": {
+    "repository": "MinamiChiwa/MabiAgent",
+    "commit": "82bc0ef168d8f2d78066c6decb665c6ae037c07f",
+    "files": [
+      {
+        "path": "config/screen_catalog.1280x960.tw.json",
+        "sha256": "f8576760e66992f829698226385ce78a523696de68317f994b0752f10ba8b702"
+      },
+      {
+        "path": "config/gathering_routes.tw.json",
+        "sha256": "42aa4b9c566bf20afd3025a7849fd2f9478645d7e5602aa39da3ca807705ac9e"
+      },
+      {
+        "path": "docs/全部配方材料来源待填写.csv",
+        "sha256": "cbbc787c83fca971fcfae59957960d5311cdb09048b8db5a61a12565d0c781f0"
+      },
+      {
+        "path": "docs/全部配方材料来源核对.csv",
+        "sha256": "23f50bd45f576f78c2a78bb0e6906483811f00f3e9c3f0fda49e89f4d55b5cb3"
+      },
+      {
+        "path": "docs/当前队列材料映射核对.csv",
+        "sha256": "56ab1725ba485d41332d88c4bed8227d614508940d3f50e7511a03399e9d0582"
+      }
+    ]
+  },
+  "skills": [
+    {
+      "name": "日常採集",
+      "fishing": false
+    },
+    {
+      "name": "鋤地",
+      "fishing": false
+    },
+    {
+      "name": "收割",
+      "fishing": false
+    },
+    {
+      "name": "採礦",
+      "fishing": false
+    },
+    {
+      "name": "剪羊毛",
+      "fishing": false
+    },
+    {
+      "name": "採集藥草",
+      "fishing": false
+    },
+    {
+      "name": "釣魚",
+      "fishing": true
+    },
+    {
+      "name": "伐木",
+      "fishing": false
+    },
+    {
+      "name": "昆蟲採集",
+      "fishing": false
+    }
+  ],
+  "items": [
+    {
+      "name": "牛奶",
+      "skill": "日常採集",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "蜘蛛網",
+      "skill": "日常採集",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "裝水的瓶子",
+      "skill": "日常採集",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "雞蛋",
+      "skill": "日常採集",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "黏土",
+      "skill": "鋤地",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "小麥",
+      "skill": "收割",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "長莖稈",
+      "skill": "收割",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "黃豆",
+      "skill": "收割",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "煤炭",
+      "skill": "採礦",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "白銅礦石",
+      "skill": "採礦",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "礦石",
+      "skill": "採礦",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "蘊含魔力的石頭",
+      "skill": "採礦",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "銀礦石",
+      "skill": "採礦",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "銅礦石",
+      "skill": "採礦",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "鐵礦石",
+      "skill": "採礦",
+      "from": "gathering_routes"
+    },
+    {
+      "name": "厚實羊毛",
+      "skill": "剪羊毛",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "最高級羊毛",
+      "skill": "剪羊毛",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "羊毛",
+      "skill": "剪羊毛",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "高級羊毛",
+      "skill": "剪羊毛",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "高級羊毛+",
+      "skill": "剪羊毛",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "傷痕花",
+      "skill": "採集藥草",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "咻咻蘑菇",
+      "skill": "採集藥草",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "增幅蘑菇",
+      "skill": "採集藥草",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "壯壯蘑菇",
+      "skill": "採集藥草",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "新芽蘑菇",
+      "skill": "採集藥草",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "淨淨蘑菇",
+      "skill": "採集藥草",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "藥草",
+      "skill": "採集藥草",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "躲躲花",
+      "skill": "採集藥草",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "閃閃發亮的苔蘚",
+      "skill": "採集藥草",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "魔力藥草",
+      "skill": "採集藥草",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "封印結晶",
+      "skill": "釣魚",
+      "from": "screen_catalog.material_sources"
+    },
+    {
+      "name": "原木",
+      "skill": "伐木",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "堅硬原木",
+      "skill": "伐木",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "最高級原木",
+      "skill": "伐木",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "柔軟原木",
+      "skill": "伐木",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "樹液",
+      "skill": "伐木",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "高級原木",
+      "skill": "伐木",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "高級原木+",
+      "skill": "伐木",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "夕陽蝴蝶",
+      "skill": "昆蟲採集",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "幽靈螢火蟲",
+      "skill": "昆蟲採集",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "白霜金龜子",
+      "skill": "昆蟲採集",
+      "from": "screen_catalog"
+    },
+    {
+      "name": "落葉蛾",
+      "skill": "昆蟲採集",
+      "from": "screen_catalog"
+    }
+  ]
+}

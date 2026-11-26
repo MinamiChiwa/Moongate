@@ -24,7 +24,8 @@ public sealed partial class LiveBackend
     {
         var key = IdempotencyKey();
         PageState page;
-        lock (gate) page = pages;
+        string? selectedPlaylist;
+        lock (gate) (page, selectedPlaylist) = (pages, playlistId);
         var game = current.Binding?.Binding?.Session;
         GameSession Bound() => game ?? throw new InvalidOperationException(Pick("尚未绑定游戏窗口", "尚未綁定遊戲視窗"));
 
@@ -32,7 +33,8 @@ public sealed partial class LiveBackend
         {
             case "music.enqueue" when argument is not null:
             {
-                var item = new PlaylistItem(Guid.NewGuid().ToString("N"), argument, null, DateTimeOffset.UtcNow.Ticks.ToString("D20"));
+                var instrument = EnqueueInstrument(argument, page.Playlists.FirstOrDefault(playlist => playlist.Id == selectedPlaylist));
+                var item = new PlaylistItem(Guid.NewGuid().ToString("N"), argument, instrument, DateTimeOffset.UtcNow.Ticks.ToString("D20"));
                 if (!IsLive(page.Session))
                     await api.CreatePerformanceSessionAsync(new(null, "solo", Bound().Id, [item], false, PerformanceRepeatMode.Off), key, token);
                 else
@@ -43,6 +45,15 @@ public sealed partial class LiveBackend
                 await CommandAsync(api, page.Session!.Id,
                     new("edit", Items: page.Session.Items.Select(entry => entry.Item).Where(entry => entry.Id != argument).ToList()), token);
                 return null;
+            // 参数为“条目 ID 换行 乐器 ID”，乐器为空表示游戏当前乐器（演奏前不换）。
+            case "music.instrument" when argument is not null && IsLive(page.Session):
+            {
+                var split = argument.IndexOf('\n');
+                var itemId = split < 0 ? argument : argument[..split];
+                var instrumentId = split < 0 ? null : argument[(split + 1)..];
+                await CommandAsync(api, page.Session!.Id, new("edit", Items: QueueItemsWithInstrument(page.Session.Items, itemId, instrumentId)), token);
+                return null;
+            }
             case "music.start" when IsLive(page.Session):
                 await CommandAsync(api, page.Session!.Id, new("arm"), token);
                 return null;
@@ -111,6 +122,26 @@ public sealed partial class LiveBackend
             }
         }
         return Pick($"后端没有对应这个操作的接口：{intent}", $"後端沒有對應這個操作的介面：{intent}");
+    }
+
+    /// <summary>
+    /// 加入队列的条目乐器：在所选清单下加入时取该乐谱在清单里第一个条目（按排序键）的乐器，条目没有写时取清单的默认乐器；
+    /// 没有选清单（全部乐谱）或乐谱不在清单里时为空（游戏当前乐器）。
+    /// </summary>
+    internal static string? EnqueueInstrument(string scoreId, MusicPlaylist? playlist) => playlist is null ? null
+        : playlist.Items.Where(item => item.ScoreId == scoreId).OrderBy(item => item.SortKey, StringComparer.Ordinal).ThenBy(item => item.Id, StringComparer.Ordinal)
+            .Select(item => item.InstrumentId ?? playlist.DefaultInstrumentId).FirstOrDefault();
+
+    /// <summary>
+    /// 改一项乐器后的完整队列条目（会话条目原有次序，其余条目不变），交给会话命令 <c>edit</c> 整体替换；
+    /// <paramref name="instrumentId"/> 为空表示游戏当前乐器。条目已不在队列里时抛出带中文说明的异常，不发送。
+    /// </summary>
+    internal static IReadOnlyList<PlaylistItem> QueueItemsWithInstrument(IReadOnlyList<PerformanceQueueItem> items, string itemId, string? instrumentId)
+    {
+        if (items.All(entry => entry.Item.Id != itemId))
+            throw new InvalidOperationException(Pick("这一项已经不在队列里", "這一項已經不在佇列裡"));
+        var instrument = string.IsNullOrEmpty(instrumentId) ? null : instrumentId;
+        return [.. items.Select(entry => entry.Item.Id == itemId ? entry.Item with { InstrumentId = instrument } : entry.Item)];
     }
 
     private static async Task CommandAsync(MabiToolClient api, string sessionId, PerformanceSessionCommand command,

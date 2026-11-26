@@ -158,6 +158,11 @@
           </StackPanel>
         </controls:Card>
 
+        <!-- 游戏连接器：台服游戏自带的命令行工具，默认关闭；与侧栏状态胶囊的弹出层内容相同，首次启用先弹出风险确认窗口。 -->
+        <controls:Card x:Name="GameConnectorPanel" CardId="game-connector" Title="{DynamicResource GC.CardTitle}" TitleTip="{DynamicResource GC.CardHint}" Size="HalfByAuto" AllowedSizes="FullWidth">
+          <settings:GameConnectorCardView x:Name="ConnectorCard" />
+        </controls:Card>
+
         <controls:Card x:Name="ShortcutsPanel" CardId="shortcuts" Title="{DynamicResource T.Shortcuts}" TitleTip="{DynamicResource T.ShortcutHint}" Size="HalfByAuto" AllowedSizes="FullWidth">
           <StackPanel Spacing="8">
             <TextBlock Classes="note" Text="{DynamicResource T.NoShortcuts}" IsVisible="{Binding NoShortcuts}" />
@@ -277,8 +282,8 @@
             <WrapPanel>
               <Button Margin="0,0,8,6" Content="{DynamicResource T.CheckUpdate}" Command="{Binding IntentCommand}"
                       CommandParameter="update.check" IsEnabled="{Binding Data.CanCheckUpdate}" />
-              <Button Margin="0,0,8,6" Content="{DynamicResource T.DownloadUpdate}" Command="{Binding IntentCommand}"
-                      CommandParameter="update.download" IsVisible="{Binding Data.CanDownloadUpdate}" />
+              <Button x:Name="DownloadUpdateButton" Margin="0,0,8,6" Content="{DynamicResource T.DownloadUpdate}"
+                      Command="{Binding DownloadUpdateCommand}" IsVisible="{Binding Data.CanDownloadUpdate}" />
               <Button Classes="primary" Margin="0,0,0,6" Content="{DynamicResource T.InstallUpdate}" Command="{Binding IntentCommand}"
                       CommandParameter="update.install" IsVisible="{Binding Data.CanInstallUpdate}" />
             </WrapPanel>

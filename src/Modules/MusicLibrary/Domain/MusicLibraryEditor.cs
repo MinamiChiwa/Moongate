@@ -29,6 +29,17 @@ public static class MusicLibraryEditor
         new("harp", new Dictionary<string, string> { ["zh-TW"] = "豎琴", ["ko-KR"] = "하프", ["en-US"] = "Harp" }, ["豎琴", "하프", "Harp"])
     });
 
+    /// <summary>游戏乐器标识的前缀：<c>game:</c> 加游戏里的乐器原文名（当前角色背包里的乐器），演奏前按该名称换乐器。</summary>
+    public const string GameInstrumentPrefix = "game:";
+
+    /// <summary>游戏乐器标识里的乐器名；不是游戏乐器标识时为空。</summary>
+    public static string? GameInstrumentName(string? id) =>
+        id is not null && id.Length > GameInstrumentPrefix.Length && id.StartsWith(GameInstrumentPrefix, StringComparison.Ordinal) ? id[GameInstrumentPrefix.Length..] : null;
+
+    /// <summary>乐器标识对应的游戏乐器名：游戏乐器标识取其名称，乐器目录标识取台服名称；都不是时为空。</summary>
+    public static string? InstrumentGameName(string? id) =>
+        GameInstrumentName(id) ?? InstrumentCatalog.FirstOrDefault(x => x.Id == id)?.DisplayNames.GetValueOrDefault("zh-TW");
+
     public static (MusicLibraryState State, MusicEditResult Result) Apply(MusicLibraryState previous, MusicEditBatch request,
         IReadOnlySet<string> knownScores)
         => ApplyCore(previous, request, knownScores, false);
@@ -127,6 +138,12 @@ public static class MusicLibraryEditor
     {
         if (value is null) return;
         Text(value, 128);
+        // 游戏乐器标识：名称为游戏原文，不能为空白或含控制字符；乐器目录标识须在目录里。
+        if (GameInstrumentName(value) is { } name)
+        {
+            if (string.IsNullOrWhiteSpace(name) || name.Any(char.IsControl)) Invalid("游戏乐器名称无效");
+            return;
+        }
         if (!InstrumentCatalog.Any(x => x.Id == value)) Missing("乐器目录中不存在该乐器");
     }
     private static void Unique(IEnumerable<string> values)

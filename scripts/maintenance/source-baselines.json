@@ -369,7 +369,7 @@
           "path": "work/studio/native_live/same_session_dye_planner.py",
           "sha256": "57bb6062b335dea526be38d7ade6e8b41c41308e26c8c4ebc6ba899a3a98992a",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/same_session_dye_planner.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；算法保持来源实现"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；回读的目视确认与本局放行共用截图核验规则，已启用区域的卡由色块核验（至少另有一卡文字一致）也算确认；其余算法保持来源实现"
         },
         {
           "path": "work/studio/native_live/session_deadline.py",
@@ -609,7 +609,7 @@
           "path": "work/studio/native_live/adaptive_build.py",
           "sha256": "5933b54cfba299ca69dbefd455aa4c6cee67765666f61faae5d7b464fef1e479",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/adaptive_build.py",
-          "adaptation": "保留原基线；同步原仓库提交 3c2942e（PR #18）的 v2 地址发现修复，按目标类有效 64 位读取引用判定唯一槽位，排除无关标记、窄字段和写入指令；UnityPlayer 未登记时改用同引擎版本的静态定位布局"
+          "adaptation": "保留原基线；同步原仓库提交 3c2942e（PR #18）的 v2 地址发现修复，按目标类有效 64 位读取引用判定唯一槽位，排除无关标记、窄字段和写入指令；UnityPlayer 未登记时改用同引擎版本的静态定位布局；本局放行的截图核验允许色码文字未读出的卡按色块与游戏色码核验（至少另有一卡文字一致）"
         },
         {
           "path": "work/studio/native_live/build_adapters.py",
@@ -651,7 +651,7 @@
           "path": "work/studio/native_live/controller.py",
           "sha256": "b1888c2a7049e354a676b6a4ac2fd366229fa82612e7d8069f4df85311798ddf",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/controller.py",
-          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；复用原定位、候选排序和预算；允许候选与重试共存，重试批次增加 epoch，避免低精度 Windows 单调时钟重复 ID，保留独立实测快照；色卡等待发布核验未通过的原因，遮挡或识别超时持续时提前结束。"
+          "adaptation": "本地模块导入改为 mabitool_color._vendor 命名空间；复用原定位、候选排序和预算；允许候选与重试共存，重试批次增加 epoch，避免低精度 Windows 单调时钟重复 ID，保留独立实测快照；色卡等待发布核验未通过的原因，遮挡或识别超时持续时提前结束；完整截图判定与本局放行共用规则，接受色块核验的卡（计时器缩短截止仍只认文字）。"
         },
         {
           "path": "work/studio/native_live/dye_action_checkpoint.py",
@@ -711,13 +711,13 @@
           "path": "work/studio/native_live/project_closed_loop_io.py",
           "sha256": "2b55c10a8038a3f039c959a51498c8d10d097d3022d68658ceae3ac6312511ae",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/project_closed_loop_io.py",
-          "adaptation": "本地导入加包前缀；中央代理模式用类型化 release 释放鼠标，输入凭据记录宿主代理来源；截图核验未通过时按逐卡读数与窗口遮挡给出结构化原因；保留原闭环校验、手势及重试算法。"
+          "adaptation": "本地导入加包前缀；中央代理模式用类型化 release 释放鼠标，输入凭据记录宿主代理来源；截图核验未通过时按逐卡读数与窗口遮挡给出结构化原因；本局放行接受色块核验的卡，并在 adaptive-session.json 逐卡写明由文字或色块核验；保留原闭环校验、手势及重试算法。"
         },
         {
           "path": "work/studio/native_live/project_probe_io.py",
           "sha256": "ff8a013469b1f98ba0abad5fe178275ee32ef95c6a7287270f65d73c4f15e782",
           "localPath": "workers/color-engine/mabitool_color/_vendor/native_live/project_probe_io.py",
-          "adaptation": "本地导入加包前缀；注入代理时使用其输入来源和类型化 release，截图/输入与中央停止经注入端口；逐卡记录识别超时、空结果与色差，读字时限按识别实测放宽；保留原色板与进程绑定校验。"
+          "adaptation": "本地导入加包前缀；注入代理时使用其输入来源和类型化 release，截图/输入与中央停止经注入端口；逐卡记录识别超时、空结果与色差，读字时限按识别实测放宽；色码文字未读出、无识别超时且色块与游戏色码色差不超过 3 的卡，在本帧另有一卡文字一致时记为色块核验（swatch），色块不产生截图色码也不进入色卡缓存；保留原色板与进程绑定校验。"
         },
         {
           "path": "work/studio/native_live/read_dye_input_backend.py",
@@ -1182,6 +1182,220 @@
         {
           "path": "dotnet/MabiAgent.Windows/WindowMessageInputOps.cs",
           "sha256": "f99144582bc379e0c24ed8fde14fcc621e2d61b98a898b22fab19ce3cb9a2af0",
+          "contentSource": "working-tree"
+        }
+      ]
+    },
+    {
+      "id": "mabiagent-fishing",
+      "repository": "MinamiChiwa/MabiAgent",
+      "commit": "82bc0ef168d8f2d78066c6decb665c6ae037c07f",
+      "licenseStatus": "PolyForm-Noncommercial-1.0.0",
+      "rootLicensePresent": true,
+      "licenseEvidence": [
+        "LICENSE"
+      ],
+      "authors": [
+        "MinamiChiwa"
+      ],
+      "workingTree": {
+        "capturedAt": "2026-11-25T13:49:07.869725+00:00",
+        "sha256": "3a0d23aa0bbc86ad3bdb83ce1b0acc2f31e13d82c57c0c7a397b14d404ebf54c"
+      },
+      "distributionLicense": {
+        "id": "MIT",
+        "authorizationSource": "user",
+        "authorizationDate": "2026-11-10",
+        "copyright": "Copyright (c) 2026 MinamiChiwa（南千和）",
+        "path": "packaging/licenses/MinamiChiwa-MIT.txt",
+        "sha256": "0387f86fdf0f7009445dfeaa0f054af29e78704ed74fb603c777f61588083ee0"
+      },
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "74bab30de8b346f584b2c7f3f6be2530aab01bb7137f5f90950d235c1deddafa",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Workflows/IdleFishingRunner.cs",
+          "sha256": "22635e8e35a0d11c223e2853f57f184c891717b22c0debd5086be54cc8e54c6e",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows/ScreenFishingPort.cs",
+          "sha256": "c1d3aeacf0044aa267d42062d4743caa0e9cfa9c7e13940bb31ba701276f262d",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows/ForegroundInputGuard.cs",
+          "sha256": "2118dcea1d33ec26034ae07b321cef8236ab5d7ab3c8c7ca5ee299547a3eff8b",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows/FishingGauge.cs",
+          "sha256": "0dc2a18bf0b90d4b5afa9220c3ebe7ba9f0342e328adb6c9d6a140e2d4b88031",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows/TemplateMatcher.cs",
+          "sha256": "0b1615cba9de59f80ea134e9c13035e7efd7816b8a2e6018e821bdc93330d912",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows/PrintWindowCapture.cs",
+          "sha256": "a4612600e655f912ddbb50580e5ec09ceda2a8ac8c250764e0d12c3c3d822e91",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "dotnet/MabiAgent.Windows.Tests/FishingGaugeTests.cs",
+          "sha256": "2a7c5f33822ee315a04879bd6e6b19eb3b27f8fbc1c9327ede1e29a28e3f6ae4",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "config/screen_catalog.1280x960.tw.json",
+          "sha256": "f8576760e66992f829698226385ce78a523696de68317f994b0752f10ba8b702",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "config/screen_maintenance.1280x960.tw.json",
+          "sha256": "9aa565d74b139aa9ceb95206a7e30f36e1183cbf5d89e07bafbf8e3e48331c32",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "config/screen_overlays.1280x960.tw.json",
+          "sha256": "d0eb690f2fc40e9729e01cd78006b2466ad01bc9c8b58fad5812b44ad4109b9a",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "assets/templates/screen_ui/fishing/fishing_hook.png",
+          "sha256": "eba37e4406ef18854e84282fe5b0bf3e2c74e259f12a98f269f76d41354345d4",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "assets/templates/screen_ui/fishing/focused_dialog_title.png",
+          "sha256": "545fc50bfd24ecd0e428513300bd27f58f8089f53dc2ff19f3f4b921b7e0b869",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "assets/templates/screen_ui/fishing/focused_dialog_title_current.png",
+          "sha256": "a6fd13875fd4bbfcb3540c729d5270d0d27042a4bd3e403fab18bb85cfbac5fe",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "assets/templates/screen_ui/fishing/fishing_leisure_dialog_title.png",
+          "sha256": "eb08d1648e5422c686cb8a6e58c94768ddba97b73086513178182c63aaee34cf",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "assets/templates/screen_ui/runtime_hud/scene_bag_core_current.png",
+          "sha256": "8293fb6eaac01387e2af8ab51f28b4949980bda9434d5481a6878838d110f488",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "assets/templates/maintenance_ui/scene_map_key_core.png",
+          "sha256": "b4b9929e2732e67c182c6cff892d68551cf8ed96cafabefea427f1cfe83be18d",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "assets/templates/maintenance_ui/maint_dismount.png",
+          "sha256": "49ec67937ce4a212030abe66c005bf90830bcff79e9046a0c3e3754c2e4091b3",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "assets/templates/screen_ui/runtime_hud/backpack_full_toast.png",
+          "sha256": "fb89344f9190e4840282aeda202741ab17f8b4a8694b06f43daf824778f39e3c",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "tests/fixtures/fishing-gauge/live-0.png",
+          "sha256": "c07f0e253fa09b3644f6bac6ac37438ab18ad26bcf8c96efe554da077f2011d9",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "tests/fixtures/fishing-gauge/live-1.png",
+          "sha256": "85f3c2dbec6d5e5ff2aab26755b8961d4b68e896b9d1280faeaf1b565614553d",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "tests/fixtures/fishing-gauge/live-2.png",
+          "sha256": "183c461b39bf1fd4c2cd782c699e315eb9f1c201e0049f24cfe0683223f825a2",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "tests/fixtures/fishing-gauge/live-3.png",
+          "sha256": "a94f48d4e6bb0f41f73f2db837b17a8c91f7812dd1d449d15929d382e9de723a",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "tests/fixtures/fishing-gauge/live-4.png",
+          "sha256": "6ea977316c0628d3bbd207cc1eb313525930d60a52cc4c4f1886aca8e91e1ce6",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "tests/fixtures/production/fishing-mode-confirm-user.png",
+          "sha256": "62e4b4cb900b9c986bc7dfaafeb97a86400d2b141e8889f0dd72063af2b54452",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "tests/fixtures/production/fishing-mounted-current.png",
+          "sha256": "844921167d4a31643dc2c2ef91462526cb1cbef379d57b200c9fc4f92db77a95",
+          "contentSource": "working-tree"
+        }
+      ]
+    },
+    {
+      "id": "mabiagent-life",
+      "repository": "MinamiChiwa/MabiAgent",
+      "commit": "82bc0ef168d8f2d78066c6decb665c6ae037c07f",
+      "licenseStatus": "PolyForm-Noncommercial-1.0.0",
+      "rootLicensePresent": true,
+      "licenseEvidence": [
+        "LICENSE"
+      ],
+      "authors": [
+        "MinamiChiwa"
+      ],
+      "workingTree": {
+        "capturedAt": "2026-11-25T17:57:48.680058+00:00",
+        "sha256": "1224a295d2ebdf7233019a8c1b3abb3628c49374dca6fe47e2c56b818e7db005"
+      },
+      "distributionLicense": {
+        "id": "MIT",
+        "authorizationSource": "user",
+        "authorizationDate": "2026-11-10",
+        "copyright": "Copyright (c) 2026 MinamiChiwa（南千和）",
+        "path": "packaging/licenses/MinamiChiwa-MIT.txt",
+        "sha256": "0387f86fdf0f7009445dfeaa0f054af29e78704ed74fb603c777f61588083ee0"
+      },
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "74bab30de8b346f584b2c7f3f6be2530aab01bb7137f5f90950d235c1deddafa",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "config/screen_catalog.1280x960.tw.json",
+          "sha256": "f8576760e66992f829698226385ce78a523696de68317f994b0752f10ba8b702",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "config/gathering_routes.tw.json",
+          "sha256": "42aa4b9c566bf20afd3025a7849fd2f9478645d7e5602aa39da3ca807705ac9e",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "docs/全部配方材料来源待填写.csv",
+          "sha256": "cbbc787c83fca971fcfae59957960d5311cdb09048b8db5a61a12565d0c781f0",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "docs/全部配方材料来源核对.csv",
+          "sha256": "23f50bd45f576f78c2a78bb0e6906483811f00f3e9c3f0fda49e89f4d55b5cb3",
+          "contentSource": "working-tree"
+        },
+        {
+          "path": "docs/当前队列材料映射核对.csv",
+          "sha256": "56ab1725ba485d41332d88c4bed8227d614508940d3f50e7511a03399e9d0582",
           "contentSource": "working-tree"
         }
       ]
@@ -1909,6 +2123,74 @@
       "localEntries": [
         "src/Platform.Windows/WindowsBackgroundTouchInput.cs",
         "src/ModuleSdk/GameBackgroundInput.cs"
+      ]
+    },
+    {
+      "id": "mabiagent-focused-fishing",
+      "source": "mabiagent-fishing",
+      "task": "life-focused-fishing:2.1",
+      "module": "life",
+      "entries": [
+        "dotnet/MabiAgent.Workflows/IdleFishingRunner.cs",
+        "dotnet/MabiAgent.Windows/ScreenFishingPort.cs",
+        "dotnet/MabiAgent.Windows/ForegroundInputGuard.cs"
+      ],
+      "acceptance": "原地专注钓鱼按画面观察循环：模式准备、抛竿（W/S 60 毫秒、等待 300 毫秒、空格 80 毫秒）、20 秒无响应换向轻移重抛、低点后回升收竿、收竿三秒动画与两秒续抛窗口、坐骑与满包处理、按时长或停止离开钓鱼姿态；取消与紧急停止后不再发送输入，宿主重启只标记中断。",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Modules/Life/Domain/FishingMachine.cs",
+        "src/Modules/Life/Application/FishingRunner.cs",
+        "src/Host/Life/FishingSessions.cs",
+        "src/Host/Life/FishingRunOperations.cs"
+      ]
+    },
+    {
+      "id": "mabiagent-fishing-vision",
+      "source": "mabiagent-fishing",
+      "task": "life-focused-fishing:3.1",
+      "module": "life",
+      "entries": [
+        "dotnet/MabiAgent.Windows/FishingGauge.cs",
+        "dotnet/MabiAgent.Windows/TemplateMatcher.cs",
+        "dotnet/MabiAgent.Windows/PrintWindowCapture.cs",
+        "config/screen_catalog.1280x960.tw.json",
+        "config/screen_maintenance.1280x960.tw.json",
+        "config/screen_overlays.1280x960.tw.json",
+        "assets/templates/screen_ui/fishing/fishing_hook.png",
+        "assets/templates/screen_ui/fishing/focused_dialog_title.png",
+        "assets/templates/screen_ui/fishing/focused_dialog_title_current.png",
+        "assets/templates/screen_ui/fishing/fishing_leisure_dialog_title.png",
+        "assets/templates/screen_ui/runtime_hud/scene_bag_core_current.png",
+        "assets/templates/maintenance_ui/scene_map_key_core.png",
+        "assets/templates/maintenance_ui/maint_dismount.png",
+        "assets/templates/screen_ui/runtime_hud/backpack_full_toast.png"
+      ],
+      "acceptance": "识别 Worker 用 PrintWindow 截取游戏窗口并只输出类型化观察：进度条读数（填充色 RGB(40,220,88)、空槽 RGB(39,42,50)、容差 35、相邻行规则）、上钩图标与弹窗、场景与坐骑图标、满包提示；MabiAgent 无损夹具上的读数为 101、72、42、14（除以 104），弹窗夹具输出 focused 弹窗，坐骑夹具输出坐骑图标。",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "workers/life-vision/FishingGauge.cs",
+        "workers/life-vision/TemplateMatcher.cs",
+        "workers/life-vision/PlaneTransformer.cs",
+        "workers/life-vision/FishingRecognizer.cs",
+        "workers/life-vision/FishingProfile.cs",
+        "workers/life-vision/PrintWindowFrameSource.cs",
+        "workers/life-vision/Assets/templates.lock.json"
+      ]
+    },
+    {
+      "id": "mabiagent-life-gathering",
+      "source": "mabiagent-life",
+      "task": "tw-game-cli:13.2",
+      "module": "life",
+      "entries": [
+        "config/screen_catalog.1280x960.tw.json",
+        "config/gathering_routes.tw.json"
+      ],
+      "acceptance": "采集物到生活技能的归类：screen_catalog 的 gathering_routes（target_item_id 经 item_names 换成道具名）与 material_sources 的钓鱼来源、gathering_routes.tw.json 的铁矿石，技能名换成台服客户端 LivingSkill 显示名；三份材料来源 CSV 只作交叉核对。分类时先于客户端表使用。",
+      "migrationStatus": "ported",
+      "localEntries": [
+        "src/Providers/TwObservation/Resources/mabiagent-gather-skills.tw.json",
+        "src/Providers/TwObservation/ItemCatalog/MabiAgentGatherSkills.cs"
       ]
     }
   ]

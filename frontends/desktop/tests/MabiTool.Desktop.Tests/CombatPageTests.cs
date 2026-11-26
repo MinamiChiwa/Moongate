@@ -195,6 +195,48 @@ public sealed class CombatPageTests
         finally { window.Close(); }
     }
 
+    // 随包图标：登记的每个图标都能解码为 64×64；属性图标不需要绑定游戏，包里键齐全时不向后端登记使用（不读运行时目录），
+    // 关掉随包图标（等同包里缺键）时回到后端运行时图标。生活技能与货币按游戏原文名称或货币类型对应图标。
+    [AvaloniaFact]
+    public void BundledIconsWorkWithoutAGameBindingAndTheRuntimeReadIsOnlyAFallback()
+    {
+        foreach (var entry in MabiTool.Desktop.Theme.GameIcons.All.Values)
+        {
+            var bitmap = MabiTool.Desktop.Theme.GameIcons.Bitmap(entry);
+            Assert.True(bitmap is { PixelSize.Width: 64, PixelSize.Height: 64 }, entry.Id);
+        }
+        Assert.Equal("life/mining", MabiTool.Desktop.Theme.GameIcons.LifeSkill("採礦"));
+        Assert.Null(MabiTool.Desktop.Theme.GameIcons.LifeSkill("不存在的技能"));
+        Assert.Equal("currency/gold", MabiTool.Desktop.Theme.GameIcons.Currency("Gold", null));
+        Assert.Equal("currency/mCash", MabiTool.Desktop.Theme.GameIcons.Currency(null, "M幣(免費)"));
+
+        var backend = new SampleBackend();
+        var previous = ClientIconHub.Source;
+        ClientIconHub.Use(backend);
+        try
+        {
+            ClientIconHub.UseBundled = true;
+            Assert.False(ClientIconHub.NeedsRuntime);
+            Assert.All(MabiTool.Contracts.ClientIconKeys.All, key => Assert.NotNull(ClientIconHub.Get(key)));
+            Assert.Equal("#6CF08F", ClientIconHub.Get("critical")!.Tint);
+            ClientIconHub.Acquire();
+            Assert.False(backend.ClientIconsInUse);
+            ClientIconHub.Release();
+
+            ClientIconHub.UseBundled = false;
+            Assert.Null(ClientIconHub.Get("critical"));
+            ClientIconHub.Acquire();
+            Assert.True(backend.ClientIconsInUse);
+            ClientIconHub.Release();
+            Assert.False(backend.ClientIconsInUse);
+        }
+        finally
+        {
+            ClientIconHub.UseBundled = false;
+            ClientIconHub.Use(previous);
+        }
+    }
+
     // 比率卡片与总表列组标题：图标可用时只显示图标，名称在悬浮提示与无障碍名称里；不可用的键与图标撤下后回到文字，占位不变。
     [AvaloniaFact]
     public void RateIconsReplaceNamesWithTheNameInTheTooltipAndFallBackWithoutReflow()

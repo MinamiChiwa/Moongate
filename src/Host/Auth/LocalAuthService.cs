@@ -37,7 +37,7 @@ public sealed class LocalAuthService
         .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     public AccessGrant OwnerGrant() => new(ownerToken, new("owner", "desktop-owner",
-                [ApiPermissions.SystemRead, ApiPermissions.AuthManage, ApiPermissions.ModulesConfigure, ApiPermissions.ReplayControl, ApiPermissions.CombatControl, ApiPermissions.InventoryControl, ApiPermissions.InventoryEdit, ApiPermissions.GameObserve, ApiPermissions.GameControl, ApiPermissions.MusicEdit, ApiPermissions.RoomsCoordinate, ApiPermissions.ColorEdit, ApiPermissions.ColorControl, ApiPermissions.DesktopCapture, ApiPermissions.DesktopControl, ApiPermissions.DiagnosticsExport, ApiPermissions.DiagnosticsDebug, ApiPermissions.FilesTransfer, ApiPermissions.StorageManage, ApiPermissions.UpdatesManage], null, null, true));
+                [ApiPermissions.SystemRead, ApiPermissions.AuthManage, ApiPermissions.ModulesConfigure, ApiPermissions.ReplayControl, ApiPermissions.CombatControl, ApiPermissions.InventoryControl, ApiPermissions.InventoryEdit, ApiPermissions.GameObserve, ApiPermissions.GameControl, ApiPermissions.MusicEdit, ApiPermissions.RoomsCoordinate, ApiPermissions.ColorEdit, ApiPermissions.ColorControl, ApiPermissions.LifeControl, ApiPermissions.DesktopCapture, ApiPermissions.DesktopControl, ApiPermissions.DiagnosticsExport, ApiPermissions.DiagnosticsDebug, ApiPermissions.FilesTransfer, ApiPermissions.StorageManage, ApiPermissions.UpdatesManage], null, null, true));
 
     public AuthSession? Authenticate(string token, string? origin)
     {
@@ -66,7 +66,7 @@ public sealed class LocalAuthService
         if (string.IsNullOrWhiteSpace(request.ClientName) || request.ClientName.Length > 80 || request.ClientName.Any(char.IsControl) ||
             (request.Origin is not null && !origins.Contains(request.Origin)) ||
             request.Permissions.Count is < 1 or > 3 || request.Permissions.Distinct(StringComparer.Ordinal).Count() != request.Permissions.Count ||
-                request.Permissions.Any(p => p is not ApiPermissions.SystemRead and not ApiPermissions.ModulesConfigure and not ApiPermissions.ReplayControl and not ApiPermissions.CombatControl and not ApiPermissions.InventoryControl and not ApiPermissions.InventoryEdit and not ApiPermissions.GameObserve and not ApiPermissions.GameControl and not ApiPermissions.MusicEdit and not ApiPermissions.RoomsCoordinate and not ApiPermissions.ColorControl and not ApiPermissions.ColorEdit and not ApiPermissions.DesktopCapture and not ApiPermissions.DesktopControl and not ApiPermissions.DiagnosticsExport and not ApiPermissions.FilesTransfer and not ApiPermissions.StorageManage and not ApiPermissions.UpdatesManage))
+                request.Permissions.Any(p => p is not ApiPermissions.SystemRead and not ApiPermissions.ModulesConfigure and not ApiPermissions.ReplayControl and not ApiPermissions.CombatControl and not ApiPermissions.InventoryControl and not ApiPermissions.InventoryEdit and not ApiPermissions.GameObserve and not ApiPermissions.GameControl and not ApiPermissions.MusicEdit and not ApiPermissions.RoomsCoordinate and not ApiPermissions.ColorControl and not ApiPermissions.ColorEdit and not ApiPermissions.LifeControl and not ApiPermissions.DesktopCapture and not ApiPermissions.DesktopControl and not ApiPermissions.DiagnosticsExport and not ApiPermissions.FilesTransfer and not ApiPermissions.StorageManage and not ApiPermissions.UpdatesManage))
             throw new LocalApiException("request.invalid", "配对名称、Origin 或授权范围无效");
         lock (gate)
         {

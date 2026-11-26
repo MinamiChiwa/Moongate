@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "id": "life-vision-fixtures",
+  "vendor": "Nexon / devCAT",
+  "copyright": "台服客户端界面截图，版权归 Nexon / devCAT 所有，不适用 Moongate 的 MIT 许可；Moongate 是非商业的爱好者项目，与 NEXON、devCAT 无关。",
+  "source": "经 MabiAgent（82bc0ef）从台服 Mabinogi Mobile 客户端采集的无损截图，仅用于 life-vision 识别的测试。",
+  "distribution": "随 Moongate 仓库（tests/Providers/MabiTool.LifeVision.Tests/Fixtures/）分发，不进入发行包；文件按字节原样保存。",
+  "files": [
+    {
+      "path": "fishing-gauge/live-0.png",
+      "sha256": "c07f0e253fa09b3644f6bac6ac37438ab18ad26bcf8c96efe554da077f2011d9",
+      "length": 13466,
+      "origin": "tests/fixtures/fishing-gauge/live-0.png",
+      "role": "浮动进度条实采，填充 101/104"
+    },
+    {
+      "path": "fishing-gauge/live-1.png",
+      "sha256": "85f3c2dbec6d5e5ff2aab26755b8961d4b68e896b9d1280faeaf1b565614553d",
+      "length": 13287,
+      "origin": "tests/fixtures/fishing-gauge/live-1.png",
+      "role": "浮动进度条实采，填充 72/104"
+    },
+    {
+      "path": "fishing-gauge/live-2.png",
+      "sha256": "183c461b39bf1fd4c2cd782c699e315eb9f1c201e0049f24cfe0683223f825a2",
+      "length": 13447,
+      "origin": "tests/fixtures/fishing-gauge/live-2.png",
+      "role": "浮动进度条实采，填充 42/104"
+    },
+    {
+      "path": "fishing-gauge/live-3.png",
+      "sha256": "a94f48d4e6bb0f41f73f2db837b17a8c91f7812dd1d449d15929d382e9de723a",
+      "length": 13308,
+      "origin": "tests/fixtures/fishing-gauge/live-3.png",
+      "role": "浮动进度条实采，填充 14/104"
+    },
+    {
+      "path": "fishing-gauge/live-4.png",
+      "sha256": "6ea977316c0628d3bbd207cc1eb313525930d60a52cc4c4f1886aca8e91e1ce6",
+      "length": 12909,
+      "origin": "tests/fixtures/fishing-gauge/live-4.png",
+      "role": "进度条消失后的实采帧"
+    },
+    {
+      "path": "fishing-mode-confirm-user.png",
+      "sha256": "62e4b4cb900b9c986bc7dfaafeb97a86400d2b141e8889f0dd72063af2b54452",
+      "length": 67325,
+      "origin": "tests/fixtures/production/fishing-mode-confirm-user.png",
+      "role": "“改为专注”弹窗的 1280×960 整帧"
+    },
+    {
+      "path": "fishing-mounted-current.png",
+      "sha256": "844921167d4a31643dc2c2ef91462526cb1cbef379d57b200c9fc4f92db77a95",
+      "length": 803662,
+      "origin": "tests/fixtures/production/fishing-mounted-current.png",
+      "role": "骑乘状态的 1280×960 整帧"
+    }
+  ]
+}

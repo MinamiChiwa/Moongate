@@ -19,6 +19,8 @@ using MabiTool.Host.Presentation;
 using MabiTool.Host.Diagnostics;
 using MabiTool.Host.Files;
 using MabiTool.Host.Game;
+using MabiTool.Host.GameCli;
+using MabiTool.Host.Life;
 using MabiTool.Host.Combat;
 using MabiTool.Host.Inventory;
 using MabiTool.Host.Performance;
@@ -33,6 +35,7 @@ using MabiTool.Modules.Rooms.Persistence;
 using MabiTool.Modules.Rooms.Domain;
 using MabiTool.Providers.GitHubReleases;
 using MabiTool.Providers.Tunnels;
+using MabiTool.Providers.TwCli;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MabiTool.Host;
@@ -45,7 +48,7 @@ public static class BackendApplication
         new("core", ["platform_assets", "platform_asset_references", "core_module_configuration", "platform_shortcut_settings", "platform_shortcut_receipts"])]);
     public static IReadOnlyList<DatabaseMigration> DatabaseMigrations { get; } = Array.AsReadOnly<DatabaseMigration>(
         [.. PlatformMigrations.All, .. MusicLibraryStore.Migrations, .. AssetStore.Migrations, .. UpdatePolicyStore.Migrations, ColorLibraryStore.Migration,
-            RoomPreferenceStore.Migration, RoomPreferenceStore.EditingMigration, RoomPreferenceStore.TailDefaultMigration, GameCaptureSettingsStore.Migration, ShortcutSettingsStore.Migration, ColorPreferenceStore.Migration, SettingsImportCoordinator.Migration, DiagnosticStore.Migration, DiagnosticStore.CaptureMigration, FileTransferStore.Migration, .. CombatHistoryStore.Migrations,
+            RoomPreferenceStore.Migration, RoomPreferenceStore.EditingMigration, RoomPreferenceStore.TailDefaultMigration, GameCaptureSettingsStore.Migration, GameConnectorSettingsStore.Migration, LifeQueueStore.Migration, ShortcutSettingsStore.Migration, ColorPreferenceStore.Migration, SettingsImportCoordinator.Migration, DiagnosticStore.Migration, DiagnosticStore.CaptureMigration, FileTransferStore.Migration, .. CombatHistoryStore.Migrations,
             InventoryHistoryStore.Migration, TemporaryStorageRegistry.Migration, StorageControlStore.Migration, DataBackupStore.Migration, StorageMaintenancePlanStore.Migration,
             StorageModuleDataStore.Migration]);
     public static WebApplication Build(LocalApiOptions options, TimeProvider? clock = null, StorageOptions? storage = null, bool mock = false,
@@ -57,7 +60,8 @@ public static class BackendApplication
         QuickTunnelFactory? roomTunnels = null, IRoomServerListenerFactory? roomListeners = null,
         Func<PathService?, WorkerProcessOptions?>? observationOptions = null, bool gameAutomation = false,
         PortableInstallation? portableUpdate = null, System.Diagnostics.Process? ownerProcess = null, IGameCaptureSource? gameCapture = null,
-        Func<IServiceProvider, GameBuildAdaptation>? buildAdaptation = null)
+        Func<IServiceProvider, GameBuildAdaptation>? buildAdaptation = null, GameConnectorEnvironment? gameConnector = null,
+        Func<IServiceProvider, IFishingSessionFactory>? fishingSessions = null)
     {
         options.Validate();
         if (portableUpdate is not null && (storage is null || mock))
@@ -132,13 +136,45 @@ public static class BackendApplication
             var controls = sp.GetRequiredService<GameControlContext>();
             var binding = sp.GetRequiredService<GameBindingService>();
             return new RoomSessionManager(clock, activityBarrier: sp.GetRequiredService<ActivityBarrier>(),
-                inputPorts: new(controls.Bindings, controls.Leases, controls.Input, binding.TryActivate, Simulation: controls.Simulation),
+                inputPorts: new(controls.Bindings, controls.Leases, controls.Input, binding.TryActivate, Simulation: controls.Simulation,
+                    Music: new RoomGameMusic(sp.GetRequiredService<IGameMusicControl>())),
                 preferences: owner => sp.GetService<RoomPreferenceStore>()?.Read(owner) ?? RoomPreferences.Default,
                 authorized: owner => sp.GetRequiredService<LocalAuthService>().HasPermission(owner, ApiPermissions.RoomsCoordinate),
                 shortcutConflict: value => ShortcutService.Conflicts(value, sp.GetService<IGlobalShortcutSource>()), backendEpoch: info.InstanceId,
                 scoreReader: sp.GetService<MusicScoreReader>());
         });
         AddBackground(sp => sp.GetRequiredService<RoomSessionManager>());
+        // 游戏连接器（台服命令行）：状态与偏好写入、演奏控制端口、乐谱可演奏性。真实宿主（gameAutomation）才读取本机偏好与进程并常驻刷新。
+        builder.Services.AddSingleton(sp => new GameConnectorSettingsStore(sp.GetService<SqliteStore>()));
+        builder.Services.AddSingleton(sp => new GameConnectorService(sp.GetRequiredService<GameControlContext>(), info,
+            sp.GetRequiredService<GameConnectorSettingsStore>(),
+            gameConnector ?? (gameAutomation && !mock && OperatingSystem.IsWindows()
+                ? GameConnectorEnvironment.ForWindows(sp.GetService<PathService>() is { } paths ? paths.Resolve("settings", "game-cli") : null)
+                : GameConnectorEnvironment.Unsupported("platform.unsupported")),
+            clock ?? TimeProvider.System, sp.GetRequiredService<DiagnosticTrace>()));
+        if (gameAutomation) AddBackground(sp => sp.GetRequiredService<GameConnectorService>());
+        builder.Services.AddSingleton<IGameMusicControl>(sp =>
+        {
+            var connector = sp.GetRequiredService<GameConnectorService>();
+            var controls = sp.GetRequiredService<GameControlContext>();
+            return new TwCliMusicControl(connector.Cli, connector.MusicAvailability, proof => HostPerformanceLeases.Validate(controls, proof), clock ?? TimeProvider.System);
+        });
+        builder.Services.AddSingleton(sp => new GameScoreSupportService(sp.GetRequiredService<GameConnectorService>(), sp.GetRequiredService<IGameMusicControl>(),
+            ids => sp.GetService<ScoreCatalogStore>()?.FindRawTitles(ids) ?? new Dictionary<string, string>(), info.InstanceId));
+        builder.Services.AddSingleton(sp => new GameMusicLibrarySyncService(sp.GetRequiredService<GameConnectorService>(), sp.GetRequiredService<IGameMusicControl>(),
+            sp.GetService<ScoreCatalogStore>(), info.InstanceId, clock ?? TimeProvider.System));
+        // 乐谱库的抓包来源：库存读模型里的玩家自制与复制乐谱（游戏提供的乐谱只走游戏列表来源）。
+        builder.Services.AddSingleton(sp => new OwnedMusicLibrarySyncService(sp.GetRequiredService<OwnedScoreProvider>(), sp.GetService<ScoreCatalogStore>(),
+            () => sp.GetRequiredService<GameControlContext>().Bindings.Recent?.Session, info.InstanceId, clock ?? TimeProvider.System));
+        builder.Services.AddSingleton(sp => new LifeClientSource(sp.GetRequiredService<GameConnectorService>(), clock ?? TimeProvider.System));
+        builder.Services.AddSingleton(sp => new LifeQueueStore(sp.GetService<SqliteStore>()));
+        builder.Services.AddSingleton(sp => new LifeService(sp.GetRequiredService<GameConnectorService>(), sp.GetRequiredService<GameControlContext>(), info,
+            sp.GetRequiredService<LifeClientSource>(), clock ?? TimeProvider.System, sp.GetRequiredService<DiagnosticTrace>(), sp.GetRequiredService<LifeQueueStore>()));
+        // 游戏数据读取（角色、货币、任务、环境、附近）与交易所查价：查询驱动、数据读取优先级、命令行不可用时回落抓包。
+        builder.Services.AddSingleton(sp => new GameDataService(sp.GetRequiredService<GameConnectorService>(),
+            GameCaptureFactsSource.From(sp.GetRequiredService<GameObservationService>(), () => sp.GetService<InventoryHistoryStore>()?.Resources()),
+            sp.GetRequiredService<StateEventHub>(), info.InstanceId, clock ?? TimeProvider.System, sp.GetRequiredService<DiagnosticTrace>()));
+        builder.Services.AddSingleton(sp => new GameMarketService(sp.GetRequiredService<GameConnectorService>(), info.InstanceId, clock ?? TimeProvider.System));
         builder.Services.AddSingleton<GameControlService>();
         builder.Services.AddSingleton<ShortcutSettingsService>();
         builder.Services.AddSingleton<DesktopBridgeRegistry>();
@@ -154,13 +190,9 @@ public static class BackendApplication
         builder.Services.AddSingleton(_ => new ColorCaptureService(desktopCapture ??
             (!mock && OperatingSystem.IsWindows() ? new WindowsDesktopCaptureSource() : null), clock ?? TimeProvider.System));
         AddBackground(sp => sp.GetRequiredService<ColorCaptureService>());
-        builder.Services.AddSingleton(_ => new ProviderCapabilityRegistry([
-            new ProviderCapabilityRequirement("music.inventory", "music-library", "tw-cli",
-                new Version(1, 0), new Version(2, 0), "TW", new HashSet<string>(),
-                new HashSet<string>(["score.read"]), []),
-            new ProviderCapabilityRequirement("environment.observe", "environment", "tw-cli",
-                new Version(1, 0), new Version(2, 0), "TW", new HashSet<string>(),
-                new HashSet<string>(["environment.read"]), [])], clock));
+        // music.inventory 由游戏连接器的指令目录决定（GameConnectorCapabilities），不再走构建指纹登记。
+        // environment.observe 与 nearby.observe、character.info、market.prices 由游戏连接器的状态与目录生成（GameDataCapabilities）。
+        builder.Services.AddSingleton(_ => new ProviderCapabilityRegistry([], clock));
         if (storage is not null)
         {
             builder.Services.AddSingleton(_ => DataRootLease.Open(storage));
@@ -225,6 +257,17 @@ public static class BackendApplication
             builder.Services.AddSingleton(sp => new MusicLibraryStore(sp.GetRequiredService<SqliteStore>(), info.InstanceId, clock));
             builder.Services.AddSingleton(sp => new PerformanceSessionStore(sp.GetRequiredService<SqliteStore>(), sp.GetRequiredService<TimeProvider>()));
             builder.Services.AddSingleton<PerformanceSessionService>();
+            if (gameAutomation)
+            {
+                // 独奏队列经游戏连接器驱动游戏内演奏；只有真实宿主装配，嵌入测试宿主的会话保持纯状态机。
+                builder.Services.AddSingleton<IPerformanceActivityLeases>(sp => new HostPerformanceLeases(sp.GetRequiredService<GameControlContext>()));
+                builder.Services.AddSingleton(sp => new PerformanceRunner(sp.GetRequiredService<PerformanceSessionService>(), sp.GetRequiredService<IGameMusicControl>(),
+                    sp.GetRequiredService<IPerformanceActivityLeases>(),
+                    id => sp.GetRequiredService<ScoreCatalogStore>().FindRawTitles([id]).GetValueOrDefault(id),
+                    MusicLibraryEditor.InstrumentGameName,
+                    null, clock ?? TimeProvider.System, sp.GetRequiredService<DiagnosticTrace>()));
+                AddBackground(sp => new PerformanceRunnerLifetime(sp.GetRequiredService<PerformanceRunner>()));
+            }
             builder.Services.AddSingleton(sp => new PlaybackHistoryStore(sp.GetRequiredService<SqliteStore>(), clock));
             builder.Services.AddSingleton(sp => new ScoreTimelineStore(sp.GetRequiredService<SqliteStore>(), clock));
             builder.Services.AddSingleton<MusicScoreReader>();
@@ -275,6 +318,13 @@ public static class BackendApplication
             builder.Services.AddSingleton<IInventoryReadModel>(sp => sp.GetRequiredService<InventoryHistoryStore>());
             builder.Services.AddSingleton<InventoryOperations>();
             AddBackground(sp => sp.GetRequiredService<InventoryOperations>());
+            // 生活模块的原地专注钓鱼：识别由按需启动的 life-vision Worker 提供，输入走后台输入通道；组件缺失时能力表写明原因。
+            builder.Services.AddSingleton(sp => fishingSessions?.Invoke(sp) ?? (IFishingSessionFactory)new WindowsFishingSessionFactory(
+                sp.GetRequiredService<GameControlContext>(),
+                WindowsFishingSessionFactory.FromEnvironment(() => Path.Combine(sp.GetRequiredService<PathService>().Temporary, "life-vision")),
+                sp.GetRequiredService<TimeProvider>()));
+            builder.Services.AddSingleton<FishingRunOperations>();
+            AddBackground(sp => sp.GetRequiredService<FishingRunOperations>());
             builder.Services.AddSingleton<MusicImportOperations>();
             AddBackground(sp => sp.GetRequiredService<MusicImportOperations>());
             // 正式宿主：染色组件已配置时运行端口复用宿主的绑定、租约与输入代理；未配置时为空，能力表与开始请求给出原因。
@@ -313,10 +363,12 @@ public static class BackendApplication
             builder.Services.AddSingleton<IUpdateCheckService>(sp => sp.GetRequiredService<PortableUpdateService>());
             builder.Services.AddSingleton<IUpdateDownloadService>(sp => sp.GetRequiredService<PortableUpdateService>());
             builder.Services.AddSingleton<IUpdateInstallService>(sp => sp.GetRequiredService<PortableUpdateService>());
+            builder.Services.AddSingleton(sp => new UpdateNotesService(portableUpdate, sp.GetRequiredService<GitHubReleaseSource>()));
             builder.Services.AddSingleton<UpdateCheckOperations>();
             AddBackground(sp => sp.GetRequiredService<UpdateCheckOperations>());
             builder.Services.AddSingleton(sp => new UpdateApiService(portableUpdate, sp.GetRequiredService<IUpdateDownloadService>(),
-                sp.GetRequiredService<OperationStore>(), sp.GetRequiredService<UpdatePolicyStore>(), sp.GetRequiredService<TimeProvider>()));
+                sp.GetRequiredService<OperationStore>(), sp.GetRequiredService<UpdatePolicyStore>(), sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<UpdateNotesService>()));
         }
         if (mock)
         {
@@ -364,11 +416,14 @@ public static class BackendApplication
         app.UseMiddleware<LocalApiMiddleware>(options);
         GameEndpoints.Map(app);
         GameControlEndpoints.Map(app);
+        GameConnectorEndpoints.Map(app);
+        GameDataEndpoints.Map(app);
         ShortcutSettingsEndpoints.Map(app);
         GameObservationEndpoints.Map(app);
         CombatEndpoints.Map(app);
         ClientIconEndpoints.Map(app);
         InventoryEndpoints.Map(app);
+        LifeEndpoints.Map(app);
         PerformanceEndpoints.Map(app);
         FileTransferEndpoints.Map(app);
         StorageEndpoints.Map(app);
@@ -494,7 +549,7 @@ public static class BackendApplication
                 await context.Response.WriteAsync(module.SettingsSchema, ct);
             }
         }).WithMetadata(ApiContract.ModuleSettingsSchema);
-        app.MapGet(ApiContract.Capabilities.Path, (ProviderCapabilityRegistry capabilityRegistry, ICombatObservationSource combatObservationSource, HttpContext context) =>
+        app.MapGet(ApiContract.Capabilities.Path, (ProviderCapabilityRegistry capabilityRegistry, ICombatObservationSource combatObservationSource, GameConnectorService gameConnectorService, GameDataService gameDataService, HttpContext context) =>
         {
             var checkedAt = (clock ?? TimeProvider.System).GetUtcNow();
             var inventory = context.RequestServices.GetService<InventoryOperations>()?.Capabilities()
@@ -518,9 +573,13 @@ public static class BackendApplication
             return Results.Ok(new ApiList<CapabilitySnapshot>(
                 [Snapshot("system.inspect", "core", CapabilityStatus.Available, "host", info.Version, "available"),
                  .. capabilityRegistry.Snapshot(),
-                 Snapshot("performance.play", "performance", CapabilityStatus.Unavailable, null, null, "module.notImplemented"),
+                 .. GameConnectorCapabilities.Snapshots(gameConnectorService, checkedAt),
+                 .. LifeCapabilities.Snapshots(gameConnectorService, checkedAt),
+                 .. GameDataCapabilities.Snapshots(gameConnectorService, gameDataService.CaptureFacts, checkedAt),
                  Snapshot("rooms.coordinate", "rooms", CapabilityStatus.Unavailable, null, null, "module.notImplemented"),
                  ColorCapability(context.RequestServices, checkedAt),
+                 .. (context.RequestServices.GetService<FishingRunOperations>()?.CapabilitySnapshots(checkedAt)
+                     ?? [Snapshot("life.fishing", "life", CapabilityStatus.Unavailable, null, null, "storage.unavailable")]),
                  Combat("combat.local-dps", "combat.damage.local"),
                  Combat("combat.self-effects", "combat.effects.self"),
                  Combat("combat.monster-effects", "combat.effects.monster"),
@@ -548,6 +607,11 @@ public static class BackendApplication
             var scores = context.RequestServices.GetRequiredService<OwnedScoreProvider>();
             return Results.Ok(await scores.QueryAsync(request, () => controls.Bindings.Recent?.Session, context.RequestAborted));
         }).WithMetadata(ApiContract.QueryOwnedMusicScores);
+        app.MapPost(MusicLibraryApi.SyncOwnedScores.Path, async (OwnedMusicLibrarySyncService sync, ModuleRuntime runtime, CancellationToken ct) =>
+        {
+            await using var demand = await runtime.AcquireManyAsync(["music-library", "inventory"], "music-owned-sync", ct);
+            return Results.Ok(await sync.SyncAsync(ct));
+        }).WithMetadata(MusicLibraryApi.SyncOwnedScores);
         app.MapGet(ApiContract.MusicLibrary.Path, async (HttpContext context, ModuleRuntime runtime) =>
         {
             await using var demand = await runtime.AcquireAsync("music-library", "music-query", context.RequestAborted);
@@ -704,8 +768,9 @@ public static class BackendApplication
             context.Response.Headers.ETag = OperationStore.OperationETag(value);
             return Results.Ok(value);
         }).WithMetadata(ApiContract.Operation);
-        app.MapPost(ApiContract.CaptureColorScreen.Path, async (HttpContext context, ColorCaptureService service) =>
-            Results.Ok(await service.CaptureAsync(LocalApiMiddleware.Session(context), context.RequestAborted))).WithMetadata(ApiContract.CaptureColorScreen);
+        // 区域可省略（旧客户端发送空对象），此时冻结整个虚拟桌面。
+        app.MapPost(ApiContract.CaptureColorScreen.Path, async (ColorCaptureRequest? request, HttpContext context, ColorCaptureService service) =>
+            Results.Ok(await service.CaptureAsync(LocalApiMiddleware.Session(context), request?.Region, context.RequestAborted))).WithMetadata(ApiContract.CaptureColorScreen);
         app.MapPost(ApiContract.PickColorPixel.Path, (string id, ColorPixelQuery request, HttpContext context, ColorCaptureService service) =>
             Results.Ok(service.Pixel(id, request, LocalApiMiddleware.Session(context)))).WithMetadata(ApiContract.PickColorPixel);
         app.MapPost(ApiContract.ReadColorCapture.Path, (string id, ColorAssetRangeRequest request, HttpContext context, ColorCaptureService service) =>
@@ -798,6 +863,8 @@ public static class BackendApplication
                 return Results.Ok(await RequiredService<FileExportOperations>(context).CancelAsync(id, session, request.Reason, context.RequestAborted));
             if (OperationService(context).Get(id, session.ClientId, session.Owner).Kind == "diagnostics.export")
                 return Results.Ok(await RequiredService<DiagnosticExportOperations>(context).CancelAsync(id, session.ClientId, session.Owner, request.Reason, context.RequestAborted));
+            if (OperationService(context).Get(id, session.ClientId, session.Owner).Kind == OperationStore.FishingKind)
+                return Results.Ok(await RequiredService<FishingRunOperations>(context).CancelAsync(id, session.ClientId, session.Owner, request.Reason, context.RequestAborted));
             if (OperationService(context).Get(id, session.ClientId, session.Owner).Kind == "combat.observe")
                 return Results.Ok(await RequiredService<CombatOperations>(context).CancelAsync(id, session.ClientId, session.Owner, request.Reason, context.RequestAborted));
             if (OperationService(context).Get(id, session.ClientId, session.Owner).Kind.StartsWith("inventory.", StringComparison.Ordinal))

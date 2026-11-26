@@ -42,7 +42,8 @@ public sealed class ClientInventoryDecoder
         {
             var reader = new InventoryWireReader(body, wire, cancellation);
             // 按根字段顺序读取：库存域、装备槽都在任务字段之前；之后未选中的字段读不下去时停在那里，其后的 JamItem 与钱包按 LoginWalletLocator 定位。
-            var root = reader.RootPrefix(RootType, CapturedRoot, out var stoppedAt);
+            // 已读通一个库存域后某个库存域读不下去（客户端更新加了成员）也停在那里，该域与其后没有定位到的库存域标为未读。
+            var root = reader.RootPrefix(RootType, CapturedRoot, out var stoppedAt, IsInventory);
             if (stoppedAt is null) reader.EnsureEnd();
             var character = root.Field("CharacterId")?.Unsigned();
             if (character is null or 0) throw new InvalidDataException("inventory.characterInvalid");

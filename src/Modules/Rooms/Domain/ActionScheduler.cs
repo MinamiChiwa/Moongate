@@ -16,6 +16,8 @@ public sealed class ActionScheduler : IDisposable
         public bool Immediate {get;init;}
         public bool Simulated { get; } = simulated;
         public int TimingOffsetMs { get; } = timingOffsetMs;
+        /// <summary>执行器要求的提前量（毫秒），已从 <see cref="Deadline"/> 中扣除。</summary>
+        public double LeadMs { get; init; }
         public CancellationTokenSource Cancellation { get; } = new();
     }
     private readonly object _gate = new();
@@ -81,13 +83,15 @@ public sealed class ActionScheduler : IDisposable
         try { preparation = _input.Prepare(action); }
         catch { lock (_gate) _preparing.Remove(action.Id); _input.Forget(action.Id); throw; }
         var accepted = false;
+        // 先取提前量再进调度锁，避免调度锁与执行器内部锁交叉。
+        var executionLead = preparation.Ready ? Math.Clamp(_input.ExecutionLeadMs(action), 0, 1000) : 0;
         lock (_gate)
         {
             _preparing.Remove(action.Id);
             if (preparation.Ready && !_disposed && version == _cancellationVersion && action.ServerEpoch == _epoch && !_pending.ContainsKey(action.Id) && !_completed.Contains(action.Id))
             {
                 FreezeOffset(action.SessionId,lead);
-                _pending.Add(action.Id, new(action, deadline, estimate, _input.IsSimulation(action), lead)); accepted = true;
+                _pending.Add(action.Id, new(action, deadline - executionLead, estimate, _input.IsSimulation(action), lead) { LeadMs = executionLead }); accepted = true;
             }
         }
         if (!accepted) _input.Forget(action.Id);
@@ -107,7 +111,7 @@ public sealed class ActionScheduler : IDisposable
             var estimate = _room.Estimate;
             if (estimate is null) return false;
             entry.Estimate = estimate;
-            entry.Deadline = action.TargetServerMs - estimate.OffsetMs + entry.TimingOffsetMs;
+            entry.Deadline = action.TargetServerMs - estimate.OffsetMs + entry.TimingOffsetMs - entry.LeadMs;
             entry.Committed = true;
         }
         Signal(); return true;

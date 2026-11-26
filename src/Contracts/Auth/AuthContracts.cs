@@ -12,6 +12,7 @@ public static class ApiPermissions
     public const string UpdatesManage = "updates.manage";
     public const string ColorEdit = "color.edit";
     public const string ColorControl = "color.control";
+    public const string LifeControl = "life.control";
     public const string RoomsCoordinate = "rooms.coordinate";
     public const string ReplayControl = "replay.control";
     public const string CombatControl = "combat.control";

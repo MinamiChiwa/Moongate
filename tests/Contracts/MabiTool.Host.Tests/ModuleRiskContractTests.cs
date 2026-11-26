@@ -26,7 +26,7 @@ public sealed class ModuleRiskContractTests
             var a = await first.GetModulesAsync();
             var b = await second.GetModulesAsync();
             Assert.Equal(a.SnapshotRevision, b.SnapshotRevision);
-            Assert.Equal(11, a.Items.Count);
+            Assert.Equal(12, a.Items.Count);
             Assert.All(a.Items, module =>
             {
                 Assert.NotNull(module.Risk);

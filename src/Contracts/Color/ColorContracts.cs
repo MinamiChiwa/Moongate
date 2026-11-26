@@ -10,6 +10,8 @@ public sealed record ColorHistoryItem(string Id, string OperationId, string Owne
     ColorMeasurement? BestMeasured, ColorMeasurement? LastMeasured);
 public sealed record ColorAssetRangeRequest(int Offset, int Count);
 public sealed record ColorAssetContent(string AssetId, string Sha256, int Offset, int TotalBytes, string Base64);
+/// <summary>截屏请求：<see cref="Region"/> 为当前虚拟桌面内的一块物理像素区域（可为负原点）；为空时冻结整个虚拟桌面。</summary>
+public sealed record ColorCaptureRequest(PhysicalWindowRect? Region = null);
 public sealed record ColorScreenCapture(string Id, PhysicalWindowRect Bounds, string Encoding, string Sha256,
     int SizeBytes, DateTimeOffset CapturedAt, DateTimeOffset ExpiresAt);
 public sealed record ColorPixelQuery(int X, int Y);

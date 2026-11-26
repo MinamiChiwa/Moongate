@@ -15,10 +15,11 @@ namespace MabiTool.Desktop.Overlay;
 /// 极性色标、“自身／目标”标记、名称、层数与右对齐的剩余时间，背景按剩余比例填充；没有出现的项整项变暗，觉醒触发后按设定颜色闪烁。
 /// 放不下时最后一格改为“+N”。元件解锁时按住一项拖过 6 px 即拖动排序，其余项让位，松手交给 <see cref="Reorder"/> 保存；
 /// 按下即处理指针事件，所以不会同时拖动整个元件（空白处与外框内边距仍拖动元件）。倒计时与闪烁随 200 ms 的效果节拍重绘。
+/// <see cref="Prominent"/> 为真时（DPS 元件里的觉醒显示）行高与字号加大。
 /// </summary>
 public sealed class FavoriteBoardView : Control
 {
-    public const double ItemHeight = EffectLine.CompactHeight, MinimumColumnWidth = 132, Threshold = 6;
+    public const double ItemHeight = EffectLine.CompactHeight, ProminentHeight = EffectLine.RowHeight, MinimumColumnWidth = 132, Threshold = 6;
     private const double TagWidth = 28, TimeWidth = 40, FlashPeriodMs = 500;
 
     public static readonly StyledProperty<IReadOnlyList<FavoriteItem>?> ItemsProperty =
@@ -26,6 +27,7 @@ public sealed class FavoriteBoardView : Control
     public static readonly StyledProperty<Action<string, int>?> ReorderProperty =
         AvaloniaProperty.Register<FavoriteBoardView, Action<string, int>?>(nameof(Reorder));
     public static readonly StyledProperty<bool> HorizontalProperty = AvaloniaProperty.Register<FavoriteBoardView, bool>(nameof(Horizontal));
+    public static readonly StyledProperty<bool> ProminentProperty = AvaloniaProperty.Register<FavoriteBoardView, bool>(nameof(Prominent));
     public static readonly StyledProperty<AwakeningSettings?> AlertsProperty = AvaloniaProperty.Register<FavoriteBoardView, AwakeningSettings?>(nameof(Alerts));
     public static readonly StyledProperty<IBrush> PositiveProperty = AvaloniaProperty.Register<FavoriteBoardView, IBrush>(nameof(Positive), new ImmutableSolidColorBrush(EffectLine.OverlayPositiveColor));
     public static readonly StyledProperty<IBrush> NegativeProperty = AvaloniaProperty.Register<FavoriteBoardView, IBrush>(nameof(Negative), new ImmutableSolidColorBrush(EffectLine.OverlayNegativeColor));
@@ -44,13 +46,16 @@ public sealed class FavoriteBoardView : Control
 
     static FavoriteBoardView()
     {
-        AffectsMeasure<FavoriteBoardView>(ItemsProperty, HorizontalProperty);
+        AffectsMeasure<FavoriteBoardView>(ItemsProperty, HorizontalProperty, ProminentProperty);
         AffectsRender<FavoriteBoardView>(AlertsProperty, PositiveProperty, NegativeProperty, OtherProperty, WarningProperty, TextProperty, MutedProperty,
             TrackProperty, OverflowProperty);
     }
 
     public IReadOnlyList<FavoriteItem>? Items { get => GetValue(ItemsProperty); set => SetValue(ItemsProperty, value); }
     public bool Horizontal { get => GetValue(HorizontalProperty); set => SetValue(HorizontalProperty, value); }
+    /// <summary>加大行高与字号，用于 DPS 元件里醒目的觉醒显示。</summary>
+    public bool Prominent { get => GetValue(ProminentProperty); set => SetValue(ProminentProperty, value); }
+    private double RowSize => Prominent ? ProminentHeight : ItemHeight;
     public AwakeningSettings? Alerts { get => GetValue(AlertsProperty); set => SetValue(AlertsProperty, value); }
     public IBrush Positive { get => GetValue(PositiveProperty); set => SetValue(PositiveProperty, value); }
     public IBrush Negative { get => GetValue(NegativeProperty); set => SetValue(NegativeProperty, value); }
@@ -103,28 +108,28 @@ public sealed class FavoriteBoardView : Control
         var count = Items?.Count ?? 0;
         columns = Horizontal ? Math.Max(1, (int)Math.Floor(width / MinimumColumnWidth)) : 1;
         columnWidth = width / columns;
-        var rows = double.IsInfinity(availableSize.Height) ? int.MaxValue : Math.Max(1, (int)Math.Floor(availableSize.Height / ItemHeight));
+        var rows = double.IsInfinity(availableSize.Height) ? int.MaxValue : Math.Max(1, (int)Math.Floor(availableSize.Height / RowSize));
         var capacity = rows == int.MaxValue ? count : rows * columns;
         if (count <= capacity) { shown = count; hidden = 0; }
         else { shown = Math.Max(0, capacity - 1); hidden = count - shown; }
         var used = shown + (hidden > 0 ? 1 : 0);
-        return new(width, Math.Ceiling(used / (double)columns) * ItemHeight);
+        return new(width, Math.Ceiling(used / (double)columns) * RowSize);
     }
 
     private Rect SlotRect(int index) =>
-        new(index % columns * columnWidth, index / columns * ItemHeight, columnWidth, ItemHeight);
+        new(index % columns * columnWidth, index / columns * RowSize, columnWidth, RowSize);
 
     private int SlotAt(Point point)
     {
         var column = Math.Clamp((int)Math.Floor(point.X / Math.Max(1, columnWidth)), 0, columns - 1);
-        var row = Math.Max(0, (int)Math.Floor(point.Y / ItemHeight));
+        var row = Math.Max(0, (int)Math.Floor(point.Y / RowSize));
         return Math.Clamp(row * columns + column, 0, Math.Max(0, shown - 1));
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        // 没有排序回调（觉醒监控浮窗）时不处理按下，按在项上照常拖动整个元件。
+        // 没有排序回调（觉醒监控浮窗、DPS 元件里的觉醒显示）时不处理按下，按在项上照常拖动整个元件。
         if (Reorder is null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || Items is not { Count: > 0 }) return;
         var point = e.GetPosition(this);
         var index = SlotAt(point);
@@ -227,8 +232,7 @@ public sealed class FavoriteBoardView : Control
             else if (look.Progress is { } ratio and > 0) context.DrawRectangle(fill, null, bounds.WithWidth(bounds.Width * ratio), radius, radius);
         }
         // 觉醒触发后的闪烁：按设定的颜色与时长，每 0.5 秒亮暗一次。
-        if (item.Kind is FavoriteItemKind.Badge or FavoriteItemKind.Class && look.TriggerTick != 0
-            && Alerts?.Of(item.Kind == FavoriteItemKind.Badge ? FavoriteEffectTracker.Badge : FavoriteEffectTracker.Class) is { Flash: true } alert)
+        if (item.Kind == FavoriteItemKind.Badge && look.TriggerTick != 0 && Alerts?.Badge is { Flash: true } alert)
         {
             var elapsed = (now - look.TriggerTick) * 1000d / Stopwatch.Frequency;
             if (elapsed >= 0 && elapsed < alert.FlashSeconds * 1000 && (int)(elapsed / (FlashPeriodMs / 2)) % 2 == 0)
@@ -241,7 +245,7 @@ public sealed class FavoriteBoardView : Control
                    Matrix.CreateTranslation(bounds.X + 10, middle)))
             context.DrawGeometry(PentagonFill(look.Polarity), null, Pentagon);
 
-        const double size = 11;
+        var size = Prominent ? 13d : 11d;
         var left = bounds.X + 20;
         if (look.Tag.Length > 0)
         {

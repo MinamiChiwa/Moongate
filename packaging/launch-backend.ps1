@@ -29,6 +29,15 @@ try {
     if (Test-Path -LiteralPath $observation -PathType Leaf) {
         $settings.MABITOOL_OBSERVATION_EXECUTABLE = $observation
     }
+    $lifeVision = Join-Path $packageRoot 'components/life-vision/MabiTool.LifeVision.Worker.exe'
+    if (Test-Path -LiteralPath $lifeVision -PathType Leaf) {
+        $settings.MABITOOL_LIFE_VISION_EXECUTABLE = $lifeVision
+    }
+    # 命令行工具随包分发时固定为包内路径；包内没有该文件时不设置，宿主回落本机韩服目录。
+    $gameCli = Join-Path $packageRoot 'components/game-cli/MabinogiMobile_CLI.exe'
+    if (Test-Path -LiteralPath $gameCli -PathType Leaf) {
+        $settings.MABITOOL_GAME_CLI_EXECUTABLE = $gameCli
+    }
     $colorPython = Join-Path $packageRoot 'components/color-engine/python/python.exe'
     if (Test-Path -LiteralPath $colorPython -PathType Leaf) {
         $settings.MABITOOL_COLOR_PYTHON = $colorPython

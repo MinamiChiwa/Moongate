@@ -97,13 +97,13 @@ public sealed partial class OverlayPage : UserControl
     // 觉醒提示选用本机 wav 或 mp3；只记路径，播放时读取。
     private async void OnPickSound(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: string kind } || TopLevel.GetTopLevel(this) is not { } top || DataContext is not OverlayPageModel model) return;
+        if (TopLevel.GetTopLevel(this) is not { } top || DataContext is not OverlayPageModel model) return;
         var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             AllowMultiple = false,
             FileTypeFilter = [new FilePickerFileType("WAV / MP3") { Patterns = ["*.wav", "*.mp3"] }]
         });
-        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) model.SetAlertFile(kind, path);
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) model.SetAlertFile(path);
     }
 
     private async void OnPickImage(object? sender, RoutedEventArgs e)

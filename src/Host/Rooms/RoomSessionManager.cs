@@ -278,6 +278,7 @@ public sealed partial class RoomSessionManager : BackgroundService, IAsyncDispos
                     if (mode != "emote") EnsureScoreReady(entry, owner);
                     capabilities = entry.LocalInput?.Arm(request, mode)
                         ?? throw new OperationException("input.actionMappingUnavailable", "宿主尚未装配本地轮次输入");
+                    await PrepareGameMusicAsync(entry, mode, token);
                 }
                 await entry.Client.SetReadyAsync(request.Ready, request.Simulation,
                     capabilities?.CanStart ?? false, capabilities?.CanStop ?? false, request.TimingOffsetMs, request.MusicRole, request.ReadyMode,
@@ -439,6 +440,9 @@ public sealed partial class RoomSessionManager : BackgroundService, IAsyncDispos
             finally { candidate.Gate.Release(); }
         };
         candidate.Scheduler.Receipt += _ => Notify(owner);
+        // 经连接器开奏时按本机映射的乐谱标题核对游戏乐谱列表。
+        if (candidate.LocalInput is { } local)
+            local.ScoreTitleSource = () => { lock (candidate.ScoreGate) return candidate.LocalScore is { State: "mapped", Score: { } mapped } ? mapped.Entry.RawTitle : null; };
         var entry = entries.GetOrAdd(owner, candidate);
         if (!ReferenceEquals(entry, candidate))
         {

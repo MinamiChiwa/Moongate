@@ -1858,7 +1858,7 @@ public sealed class OverlayTests
     }
 
     [AvaloniaFact]
-    public void PendingModuleWidgetsMoveToTheGameDataLayerAndSavedPlacementsStay()
+    public void NowPlayingIsInTheMainLibraryAndGameDataWidgetsLiveInTheGameDataLayer()
     {
         var backend = new SampleBackend();
         var window = LayoutProbe.Open(backend, 1280, 860, "presentation");
@@ -1866,15 +1866,17 @@ public sealed class OverlayTests
         {
             var page = window.GetVisualDescendants().OfType<OverlayPage>().Single();
             var model = (OverlayPageModel)page.DataContext!;
-            Assert.DoesNotContain(model.Library, item => item.WidgetId is "performance.now-playing" or "performance.nearby");
-            Assert.Equal(["performance.now-playing", "performance.nearby"], model.GameDataLibrary.Select(item => item.WidgetId));
+            // 乐谱库是正常模块：“当前演奏”在主元件库；依赖展示主题的附近演奏字幕与“环境信息”（角色模块）放在“需要游戏数据的元件”层里。
+            Assert.Contains(model.Library, item => item.WidgetId == "performance.now-playing");
+            Assert.DoesNotContain(model.Library, item => item.WidgetId is "performance.nearby" or "environment.info");
+            Assert.Equal(["performance.nearby", "environment.info"], model.GameDataLibrary.Select(item => item.WidgetId));
             // 没有缺失主题的元件只是换了位置，不加标注。
             Assert.All(model.GameDataLibrary, item => Assert.False(item.HasNotice));
-            // 主元件库的磁贴里没有它们；层的入口可用，层默认关闭。
+            // 主元件库的磁贴里有当前演奏、没有依赖游戏数据的两个；层的入口可用，层默认关闭。
             var libraryTiles = Named<Card>(page, "LibraryPanel").GetVisualDescendants().OfType<Button>()
                 .Where(button => button.Classes.Contains("tile")).Select(button => button.CommandParameter as string).ToList();
             Assert.DoesNotContain("performance.nearby", libraryTiles);
-            Assert.DoesNotContain("performance.now-playing", libraryTiles);
+            Assert.Contains("performance.now-playing", libraryTiles);
             Assert.True(Named<Button>(page, "GameDataButton").IsEffectivelyEnabled);
             Assert.False(Named<Panel>(page, "GameDataLayer").IsEffectivelyVisible);
 

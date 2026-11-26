@@ -13,7 +13,41 @@
       <Setter Property="Foreground" Value="White" />
       <Setter Property="BorderBrush" Value="{StaticResource InventoryBrush}" />
     </Style>
+    <!-- 主货币的一行与其余资源的紧凑格。 -->
+    <Style Selector="Border.currency">
+      <Setter Property="Background" Value="{DynamicResource InsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource InsetEdgeBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="10,6" />
+    </Style>
+    <Style Selector="Border.cell">
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="6,4" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
   </UserControl.Styles>
+  <UserControl.Resources>
+    <!-- 资源的紧凑格：图标、数值与名称，来源与明细在悬停提示。 -->
+    <DataTemplate x:Key="ResourceTile" DataType="inventory:InventoryResourceRow">
+      <Border Classes="cell" ToolTip.Tip="{Binding Tip}">
+        <DockPanel>
+          <controls:GameIcon DockPanel.Dock="Left" Icon="{Binding Icon}" Size="24" Margin="0,0,8,0" VerticalAlignment="Center" />
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Classes="name" FontWeight="SemiBold" Text="{Binding Value}" />
+            <TextBlock Classes="note name" TextWrapping="NoWrap" Text="{Binding Name}" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+    </DataTemplate>
+    <!-- 未读取的一行：名称与原因。 -->
+    <DataTemplate x:Key="UnreadResourceRow" DataType="inventory:InventoryResourceRow">
+      <controls:PairRow Margin="0,2" Background="Transparent" ToolTip.Tip="{Binding Tip}">
+        <TextBlock Classes="muted" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+        <TextBlock Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" Text="{Binding Detail}" />
+      </controls:PairRow>
+    </DataTemplate>
+  </UserControl.Resources>
   <DockPanel>
     <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
       <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
@@ -28,6 +62,8 @@
                  PlaceholderText="{DynamicResource I.SearchHint}" AutomationProperties.Name="{DynamicResource I.SearchHint}" />
       </controls:ReflowPanel>
       <TextBlock Margin="0,4,0,0" x:Name="CapabilityNotice" Classes="note" Text="{Binding CapabilityNotice}" IsVisible="{Binding HasCapabilityNotice}" />
+      <!-- 估价：交易所价格，单位德卡，取价于何时；读不到时写原因，入口不可用时写明原因。 -->
+      <TextBlock Margin="0,4,0,0" x:Name="ValuationLine" Classes="note" Text="{Binding ValuationLine}" IsVisible="{Binding HasValuationLine}" />
       <!-- 账号与显示的列组；在窗口中打开与导出 CSV 在表格左上角。 -->
       <WrapPanel Margin="0,8,0,0">
         <StackPanel Orientation="Horizontal" Margin="0,0,16,6" VerticalAlignment="Center">
@@ -62,7 +98,7 @@
     <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <!--
-        卡片网格：物品 2×4（表格在表内滚动，卡片外壳不滚动），右侧一列叠放概况 1×1.5 与资源 1×2.5，两者合起来与物品等高；
+        卡片网格：物品 2×4（表格在表内滚动，卡片外壳不滚动），右侧资源 1×4 与物品等高；
         其下读取范围与道具名称目录各一列、随内容。顺序与尺寸档在“编辑布局”里调整。一张卡片同一方向只有一个滚动区。
       -->
       <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
@@ -84,75 +120,19 @@
           </DockPanel>
         </controls:Card>
 
-          <!-- 概况：固定高度。角色行与金币、银币、魔族貢品跟随资源区所选角色，与资源区读同一份数据；银币与贡品带补充倒计时（全页一个每秒节拍，只改倒计时文字）。
-               五行的值都停在卡片右边线：标签靠左停靠，数值靠右停靠，中间的剩余宽度放倒计时（小号、弱化色、右对齐、等宽数字），倒计时每秒变化不推动数值。 -->
-          <controls:Card x:Name="SummaryPanel" CardId="summary" Title="{DynamicResource I.Summary}" Size="OneByOneAndHalf"
-                         AllowedSizes="OneByTwo,OneByAuto,HalfByAuto">
-            <StackPanel Spacing="8">
-              <StackPanel>
-                <DockPanel Height="26">
-                  <TextBlock DockPanel.Dock="Left" Classes="muted" VerticalAlignment="Center" Margin="0,0,12,0" Text="{DynamicResource I.SummaryCharacter}" />
-                  <TextBlock x:Name="SummaryCharacter" Classes="name" VerticalAlignment="Center" TextAlignment="Right"
-                             Text="{Binding SummaryCharacter}" ToolTip.Tip="{Binding SummaryCharacter}" />
-                </DockPanel>
-                <ItemsControl controls:StableItems.Source="{Binding Data.Summary}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="infrastructure:KeyValue">
-                      <Grid Height="26" ColumnDefinitions="*,Auto">
-                        <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding Label}" />
-                        <TextBlock Grid.Column="1" Classes="body" VerticalAlignment="Center" Text="{Binding Value}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <ItemsControl x:Name="SummaryResourceList" controls:StableItems.Source="{Binding SummaryResources}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="inventory:InventoryResourceRow">
-                      <DockPanel Height="26" Background="Transparent" ToolTip.Tip="{Binding Tip}">
-                        <TextBlock DockPanel.Dock="Left" Classes="muted" VerticalAlignment="Center" Text="{Binding Name}" />
-                        <TextBlock DockPanel.Dock="Right" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Value}"
-                                   Classes.muted="{Binding !Observed}" />
-                        <inventory:InventoryCountdownText Classes="name muted" FontSize="11" FontFeatures="+tnum" VerticalAlignment="Center" Margin="8,0,8,0"
-                                                          TextAlignment="Right" Refill="{Binding Refill}" />
-                      </DockPanel>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-            </StackPanel>
-          </controls:Card>
-          <!-- 资源：账户级（客户端 AccountWallet 的成员）跟随账号下拉；角色级按所选账户下的角色分开（金币、银币、贡品在概况）。每项一行，明细在悬停提示；
-               两组列表随内容展开，固定高度档由卡片外壳统一滚动（组内不再各自限高滚动）；未读取折叠。 -->
-          <controls:Card x:Name="ResourcesPanel" CardId="resources" Title="{DynamicResource I.Resources}" TitleTip="{DynamicResource I.ResourcesHint}" Size="OneByTwoAndHalf"
-                         AllowedSizes="OneByThree,OneByFour,OneByAuto,HalfByAuto">
+          <!-- 资源：货币的唯一位置。顶部选角色（所选账户下的角色，默认当前登录角色），主货币为金币、银币、魔族貢品竖排三行（银币与贡品带补充倒计时，
+               全页一个每秒节拍，只改倒计时文字）；账户资源跟随账号下拉，角色资源按所选角色；都是图标加数值的紧凑格，名称、来源与明细在悬停提示。
+               各组随内容展开，固定高度档由卡片外壳统一滚动（组内不再各自限高滚动）；未读取折叠。 -->
+          <controls:Card x:Name="ResourcesPanel" CardId="resources" Title="{DynamicResource I.Resources}" TitleTip="{DynamicResource I.ResourcesHint}" Size="OneByFour"
+                         AllowedSizes="OneByThree,OneByAuto,HalfByAuto">
+            <controls:Card.Icon><controls:GameIcon Icon="currency/gold" Size="18" /></controls:Card.Icon>
             <StackPanel Spacing="6">
-              <TextBlock Classes="label" Margin="0,4,0,0" Text="{DynamicResource I.AccountResources}" />
-              <ItemsControl x:Name="AccountResourceList" controls:StableItems.Source="{Binding AccountResources}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate DataType="inventory:InventoryResourceRow">
-                    <Grid Height="26" Background="Transparent" ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Tip}">
-                      <TextBlock Classes="body" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
-                      <TextBlock Grid.Column="1" Classes="body" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Value}" />
-                    </Grid>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-              <Button x:Name="UnreadAccountResourcesToggle" Classes="bare" HorizontalAlignment="Left" IsVisible="{Binding HasUnreadAccountResources}"
-                      Command="{Binding ToggleUnreadAccountCommand}" Content="{Binding UnreadAccountResourcesText}" />
-              <controls:ExpandPanel IsExpanded="{Binding UnreadAccountExpanded, Mode=OneWay}">
-                <ItemsControl controls:StableItems.Source="{Binding UnreadAccountResources}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="inventory:InventoryResourceRow">
-                      <controls:PairRow Margin="0,2" Background="Transparent" ToolTip.Tip="{Binding Tip}">
-                        <TextBlock Classes="muted" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
-                        <TextBlock Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" Text="{Binding Detail}" />
-                      </controls:PairRow>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </controls:ExpandPanel>
-              <TextBlock Classes="label" Margin="0,4,0,0" Text="{DynamicResource I.CharacterResources}" />
-              <!-- 角色与透视表的角色列同一来源；默认当前登录角色。概况的三项资源跟随这里的选择。 -->
+              <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Classes="muted" VerticalAlignment="Center" Margin="0,0,12,0" Text="{DynamicResource I.SummaryCharacter}" />
+                <TextBlock x:Name="ResourceCharacterLabel" Classes="name" VerticalAlignment="Center" TextAlignment="Right"
+                           Text="{Binding ResourceCharacterLabel}" ToolTip.Tip="{Binding ResourceCharacterLabel}" />
+              </DockPanel>
+              <!-- 角色与透视表的角色列同一来源；默认当前登录角色。主货币与角色资源跟随这里的选择。 -->
               <ItemsControl x:Name="ResourceCharacterChips" controls:StableItems.Source="{Binding ResourceCharacters}" IsVisible="{Binding HasResourceCharacters}">
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
@@ -164,29 +144,48 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <ItemsControl x:Name="CharacterResourceList" controls:StableItems.Source="{Binding CharacterResources}">
+              <TextBlock Classes="label" Margin="0,4,0,0" Text="{DynamicResource I.MainCurrencies}" />
+              <!-- 主货币竖排一列：每行图标、名称与数值（数值右对齐、不截断，名称让出宽度），倒计时在名称下方。 -->
+              <ItemsControl x:Name="MainCurrencyList" controls:StableItems.Source="{Binding MainCurrencies}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate DataType="inventory:InventoryResourceRow">
-                    <Grid Height="26" Background="Transparent" ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Tip}">
-                      <TextBlock Classes="body" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
-                      <TextBlock Grid.Column="1" Classes="body" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Value}" />
-                    </Grid>
+                    <Border Classes="currency" Margin="0,0,0,6" ToolTip.Tip="{Binding Tip}">
+                      <DockPanel>
+                        <controls:GameIcon DockPanel.Dock="Left" Icon="{Binding Icon}" Size="24" Margin="0,0,10,0" VerticalAlignment="Center" />
+                        <TextBlock DockPanel.Dock="Right" Classes="name" FontSize="16" FontWeight="Bold" FontFeatures="+tnum" Margin="10,0,0,0"
+                                   VerticalAlignment="Center" Text="{Binding Value}" Classes.muted="{Binding !Observed}" />
+                        <StackPanel VerticalAlignment="Center">
+                          <TextBlock Classes="name" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                          <!-- 补充倒计时：小号、弱化色、等宽数字；金币没有时不占高度。 -->
+                          <inventory:InventoryCountdownText Classes="name muted" FontSize="11" FontFeatures="+tnum" Refill="{Binding Refill}"
+                                                            IsVisible="{Binding Refill, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        </StackPanel>
+                      </DockPanel>
+                    </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Classes="label" Margin="0,4,0,0" Text="{DynamicResource I.AccountResources}" />
+              <ItemsControl x:Name="AccountResourceList" controls:StableItems.Source="{Binding AccountResources}" ItemTemplate="{StaticResource ResourceTile}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="130" Spacing="8" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+              </ItemsControl>
+              <Button x:Name="UnreadAccountResourcesToggle" Classes="bare" HorizontalAlignment="Left" IsVisible="{Binding HasUnreadAccountResources}"
+                      Command="{Binding ToggleUnreadAccountCommand}" Content="{Binding UnreadAccountResourcesText}" />
+              <controls:ExpandPanel IsExpanded="{Binding UnreadAccountExpanded, Mode=OneWay}">
+                <ItemsControl controls:StableItems.Source="{Binding UnreadAccountResources}" ItemTemplate="{StaticResource UnreadResourceRow}" />
+              </controls:ExpandPanel>
+              <TextBlock Classes="label" Margin="0,4,0,0" Text="{DynamicResource I.CharacterResources}" />
+              <ItemsControl x:Name="CharacterResourceList" controls:StableItems.Source="{Binding CharacterResources}" ItemTemplate="{StaticResource ResourceTile}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><controls:ReflowPanel MinItemWidth="130" Spacing="8" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
               </ItemsControl>
               <Button x:Name="UnreadCharacterResourcesToggle" Classes="bare" HorizontalAlignment="Left" IsVisible="{Binding HasUnreadCharacterResources}"
                       Command="{Binding ToggleUnreadCharacterCommand}" Content="{Binding UnreadCharacterResourcesText}" />
               <controls:ExpandPanel IsExpanded="{Binding UnreadCharacterExpanded, Mode=OneWay}">
-                <ItemsControl controls:StableItems.Source="{Binding UnreadCharacterResources}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="inventory:InventoryResourceRow">
-                      <controls:PairRow Margin="0,2" Background="Transparent" ToolTip.Tip="{Binding Tip}">
-                        <TextBlock Classes="muted" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
-                        <TextBlock Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" Text="{Binding Detail}" />
-                      </controls:PairRow>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <ItemsControl controls:StableItems.Source="{Binding UnreadCharacterResources}" ItemTemplate="{StaticResource UnreadResourceRow}" />
               </controls:ExpandPanel>
             </StackPanel>
           </controls:Card>

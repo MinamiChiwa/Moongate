@@ -15,12 +15,16 @@ public sealed record TwCapabilityCheck(bool Enabled, string? Reason)
 /// 客户端构建的核对结果。已登记构建各项直接启用；未登记构建按运行时从客户端读出的协议枚举、收包签名与字段布局
 /// 逐项核对：<see cref="Identity"/>（本机身份与地图频道）、<see cref="Music"/>（合奏与演奏）、<see cref="Combat"/>（战斗统计与效果，
 /// 依赖身份）、<see cref="Health"/>（实体血量、死亡、离场与本机主目标，依赖战斗）。<see cref="KnownProtocols"/> 为分帧可识别的协议号集合，为空时不能抓包。
+/// <see cref="ProtocolTranslation"/> 是按名称对应、编号与基线不同的协议的换算表；已登记构建与编号未变时为空表。
 /// </summary>
 public sealed record TwBuildVerdict(string Build, bool Registered, string? RegisteredName, TwCapabilityCheck Identity,
-    TwCapabilityCheck Music, TwCapabilityCheck Combat, IReadOnlySet<int> KnownProtocols, TwCapabilityCheck? HealthCheck = null)
+    TwCapabilityCheck Music, TwCapabilityCheck Combat, IReadOnlySet<int> KnownProtocols, TwCapabilityCheck? HealthCheck = null,
+    TwProtocolTranslation? Translation = null)
 {
     /// <summary>实体血量能力的核对结果；构造时未给出时与战斗相同。</summary>
     public TwCapabilityCheck Health => HealthCheck ?? Combat;
+    /// <summary>当前客户端协议号到基线协议号的换算；没有换算时为空表。</summary>
+    public TwProtocolTranslation ProtocolTranslation => Translation ?? TwProtocolTranslation.None;
     public bool CaptureUsable => KnownProtocols.Count > 0;
     public static TwBuildVerdict ForRegistered(TwRegisteredBuild build) => new(TwClientFingerprint.GameBuild, true, build.Name,
         TwCapabilityCheck.Ok, TwCapabilityCheck.Ok, TwCapabilityCheck.Ok, Tw20261110CombatProtocol.StreamProfile.KnownProtocols);
@@ -33,15 +37,38 @@ public sealed record TwBuildVerdict(string Build, bool Registered, string? Regis
 }
 
 /// <summary>
-/// 未登记构建的运行时核对。登记基线（<c>tw-20261110-build-facts.json</c>）记录各能力依赖的协议号、收包方法签名、
-/// 复制方法签名与定长消息的字段；当前客户端的同名事实与基线完全一致时该能力启用，协议号不同记
-/// <c>gameBuild.protocolChanged</c>，签名或字段不同记 <c>gameBuild.layoutChanged</c>。按字段前缀读取的消息
+/// 按名称对应、编号与基线不同的协议：当前客户端协议号 → 基线协议号。身份、合奏、战斗与实体血量的解析按基线协议号分发，
+/// 解析前用 <see cref="ToBaseline"/> 换算；当前客户端里占用基线旧编号的其他协议换算为 -1，不进入这些解析。库存不经过换算。
+/// </summary>
+public sealed class TwProtocolTranslation
+{
+    /// <summary>没有换算（已登记构建或编号与基线相同）。</summary>
+    public static TwProtocolTranslation None { get; } = new(new Dictionary<int, int>());
+    private readonly FrozenDictionary<int, int> map;
+    private readonly FrozenSet<int> displaced;
+    public TwProtocolTranslation(IReadOnlyDictionary<int, int> currentToBaseline)
+    {
+        ArgumentNullException.ThrowIfNull(currentToBaseline);
+        map = currentToBaseline.ToFrozenDictionary();
+        displaced = map.Values.Where(value => !map.ContainsKey(value)).ToFrozenSet();
+    }
+    /// <summary>当前协议号 → 基线协议号。</summary>
+    public IReadOnlyDictionary<int, int> Map => map;
+    public bool IsEmpty => map.Count == 0;
+    /// <summary>换过编号的协议返回基线编号；占用基线旧编号的其他协议返回 -1；其余原样返回。</summary>
+    public int ToBaseline(int code) => map.TryGetValue(code, out var baseline) ? baseline : displaced.Contains(code) ? -1 : code;
+}
+
+/// <summary>
+/// 未登记构建的运行时核对。登记基线（<c>tw-20261110-build-facts.json</c>）记录各能力依赖的协议、收包方法签名、
+/// 复制方法签名与定长消息的字段；协议按名称对应（编号可以不同，结论带换算表，见 <see cref="TwProtocolTranslation"/>），
+/// 当前客户端缺少所需协议记 <c>gameBuild.protocolChanged</c>，签名或字段不同记 <c>gameBuild.layoutChanged</c>。按字段前缀读取的消息
 /// （角色、自动体出现与频道进入）只要求基线字段是当前字段的前缀。核对结果按 GameAssembly 与 metadata 哈希缓存。
 /// </summary>
 public static class TwBuildVerification
 {
-    /// <summary>核对规则版本；规则变化后旧缓存失效。</summary>
-    public const int RulesVersion = 2;
+    /// <summary>核对规则版本；规则变化后旧缓存失效（3：协议按名称对应，缓存带换算表）。</summary>
+    public const int RulesVersion = 3;
     public const string ProtocolChanged = "gameBuild.protocolChanged", LayoutChanged = "gameBuild.layoutChanged",
         VerifyFailed = "gameBuild.verifyFailed", IdentityUnavailable = "gameBuild.identityUnavailable";
     private const string Handler = "MM.Client.Framework.Network.GC.IGCPacketHandler";
@@ -111,15 +138,23 @@ public static class TwBuildVerification
         var music = identity.Enabled ? Check(MusicRequirement, facts) : new(false, IdentityUnavailable);
         var combat = identity.Enabled ? Check(CombatRequirement, facts) : new(false, IdentityUnavailable);
         var health = combat.Enabled ? Check(HealthRequirement, facts) : combat;
-        return new(build, false, null, identity, music, combat, known, health);
+        // 换算表：所需协议里当前编号与基线编号不同的，按名称对应（当前客户端的协议号互不相同，换算不会冲突）。
+        var protocols = Baseline.Value.RootElement.GetProperty("protocols");
+        var translation = new Dictionary<int, int>();
+        foreach (var name in Requirements.SelectMany(value => value.Protocols).Distinct(StringComparer.Ordinal))
+            if (facts.Protocols.TryGetValue(name, out var current) && protocols.GetProperty(name).GetInt32() is var baseline && current != baseline &&
+                !translation.TryAdd(current, baseline))
+                return TwBuildVerdict.Failed(build, VerifyFailed);
+        return new(build, false, null, identity, music, combat, known, health, translation.Count == 0 ? null : new(translation));
     }
 
     private static TwCapabilityCheck Check(Requirement requirement, ClientBuildFacts facts)
     {
         var baseline = Baseline.Value.RootElement;
         var protocols = baseline.GetProperty("protocols");
+        // 协议按名称对应：编号不同由换算表处理，缺少所需协议才停用。
         foreach (var name in requirement.Protocols)
-            if (!facts.Protocols.TryGetValue(name, out var code) || code != protocols.GetProperty(name).GetInt32()) return new(false, ProtocolChanged);
+            if (!protocols.TryGetProperty(name, out _) || !facts.Protocols.TryGetValue(name, out var code) || code <= 0) return new(false, ProtocolChanged);
         var handlers = baseline.GetProperty("handlers");
         foreach (var name in requirement.Handlers)
             if (!SameParameters(Method(facts, Handler, name), handlers.GetProperty(name))) return new(false, LayoutChanged);
@@ -236,7 +271,7 @@ public static class TwBuildVerdictCache
     /// </summary>
     public const int MaximumEntries = 8;
     private sealed record Entry(int RulesVersion, string AssemblySha256, string MetadataSha256, string Build,
-        Check Identity, Check Music, Check Combat, int[] KnownProtocols, Check? Health = null);
+        Check Identity, Check Music, Check Combat, int[] KnownProtocols, Check? Health = null, int[][]? Translation = null);
     private sealed record Check(bool Enabled, string? Reason);
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
     private static string FilePath(string directory, TwClientHashes hashes) =>
@@ -253,9 +288,16 @@ public static class TwBuildVerdictCache
             if (entry is null || entry.RulesVersion != TwBuildVerification.RulesVersion || entry.AssemblySha256 != hashes.AssemblySha256 ||
                 entry.MetadataSha256 != hashes.MetadataSha256 || entry.Build != TwClientFingerprint.AdaptiveBuild(hashes.AssemblySha256, hashes.MetadataSha256) ||
                 entry.Identity is null || entry.Music is null || entry.Combat is null || entry.KnownProtocols is null || entry.Health is null) return null;
+            Dictionary<int, int>? translation = null;
+            if (entry.Translation is { } pairs)
+            {
+                translation = [];
+                foreach (var pair in pairs)
+                    if (pair is not [> 0 and var current, > 0 and var baseline] || !translation.TryAdd(current, baseline)) return null;
+            }
             return new(entry.Build, false, null, new(entry.Identity.Enabled, entry.Identity.Reason), new(entry.Music.Enabled, entry.Music.Reason),
                 new(entry.Combat.Enabled, entry.Combat.Reason), entry.KnownProtocols.Where(value => value > 0).ToFrozenSet(),
-                new(entry.Health.Enabled, entry.Health.Reason));
+                new(entry.Health.Enabled, entry.Health.Reason), translation is { Count: > 0 } ? new(translation) : null);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { return null; }
     }
@@ -269,7 +311,9 @@ public static class TwBuildVerdictCache
             File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(new Entry(TwBuildVerification.RulesVersion, hashes.AssemblySha256,
                 hashes.MetadataSha256, verdict.Build, new(verdict.Identity.Enabled, verdict.Identity.Reason), new(verdict.Music.Enabled, verdict.Music.Reason),
                 new(verdict.Combat.Enabled, verdict.Combat.Reason), verdict.KnownProtocols.Order().ToArray(),
-                new(verdict.Health.Enabled, verdict.Health.Reason)), Options));
+                new(verdict.Health.Enabled, verdict.Health.Reason),
+                verdict.ProtocolTranslation.IsEmpty ? null
+                    : verdict.ProtocolTranslation.Map.OrderBy(pair => pair.Key).Select(pair => new[] { pair.Key, pair.Value }).ToArray()), Options));
             File.Move(temporary, path, overwrite: true);
             Prune(directory);
         }

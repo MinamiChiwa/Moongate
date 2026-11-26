@@ -10,7 +10,7 @@ from mabitool_color._vendor.color_matching import MATCHING_POLICY
 from mabitool_color._vendor.refinement_policy import RefinementPolicy,compare_refinement,recovery_rank
 from .same_session_dye_planner import (normalize_target_rules,bind_planning_context,assess_feedback,
     plan_from_checkpoint,validate_plan_reference,assess_native_feedback,_frames,EARLY_TIMER_GRACE_SECONDS,EXECUTION_RESERVE_SECONDS,
-    audit_candidate_endpoint,observation_reference_fingerprint,_fresh)
+    audit_candidate_endpoint,observation_reference_fingerprint,_fresh,screenshot_confirmed)
 from .read_dye_input_backend import input_backend_binding
 from .project_closed_loop_io import validate_research_gesture,validate_retry_reset_route,InputNotStarted
 from .dye_visual_readiness import VisualNotReady
@@ -83,10 +83,8 @@ def run_goal_loop(io,session,settings,rules,*,engineering_deadline,clock=time.mo
     io.timer_grace_until=timer_grace_until
     def emit(name,**data):event(dict(event=name,at_monotonic=clock(),**data))
     def complete_screenshot(cp,frames):
-        colors=list(cp['client_hex'])
-        return bool(frames and len(frames)==2 and all(frame.get('screenshot_hex',frame['hex'])==colors
-            and frame.get('hex_source',['screenshot']*count)==['screenshot']*count
-            and frame.get('screenshot_hex_verified',True) is True for frame in frames))
+        # 两帧的每张卡都由色码文字或色块核验（至少一卡文字一致），规则同本局放行。
+        return bool(frames and len(frames)==2 and all(screenshot_confirmed(cp,frame) for frame in frames))
     def current_reference_fresh():
         if current is None or not current.get('frames'):return False
         try:_fresh(clock(),current['frames'],current['checkpoint']);return True

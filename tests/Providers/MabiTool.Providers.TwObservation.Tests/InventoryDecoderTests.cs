@@ -94,6 +94,24 @@ public sealed class InventoryDecoderTests
         Assert.Contains(value.Coverage, c => c.Category == "MusicNoteItem" && c.Complete);
     }
     [Fact]
+    public void LaterInventoryDomainThatDoesNotMatchMetadataStopsWithEarlierDomainsKept()
+    {
+        // 客户端更新给某个库存域加了与线上格式不符的成员：已读通的库存域照常同步，读不通的域标为未读。
+        using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream);
+        writer.Write(9007199254740993L);
+        writer.Write(1); Equipment(writer, 4000000000000001L, 42); writer.Write(0);
+        for (var i = 0; i < 4; i++) writer.Write(0);
+        for (var i = 0; i < 3; i++) writer.Write(0);
+        writer.Write(1); writer.Write(4000000000000002L); writer.Write(4000000000000002L); writer.Write(0U); writer.Write((byte)2);
+        writer.Write(new byte[16]);
+        var value = new ClientInventoryDecoder(SimpleSchema(true)).DecodeLogin(stream.ToArray());
+        Assert.Equal("MusicNoteItemInventory", value.StoppedAt);
+        Assert.Equal(4000000000000001UL, Assert.Single(value.Items).InstanceId!.Value.Value);
+        Assert.Contains(value.Coverage, c => c.Category == "Equipment" && c.Complete);
+        Assert.Contains(value.Coverage, c => c.Category == "Costume" && c.Complete);
+        Assert.All(value.Coverage.Where(c => c.Category == "MusicNoteItem"), c => { Assert.False(c.Complete); Assert.Equal("inventory.domainUnread", c.Reason); });
+    }
+    [Fact]
     public void LowercaseSocketableSheetKeysAndScalarJamQuantitiesAreDecoded()
     {
         var decoder = new ClientInventoryDecoder(SimpleSchema());

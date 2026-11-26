@@ -145,6 +145,38 @@ public sealed class OwnedScoreApiTests
         Assert.True(JsonElement.DeepEquals(page.Items[1].Attributes, restored.Items[1].Attributes));
     }
 
+    [Fact]
+    public async Task SyncingOwnedScoresFillsTheCaptureSourceWithPlayerComposedScoresAndNeedsMusicEdit()
+    {
+        using var area = new Workspace(); await using var app = Build(area); await app.StartAsync();
+        using var sdk = new MabiToolClient(Address(app), _ => ValueTask.FromResult(Token));
+        var challenge = await sdk.CreatePairingChallengeAsync(new("score-reader", null, [ApiPermissions.SystemRead]));
+        var grant = await sdk.RedeemPairingAsync(new(challenge.ChallengeId, challenge.Code));
+        using var reader = new MabiToolClient(Address(app), _ => ValueTask.FromResult(grant.Token));
+        var denied = await Assert.ThrowsAsync<MabiToolApiException>(() => reader.SyncOwnedMusicScoresAsync());
+        Assert.Equal(403, denied.Status);
+
+        // 背包里两张玩家自制乐谱（表编号 0）与一张游戏提供的乐谱（表编号非 0）：抓包来源只收自制的，游戏提供的只报告数量。
+        await SeedMixed(app);
+        var sync = await sdk.SyncOwnedMusicScoresAsync();
+        Assert.Equal((MusicOwnedSyncStatus.Synced, (string?)null, 2, 1, true), (sync.Status.KnownValue!.Value, sync.Reason, sync.ScoreCount, sync.GameProvidedSkipped, sync.Complete));
+        Assert.NotNull(sync.ScopeKey);
+        var library = await sdk.GetMusicLibraryAsync();
+        var source = Assert.Single(library.Sources);
+        Assert.Equal((sync.ScopeKey, "inventory", "tw-capture", "complete"), (source.ScopeKey, source.Kind, source.Provider, source.RefreshStatus));
+        var scores = (await sdk.QueryMusicLibraryAsync(new(MusicCollection.Scores, null, null, sync.ScopeKey, string.Empty, 100, null))).Scores;
+        Assert.Equal(["自制乙", "自制甲"], scores.Select(score => score.RawTitle).Order(StringComparer.Ordinal));
+        Assert.All(scores, score => { Assert.Equal("present", score.Availability); Assert.Equal("stable-id", score.SourceRefs[0].LocatorCapability); });
+
+        // 间隔内再次同步返回上次结果，来源修订不变。
+        var again = await sdk.SyncOwnedMusicScoresAsync();
+        Assert.Equal((sync.ScopeKey, sync.SyncedAt), (again.ScopeKey, again.SyncedAt));
+        Assert.Equal(source.Revision, (await sdk.GetMusicLibraryAsync()).Sources.Single().Revision);
+        Assert.Empty(app.Services.GetRequiredService<ModuleRuntime>().ActiveOperations("inventory"));
+        Assert.Empty(app.Services.GetRequiredService<ModuleRuntime>().ActiveOperations("music-library"));
+        await app.StopAsync();
+    }
+
     private sealed class BlockedReadModel : IInventoryReadModel
     {
         public readonly TaskCompletionSource Ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -176,6 +208,21 @@ public sealed class OwnedScoreApiTests
         await store.ApplyFrameAsync(new(1, new("inventory-metadata-replay", "1", binding.Region, binding.GameBuild), binding.Id,
             new(1), new(1), DateTimeOffset.UtcNow, 1, InventoryFrameKind.Full,
             new("1", ulong.MaxValue.ToString(), "角色", "角色"), items, [], coverage, BindingRevision: binding.BindingRevision));
+    }
+    private static async Task SeedMixed(WebApplication app)
+    {
+        var store = app.Services.GetRequiredService<InventoryHistoryStore>();
+        var binding = app.Services.GetRequiredService<GameControlContext>().Bindings.Current!.Session;
+        InventoryItem Note(ulong instance, ulong typeId, string title, InventoryContainer container) => new("MusicNoteItem", container, "score-" + instance,
+            new(typeId), new(instance), new(1), JsonSerializer.SerializeToElement(new { data = new { Id = new { rawValue = instance.ToString() }, SheetId = new { Id = typeId },
+                Title = title, Composer = "作曲者", ComposerRealmId = new { rawValue = 0 }, Arranger = "", ArrangerRealmId = new { rawValue = 0 },
+                AcquiredTime = new { rawValue = "1784803465623" }, IsCopyingAllowed = true, IsFavorite = false, IsLocked = false, IsJunked = false } }), "MusicNote");
+        InventoryItem[] items = [Note(11, 0, "自制甲", InventoryContainer.Backpack), Note(12, 0, "自制乙", InventoryContainer.CharacterStorage),
+            Note(21, 802704190, "少年冒險家", InventoryContainer.Backpack)];
+        var coverage = Enum.GetValues<InventoryContainer>().Select(c => new InventoryCoverage("MusicNoteItem", c, true)).ToArray();
+        await store.ApplyFrameAsync(new(1, new("inventory-metadata-replay", "1", binding.Region, binding.GameBuild), binding.Id,
+            new(1), new(1), DateTimeOffset.UtcNow, 1, InventoryFrameKind.Full,
+            new("1", "25251211640832", "角色", "角色"), items, [], coverage, BindingRevision: binding.BindingRevision));
     }
     private static WebApplication Build(Workspace area) => BackendApplication.Build(new(0, Token, new HashSet<string>()), storage: area.Options, mock: true);
     private static Uri Address(WebApplication app) => new(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single());

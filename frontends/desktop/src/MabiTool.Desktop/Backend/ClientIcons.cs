@@ -48,13 +48,36 @@ public static class ClientIconNames
 }
 
 /// <summary>
-/// 界面各处的图标位置与后端之间的中转：主窗口组装时指定后端（<see cref="Use"/>）。图标位置挂上可见窗口时登记使用、
-/// 移出时注销，有登记时后端才读取目录与下载图标；后端的图标有变化时 <see cref="Changed"/> 在界面线程上通知各位置重取。
+/// 界面各处的图标位置与后端之间的中转：主窗口组装时指定后端（<see cref="Use"/>）。取用顺序：先取桌面内嵌的随包图标
+/// （<see cref="Theme.GameIcons.Attribute"/>，没有绑定游戏时也可用），包里没有的键再取后端运行时从本机客户端读到的图标。
+/// 图标位置挂上可见窗口时登记使用、移出时注销；只有包里缺键（<see cref="NeedsRuntime"/>）且有登记时才让后端读取目录与下载图标，
+/// 包里键齐全时后端不读取。后端的图标有变化时 <see cref="Changed"/> 在界面线程上通知各位置重取。
 /// </summary>
 public static class ClientIconHub
 {
     private static IDesktopBackend? source;
     private static int users;
+    private static bool bundled = true;
+    // 是否已经让后端读取运行时图标（有使用登记且包里缺键）；撤销时按它撤销，不因中途包的状态变化漏掉。
+    private static bool forwarded;
+
+    /// <summary>
+    /// 是否先取随包图标。测试用：置为假时只取后端的运行时图标（与包里缺全部键相同），用于覆盖运行时后备的行为。
+    /// </summary>
+    internal static bool UseBundled
+    {
+        get => bundled;
+        set
+        {
+            if (bundled == value) return;
+            bundled = value;
+            Sync();
+            Changed?.Invoke(null, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>随包图标缺少至少一个属性键，需要后端运行时读取补上。</summary>
+    public static bool NeedsRuntime => !bundled || Theme.GameIcons.MissingAttributes(MabiTool.Contracts.ClientIconKeys.All).Count > 0;
 
     public static event EventHandler? Changed;
 
@@ -71,29 +94,38 @@ public static class ClientIconHub
         if (source is { } old)
         {
             old.ClientIconsChanged -= OnSourceChanged;
-            if (users > 0) old.SetClientIconsInUse(false);
+            if (forwarded) old.SetClientIconsInUse(false);
         }
+        forwarded = false;
         source = backend;
-        if (backend is not null)
-        {
-            backend.ClientIconsChanged += OnSourceChanged;
-            if (users > 0) backend.SetClientIconsInUse(true);
-        }
+        if (backend is not null) backend.ClientIconsChanged += OnSourceChanged;
+        Sync();
         Changed?.Invoke(null, EventArgs.Empty);
     }
 
-    /// <summary>键对应的可用图标；后端没有、目录未就绪或该键不可用时为空。</summary>
-    public static ClientIconImage? Get(string key) => source?.GetClientIcon(key);
+    /// <summary>键对应的可用图标：先取随包图标，包里没有时取后端的运行时图标；都没有时为空（界面显示文字）。</summary>
+    public static ClientIconImage? Get(string key) => (bundled ? Theme.GameIcons.Attribute(key) : null) ?? source?.GetClientIcon(key);
 
     internal static void Acquire()
     {
-        if (++users == 1) source?.SetClientIconsInUse(true);
+        users++;
+        Sync();
     }
 
     internal static void Release()
     {
         if (users == 0) return;
-        if (--users == 0) source?.SetClientIconsInUse(false);
+        users--;
+        Sync();
+    }
+
+    // 有使用登记且包里缺键时让后端读取运行时图标，否则撤销；状态没变不重复通知后端。
+    private static void Sync()
+    {
+        var wanted = users > 0 && source is not null && NeedsRuntime;
+        if (wanted == forwarded) return;
+        forwarded = wanted;
+        source?.SetClientIconsInUse(wanted);
     }
 
     private static void OnSourceChanged(object? sender, EventArgs e) => Changed?.Invoke(null, EventArgs.Empty);

@@ -220,6 +220,9 @@ public sealed class RoomsTests
         Assert.StartsWith("总指挥需加入本轮", RoomReadinessText.Failure(Problem("room.commandRejected", "LEADER_NOT_PARTICIPATING"), 409));
         Assert.Equal("该操作由房主执行", RoomReadinessText.Failure(Problem("permission.denied"), 403));
         Assert.Equal("未知原因", RoomReadinessText.Failure(Problem("room.somethingNew"), 409));
+        // 就绪前自动换乐器失败：分配的乐器不在背包里、名称有歧义。
+        Assert.Equal("分配的乐器不在背包里", RoomReadinessText.Failure(Problem("room.instrumentNotOwned"), 409));
+        Assert.Equal("分配的乐器名称有歧义", RoomReadinessText.Failure(Problem("room.instrumentAmbiguous"), 409));
         Assert.Equal("后端内部出错", RoomReadinessText.Failure(null, 502));
 
         // 指定总指挥与移出成员。

@@ -74,6 +74,23 @@ public sealed partial class LiveBackend
             return Pick("已保存更新策略", "已儲存更新策略");
         }, cancellationToken);
 
+    // 只读取：不改页面状态、不触发重读；读取失败（未连接、没有可用更新、后端读不到）时返回空，确认窗口写明未能读取。
+    public async Task<UpdateNotesView?> LoadUpdateNotesAsync(CancellationToken cancellationToken)
+    {
+        var (current, page, _, _) = ReadPages();
+        if (client is not { } api || !current.Connected || page.Update?.Available?.PlanId is not { } plan) return null;
+        try
+        {
+            var notes = await api.GetUpdateNotesAsync(plan, cancellationToken);
+            return new(notes.ReleaseId, notes.Entries.Select(entry => new UpdateNotesText(entry.Language, entry.Markdown)).ToList());
+        }
+        catch (Exception error) when (error is MabiToolApiException or InvalidOperationException or HttpRequestException
+                                          or IOException or OperationCanceledException or FormatException)
+        {
+            return null;
+        }
+    }
+
     // 读取时记下 ETag；保存时以它为 If-Match，请求体里的修订与界面不显示的字段都是读取时的原值。
     public async Task<RoomPreferencesReply> LoadRoomPreferencesAsync(CancellationToken cancellationToken)
     {

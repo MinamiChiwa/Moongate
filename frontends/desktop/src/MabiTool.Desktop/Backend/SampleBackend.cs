@@ -51,7 +51,7 @@ public sealed partial class SampleBackend : IDesktopBackend
     public bool IsGameMinimized() => GameMinimized;
 
     /// <summary>测试用：最近一次写进活动胶囊的前端操作结果。</summary>
-    internal string? LastNotice { get; private set; }
+    internal string? LastNotice { get; set; }
 
     public void ReportNotice(string text) => LastNotice = text;
 

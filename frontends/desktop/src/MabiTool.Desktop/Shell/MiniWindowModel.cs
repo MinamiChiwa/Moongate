@@ -8,17 +8,16 @@ using MabiTool.Desktop.Theme;
 
 namespace MabiTool.Desktop.Shell;
 
-/// <summary>迷你窗的一张乐谱磁贴。标题是游戏原文；不能选的磁贴显示原因。</summary>
+/// <summary>迷你窗的一张乐谱磁贴。标题是游戏原文，下方是来源与时长（乐器在演奏队列里指定）；不能选的磁贴显示原因。</summary>
 public sealed record MiniScoreTile(ScoreRow Row, bool Selected)
 {
     public string Id => Row.Id;
     public string Title => Row.Title;
-    public string Meta => $"{Row.Instrument} · {Row.Length}";
+    public string Meta => Row.Source.Length == 0 ? Row.Length : $"{Row.Source} · {Row.Length}";
     public string Tag => Row.Tag;
     public bool HasTag => Row.Tag.Length > 0;
     public bool Selectable => Row.Selectable;
     public bool Playing => Row.Playing;
-    public string? InstrumentId => Row.InstrumentId;
 }
 
 /// <summary>
@@ -73,11 +72,26 @@ public sealed class MiniWindowModel : BackendPageModel<MusicPageData>
 
     /// <summary>
     /// 开始演奏、下一首与停止会让后端在游戏里执行；<c>performance.play</c> 标为不可用时停用，
-    /// 其余状态（可用、降级、未知、没有该编号、未连接）沿用页面数据。
+    /// 其余状态（可用、降级、未知、没有该编号、未连接）沿用页面数据。所选乐谱或队列首项是玩家自制乐谱时开始演奏另行停用
+    /// （游戏连接器不能播放玩家自制乐谱，<see cref="StartHint"/> 写明原因）；可演奏性未知时不停用。
     /// </summary>
-    public bool CanStart => Data.Actions.CanStart && !HasCapabilityNotice;
+    public bool CanStart => Data.Actions.CanStart && !HasCapabilityNotice && !StartBlockedByScore;
     public bool CanNext => Data.Actions.CanNext && !HasCapabilityNotice;
     public bool CanStop => Data.Actions.CanStop && !HasCapabilityNotice;
+
+    // 队列里将要开始演奏的一项：标为当前的一首，没有时取第一首。
+    private QueueRow? QueueHead => Current ?? Data.Queue.FirstOrDefault();
+
+    /// <summary>所选乐谱或队列首项是玩家自制乐谱。</summary>
+    public bool StartBlockedByScore =>
+        Selected is { Support: ScoreSupportState.UserComposed } || QueueHead is { Support: ScoreSupportState.UserComposed };
+
+    /// <summary>“开始演奏”的悬浮提示（含停用状态下）：玩家自制乐谱不能经连接器演奏；没有时为空，不显示提示。</summary>
+    public string? StartHint => StartBlockedByScore ? ScoreSupportView.UserComposedTip : null;
+
+    /// <summary>演奏会话最近一次错误的说明（原因码经共用映射，未收录的原样显示）；没有时为空。</summary>
+    public string PlayError => Data.PlayError is { Length: > 0 } code ? CodeText.TryReason(code, out var text) ? text : code : string.Empty;
+    public bool HasPlayError => PlayError.Length > 0;
 
     /// <summary>所选清单的名称；没有选清单时是“全部乐谱”。</summary>
     public string ListName => Data.Playlists.FirstOrDefault(item => item.Selected)?.Name ?? UiText.Pick("全部乐谱", "全部樂譜");

@@ -652,6 +652,9 @@ public sealed partial class SqliteStore : IAsyncDisposable
                 if (snapshot.Kind == "color.search")
                     snapshot = snapshot with { Result = JsonSerializer.SerializeToElement(OperationStore.CloseColor(OperationStore.ReadColor(previous),
                         "interrupted", "backend-restarted") with { Revision = snapshot.Revision }, ContractJson.Options) };
+                if (snapshot.Kind == OperationStore.FishingKind)
+                    snapshot = snapshot with { Result = JsonSerializer.SerializeToElement(OperationStore.CloseFishing(OperationStore.ReadFishing(previous),
+                        "interrupted", "backend-restarted", snapshot.Timestamps.CompletedAt!.Value) with { Revision = snapshot.Revision }, ContractJson.Options) };
                 SaveOperation(tx, snapshot);
                 tx.Execute("UPDATE core_module_configuration SET pending_operation=NULL WHERE pending_operation=$id", ("$id", snapshot.Id));
                 return true;
@@ -660,6 +663,7 @@ public sealed partial class SqliteStore : IAsyncDisposable
             {
                 // 启动时按保留条数裁剪寻色历史：覆盖刚中断的运行，以及升级前已超出条数的旧记录。
                 await WriteAsync(tx => OperationStore.PruneColorHistory(tx), cancellationToken);
+                await WriteAsync(tx => OperationStore.PruneFishingHistory(tx), cancellationToken);
                 return total;
             }
             total++;

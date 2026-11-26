@@ -65,6 +65,11 @@ public sealed class GitHubReleaseSource : IDisposable
     {
         "github.com", "api.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"
     };
+    /// <summary>只有读取更新说明时才放行：公开仓库文件的直链 <c>github.com/&lt;仓库&gt;/raw/&lt;标签&gt;/…</c> 跳转到这个主机。</summary>
+    internal const string RawHost = "raw.githubusercontent.com";
+    public const int MaximumNotesBytes = 128 * 1024;
+    private static readonly System.Text.RegularExpressions.Regex NotesPath =
+        new(@"\Adocs/release-notes-[0-9A-Za-z.+\-]{1,64}(\.zh-TW)?\.md\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     // 两种方式都以这些原因失败时，对用户而言就是连不上 GitHub。
     private static readonly HashSet<string> ConnectivityCodes = new(StringComparer.Ordinal)
     {
@@ -239,6 +244,45 @@ public sealed class GitHubReleaseSource : IDisposable
             return response.Content.Headers.ContentLength is { } length and > 0 ? length : throw new SourceResponseException("update.assetMetadataInvalid");
         }, cancellationToken, UpdateSourceKind.GithubDirect);
 
+    /// <summary>
+    /// 读取公开仓库发行标签下的更新说明文件（<c>docs/release-notes-&lt;版本&gt;[.zh-TW].md</c>）：请求 github.com 的 raw 直链，
+    /// 跟随跳转到 <c>raw.githubusercontent.com</c>，UTF-8 文本，不超过 <see cref="MaximumNotesBytes"/>。文件不存在（404）时返回空。
+    /// </summary>
+    public Task<string?> FetchRepositoryFileAsync(string repository, string tag, string path, CancellationToken cancellationToken = default)
+    {
+        ValidateRepository(repository);
+        if (!ValidTag(tag) || !NotesPath.IsMatch(path)) throw new UpdateSourceException("update.sourceUriInvalid", []);
+        var uri = new Uri($"https://github.com/{repository}/raw/{Uri.EscapeDataString(tag)}/{path}");
+        return WithRetryAsync<string?>(async token =>
+        {
+            using var response = await SendAsync(uri, "text/plain", token, allowRaw: true).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotFound) return null;
+            if (!response.IsSuccessStatusCode) throw ResponseError(response);
+            var bytes = await ReadBoundedAsync(response.Content, MaximumNotesBytes, token).ConfigureAwait(false);
+            try { return new UTF8Encoding(false, throwOnInvalidBytes: true).GetString(bytes).TrimStart('\uFEFF'); }
+            catch (DecoderFallbackException) { throw new SourceResponseException("update.releaseMetadataInvalid"); }
+        }, cancellationToken, UpdateSourceKind.GithubDirect);
+    }
+
+    /// <summary>读取发行的正文（REST API <c>releases/tags/&lt;标签&gt;</c> 的 <c>body</c>）；发行不存在或没有正文时返回空。</summary>
+    public Task<string?> FetchReleaseBodyAsync(string repository, string tag, CancellationToken cancellationToken = default)
+    {
+        ValidateRepository(repository);
+        if (!ValidTag(tag)) throw new UpdateSourceException("update.sourceUriInvalid", []);
+        return WithRetryAsync<string?>(async token =>
+        {
+            var uri = new Uri(ApiBase, $"repos/{repository}/releases/tags/{Uri.EscapeDataString(tag)}");
+            using var response = await SendAsync(uri, "application/vnd.github+json", token).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotFound) return null;
+            if (!response.IsSuccessStatusCode) throw ResponseError(response);
+            using var document = JsonDocument.Parse(await ReadBoundedAsync(response.Content, MaximumMetadataBytes, token).ConfigureAwait(false), JsonOptions);
+            return document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("body", out var body) &&
+                body.ValueKind == JsonValueKind.String && body.GetString() is { Length: > 0 } text ? text : null;
+        }, cancellationToken);
+    }
+
+    private static bool ValidTag(string tag) => tag.Length is > 1 and <= 128 && tag[0] == 'v' && ReleaseVersion.TryParse(tag[1..], out _);
+
     public static string ParseChecksum(string text, string assetName)
     {
         var lines = text.Split('\n').Select(line => line.TrimEnd('\r')).Where(line => line.Length > 0).ToArray();
@@ -306,11 +350,11 @@ public sealed class GitHubReleaseSource : IDisposable
     }
 
     private async Task<HttpResponseMessage> SendAsync(Uri uri, string accept, CancellationToken token, HttpMethod? method = null,
-        bool followRedirects = true)
+        bool followRedirects = true, bool allowRaw = false)
     {
         for (var redirects = 0; ; redirects++)
         {
-            EnsureGitHub(uri);
+            EnsureGitHub(uri, allowRaw);
             using var request = new HttpRequestMessage(method ?? HttpMethod.Get, uri);
             request.Headers.UserAgent.ParseAdd("Moongate-Update/1");
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(accept));
@@ -376,11 +420,12 @@ public sealed class GitHubReleaseSource : IDisposable
             value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.');
     }
 
-    internal static void EnsureGitHub(Uri uri)
+    internal static void EnsureGitHub(Uri uri, bool allowRaw = false)
     {
         if (uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo) || !uri.IsDefaultPort)
             throw new SourceResponseException("update.sourceUriInvalid");
-        if (!GitHubHosts.Contains(uri.Host)) throw new SourceResponseException("update.redirectHostRejected");
+        if (!GitHubHosts.Contains(uri.Host) && !(allowRaw && uri.Host.Equals(RawHost, StringComparison.OrdinalIgnoreCase)))
+            throw new SourceResponseException("update.redirectHostRejected");
     }
 
     public void Dispose() => client.Dispose();
@@ -397,7 +442,8 @@ public sealed class GitHubReleaseSource : IDisposable
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (request.RequestUri is not { } uri || uri.Scheme != Uri.UriSchemeHttps || !GitHubHosts.Contains(uri.Host))
+            if (request.RequestUri is not { } uri || uri.Scheme != Uri.UriSchemeHttps ||
+                !GitHubHosts.Contains(uri.Host) && !uri.Host.Equals(RawHost, StringComparison.OrdinalIgnoreCase))
                 throw new HttpRequestException("update.sourceHostRejected");
             return base.SendAsync(request, cancellationToken);
         }

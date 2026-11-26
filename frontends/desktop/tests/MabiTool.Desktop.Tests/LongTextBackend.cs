@@ -64,7 +64,7 @@ internal sealed class LongTextBackend : IDesktopBackend
 
     public Task<GameWindowActivation> ActivateGameWindowAsync(CancellationToken cancellationToken) => sample.ActivateGameWindowAsync(cancellationToken);
 
-    public Task<CaptureReply> CaptureScreenAsync(CancellationToken cancellationToken) => sample.CaptureScreenAsync(cancellationToken);
+    public Task<CaptureReply> CaptureScreenAsync(Avalonia.PixelRect region, CancellationToken cancellationToken) => sample.CaptureScreenAsync(region, cancellationToken);
 
     public Task ReleaseCaptureAsync(string captureId, CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -124,6 +124,26 @@ internal sealed class LongTextBackend : IDesktopBackend
         };
     }
 
+    // 清单管理层的长文字：很长的文件夹与清单名称、很长的备注与条目标题、没有绑定游戏时的编辑说明。
+    private static MusicListsView LongLists(MusicListsView lists)
+    {
+        const string longName = "名字非常非常長的自訂樂譜清單名稱測試用（含括號與全形標點、第二樂章）";
+        var items = new PlaylistItemRow[]
+        {
+            new("l1", "long", "標題非常非常長的樂譜：艾明馬夏月光下的遠征隊進行曲（完整合奏版・第二樂章）", "piano", "名稱很長的指定樂器（限定款）", false),
+            new("l2", "gone", "gone", null, "沿用清單", true)
+        };
+        var detail = new PlaylistDetail("long", longName, string.Join("\n", Enumerable.Repeat("很長的備註內容，用來檢查多行文字框與換行", 4)),
+            "folder-long", "名字非常非常長的資料夾名稱 / 第二層資料夾也很長很長", "piano", "名稱很長的預設樂器（限定款）", items);
+        return lists with
+        {
+            Folders = [.. lists.Folders, new("folder-long", "名字非常非常長的資料夾名稱", "名字非常非常長的資料夾名稱 / 第二層資料夾也很長很長", 1)],
+            Playlists = [.. lists.Playlists, detail],
+            Selected = detail,
+            EditBlocked = "後端沒有提供樂譜庫，曲庫的編輯暫時無法使用，請先連接後端並確認樂譜庫模組已啟用"
+        };
+    }
+
     public MusicPageData GetMusic()
     {
         var data = sample.GetMusic();
@@ -131,10 +151,11 @@ internal sealed class LongTextBackend : IDesktopBackend
         {
             Status = "31,200 張樂譜，來源狀態：上次同步在 2026/11/10 14:02，之後遊戲內的新增與刪除尚未讀取，請回到遊戲開啟樂譜欄後重新同步",
             Playlists = [.. data.Playlists, new("long", "名字非常非常長的自訂樂譜清單名稱測試用", "1,234 首，自訂封面，含備註", "#7C96FF", false)],
+            Lists = LongLists(data.Lists!),
             Scores =
             [
                 new("long", "標題非常非常長的樂譜：艾明馬夏月光下的遠征隊進行曲（完整合奏版・第二樂章）", "名稱結尾有空白，遊戲無法選取，請在遊戲內重新命名",
-                    "名字非常非常長的編曲者名稱", "名稱很長的指定樂器（限定款）", "1:23:45", false, false),
+                    "名字非常非常長的編曲者名稱", "1:23:45", false, false, Source: "自製樂譜", SourceKey: ScoreSources.Composed),
                 .. data.Scores
             ],
             Queue =

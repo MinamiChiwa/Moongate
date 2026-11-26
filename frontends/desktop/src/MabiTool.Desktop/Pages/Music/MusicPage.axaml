@@ -4,9 +4,38 @@
              xmlns:music="using:MabiTool.Desktop.Pages.Music"
              xmlns:controls="using:MabiTool.Desktop.Controls"
              xmlns:tables="using:MabiTool.Desktop.Controls.Tables"
+             xmlns:infra="using:MabiTool.Desktop.Infrastructure"
              x:Class="MabiTool.Desktop.Pages.Music.MusicPage"
              x:DataType="music:MusicPageModel"
              controls:Card.PageId="music">
+  <UserControl.Styles>
+    <!-- 乐谱来源标签与筛选圆点：游戏乐谱蓝、自制乐谱橙、导入青绿，其他来源灰；固定色调配白字，不随主题变化。 -->
+    <Style Selector="Border.srctag">
+      <Setter Property="Background" Value="{StaticResource ShellBrush}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="6,1" />
+    </Style>
+    <Style Selector="Border.srctag > TextBlock">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Border.srcdot">
+      <Setter Property="Background" Value="{StaticResource ShellBrush}" />
+      <Setter Property="Width" Value="8" />
+      <Setter Property="Height" Value="8" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="Border.srctag.game, Border.srcdot.game">
+      <Setter Property="Background" Value="#2A6FD6" />
+    </Style>
+    <Style Selector="Border.srctag.composed, Border.srcdot.composed">
+      <Setter Property="Background" Value="#C2410C" />
+    </Style>
+    <Style Selector="Border.srctag.imported, Border.srcdot.imported">
+      <Setter Property="Background" Value="#0E8C7D" />
+    </Style>
+  </UserControl.Styles>
   <Panel>
   <DockPanel>
     <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14">
@@ -37,6 +66,12 @@
       <!-- 卡片网格：乐谱两列宽、演奏队列一列宽，都随内容、同一行等高；顺序与尺寸档在“编辑布局”里调整。 -->
       <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
         <controls:Card x:Name="LibraryPanel" CardId="library" Title="{DynamicResource M.Library}" Size="TwoByAuto" AllowedSizes="FullWidth">
+          <controls:Card.Actions>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button x:Name="ListsButton" Classes="chip" Content="{DynamicResource M.ListsEntry}" Command="{Binding OpenListsCommand}"
+                      ToolTip.Tip="{DynamicResource M.ListsEntryHint}" />
+            </StackPanel>
+          </controls:Card.Actions>
           <StackPanel Spacing="14">
             <controls:SelectionBorder>
               <ItemsControl controls:StableItems.Source="{Binding Data.Playlists}">
@@ -64,6 +99,33 @@
               </ItemsControl>
             </controls:SelectionBorder>
 
+            <!-- 来源筛选：只在前端对已读到的乐谱再筛一次；“全部”之后是当前存在的来源，圆点颜色与名称前的来源标签一致。 -->
+            <DockPanel x:Name="SourceFilterRow" IsVisible="{Binding HasSourceFilters}">
+              <TextBlock DockPanel.Dock="Left" Classes="note" FontWeight="Bold" Margin="0,0,10,0" VerticalAlignment="Center"
+                         Text="{DynamicResource M.ColSource}" />
+              <controls:SelectionBorder>
+                <ItemsControl x:Name="SourceFilterList" controls:StableItems.Source="{Binding SourceFilters}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="music:SourceFilterChip">
+                      <Button Classes="chip" Classes.active="{Binding Selected}" Margin="0,0,8,0"
+                              Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).SourceFilterCommand}"
+                              CommandParameter="{Binding Key}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Border Classes="srcdot" VerticalAlignment="Center" IsVisible="{Binding HasDot}"
+                                  Classes.game="{Binding IsGameSource}" Classes.composed="{Binding IsComposedSource}"
+                                  Classes.imported="{Binding IsImportedSource}" />
+                          <TextBlock VerticalAlignment="Center" Text="{Binding Text}" />
+                        </StackPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </controls:SelectionBorder>
+            </DockPanel>
+
             <!-- 乐谱表分页，放在表头上方，不必滚过整页就能翻页；时长只为当前页查询。 -->
             <DockPanel x:Name="ScorePager" IsVisible="{Binding HasPages}">
               <Button x:Name="PreviousPageButton" DockPanel.Dock="Left" Classes="chip" Content="{DynamicResource M.PreviousPage}"
@@ -73,40 +135,47 @@
               <TextBlock Classes="note" Margin="8,0" TextAlignment="Center" VerticalAlignment="Center" Text="{Binding PageLabel}" />
             </DockPanel>
 
-            <!-- 通用表格：只含当前页的乐谱，排序、筛选与检索在当前页内进行；时长只为当前页查询。 -->
+            <!--
+              通用表格：只含当前页的乐谱，排序、筛选与检索在当前页内进行；时长只为当前页查询。
+              列为名称（前面是来源标签）、编曲、时长与操作，缺省宽度合计约 560 px：主窗口 1280×860 时表格可见宽度约 630 px（含滚动条槽位），整表在乐谱卡片内完整可见，名称列占满剩余宽度。
+              复制（Ctrl+C 与右键菜单）只复制所选各行的乐谱名。
+            -->
             <tables:DataTable x:Name="ScoreList" TableId="music.scores" ItemsSource="{Binding VisibleScores}"
-                              EmptyText="{DynamicResource M.NoScores}" BodyMaxHeight="560">
-              <tables:TableColumn Id="title" HeaderKey="M.ColTitle" Path="Title" Width="240" MinWidth="120" Fill="True" CanHide="False">
+                              EmptyText="{DynamicResource M.NoScores}" BodyMaxHeight="560"
+                              CopyColumnId="title" CopyLabel="{DynamicResource M.CopyScoreName}">
+              <tables:TableColumn Id="title" HeaderKey="M.ColTitle" Path="Title" Width="200" MinWidth="160" Fill="True" CanHide="False">
                 <tables:TableColumn.CellTemplate>
                   <DataTemplate DataType="music:ScoreRow">
                     <StackPanel Margin="10,8" VerticalAlignment="Center">
-                      <TextBlock Classes="name" FontSize="16" FontWeight="Medium" Text="{Binding Title}" ToolTip.Tip="{Binding Title}" />
+                      <DockPanel>
+                        <Border DockPanel.Dock="Left" Classes="srctag" Margin="0,0,8,0" VerticalAlignment="Center" IsVisible="{Binding HasSource}"
+                                Classes.game="{Binding IsGameSource}" Classes.composed="{Binding IsComposedSource}"
+                                Classes.imported="{Binding IsImportedSource}">
+                          <TextBlock Text="{Binding Source}" />
+                        </Border>
+                        <TextBlock Classes="name" FontSize="16" FontWeight="Medium" VerticalAlignment="Center"
+                                   Text="{Binding Title}" ToolTip.Tip="{Binding Title}" />
+                      </DockPanel>
                       <TextBlock Classes="name" FontSize="12" Text="{Binding Tag}" IsVisible="{Binding HasTag}"
                                  Classes.unconfirmed="{Binding Playing}" Classes.muted="{Binding !Playing}" />
                     </StackPanel>
                   </DataTemplate>
                 </tables:TableColumn.CellTemplate>
               </tables:TableColumn>
-              <tables:TableColumn Id="arranger" HeaderKey="M.ColArranger" Path="Arranger" Width="130" />
-              <tables:TableColumn Id="instrument" HeaderKey="M.ColInstrument" Path="Instrument" Width="140">
-                <tables:TableColumn.CellTemplate>
-                  <DataTemplate DataType="music:ScoreRow">
-                    <DockPanel Margin="10,8" VerticalAlignment="Center">
-                      <controls:PackImage DockPanel.Dock="Left" Width="20" Height="20" Radius="6" Margin="0,0,6,0"
-                                          Kind="Instrument" Key="{Binding InstrumentId}" CollapseWhenEmpty="True" />
-                      <TextBlock Classes="name" VerticalAlignment="Center" Text="{Binding Instrument}" />
-                    </DockPanel>
-                  </DataTemplate>
-                </tables:TableColumn.CellTemplate>
-              </tables:TableColumn>
+              <tables:TableColumn Id="arranger" HeaderKey="M.ColArranger" Path="Arranger" Width="100" />
               <tables:TableColumn Id="length" HeaderKey="M.ColLength" Path="Length" Kind="Number" Width="90" />
-              <tables:TableColumn Id="enqueue" HeaderKey="M.Enqueue" Width="96" Sortable="False" Filterable="False">
+              <tables:TableColumn Id="actions" HeaderKey="M.ColActions" Width="168" Sortable="False" Filterable="False" CanHide="False">
                 <tables:TableColumn.CellTemplate>
                   <DataTemplate DataType="music:ScoreRow">
-                    <Button Classes="chip" Margin="8,6" HorizontalAlignment="Right" VerticalAlignment="Center"
-                            Content="{DynamicResource M.Enqueue}" IsEnabled="{Binding Selectable}"
-                            Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).IntentCommand}"
-                            CommandParameter="{Binding EnqueueIntent}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="8,6" HorizontalAlignment="Right" VerticalAlignment="Center">
+                      <Button Classes="chip" Tag="add-to-list" Content="{DynamicResource M.AddToList}" CommandParameter="{Binding Id}"
+                              IsEnabled="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.CanEdit}"
+                              ToolTip.Tip="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.EditNotice}" ToolTip.ShowOnDisabled="True" />
+                      <Button Classes="chip" Content="{DynamicResource M.Enqueue}" IsEnabled="{Binding Selectable}"
+                              ToolTip.Tip="{Binding Blocked}" ToolTip.ShowOnDisabled="True"
+                              Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).IntentCommand}"
+                              CommandParameter="{Binding EnqueueIntent}" />
+                    </StackPanel>
                   </DataTemplate>
                 </tables:TableColumn.CellTemplate>
               </tables:TableColumn>
@@ -121,21 +190,30 @@
           </controls:Card.Status>
           <StackPanel Spacing="12">
             <TextBlock Classes="note" Text="{DynamicResource M.NoQueue}" IsVisible="{Binding NoQueue}" />
-            <ItemsControl controls:StableItems.Source="{Binding Data.Queue}">
+            <!-- 每项的乐器选择：游戏当前乐器（不换）或乐器目录里的乐器；换乐器不可用或这一项正在演奏时停用，悬浮提示写明原因。 -->
+            <ItemsControl x:Name="QueueList" controls:StableItems.Source="{Binding QueueEntries}">
               <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="music:QueueRow">
-                  <Border Classes="listrow" Classes.current="{Binding Current}">
+                <DataTemplate DataType="music:QueueEntry">
+                  <Border Classes="listrow" Classes.current="{Binding Row.Current}">
                     <DockPanel>
-                      <TextBlock DockPanel.Dock="Left" Width="20" FontWeight="Bold" Text="{Binding Number}"
-                                 Classes.unconfirmed="{Binding Current}" Classes.muted="{Binding !Current}" />
+                      <TextBlock DockPanel.Dock="Left" Width="20" FontWeight="Bold" Text="{Binding Row.Number}"
+                                 Classes.unconfirmed="{Binding Row.Current}" Classes.muted="{Binding !Row.Current}" />
                       <Button DockPanel.Dock="Right" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
                               Content="{DynamicResource M.Remove}"
                               Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).IntentCommand}"
-                              CommandParameter="{Binding RemoveIntent}" />
-                      <TextBlock DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding Length}" />
+                              CommandParameter="{Binding Row.RemoveIntent}" />
+                      <TextBlock DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding Row.Length}" />
                       <StackPanel>
-                        <TextBlock Classes="name" FontWeight="Medium" Text="{Binding Title}" />
-                        <TextBlock Classes="note" Text="{Binding Note}" />
+                        <TextBlock Classes="name" FontWeight="Medium" Text="{Binding Row.Title}" />
+                        <Button Classes="chip" HorizontalAlignment="Left" Margin="0,4,0,0" Tag="queue-instrument"
+                                CommandParameter="{Binding Row.Id}" IsEnabled="{Binding CanPickInstrument}"
+                                ToolTip.Tip="{Binding InstrumentHint}" ToolTip.ShowOnDisabled="True">
+                          <DockPanel>
+                            <controls:PackImage DockPanel.Dock="Left" Width="16" Height="16" Radius="4" Margin="0,0,5,0"
+                                                Kind="Instrument" Key="{Binding Row.InstrumentId}" CollapseWhenEmpty="True" />
+                            <TextBlock Classes="name" MaxWidth="220" VerticalAlignment="Center" Text="{Binding Row.Note}" />
+                          </DockPanel>
+                        </Button>
                       </StackPanel>
                     </DockPanel>
                   </Border>
@@ -162,7 +240,7 @@
         </DockPanel>
         <ScrollViewer controls:EdgeFade.IsEnabled="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel Spacing="10">
-            <TextBlock x:Name="CapabilityNotice" Classes="body unconfirmed" FontWeight="Bold" Text="{Binding CapabilityNotice}"
+            <TextBlock x:Name="CapabilityNotice" Classes="body unconfirmed" FontWeight="Bold" TextWrapping="Wrap" Text="{Binding CapabilityNotice}"
                        IsVisible="{Binding HasCapabilityNotice}" />
             <DockPanel>
               <TextBlock DockPanel.Dock="Left" Classes="note" FontWeight="Bold" Margin="0,0,10,0" Text="{DynamicResource MW.NowPlaying}" />
@@ -170,6 +248,7 @@
                          ToolTip.Tip="{Binding Data.QueueSummary}" />
             </DockPanel>
             <TextBlock x:Name="CurrentTitle" Classes="name strong" FontSize="17" Text="{Binding CurrentTitle}" />
+            <TextBlock x:Name="PlayErrorText" Classes="note unconfirmed" Text="{Binding PlayError}" IsVisible="{Binding HasPlayError}" />
             <ItemsControl controls:StableItems.Source="{Binding Stages}" IsVisible="{Binding ShowStages}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
@@ -187,7 +266,8 @@
             <TextBlock Classes="note" Text="{Binding ActivityLine}" IsVisible="{Binding !ShowStages}" />
             <WrapPanel>
               <Button x:Name="StartButton" Classes="primary" Margin="0,0,8,8" Content="{DynamicResource M.Start}"
-                      Command="{Binding IntentCommand}" CommandParameter="music.start" IsEnabled="{Binding CanStart}" />
+                      Command="{Binding IntentCommand}" CommandParameter="music.start" IsEnabled="{Binding CanStart}"
+                      ToolTip.Tip="{Binding StartHint}" ToolTip.ShowOnDisabled="True" />
               <Button x:Name="NextButton" Margin="0,0,8,8" Content="{DynamicResource M.Next}"
                       Command="{Binding IntentCommand}" CommandParameter="music.next" IsEnabled="{Binding CanNext}" />
               <Button x:Name="StopButton" Margin="0,0,0,8" Content="{DynamicResource M.Stop}"
@@ -208,6 +288,170 @@
             </Border>
             <Border x:Name="QueueSettingsBox" Classes="inset" IsVisible="{Binding HasQueueSettings}">
               <ItemsControl controls:StableItems.Source="{Binding Data.QueueSettings}" />
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+  </Panel>
+
+  <!-- 管理清单：新建、重命名、排序、删除清单与文件夹；点外面或按 Esc 关闭，Tab 只在层内循环。 -->
+  <Panel x:Name="ListsLayer" IsVisible="{Binding IsListsOpen}" KeyDown="OnListsLayerKeyDown">
+    <Border Background="Transparent" PointerPressed="OnListsLayerOutsidePressed" />
+    <Border x:Name="ListsPanel" Classes="panel popup" Classes.open="{Binding IsListsOpen}" MaxWidth="520"
+            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14,56,14,14" KeyboardNavigation.TabNavigation="Cycle">
+      <DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+          <Button DockPanel.Dock="Right" x:Name="ListsLayerClose" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center"
+                  Content="{DynamicResource S.ClosePicker}" Command="{Binding CloseListsCommand}"
+                  AutomationProperties.Name="{DynamicResource S.ClosePicker}" />
+          <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="h2" FontSize="17" Text="{DynamicResource M.ListsTitle}" /><controls:HelpTip Text="{DynamicResource M.ListsHint}" /></StackPanel>
+        </DockPanel>
+        <ScrollViewer controls:EdgeFade.IsEnabled="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Spacing="10" Margin="4,2,4,8">
+            <TextBlock x:Name="ListsNotice" Classes="body unconfirmed" FontWeight="Bold" TextWrapping="Wrap" Text="{Binding Lists.EditNotice}"
+                       IsVisible="{Binding Lists.HasEditNotice}" />
+            <TextBlock x:Name="ListsMessage" Classes="note" TextWrapping="Wrap" Text="{Binding Lists.Message}" IsVisible="{Binding Lists.HasMessage}"
+                       Classes.unconfirmed="{Binding Lists.MessageIsError}" Classes.confirmed="{Binding !Lists.MessageIsError}" />
+
+            <Border Classes="inset">
+              <StackPanel Spacing="8">
+                <TextBlock Classes="note" FontWeight="Bold" Text="{DynamicResource M.ListsNew}" />
+                <TextBox x:Name="NewNameBox" Classes="field" Text="{Binding Lists.NewName}" MaxLength="200" IsEnabled="{Binding Lists.CanEdit}"
+                         PlaceholderText="{DynamicResource M.ListsNameHint}" AutomationProperties.Name="{DynamicResource M.ListsNameHint}" />
+                <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding Lists.TargetLabel}" />
+                <WrapPanel>
+                  <Button x:Name="CreatePlaylistButton" Classes="primary" Margin="0,0,8,0" Content="{DynamicResource M.ListsNewPlaylist}"
+                          Command="{Binding Lists.CreatePlaylistCommand}" IsEnabled="{Binding Lists.CanCreate}" />
+                  <Button x:Name="CreateFolderButton" Content="{DynamicResource M.ListsNewFolder}"
+                          Command="{Binding Lists.CreateFolderCommand}" IsEnabled="{Binding Lists.CanCreate}" />
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="inset">
+              <StackPanel Spacing="8">
+                <TextBlock Classes="note" FontWeight="Bold" Text="{DynamicResource M.ListsFolders}" />
+                <ItemsControl x:Name="FolderChoiceList" controls:StableItems.Source="{Binding Lists.FolderChoices}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="music:ChoiceRow">
+                      <Button Classes="chip" Classes.active="{Binding Selected}" Margin="{Binding Padding}"
+                              Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.SelectFolderCommand}" CommandParameter="{Binding Id}">
+                        <TextBlock Classes="name" MaxWidth="360" Text="{Binding Label}" ToolTip.Tip="{Binding Label}" />
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Spacing="8" IsVisible="{Binding Lists.HasFolder}">
+                  <TextBox x:Name="FolderNameBox" Classes="field" Text="{Binding Lists.FolderName}" MaxLength="200" IsEnabled="{Binding Lists.CanEdit}"
+                           AutomationProperties.Name="{DynamicResource M.ListsFolderName}" />
+                  <WrapPanel>
+                    <Button x:Name="RenameFolderButton" Margin="0,0,8,0" Content="{DynamicResource M.ListsRename}"
+                            Command="{Binding Lists.RenameFolderCommand}" IsEnabled="{Binding Lists.CanRenameFolder}" />
+                    <Button x:Name="DeleteFolderButton" Content="{Binding Lists.DeleteFolderLabel}"
+                            Command="{Binding Lists.DeleteFolderCommand}" IsEnabled="{Binding Lists.CanDeleteFolder}"
+                            ToolTip.Tip="{DynamicResource M.ListsDeleteFolderHint}" />
+                  </WrapPanel>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="inset">
+              <StackPanel Spacing="8">
+                <TextBlock Classes="note" FontWeight="Bold" Text="{DynamicResource M.ListsPlaylists}" />
+                <ItemsControl x:Name="PlaylistChoiceList" controls:StableItems.Source="{Binding Lists.PlaylistChoices}" IsVisible="{Binding Lists.HasPlaylists}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="music:ChoiceRow">
+                      <Button Classes="chip" Classes.active="{Binding Selected}"
+                              Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).SelectPlaylistCommand}" CommandParameter="{Binding Id}">
+                        <TextBlock Classes="name" MaxWidth="360" Text="{Binding Label}" ToolTip.Tip="{Binding Label}" />
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="note" Text="{DynamicResource M.ListsNoPlaylists}" IsVisible="{Binding !Lists.HasPlaylists}" />
+              </StackPanel>
+            </Border>
+            <TextBlock x:Name="NoPlaylistNote" Classes="note" TextWrapping="Wrap" Text="{DynamicResource M.ListsPickOne}" IsVisible="{Binding Lists.NoPlaylist}" />
+            <Border Classes="inset" IsVisible="{Binding Lists.HasPlaylist}">
+              <StackPanel Spacing="8">
+                <TextBlock Classes="name strong" FontSize="15" Text="{Binding Lists.PlaylistHeader}" />
+                <TextBlock Classes="note" Text="{Binding Lists.PlaylistSummary}" />
+                <TextBox x:Name="PlaylistNameBox" Classes="field" Text="{Binding Lists.PlaylistName}" MaxLength="200" IsEnabled="{Binding Lists.CanEdit}"
+                         AutomationProperties.Name="{DynamicResource M.ListsNameHint}" />
+                <Button x:Name="RenamePlaylistButton" HorizontalAlignment="Left" Content="{DynamicResource M.ListsSaveName}"
+                        Command="{Binding Lists.RenamePlaylistCommand}" IsEnabled="{Binding Lists.CanRename}" />
+                <TextBox x:Name="NotesBox" Classes="field" Text="{Binding Lists.Notes}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" MaxLength="4000"
+                         IsEnabled="{Binding Lists.CanEdit}" PlaceholderText="{DynamicResource M.ListsNotes}" AutomationProperties.Name="{DynamicResource M.ListsNotes}" />
+                <Button x:Name="SaveNotesButton" HorizontalAlignment="Left" Content="{DynamicResource M.ListsSaveNotes}"
+                        Command="{Binding Lists.SaveNotesCommand}" IsEnabled="{Binding Lists.CanSaveNotes}" />
+                <TextBlock Classes="note" FontWeight="Bold" Text="{DynamicResource M.ListsDefaultInstrument}" />
+                <ItemsControl x:Name="DefaultInstrumentList" controls:StableItems.Source="{Binding Lists.DefaultInstrumentChoices}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="music:ChoiceRow">
+                      <Button Classes="chip" Classes.active="{Binding Selected}"
+                              IsEnabled="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.CanEdit}"
+                              Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.SetDefaultInstrumentCommand}" CommandParameter="{Binding Id}">
+                        <TextBlock Classes="name" MaxWidth="360" Text="{Binding Label}" ToolTip.Tip="{Binding Label}" />
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="note" FontWeight="Bold" Text="{DynamicResource M.ListsMoveTo}" />
+                <ItemsControl x:Name="MoveChoiceList" controls:StableItems.Source="{Binding Lists.MoveChoices}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="music:ChoiceRow">
+                      <Button Classes="chip" Classes.active="{Binding Selected}"
+                              IsEnabled="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.CanEdit}"
+                              Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.MovePlaylistCommand}" CommandParameter="{Binding Id}">
+                        <TextBlock Classes="name" MaxWidth="360" Text="{Binding Label}" ToolTip.Tip="{Binding Label}" />
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button x:Name="DeletePlaylistButton" HorizontalAlignment="Left" Content="{Binding Lists.DeletePlaylistLabel}"
+                        Command="{Binding Lists.DeletePlaylistCommand}" IsEnabled="{Binding Lists.CanEdit}" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="inset" IsVisible="{Binding Lists.HasPlaylist}">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="note" FontWeight="Bold" Text="{DynamicResource M.ListsItems}" />
+                <TextBlock x:Name="NoItemsNote" Classes="note" Text="{DynamicResource M.ListsNoItems}" IsVisible="{Binding Lists.NoItems}" />
+                <ItemsControl x:Name="PlaylistItemList" controls:StableItems.Source="{Binding Lists.Items}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="music:PlaylistItemRow">
+                      <Border Classes="listrow">
+                        <DockPanel>
+                          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0" VerticalAlignment="Center">
+                            <Button Classes="chip" Content="{DynamicResource M.ListsItemUp}"
+                                    IsEnabled="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.CanEdit}"
+                                    Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.MoveItemUpCommand}" CommandParameter="{Binding Id}" />
+                            <Button Classes="chip" Content="{DynamicResource M.ListsItemDown}"
+                                    IsEnabled="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.CanEdit}"
+                                    Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.MoveItemDownCommand}" CommandParameter="{Binding Id}" />
+                            <Button Classes="chip" Content="{DynamicResource M.ListsItemRemove}"
+                                    IsEnabled="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.CanEdit}"
+                                    Command="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.RemoveItemCommand}" CommandParameter="{Binding Id}" />
+                          </StackPanel>
+                          <StackPanel>
+                            <TextBlock Classes="name" FontWeight="Medium" Text="{Binding Title}" ToolTip.Tip="{Binding Title}" Classes.muted="{Binding Missing}" />
+                            <Button Classes="chip" HorizontalAlignment="Left" Margin="0,4,0,0" Tag="item-instrument"
+                                    CommandParameter="{Binding Id}" ToolTip.Tip="{DynamicResource M.ListsItemInstrumentHint}"
+                                    IsEnabled="{Binding $parent[UserControl].((music:MusicPageModel)DataContext).Lists.CanEdit}">
+                              <TextBlock Classes="name" MaxWidth="260" Text="{Binding Instrument}" />
+                            </Button>
+                          </StackPanel>
+                        </DockPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
             </Border>
           </StackPanel>
         </ScrollViewer>

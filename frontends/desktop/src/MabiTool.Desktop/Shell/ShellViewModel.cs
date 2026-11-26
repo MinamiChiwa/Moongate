@@ -79,6 +79,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         Capture = backend.GetCaptureStatus();
         UpdateRelease = AvailableUpdate(backend);
         GamePicker = new GamePickerModel(backend);
+        Connector = new GameConnectorModel(backend, ownsRiskLayer: true);
+        UpdateConfirm = new UpdateConfirmModel(backend);
+        ShellRequests.UpdateDownloadRequested += UpdateConfirm.Open;
         NpcapGuide.Observe(Capture);
         ShellRequests.NpcapGuideRequested += NpcapGuide.Show;
         Select(selected);
@@ -100,7 +103,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             allExtensions.Add(new NavigationItem(module, SelectCommand));
         Sync(Extensions, allExtensions);
         Raise(nameof(HasExtensions));
-        if (selected.Module.Origin == ModuleOrigin.Extension && !current.Contains(selected.Module)) Select(DefaultEntry());
+        // 运行中登记的未实现模块（扩展列表随后端变化）同样进入“未实现模块”分组；内建模块都已实现时分组只由它们提供。
+        var pending = catalog.Modules.Where(m => m.Origin != ModuleOrigin.Shell && m.Pending).ToList();
+        allPending.RemoveAll(item => !pending.Contains(item.Module));
+        foreach (var module in pending.Where(module => allPending.All(item => item.Module != module)))
+            allPending.Add(new NavigationItem(module, SelectCommand));
+        Sync(PendingModules, allPending);
+        Raise(nameof(HasPending));
+        if (selected.Module.Origin == ModuleOrigin.Extension && !current.Contains(selected.Module) && !pending.Contains(selected.Module) ||
+            selected.Module.Pending && !pending.Contains(selected.Module)) Select(DefaultEntry());
     }
 
     /// <summary>模块注册表；主窗口借它把自己交给迷你窗，迷你窗据此回到主窗口。</summary>
@@ -272,6 +283,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>侧栏绑定卡打开的选择游戏窗口弹出层。</summary>
     public GamePickerModel GamePicker { get; }
 
+    /// <summary>侧栏“游戏连接器”状态胶囊、点开的弹出层与首次启用的风险确认窗口；设置页卡片另有同一模型的独立实例。</summary>
+    public GameConnectorModel Connector { get; }
+    /// <summary>设置页点“下载更新”后的确认窗口（版本、下载方式与大小、当前语言的更新说明）。</summary>
+    public UpdateConfirmModel UpdateConfirm { get; }
+
     /// <summary>持有输入的是已注册模块时显示模块名称，否则显示后端给出的说明。</summary>
     public string OwnerLine => OwnerModule is { } owner
         ? UiText.Pick($"{owner.Title.Current} 持有游戏输入", $"{owner.Title.Current} 持有遊戲輸入")
@@ -419,6 +435,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         backend.Changed -= OnBackendChanged;
         backend.ShortcutTriggered -= OnShortcutTriggered;
         ShellRequests.NpcapGuideRequested -= NpcapGuide.Show;
+        Connector.Dispose();
+        ShellRequests.UpdateDownloadRequested -= UpdateConfirm.Open;
+        UpdateConfirm.Dispose();
         SetWindowShown(false);
         // 关闭窗口时当前页面与保留的页面都退订，并释放它们持有的后端资源（例如取色用的冻结画面）。
         ReleasePages();
@@ -467,6 +486,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
         else if (!onlyChanges) Raise(nameof(UpdateLabel));
         GamePicker.OnBackendChanged();
+        UpdateConfirm.OnBackendChanged();
     }
 
     private void RaiseBackendState(ActivitySnapshot activity, BindingView binding, CaptureStatusView capture)

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using Avalonia;
 using Avalonia.Media.Imaging;
 using MabiTool.Client;
 using MabiTool.Contracts;
@@ -258,12 +259,12 @@ public sealed partial class LiveBackend
         _ => Localization.CodeText.Reason(code)
     };
 
-    public async Task<CaptureReply> CaptureScreenAsync(CancellationToken cancellationToken)
+    public async Task<CaptureReply> CaptureScreenAsync(PixelRect region, CancellationToken cancellationToken)
     {
         ScreenCapture? capture = null;
         var reply = await ReplyAsync(async (api, token) =>
         {
-            var metadata = await api.CaptureColorScreenAsync(token);
+            var metadata = await api.CaptureColorScreenAsync(new(new(region.X, region.Y, region.Width, region.Height)), token);
             // 画面分块读取，每块最多 256 KiB；读取失败时立即释放，不留冻结画面。
             try
             {

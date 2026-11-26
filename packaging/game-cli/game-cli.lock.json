@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "game-cli",
+  "fileName": "MabinogiMobile_CLI.exe",
+  "version": "0.1.0+b587207e73fabc7e8993d2e4d38c803f87e013f7",
+  "platform": "win-x64",
+  "sha256": "913a4c38a0275ced1b5925a2d8e14dbefb0595c045d2590e5c04295ca8748cc8",
+  "length": 2959360,
+  "source": "Mabinogi Mobile 游戏客户端自带的命令行工具，位于游戏安装目录根下，文件原样保存。",
+  "vendor": "Nexon / devCAT",
+  "copyright": "该文件的版权归 Nexon / devCAT 所有，不适用 Moongate 的 MIT 许可。Moongate 是非商业的爱好者项目，与 NEXON、devCAT 无关。",
+  "distribution": "随 Moongate 仓库（packaging/game-cli/）与发行包（components/game-cli/）分发，未修改该文件。",
+  "input": "仓库内的 packaging/game-cli/MabinogiMobile_CLI.exe 即打包输入，publish-backend.ps1 默认使用它；-CliExecutable 可指定另一份文件，同样按本登记核对文件名、长度与 SHA-256。"
+}

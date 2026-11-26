@@ -174,7 +174,7 @@
               <StackPanel x:Name="LiveBlock" Spacing="6" IsVisible="{Binding HasLive}">
                 <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Classes="h2" FontSize="17" Text="{DynamicResource G.LiveTitle}" /><controls:HelpTip Text="{DynamicResource G.LiveHint}" /></StackPanel>
                 <Border Classes="inset">
-                  <ScrollViewer x:Name="LiveScroller" MaxHeight="320" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                  <ScrollViewer x:Name="LiveScroller" Classes="room" MaxHeight="320" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl x:Name="LiveList" ItemsSource="{Binding LiveRows}" ItemTemplate="{StaticResource RecordTemplate}" />
                   </ScrollViewer>
                 </Border>

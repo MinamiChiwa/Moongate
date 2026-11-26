@@ -1,0 +1,494 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:life="using:MabiTool.Desktop.Pages.Life"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Pages.Life.LifePage"
+             x:DataType="life:LifePageModel"
+             controls:Card.PageId="life">
+  <!--
+    “生活”页：四层卡片（加工设施、制作、采集、总队列）与专注钓鱼卡片，放在与其他页相同的卡片网格里，可在“编辑布局”里调整顺序与尺寸档。
+    设施块按游戏加工设施界面的样子排：图标、名称、一排槽位圆点（已完成、加工中、已安排、空槽）、全部领取；
+    制作按设施分成小块，点按弹出配方菜单；采集按技能折叠，展开时才生成行；总队列卡片可拖动排序、改数量、删除，
+    开始、暂停/继续、停止当前与清空已完成固定在页面顶部的状态行之下。
+  -->
+  <UserControl.Styles>
+    <!-- 槽位圆点：不用按钮外框，只画圆与符号；空槽与已完成可以点按。 -->
+    <Style Selector="Button.slot">
+      <Setter Property="Width" Value="22" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <ContentPresenter Background="Transparent" Content="{TemplateBinding Content}" />
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.slot:pointerover Ellipse.dot">
+      <Setter Property="StrokeThickness" Value="2.5" />
+    </Style>
+    <Style Selector="Ellipse.dot">
+      <Setter Property="Width" Value="20" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="StrokeThickness" Value="1.5" />
+      <Setter Property="Fill" Value="Transparent" />
+      <Setter Property="Stroke" Value="{DynamicResource MutedBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.done">
+      <Setter Property="Fill" Value="{DynamicResource ConfirmedBrush}" />
+      <Setter Property="Stroke" Value="{DynamicResource ConfirmedBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.working">
+      <Setter Property="Fill" Value="{DynamicResource UnknownBrush}" />
+      <Setter Property="Stroke" Value="{DynamicResource UnknownBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.scheduled">
+      <Setter Property="Fill" Value="{DynamicResource TrackBrush}" />
+      <Setter Property="Stroke" Value="{DynamicResource UnknownBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.empty">
+      <Setter Property="StrokeDashArray" Value="2,2" />
+    </Style>
+    <Style Selector="TextBlock.dotglyph">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+    </Style>
+    <Style Selector="TextBlock.dotglyph.done">
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <!-- 设施块、制作小块、技能标题行、采集物与任务行共用的内嵌块外观；可点的块悬停时边框加深。 -->
+    <Style Selector="Border.lifetile">
+      <Setter Property="Background" Value="{DynamicResource InsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource InsetEdgeBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Padding" Value="10,8" />
+    </Style>
+    <Style Selector="Border.lifetile.running">
+      <Setter Property="BorderBrush" Value="{DynamicResource UnknownBrush}" />
+      <Setter Property="BorderThickness" Value="1.5" />
+    </Style>
+    <Style Selector="Border.lifetile.paused">
+      <Setter Property="BorderBrush" Value="{DynamicResource ErrorBrush}" />
+    </Style>
+    <Style Selector="Border.lifetile.finished">
+      <Setter Property="Opacity" Value="0.72" />
+    </Style>
+    <Style Selector="Button.lifetile">
+      <Setter Property="Background" Value="{DynamicResource InsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource InsetEdgeBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <!-- 整行宽的技能标题按钮与侧栏绑定卡一样不缩放（放大会超出卡片的裁切余量），悬停只换底色。 -->
+    <Style Selector="Window.motion Button.lifetile.wide /template/ Border#PART_Face">
+      <Setter Property="RenderTransform" Value="{x:Null}" />
+    </Style>
+    <Style Selector="Button.mini">
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Width" Value="26" />
+      <Setter Property="Height" Value="26" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="13" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.draghandle">
+      <Setter Property="Cursor" Value="SizeNorthSouth" />
+      <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Padding" Value="2,0,8,0" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+  </UserControl.Styles>
+
+  <UserControl.Resources>
+    <SolidColorBrush x:Key="LifeAccentBrush" Color="#4F9A3A" />
+    <!-- 虚拟化的列表：只为可见的行建立控件，自己限高滚动（总队列、二级菜单）。 -->
+    <ControlTemplate x:Key="VirtualList" TargetType="ItemsControl">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+      </ScrollViewer>
+    </ControlTemplate>
+  </UserControl.Resources>
+
+  <Panel>
+    <DockPanel>
+      <StackPanel DockPanel.Dock="Top" Margin="8,4,8,14" Spacing="6">
+        <!-- 标题行：标题之后紧跟卡片布局的编辑入口（各页同一位置）；右端留给窗口右上角的按钮。 -->
+        <DockPanel Margin="{DynamicResource TitleReserve}">
+          <TextBlock DockPanel.Dock="Left" Classes="h1" Margin="0" Text="{Binding Title}" />
+          <controls:CardGridEditBar Target="{Binding #CardsGrid}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="16,0,0,0" />
+        </DockPanel>
+        <WrapPanel>
+          <Button x:Name="RefreshAllButton" Classes="chip" Margin="0,0,12,4" Content="{Binding RefreshText}" Command="{Binding RefreshCommand}"
+                  IsEnabled="{Binding CanRead}" AutomationProperties.Name="{Binding RefreshText}" />
+          <TextBlock x:Name="StatusText" Classes="body muted" VerticalAlignment="Center" Margin="0,0,0,4" TextWrapping="Wrap" Text="{Binding StatusLine}" />
+        </WrapPanel>
+        <TextBlock x:Name="ConnectorHintText" Classes="note unconfirmed" TextWrapping="Wrap" Text="{Binding ConnectorHint}" IsVisible="{Binding HasConnectorHint}" />
+        <TextBlock x:Name="BlockedText" Classes="note unconfirmed" TextWrapping="Wrap" Text="{Binding Blocked}" IsVisible="{Binding HasBlocked}" />
+        <TextBlock x:Name="MessageText" Classes="note" TextWrapping="Wrap" Text="{Binding Message}" IsVisible="{Binding HasMessage}"
+                   Classes.error="{Binding MessageFailed}" />
+        <!-- 总队列的控制、执行中的花费与暂停原因固定在页面顶部，不随卡片顺序移动；任务列表与逐项编辑在“总队列”卡片里。 -->
+        <WrapPanel x:Name="QueueControls">
+          <TextBlock Classes="label" VerticalAlignment="Center" Margin="0,0,10,4" Text="{Binding QueueTitle}" />
+          <Button x:Name="QueueStartButton" Classes="primary" Margin="0,0,8,4" Content="{Binding StartText}" Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}" />
+          <Button x:Name="QueuePauseButton" Classes="chip" Margin="0,0,8,4" Content="{Binding PauseText}" Command="{Binding PauseCommand}" IsEnabled="{Binding CanPause}" />
+          <Button x:Name="QueueStopButton" Classes="stop" Margin="0,0,8,4" Content="{Binding StopCurrentText}" Command="{Binding StopCurrentCommand}"
+                  IsEnabled="{Binding CanStopCurrent}" />
+          <Button x:Name="QueueClearButton" Classes="chip" Margin="0,0,16,4" Content="{Binding ClearFinishedText}" Command="{Binding ClearFinishedCommand}"
+                  IsEnabled="{Binding CanClearFinished}" />
+          <TextBlock x:Name="QueueCostText" Classes="note" VerticalAlignment="Center" Margin="0,0,0,4" TextWrapping="Wrap" Text="{Binding CostLine}" IsVisible="{Binding HasCostLine}" />
+        </WrapPanel>
+        <Border x:Name="QueuePauseBanner" Classes="banner warning" IsVisible="{Binding HasQueuePause}">
+          <TextBlock x:Name="QueuePauseText" Classes="note" TextWrapping="Wrap" Text="{Binding QueuePause}" />
+        </Border>
+      </StackPanel>
+
+      <ScrollViewer x:Name="PageScroller" controls:EdgeFade.IsEnabled="True" Margin="-14,0,-14,0"
+                    VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <controls:CardGrid x:Name="CardsGrid" Margin="14,0,14,18">
+
+          <!-- 加工设施：每个设施一块，槽位圆点显示加工状态；“全部领取”始终显示，没有已完成项时停用并在悬停写明，点空槽弹出该设施的配方菜单。 -->
+          <controls:Card x:Name="FacilitiesCard" CardId="facilities" Title="{Binding FacilitiesTitle}" Size="FullWidth" AllowedSizes="TwoByAuto">
+            <controls:Card.Icon>
+              <controls:IconTile Slot="life.facility.other" Fallback="设" Accent="{StaticResource LifeAccentBrush}" />
+            </controls:Card.Icon>
+            <controls:Card.Status>
+              <TextBlock x:Name="FacilitiesStatusText" Classes="note" TextTrimming="CharacterEllipsis" Text="{Binding FacilitiesStatus}" />
+            </controls:Card.Status>
+            <StackPanel Spacing="8">
+              <WrapPanel>
+                <!-- 圆点图例：颜色与设施块里的圆点相同。 -->
+                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,4" VerticalAlignment="Center">
+                  <Ellipse Classes="dot done" Width="11" Height="11" VerticalAlignment="Center" />
+                  <TextBlock Classes="note" VerticalAlignment="Center" Text="{Binding LegendDone}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,4" VerticalAlignment="Center">
+                  <Ellipse Classes="dot working" Width="11" Height="11" VerticalAlignment="Center" />
+                  <TextBlock Classes="note" VerticalAlignment="Center" Text="{Binding LegendWorking}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,4" VerticalAlignment="Center">
+                  <Ellipse Classes="dot scheduled" Width="11" Height="11" VerticalAlignment="Center" />
+                  <TextBlock Classes="note" VerticalAlignment="Center" Text="{Binding LegendScheduled}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,20,4" VerticalAlignment="Center">
+                  <Ellipse Classes="dot empty" Width="11" Height="11" VerticalAlignment="Center" />
+                  <TextBlock Classes="note" VerticalAlignment="Center" Text="{Binding LegendEmpty}" />
+                </StackPanel>
+                <CheckBox x:Name="AutoCollectBox" Margin="0,0,0,4" Content="{Binding AutoCollectText}" ToolTip.Tip="{Binding AutoCollectTip}"
+                          IsChecked="{Binding AutoCollect, Mode=TwoWay}" />
+              </WrapPanel>
+              <ItemsControl x:Name="FacilityList" ItemsSource="{Binding Facilities}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="life:LifeFacilityTile">
+                    <Border Classes="lifetile" Width="250" Margin="0,0,10,10">
+                      <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                        <controls:IconTile Grid.RowSpan="2" Width="36" Height="36" Margin="0,0,10,0" VerticalAlignment="Top"
+                                           Slot="{Binding IconSlot}" Fallback="设" Accent="{Binding Accent}" />
+                        <TextBlock Grid.Column="1" Classes="name strong" TextTrimming="CharacterEllipsis" Text="{Binding Name}" ToolTip.Tip="{Binding Name}" />
+                        <TextBlock Grid.Column="1" Grid.Row="1" Classes="note" TextTrimming="CharacterEllipsis" Text="{Binding Subtitle}" ToolTip.Tip="{Binding Subtitle}" />
+                        <ItemsControl Grid.Row="2" Grid.ColumnSpan="2" Margin="0,8,0,0" ItemsSource="{Binding Dots}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="life:LifeSlotDot">
+                              <Button Classes="slot" Command="{Binding Command}" IsEnabled="{Binding Clickable}" ToolTip.Tip="{Binding Tip}"
+                                      AutomationProperties.Name="{Binding Tip}">
+                                <Panel>
+                                  <Ellipse Classes="dot" Classes.done="{Binding IsDone}" Classes.working="{Binding IsWorking}"
+                                           Classes.scheduled="{Binding IsScheduled}" Classes.empty="{Binding IsEmpty}" />
+                                  <TextBlock Classes="dotglyph" Classes.done="{Binding IsDone}" Text="{Binding Glyph}" />
+                                </Panel>
+                              </Button>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <DockPanel Grid.Row="3" Grid.ColumnSpan="2" Margin="0,6,0,0">
+                          <Button DockPanel.Dock="Right" Classes="chip" Content="{Binding CollectText}" Command="{Binding CollectCommand}"
+                                  IsEnabled="{Binding CollectEnabled}" ToolTip.Tip="{Binding CollectTip}" ToolTip.ShowOnDisabled="True"
+                                  AutomationProperties.Name="{Binding CollectText}" />
+                          <TextBlock Classes="note unconfirmed" VerticalAlignment="Center" Text="{Binding FullNote}" IsVisible="{Binding HasFullNote}" />
+                        </DockPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Classes="note" Text="{Binding FacilitiesEmpty}" IsVisible="{Binding HasFacilitiesEmpty}" />
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 制作：按制作设施分成小块，点按弹出该设施的配方菜单（成功率、材料持有/需要、次数）。 -->
+          <controls:Card x:Name="CraftCard" CardId="craft" Title="{Binding CraftTitle}" Size="FullWidth" AllowedSizes="TwoByAuto,OneByAuto">
+            <controls:Card.Icon>
+              <controls:IconTile Slot="life.craft.multi" Fallback="制" Accent="{StaticResource LifeAccentBrush}" />
+            </controls:Card.Icon>
+            <controls:Card.Status>
+              <TextBlock x:Name="CraftStatusText" Classes="note" TextTrimming="CharacterEllipsis" Text="{Binding CraftStatus}" />
+            </controls:Card.Status>
+            <StackPanel Spacing="8">
+              <TextBlock Classes="note unconfirmed" TextWrapping="Wrap" Text="{Binding CraftNote}" />
+              <ItemsControl x:Name="CraftList" ItemsSource="{Binding CraftGroups}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="life:LifeCraftTile">
+                    <Button Classes="lifetile" Width="200" Margin="0,0,10,10" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}">
+                      <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                        <controls:IconTile Grid.RowSpan="2" Width="32" Height="32" Margin="0,0,10,0" Slot="{Binding IconSlot}" Fallback="制" Accent="{Binding Accent}" />
+                        <TextBlock Grid.Column="1" Classes="name strong" TextTrimming="CharacterEllipsis" Text="{Binding Name}" ToolTip.Tip="{Binding Name}" />
+                        <TextBlock Grid.Column="1" Grid.Row="1" Classes="note" TextTrimming="CharacterEllipsis" Text="{Binding Summary}" />
+                      </Grid>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Classes="note" Text="{Binding CraftEmpty}" IsVisible="{Binding HasCraftEmpty}" />
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 采集：按生活技能分组，默认折叠，展开后每项可设目标数量加入队列；钓鱼类指向专注钓鱼卡片。 -->
+          <controls:Card x:Name="GatherCard" CardId="gather" Title="{Binding GatherTitle}" Size="TwoByAuto" AllowedSizes="FullWidth,OneByAuto">
+            <controls:Card.Icon>
+              <controls:IconTile Slot="life.skill.daily" Fallback="采" Accent="{StaticResource LifeAccentBrush}" />
+            </controls:Card.Icon>
+            <controls:Card.Status>
+              <TextBlock x:Name="GatherStatusText" Classes="note" TextTrimming="CharacterEllipsis" Text="{Binding GatherStatus}" />
+            </controls:Card.Status>
+            <StackPanel Spacing="6">
+              <ItemsControl x:Name="SkillList" ItemsSource="{Binding SkillGroups}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="life:LifeSkillGroup">
+                    <StackPanel Margin="0,0,0,6" Spacing="6">
+                      <Button Classes="lifetile wide" Command="{Binding ToggleCommand}" AutomationProperties.Name="{Binding Name}">
+                        <DockPanel>
+                          <TextBlock DockPanel.Dock="Left" Classes="name" Width="16" VerticalAlignment="Center" Text="{Binding Chevron}" />
+                          <controls:IconTile DockPanel.Dock="Left" Width="26" Height="26" Margin="0,0,10,0" Slot="{Binding IconSlot}" Fallback="采" Accent="{Binding Accent}" />
+                          <TextBlock DockPanel.Dock="Right" Classes="note unconfirmed" Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding IssueText}" IsVisible="{Binding HasIssue}" />
+                          <TextBlock DockPanel.Dock="Right" Classes="note" Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding CountText}" />
+                          <TextBlock Classes="name strong" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                        </DockPanel>
+                      </Button>
+                      <TextBlock Classes="note" Margin="12,0,0,0" TextWrapping="Wrap" Text="{Binding Reason}" IsVisible="{Binding HasReason}" />
+                      <ItemsControl ItemsSource="{Binding Items}" Margin="12,0,0,0" IsVisible="{Binding IsExpanded}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="life:LifeGatherRow">
+                            <Border Classes="lifetile" Width="230" Margin="0,0,8,8">
+                              <StackPanel Spacing="4">
+                                <TextBlock Classes="name strong" TextTrimming="CharacterEllipsis" Text="{Binding Name}" ToolTip.Tip="{Binding Name}" />
+                                <TextBlock Classes="note" Classes.unconfirmed="{Binding ToolProblem}" TextTrimming="CharacterEllipsis" Text="{Binding ToolText}"
+                                           ToolTip.Tip="{Binding ToolText}" />
+                                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding NotFishing}">
+                                  <TextBox Classes="field" Width="56" Text="{Binding CountText}" AutomationProperties.Name="{Binding Name}" />
+                                  <TextBlock Classes="label" VerticalAlignment="Center" Text="{Binding $parent[UserControl].((life:LifePageModel)DataContext).GatherCountLabel}" />
+                                  <Button Classes="chip" Content="{Binding $parent[UserControl].((life:LifePageModel)DataContext).AddText}" Command="{Binding AddCommand}"
+                                          CommandParameter="{Binding}" IsEnabled="{Binding CanAdd}" />
+                                </StackPanel>
+                                <Button Classes="chip" HorizontalAlignment="Left" IsVisible="{Binding Fishing}" Command="{Binding FishingCommand}"
+                                        Content="{Binding $parent[UserControl].((life:LifePageModel)DataContext).Fishing.Title}" />
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Classes="note" Text="{Binding GatherEmpty}" IsVisible="{Binding HasGatherEmpty}" />
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 专注钓鱼（原地）：能力不可用时开始按钮停用并写明原因；时长三个框留空为直到停止；运行与结束事实来自后端钓鱼状态。 -->
+          <controls:Card x:Name="FishingCard" CardId="fishing" Title="{Binding Fishing.Title}" Size="OneByAuto" AllowedSizes="HalfByAuto,FullWidth">
+            <controls:Card.Icon>
+              <controls:IconTile Slot="life.skill.fishing" Fallback="钓" Accent="{StaticResource LifeAccentBrush}" />
+            </controls:Card.Icon>
+            <StackPanel x:Name="FishingBlock" Spacing="6" DataContext="{Binding Fishing}" x:DataType="life:LifeFishingPanel">
+              <TextBlock x:Name="FishingConditionsText" Classes="note" TextWrapping="Wrap" Text="{Binding Conditions}" />
+              <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding Hint}" />
+              <TextBlock Classes="label" Text="{Binding DurationLabel}" />
+              <WrapPanel>
+                <TextBox x:Name="FishingHoursBox" Classes="field" Width="46" Margin="0,0,4,4" Text="{Binding Hours}" IsEnabled="{Binding CanEditDuration}"
+                         AutomationProperties.Name="{Binding HoursUnit}" />
+                <TextBlock Classes="label" VerticalAlignment="Center" Margin="0,0,6,4" Text="{Binding HoursUnit}" />
+                <TextBox x:Name="FishingMinutesBox" Classes="field" Width="46" Margin="0,0,4,4" Text="{Binding Minutes}" IsEnabled="{Binding CanEditDuration}"
+                         AutomationProperties.Name="{Binding MinutesUnit}" />
+                <TextBlock Classes="label" VerticalAlignment="Center" Margin="0,0,6,4" Text="{Binding MinutesUnit}" />
+                <TextBox x:Name="FishingSecondsBox" Classes="field" Width="46" Margin="0,0,4,4" Text="{Binding Seconds}" IsEnabled="{Binding CanEditDuration}"
+                         AutomationProperties.Name="{Binding SecondsUnit}" />
+                <TextBlock Classes="label" VerticalAlignment="Center" Margin="0,0,10,4" Text="{Binding SecondsUnit}" />
+              </WrapPanel>
+              <WrapPanel>
+                <Button x:Name="FishingStartButton" Classes="chip" Margin="0,0,8,4" Content="{Binding StartText}" Command="{Binding StartCommand}"
+                        IsEnabled="{Binding CanStart}" IsVisible="{Binding !IsRunning}" />
+                <Button x:Name="FishingStopButton" Classes="chip" Margin="0,0,8,4" Content="{Binding StopText}" Command="{Binding StopCommand}"
+                        IsEnabled="{Binding CanStop}" IsVisible="{Binding IsRunning}" />
+                <Button x:Name="FishingCancelButton" Classes="stop" Margin="0,0,0,4" Content="{Binding CancelText}" Command="{Binding CancelCommand}"
+                        IsEnabled="{Binding CanStop}" IsVisible="{Binding IsRunning}" />
+              </WrapPanel>
+              <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding DurationHint}" />
+              <TextBlock x:Name="FishingDurationErrorText" Classes="note error" TextWrapping="Wrap" Text="{Binding DurationError}" IsVisible="{Binding HasDurationError}" />
+              <TextBlock x:Name="FishingBlockedText" Classes="note unconfirmed" TextWrapping="Wrap" Text="{Binding StartBlocked}" IsVisible="{Binding HasStartBlocked}" />
+              <TextBlock x:Name="FishingMessageText" Classes="note" Classes.error="{Binding MessageFailed}" TextWrapping="Wrap" Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
+              <StackPanel x:Name="FishingRunPanel" Spacing="2" IsVisible="{Binding HasRun}">
+                <TextBlock x:Name="FishingPhaseText" Classes="body strong" TextWrapping="Wrap" Text="{Binding PhaseText}" />
+                <TextBlock x:Name="FishingElapsedText" Classes="note" TextWrapping="Wrap" Text="{Binding ElapsedText}" />
+                <TextBlock x:Name="FishingRoundsText" Classes="note" TextWrapping="Wrap" Text="{Binding RoundsText}" />
+                <TextBlock x:Name="FishingMissText" Classes="note unconfirmed" TextWrapping="Wrap" Text="{Binding MissText}" IsVisible="{Binding HasMiss}" />
+                <TextBlock x:Name="FishingReasonText" Classes="note unconfirmed" TextWrapping="Wrap" Text="{Binding ReasonNote}" IsVisible="{Binding HasReasonNote}" />
+                <TextBlock x:Name="FishingEndText" Classes="note" Classes.error="{Binding EndFailed}" TextWrapping="Wrap" Text="{Binding EndText}" IsVisible="{Binding HasEnd}" />
+              </StackPanel>
+            </StackPanel>
+          </controls:Card>
+
+          <!-- 总队列：已安排的任务按顺序执行；可拖动排序、改数量、删除。开始、暂停/继续、停止当前、清空已完成在页面顶部。 -->
+          <controls:Card x:Name="QueueCard" CardId="queue" Title="{Binding QueueTitle}" Size="FullWidth" AllowedSizes="TwoByAuto">
+            <controls:Card.Icon>
+              <controls:IconTile Slot="life.queue" Fallback="队" Accent="{StaticResource LifeAccentBrush}" />
+            </controls:Card.Icon>
+            <controls:Card.Status>
+              <TextBlock x:Name="QueueStateText" Classes="note" TextTrimming="CharacterEllipsis" Text="{Binding QueueState}"
+                         Classes.unconfirmed="{Binding QueuePaused}" />
+            </controls:Card.Status>
+            <StackPanel Spacing="8">
+              <TextBlock Classes="note" Text="{Binding QueueEmpty}" IsVisible="{Binding HasQueueEmpty}" TextWrapping="Wrap" />
+              <ItemsControl x:Name="TaskList" ItemsSource="{Binding Tasks}" MaxHeight="440" Template="{StaticResource VirtualList}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="life:LifeTaskRow">
+                    <Border Classes="lifetile" Classes.running="{Binding IsRunning}" Classes.paused="{Binding IsPausedHere}" Classes.finished="{Binding IsFinished}"
+                            Margin="0,0,0,6">
+                      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                        <TextBlock Classes="draghandle" Text="≡" IsVisible="{Binding CanMove}" ToolTip.Tip="{Binding $parent[UserControl].((life:LifePageModel)DataContext).DragTip}" />
+                        <controls:IconTile Grid.Column="1" Width="28" Height="28" Margin="0,0,10,0" VerticalAlignment="Top" Slot="{Binding IconSlot}" Fallback="务"
+                                           Accent="{Binding Accent}" />
+                        <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+                          <TextBlock Classes="name strong" TextTrimming="CharacterEllipsis" Text="{Binding Title}" ToolTip.Tip="{Binding Title}" />
+                          <TextBlock Classes="note" TextTrimming="CharacterEllipsis" Text="{Binding Subtitle}" IsVisible="{Binding HasSubtitle}" />
+                          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ShowProgress}">
+                            <controls:MeterBar Width="120" VerticalAlignment="Center" Value="{Binding Progress}" Fill="{DynamicResource ConfirmedBrush}" Track="{DynamicResource TrackBrush}" />
+                            <TextBlock Classes="note" Text="{Binding ProgressText}" />
+                          </StackPanel>
+                          <TextBlock Classes="note" Classes.unconfirmed="{Binding IsFailed}" TextWrapping="Wrap" Text="{Binding Result}" IsVisible="{Binding HasResult}" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="3" Classes="note" Margin="8,0" VerticalAlignment="Center" Text="{Binding StateText}"
+                                   Classes.unconfirmed="{Binding IsPausedHere}" />
+                        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                          <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding CanEdit}">
+                            <Button Classes="mini" Content="−" Command="{Binding MinusCommand}" ToolTip.Tip="{Binding $parent[UserControl].((life:LifePageModel)DataContext).MinusTip}" />
+                            <TextBox Classes="field countbox" Width="48" Text="{Binding CountText}" AutomationProperties.Name="{Binding Title}" />
+                            <Button Classes="mini" Content="+" Command="{Binding PlusCommand}" ToolTip.Tip="{Binding $parent[UserControl].((life:LifePageModel)DataContext).PlusTip}" />
+                          </StackPanel>
+                          <Button Classes="mini" Content="↑" Command="{Binding UpCommand}" IsEnabled="{Binding CanUp}" IsVisible="{Binding CanMove}" ToolTip.Tip="{Binding $parent[UserControl].((life:LifePageModel)DataContext).UpTip}" />
+                          <Button Classes="mini" Content="↓" Command="{Binding DownCommand}" IsEnabled="{Binding CanDown}" IsVisible="{Binding CanMove}" ToolTip.Tip="{Binding $parent[UserControl].((life:LifePageModel)DataContext).DownTip}" />
+                          <Button Classes="mini" Content="✕" Command="{Binding RemoveCommand}" IsVisible="{Binding CanRemove}" ToolTip.Tip="{Binding $parent[UserControl].((life:LifePageModel)DataContext).RemoveTip}" />
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </controls:Card>
+        </controls:CardGrid>
+      </ScrollViewer>
+    </DockPanel>
+
+    <!--
+      二级菜单：加工空槽的配方或制作设施的配方；打开时才生成，焦点落在搜索框，点外面、Esc 或“关闭”收起。
+      外框按窗口可用空间取宽高（上限 560×600），不随可见行变化：滚动与搜索过滤时尺寸不变，列表占满标题与搜索框以下的空间；
+      顶部留出窗口右上角按钮的位置。
+    -->
+    <Panel x:Name="PickerLayer" IsVisible="{Binding PickerOpen}">
+      <Border Background="Transparent" PointerPressed="OnPickerOutsidePressed" />
+      <Border x:Name="PickerPanel" Classes="panel popup" MaxWidth="560" MaxHeight="600" Margin="14,56,14,14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+              KeyboardNavigation.TabNavigation="Cycle">
+        <DockPanel DataContext="{Binding Picker}" x:DataType="life:LifePicker">
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Button x:Name="PickerCloseButton" DockPanel.Dock="Right" Classes="chip" Margin="12,0,0,0"
+                    Content="{Binding $parent[UserControl].((life:LifePageModel)DataContext).CloseText}"
+                    Command="{Binding $parent[UserControl].((life:LifePageModel)DataContext).ClosePickerCommand}" />
+            <TextBlock x:Name="PickerTitleText" Classes="h2" FontSize="17" TextWrapping="Wrap" Text="{Binding Title}" />
+          </DockPanel>
+          <TextBox x:Name="PickerSearchBox" DockPanel.Dock="Top" Classes="field" Margin="0,0,0,8" Text="{Binding Search}"
+                   PlaceholderText="{Binding $parent[UserControl].((life:LifePageModel)DataContext).PickerSearchHint}"
+                   AutomationProperties.Name="{Binding $parent[UserControl].((life:LifePageModel)DataContext).PickerSearchHint}" />
+          <TextBlock DockPanel.Dock="Top" Classes="note unconfirmed" Margin="0,0,0,8" TextWrapping="Wrap" Text="{Binding Note}" IsVisible="{Binding HasNote}" />
+          <TextBlock x:Name="PickerEmptyText" DockPanel.Dock="Top" Classes="note" TextWrapping="Wrap" Text="{Binding EmptyText}" IsVisible="{Binding HasEmpty}" />
+          <ItemsControl x:Name="PickerList" ItemsSource="{Binding Items}" Template="{StaticResource VirtualList}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="life:LifePickRow">
+                <Border Classes="lifetile" Margin="0,0,0,6">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="name strong" TextWrapping="Wrap" Text="{Binding Name}" />
+                      <TextBlock Classes="note" Classes.unconfirmed="{Binding StatusProblem}" TextWrapping="Wrap" Text="{Binding Status}" />
+                      <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding Materials}" IsVisible="{Binding HasMaterials}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="10,0,0,0" VerticalAlignment="Center">
+                      <TextBox Classes="field" Width="52" Text="{Binding CountText}" IsEnabled="{Binding CanAdd}" AutomationProperties.Name="{Binding Name}" />
+                      <TextBlock Classes="label" VerticalAlignment="Center" Text="{Binding CountLabel}" />
+                      <Button Classes="chip" Content="{Binding $parent[UserControl].((life:LifePageModel)DataContext).AddText}" Command="{Binding AddCommand}"
+                              CommandParameter="{Binding}" IsEnabled="{Binding CanAdd}" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </DockPanel>
+      </Border>
+    </Panel>
+
+    <!-- 确认：开始或继续队列（逐项花费与整队上限）、运行中加入任务、开始专注钓鱼；确认后才向后端发出。 -->
+    <Panel x:Name="ConfirmLayer" IsVisible="{Binding ConfirmOpen}" KeyDown="OnConfirmKeyDown">
+      <Border Background="Transparent" PointerPressed="OnConfirmOutsidePressed" />
+      <Border x:Name="ConfirmPanel" Classes="panel popup" Classes.open="{Binding ConfirmOpen}" MaxWidth="520" Padding="20"
+              HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14" KeyboardNavigation.TabNavigation="Cycle">
+        <StackPanel Spacing="10">
+          <TextBlock x:Name="ConfirmTitleText" Classes="h2" FontSize="17" TextWrapping="Wrap" Text="{Binding ConfirmTitle}" />
+          <ItemsControl x:Name="ConfirmLineList" ItemsSource="{Binding ConfirmLines}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <TextBlock Classes="body" Margin="0,2" TextWrapping="Wrap" Text="{Binding}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <CheckBox x:Name="RememberBox" Content="{Binding RememberText}" IsChecked="{Binding ConfirmRemember, Mode=TwoWay}" />
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button x:Name="ConfirmCancelButton" Classes="chip" Content="{Binding ConfirmCancelText}" Command="{Binding CancelCommand}" />
+            <Button x:Name="ConfirmOkButton" Classes="primary" Content="{Binding ConfirmOkText}" Command="{Binding ConfirmCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Panel>
+  </Panel>
+</UserControl>

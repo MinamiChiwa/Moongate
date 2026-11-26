@@ -108,9 +108,37 @@ public sealed class PresentationApiTests
         await using var host = await Host.Start(null); using var sdk = host.Sdk();
         var snapshot = await sdk.QueryPresentationAsync(new(["nearby", "environment"]));
         Assert.Empty(snapshot.Resources);
-        Assert.All(snapshot.Sources, source => { Assert.Equal(CapabilityStatus.Unavailable, source.Status.KnownValue); Assert.Equal("provider.unavailable", source.Reason); });
+        // 附近与环境的状态随游戏连接器：不支持连接器的宿主给出连接器的原因，不再固定为 provider.unavailable。
+        Assert.All(snapshot.Sources, source => { Assert.Equal(CapabilityStatus.Unavailable, source.Status.KnownValue); Assert.Equal("platform.unsupported", source.Reason); });
         Assert.Equal("unavailable", (await sdk.GetDesktopBridgeAsync()).State);
         Assert.Equal(snapshot.BackendEpoch, (await sdk.GetPresentationAsync()).BackendEpoch);
+    }
+
+    [Fact]
+    public async Task GameDataAndMarketQueriesOnAHostWithoutAConnectorReportReasonsInsteadOfValues()
+    {
+        await using var host = await Host.Start(null); using var sdk = host.Sdk();
+        var data = await sdk.QueryGameDataAsync(new(GameDataTopics.All));
+        Assert.Equal(host.App.Services.GetRequiredService<SystemInfo>().InstanceId, data.BackendEpoch);
+        Assert.All(new[] { data.Profile!.Status, data.Currencies!.Status, data.Missions!.Daily.Status, data.Missions.Weekly.Status, data.GrowthGuide!.Status,
+            data.Environment!.Status, data.Nearby!.Status }, status =>
+        {
+            Assert.Equal((GameDataSource.None, "platform.unsupported"), (status.Source.KnownValue!.Value, status.Reason));
+            Assert.Null(status.ReadAt);
+        });
+        Assert.Null(data.Profile!.Profile); Assert.Null(data.Currencies!.Items); Assert.Null(data.Nearby!.Players); Assert.Null(data.Missions!.Daily.Items);
+        var only = await sdk.QueryGameDataAsync(new(["environment"], true));
+        Assert.Null(only.Profile); Assert.NotNull(only.Environment);
+        Assert.Equal("request.invalid", (await Assert.ThrowsAsync<MabiToolApiException>(() => sdk.QueryGameDataAsync(new([])))).Problem!.Code);
+        Assert.Equal("request.invalid", (await Assert.ThrowsAsync<MabiToolApiException>(() => sdk.QueryGameDataAsync(new(["room"])))).Problem!.Code);
+
+        Assert.Equal("platform.unsupported", (await sdk.QueryGameMarketPricesAsync(new(["原木"]))).Reason);
+        Assert.Equal("gameCli.nameTooShort", (await sdk.QueryGameMarketPricesAsync(new(["木"]))).Reason);
+        Assert.Equal("platform.unsupported", (await sdk.QueryGameMarketPriceDetailAsync(new("原木", Quantity: 3))).Reason);
+        var valuation = await sdk.QueryGameMarketValuationAsync(new([new("原木", 3)]));
+        Assert.Equal(("platform.unsupported", GameMarketValuationState.Unread), (valuation.Reason, valuation.Rows[0].State.KnownValue!.Value));
+        Assert.Null(valuation.Rows[0].Total);
+        Assert.Equal("request.invalid", (await Assert.ThrowsAsync<MabiToolApiException>(() => sdk.QueryGameMarketPricesAsync(new()))).Problem!.Code);
     }
 
     [Trait("Category", "Desktop")]

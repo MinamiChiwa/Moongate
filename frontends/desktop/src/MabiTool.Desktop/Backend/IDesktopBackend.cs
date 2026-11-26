@@ -192,6 +192,9 @@ public partial interface IDesktopBackend
     /// <summary>保存完整的更新策略，带当前修订发送一次；失败原因显示在活动胶囊。</summary>
     Task<BackendReply> SaveUpdatePolicyAsync(UpdatePolicyView policy, CancellationToken cancellationToken);
 
+    /// <summary>当前可用更新的更新说明（简体、繁体各一份）；没有可用更新或读取失败时为空。</summary>
+    Task<UpdateNotesView?> LoadUpdateNotesAsync(CancellationToken cancellationToken) => Task.FromResult<UpdateNotesView?>(null);
+
     /// <summary>读取合奏本机设置（开始与停止按键、倒计时、时间偏移、结束方式等）。</summary>
     Task<RoomPreferencesReply> LoadRoomPreferencesAsync(CancellationToken cancellationToken);
 

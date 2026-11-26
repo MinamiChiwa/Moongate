@@ -48,7 +48,9 @@ public sealed class ShellModulesTests
         Assert.Equal("环境信息", environment.Name);
         Assert.Equal("提供游戏内时间、天气、频道与区域等环境信息", environment.Description);
         Assert.Equal("后端模块，没有前端页面", environment.Source);
-        Assert.Contains("台服数据来源待接入", environment.State);
+        // 环境信息已由游戏连接器提供（宿主登记为已实现），样本后端报告为可用。
+        Assert.StartsWith("可用", environment.State);
+        Assert.DoesNotContain("未实", environment.State);
         Assert.Contains(VisibleTexts(page), text => text == "提供游戏内时间、天气、频道与区域等环境信息");
         // 模块清单的多语言文字按界面语言选取，缺当前语言时取另一种中文，旧宿主没有时为空（卡片以标识显示）。
         Assert.Equal("游戏连接", ModuleText.Pick(new Dictionary<string, string> { ["zh-Hans"] = "游戏连接", ["zh-Hant"] = "遊戲連線" }));
@@ -110,11 +112,13 @@ public sealed class ShellModulesTests
     {
         var backend = new SampleBackend();
         var catalog = BuiltInModules.CreateCatalog(backend);
+        catalog.Register(new ModuleDescriptor("ext.pending", "未实现模块（示例）", "未", Colors.Gray, ModuleOrigin.BuiltIn, () => new PendingPage(), pending: true));
         UiText.Apply(Application.Current!, language);
         var model = new ModulesPageModel(backend, catalog);
-        var music = model.Cards.Single(card => card.Id == "music-library");
-        Assert.StartsWith(prefix, music.State);
-        Assert.All(model.Cards.Where(card => card.Id != "music-library"), card => Assert.DoesNotContain("未实现", card.State));
+        var pending = model.Cards.Single(card => card.Id == "ext.pending");
+        Assert.StartsWith(prefix, pending.State);
+        // 内建模块（含乐谱库）都已实现，不带“未实现”。
+        Assert.All(model.Cards.Where(card => card.Id != "ext.pending"), card => Assert.DoesNotContain("未实", card.State));
         model.Dispose();
     }
 

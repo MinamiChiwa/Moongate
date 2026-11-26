@@ -174,25 +174,31 @@ internal sealed class InventoryWireReader(byte[] body, InventoryWireSchema schem
     /// 按字段顺序读取根记录，只保留 <paramref name="selectFields"/> 选中的字段。未选中的字段因数据形状不符读取失败时停在该字段并返回已读部分
     /// （<paramref name="stoppedAt"/> 为该字段名），其后的字段视为未读；选中的字段读取失败仍抛出。
     /// 用于登录个人数据：台服 2026-11 构建里任务等字段的类型含客户端元数据看不出的未序列化成员，按元数据顺序读不到帧尾。
+    /// <paramref name="skippable"/> 选中的字段在此前已有另一个可跳过字段读通时，读取失败也停在该字段：客户端更新给某个库存域加了
+    /// 元数据与线上格式不符的成员时，之前的库存域照常可用。
     /// </summary>
-    public InventoryWireValue RootPrefix(string name, Func<string, bool> selectFields, out string? stoppedAt)
+    public InventoryWireValue RootPrefix(string name, Func<string, bool> selectFields, out string? stoppedAt, Func<string, bool>? skippable = null)
     {
         stoppedAt = null;
         var start = Offset;
         var record = schema.Type(name);
         var inherited = Value(record.Parent, 1, true);
         var result = inherited.Fields is null ? new Dictionary<string, InventoryWireValue>(StringComparer.Ordinal) : new(inherited.Fields, StringComparer.Ordinal);
+        var skippableRead = false;
         foreach (var (key, type) in record.Fields)
         {
             var fieldOffset = Offset;
             var wanted = selectFields(key);
+            // 可跳过字段错位后常以读过帧尾结束，与截断无法区分；帧按协议长度完整重组，因此对它不另判截断。
+            var skip = skippableRead && skippable?.Invoke(key) == true;
             try
             {
                 var value = Value(type, 1, wanted);
                 if (wanted && !result.TryAdd(key, value)) throw new InvalidDataException("inventory.fieldDuplicate");
+                if (skippable?.Invoke(key) == true) skippableRead = true;
             }
             // 帧被截断仍按整帧无效处理；只有数据形状与元数据不符时才停在该字段。
-            catch (InvalidDataException error) when (!wanted && !error.Message.EndsWith("inventory.bodyTruncated", StringComparison.Ordinal))
+            catch (InvalidDataException error) when (skip || !wanted && !error.Message.EndsWith("inventory.bodyTruncated", StringComparison.Ordinal))
             { stoppedAt = key; Offset = fieldOffset; break; }
             catch (InvalidDataException error) { throw new InvalidDataException(name + "." + key + "@" + fieldOffset + ": " + error.Message, error); }
         }

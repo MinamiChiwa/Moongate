@@ -181,6 +181,7 @@ public sealed partial class RoomSessionManager
         {
             var capabilities = entry.LocalInput?.Arm(new(true, Simulated(owner), false, false, offset, role, prepare.Mode, ChatDraftConfirmed: true), prepare.Mode)
                 ?? throw new OperationException("input.actionMappingUnavailable", "宿主尚未装配本地轮次输入");
+            await PrepareGameMusicAsync(entry, prepare.Mode, ct);
             await entry.Client.ConfigureInputAsync(capabilities.Simulation, capabilities.CanStart, capabilities.CanStop, offset, role, prepare.Mode,
                 capabilities.RoundTripMs, capabilities.ActivationMs);
             confirmed = true;
@@ -195,6 +196,36 @@ public sealed partial class RoomSessionManager
                 else { entry.Client.CancelLocalPreparations(); entry.Scheduler.CancelAll(); ReleaseReadiness(entry); }
             }
         }
+    }
+
+    /// <summary>
+    /// 合奏或独立演奏就绪时（连接器可用、本机不是模拟）：预热游戏乐谱列表，并按分配给本人的乐器（房间成员乐器，其次本机乐谱映射的乐器）
+    /// 在持有本轮活动租约的情况下换乐器；乐器不在背包、名称有歧义或游戏拒绝换乐器时本机无法就绪。连接器不可用时按原流程就绪。
+    /// </summary>
+    private async Task PrepareGameMusicAsync(Entry entry, string mode, CancellationToken ct)
+    {
+        if (inputPorts?.Music is not { Available: true } music || mode == "emote" || entry.LocalInput?.ActivityProof is not { } proof) return;
+        var self = entry.Client.Session?.MemberId;
+        var member = self is null || Field(entry.Client.Room, "members") is not { ValueKind: JsonValueKind.Array } rows ? default
+            : rows.EnumerateArray().FirstOrDefault(row => Text(row, "id") == self);
+        string? title; string? catalogInstrument;
+        lock (entry.ScoreGate)
+        {
+            title = entry.LocalScore is { State: "mapped", Score: { } mapped } ? mapped.Entry.RawTitle : null;
+            catalogInstrument = entry.LocalScore?.InstrumentId;
+        }
+        var wanted = Text(member, "instrument") is { Length: > 0 } text ? text
+            : catalogInstrument is null ? null : MabiTool.Modules.MusicLibrary.Domain.MusicLibraryEditor.InstrumentCatalog
+                .FirstOrDefault(x => x.Id == catalogInstrument)?.DisplayNames.GetValueOrDefault("zh-TW");
+        _ = await music.WarmAsync(title, ct);
+        var result = await music.PrepareInstrumentAsync(proof, wanted, ct);
+        if (result.ErrorCode is null) return;
+        throw new OperationException(result.ErrorCode, result.ErrorCode switch
+        {
+            "room.instrumentNotOwned" => "分配的乐器不在背包里",
+            "room.instrumentAmbiguous" => "分配的乐器名称有歧义，背包里有多件同名候选",
+            _ => "游戏没有换上分配的乐器"
+        }, result.GameCode is null ? null : new Dictionary<string, JsonElement> { ["gameCode"] = JsonSerializer.SerializeToElement(result.GameCode) });
     }
 
     private static JsonElement? Field(JsonElement? value, string name) => value is { ValueKind: JsonValueKind.Object } row &&

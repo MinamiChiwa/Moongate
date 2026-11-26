@@ -94,6 +94,12 @@ public sealed class WidgetPlacement
     public bool HideMonsterHealth { get; set; }
 
     /// <summary>
+    /// DPS 元件不显示徽章觉醒（版面页详情里的“觉醒监控”开关）。默认显示：只在关闭时写出，旧版面文件没有这个字段即显示。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool HideAwakening { get; set; }
+
+    /// <summary>
     /// 这个元件对底板与文字两组配色的覆盖（键见 <see cref="OverlayColors.WidgetKeys"/>，值为 #RRGGBB）；没有的项跟随整体配色。
     /// 只在有覆盖时写出，旧版面文件没有这个字段即全部跟随整体。
     /// </summary>
@@ -171,6 +177,8 @@ public sealed class OverlayLayoutStore
         this.path = path;
         var document = Load();
         Layouts = document.Layouts;
+        // 覆盖率元件已去掉：旧版面里的读取时移除，其他元件的位置不变，下次保存时不再写出。
+        foreach (var layout in Layouts) layout.Widgets.RemoveAll(widget => RemovedWidgets.Contains(widget.WidgetId));
         foreach (var widget in Layouts.SelectMany(layout => layout.Widgets)) widget.Normalize();
         Active = Layouts.FirstOrDefault(layout => layout.Id == document.ActiveId) ?? Layouts[0];
         HideFromCapture = document.HideFromCapture;
@@ -181,6 +189,9 @@ public sealed class OverlayLayoutStore
     }
 
     public static string DefaultPath => Infrastructure.DesktopFiles.File("overlay-layouts.json");
+
+    /// <summary>已去掉的内建元件：旧版面文件里有时读取时移除。</summary>
+    private static readonly HashSet<string> RemovedWidgets = new(StringComparer.Ordinal) { "combat.coverage" };
 
     public event EventHandler? Changed;
 
@@ -205,7 +216,7 @@ public sealed class OverlayLayoutStore
     /// <summary>整个浮窗共用的配色：只含改过的项（键见 <see cref="OverlayColors.Items"/>，值为 #RRGGBB），没有的项为原配色。各套版面共用。</summary>
     public Dictionary<string, string> Colors { get; private set; }
 
-    /// <summary>“徽章觉醒”“职业觉醒”的提示设置，两个收藏浮窗共用。改动后调用 <see cref="Commit"/>。</summary>
+    /// <summary>“徽章觉醒”的提示设置：觉醒监控浮窗与 DPS 元件的觉醒显示共用这一个实例，任一处改动另一处随即使用。改动后调用 <see cref="Commit"/>。</summary>
     public AwakeningSettings Awakening { get; }
 
     /// <summary>

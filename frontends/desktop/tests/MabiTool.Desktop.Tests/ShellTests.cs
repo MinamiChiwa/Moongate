@@ -114,7 +114,17 @@ public sealed class ShellTests
         LayoutProbe.SaveScreenshot(window, "combat-scrolled-760x600");
         window.Close();
 
-        var tall = LayoutProbe.Open(new SampleBackend(), 1280, 1100, "combat-observation");
+        // 默认尺寸 1280×860 下九个内建入口一屏放下：不滚动、不渐隐，最后一个入口完整在视口内。
+        var tall = LayoutProbe.Open(new SampleBackend(), 1280, 860, "combat-observation");
+        var fitting = tall.GetVisualDescendants().OfType<ScrollViewer>().Single(s => s.Name == "NavigationScroller");
+        var last = Nav(tall, "presentation");
+        var bottom = last.TranslatePoint(new Point(0, last.Bounds.Height), fitting)!.Value.Y;
+        Assert.True(fitting.Extent.Height <= fitting.Viewport.Height + 0.5 && bottom <= fitting.Viewport.Height,
+            $"九个内建入口放不下：内容 {fitting.Extent.Height}，视口 {fitting.Viewport.Height}，最后一个入口止于 {bottom}");
+        Assert.Null(fitting.OpacityMask);
+        // 窗口显示后再拉高，侧栏放得下时同样不出现渐隐。
+        tall.Height = 1300;
+        LayoutProbe.Settle();
         var roomy = tall.GetVisualDescendants().OfType<ScrollViewer>().Single(s => s.Name == "NavigationScroller");
         Assert.Null(roomy.OpacityMask);
         tall.Close();

@@ -13,6 +13,7 @@ from pefile import PEFormatError
 
 from .build_adapters import (BuildAdapter, BuildUnsupported, select_adapter, unity_layout_for,
                              register_located_unity)
+from .frame_verification import independently_verified
 from .il2cpp_discovery import Build
 from .managed_layout_contract import CONTRACT_ID, LAYOUTS
 
@@ -186,9 +187,8 @@ def enable_session_input(backend, baseline, observation, frames):
             or not isinstance(colors, list) or len(colors) not in (2, 3)
             or any(not isinstance(color,str) or not re.fullmatch('#[0-9A-F]{6}',color) for color in colors)
             or not isinstance(frames, list) or len(frames) != 2
-            or any(frame.get('screenshot_hex_verified') is not True
-                   or frame.get('screenshot_hex') != colors
-                   or frame.get('hex_source') != ['screenshot'] * len(colors) for frame in frames)):
+            # 每帧每卡由色码文字或色块核验，且至少一卡由文字核验（见 frame_verification）。
+            or any(not independently_verified(frame, colors) for frame in frames)):
         raise ValueError('Adaptive build requires passive model and independent screenshot HEX verification')
     backend._adaptive_input_session = (backend.adapter, identity, token)
 

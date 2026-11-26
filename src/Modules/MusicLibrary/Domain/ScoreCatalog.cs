@@ -4,7 +4,8 @@ using System.Text.Json;
 
 namespace MabiTool.Modules.MusicLibrary.Domain;
 
-public enum ScoreSourceKind { Inventory, ObservationSummary, ImportedMml, ImportedLibrary }
+/// <summary><c>GameList</c>：台服游戏连接器的 <c>get_music_scores</c> 列表（游戏提供的乐谱标题，没有物品实例标识）。</summary>
+public enum ScoreSourceKind { Inventory, ObservationSummary, ImportedMml, ImportedLibrary, GameList }
 public enum ScoreRefreshStatus { Complete, Partial, Failed }
 public enum ScoreAvailability { Present, Missing, Uncertain, Observed, Imported }
 
@@ -68,7 +69,7 @@ public static class ScoreCatalog
         var incoming = input.GroupBy(x => x.RawTitle, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
         var result = old.ToDictionary(x => x.Id, StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var fullInventory = status == ScoreRefreshStatus.Complete && scope.Kind == ScoreSourceKind.Inventory;
+        var fullInventory = status == ScoreRefreshStatus.Complete && scope.Kind is ScoreSourceKind.Inventory or ScoreSourceKind.GameList;
         foreach (var (title, rows) in incoming)
         {
             var prior = oldByTitle.GetValueOrDefault(title) ?? [];
@@ -115,9 +116,17 @@ public static class ScoreCatalog
 
     private static ScoreAvailability Positive(ScoreSourceKind kind) => kind switch
     {
-        ScoreSourceKind.Inventory => ScoreAvailability.Present,
+        ScoreSourceKind.Inventory or ScoreSourceKind.GameList => ScoreAvailability.Present,
         ScoreSourceKind.ObservationSummary => ScoreAvailability.Observed,
         _ => ScoreAvailability.Imported
+    };
+
+    /// <summary>条目在来源里的定位能力：导入的没有；游戏列表按标题定位；其余有稳定标识为 <c>stable-id</c>，没有为 <c>ambiguous</c>。</summary>
+    public static string Locator(ScoreSourceKind kind, string? stableSourceId) => kind switch
+    {
+        ScoreSourceKind.ImportedLibrary or ScoreSourceKind.ImportedMml => "none",
+        ScoreSourceKind.GameList => "title",
+        _ => stableSourceId is null ? "ambiguous" : "stable-id"
     };
 
     public static void ValidateScope(ScoreScope scope)

@@ -46,7 +46,11 @@ public sealed class InventoryProtocolObserver(string session, ObservationSource 
             {
                 Reset("inventory.awaitingIdentity", mono, utc); Generation = nextGeneration(); sequence = 0;
                 Emit(InventoryFrameKind.Invalidated, mono, utc, [], [], "inventory.awaitingIdentity");
-                pending = decoder.DecodeLogin(body); pendingAt = mono;
+                // 登录数据读不通时还没有等待中的数据，Reset 不会发帧：在这里发出失效帧，宿主日志才看得到解码失败。
+                try { pending = decoder.DecodeLogin(body); }
+                catch (Exception error) when (error is InvalidDataException or OverflowException or ArgumentException)
+                { Emit(InventoryFrameKind.Invalidated, mono, utc, [], [], "inventory.protocolInvalid"); return; }
+                pendingAt = mono;
                 ResolveByMaster(mono, utc); return;
             }
             if ((uint)code == layout.Protocol.Profile)

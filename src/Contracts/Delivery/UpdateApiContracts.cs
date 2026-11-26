@@ -37,3 +37,14 @@ public sealed record UpdateDownloadStatus(string PlanId, string ReleaseId, strin
     UInt64String VerifiedBytes, UInt64String? TotalBytes = null,
     OpenEnum<UpdateSourceKind>? Source = null, string? ComponentId = null,
     string? DownloadKind = null, string? FallbackReason = null);
+/// <summary>
+/// 一种界面语言的更新说明。<c>Language</c> 为 <c>zh-Hans</c> 或 <c>zh-Hant</c>；<c>Markdown</c> 是标题、列表、粗体与链接组成的正文
+/// （去掉发布脚本的注释标记，链接都是 http／https 绝对地址）；<c>Source</c> 为 <c>repository</c>（公开仓库发行标签下的
+/// <c>docs/release-notes-&lt;版本&gt;[.zh-TW].md</c>）或 <c>release</c>（GitHub Release 正文按语言切分）。
+/// </summary>
+public sealed record UpdateNotesEntry(string Language, string Markdown, string Source);
+/// <summary>
+/// 计划对应版本的更新说明，每种语言各一份；没有读到的语言不在 <c>Entries</c> 里，两种语言都没有时 <c>Entries</c> 为空，
+/// 界面写明未能读取更新说明、仍可下载。检查成功后由宿主取回并缓存在 <c>update/plans/&lt;计划&gt;.notes.json</c>，随计划回收。
+/// </summary>
+public sealed record UpdateReleaseNotes(string PlanId, string ReleaseId, IReadOnlyList<UpdateNotesEntry> Entries);

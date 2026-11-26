@@ -13,8 +13,10 @@
     <ProjectReference Include="../Modules/Rooms/MabiTool.Modules.Rooms.csproj" />
     <ProjectReference Include="../Modules/CombatObservation/MabiTool.Modules.CombatObservation.csproj" />
     <ProjectReference Include="../Modules/Inventory/MabiTool.Modules.Inventory.csproj" />
+    <ProjectReference Include="../Modules/Life/MabiTool.Modules.Life.csproj" />
     <ProjectReference Include="../Providers/Replay/MabiTool.Providers.Replay.csproj" />
     <ProjectReference Include="../Providers/TwObservation/MabiTool.Providers.TwObservation.csproj" />
+    <ProjectReference Include="../Providers/TwCli/MabiTool.Providers.TwCli.csproj" />
     <ProjectReference Include="../Contracts/MabiTool.Contracts.csproj" />
     <ProjectReference Include="../Platform.Windows/MabiTool.Platform.Windows.csproj" />
     <ProjectReference Include="../ModuleSdk/MabiTool.ModuleSdk.csproj" />

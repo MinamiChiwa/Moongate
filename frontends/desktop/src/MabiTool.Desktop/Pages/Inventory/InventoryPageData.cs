@@ -5,6 +5,7 @@ using MabiTool.Desktop.Backend;
 using MabiTool.Desktop.Controls.Tables;
 using MabiTool.Desktop.Infrastructure;
 using MabiTool.Desktop.Localization;
+using MabiTool.Desktop.Pages.Market;
 
 namespace MabiTool.Desktop.Pages.Inventory;
 
@@ -110,10 +111,13 @@ public sealed record CoverageRow(string Label, string State, bool Complete);
 /// </summary>
 public static class InventorySyncText
 {
-    public static string Status(bool connected, CaptureStatusView capture, InventoryWorkspace? workspace)
+    public static string Status(bool connected, CaptureStatusView capture, InventoryWorkspace? workspace, DateTimeOffset? now = null)
     {
         if (!connected) return UiText.Pick("未连接后端", "未連接後端");
-        var at = workspace?.LastObservedAt?.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        // 不是当天的同步时刻带上日期，免得把几天前的结果当成今天的。
+        var observed = workspace?.LastObservedAt?.ToLocalTime();
+        var today = (now ?? DateTimeOffset.Now).ToLocalTime().Date;
+        var at = observed?.ToString(observed.Value.Date == today ? "HH:mm:ss" : "MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
         if (workspace is { Current: true })
             return UiText.Pick($"已同步 {at}，随全局抓包自动更新", $"已同步 {at}，隨全域抓包自動更新")
                    + (workspace.Quality.KnownValue == ObservationQuality.Confirmed ? string.Empty : UiText.Pick("（部分类别不完整）", "（部分類別不完整）"));
@@ -127,10 +131,10 @@ public static class InventorySyncText
 /// <summary>
 /// 背包页数据。<see cref="Status"/> 是同步状态一行：背包随全局常驻抓包自动同步，没有开始/停止操作；
 /// 状态为未读取、同步中（等待游戏下发完整背包）、已同步（时间）或未同步（全局抓包未运行及原因）。
-/// <see cref="Summary"/> 是概况里角色行之后的固定行（道具种数，未读取时写“未读取”）；概况的角色与三项资源由页面模型按所选角色从 <see cref="Resources"/> 取。
+/// 背包页不设概况卡；货币在资源卡，主货币由页面模型按所选角色从 <see cref="Resources"/> 取。
 /// <see cref="Resources"/> 是资源视图换成的行（见 <see cref="InventoryResourceText"/>），后端未提供时为空。
 /// </summary>
-public sealed record InventoryPageData(string Status, IReadOnlyList<KeyValue> Summary,
+public sealed record InventoryPageData(string Status,
     IReadOnlyList<InventoryAccountOption> Accounts, string? AccountId, IReadOnlyList<InventoryCharacter> Characters,
     IReadOnlyList<InventoryPivotRow> Rows, IReadOnlyList<CoverageRow> Coverage, IReadOnlyList<KeyValue> Catalog,
     IReadOnlyList<InventoryResourceRow>? Resources = null, string? CurrentCharacterId = null);
@@ -148,6 +152,10 @@ public sealed record GroupToggle(string Id, string Label, bool Shown, ICommand C
 public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
 {
     private readonly InventoryNoteStore notes;
+    private readonly RelayCommand toggleGroup = null!;
+    private InventoryValuationView valuation = InventoryValuationView.Off;
+    private string? valuationBlocked;
+    private bool valuationReported;
     private string search = string.Empty;
     private IReadOnlyList<TableColumn> columns = [];
     private string columnKey = string.Empty;
@@ -158,12 +166,16 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
     public InventoryPageModel(IDesktopBackend backend, InventoryNoteStore? notes = null) : base(backend, source => source.GetInventory())
     {
         this.notes = notes ?? InventoryNoteStore.Shared;
-        ToggleGroupCommand = new RelayCommand(id =>
+        ToggleGroupCommand = toggleGroup = new RelayCommand(id =>
         {
-            if (id is string group) InventoryPreference.SetGroupShown(group, InventoryPreference.HiddenGroups.Contains(group));
-        });
+            if (id as string == InventoryPreference.ValuationGroup) InventoryPreference.SetValuationShown(!InventoryPreference.ValuationShown);
+            else if (id is string group) InventoryPreference.SetGroupShown(group, InventoryPreference.HiddenGroups.Contains(group));
+        }, id => id as string != InventoryPreference.ValuationGroup || InventoryPreference.ValuationShown || ValuationBlocked is null);
         this.notes.Changed += OnNotesChanged;
         InventoryPreference.Changed += OnPreferenceChanged;
+        InventoryPreference.ValuationChanged += OnValuationPreferenceChanged;
+        valuation = backend.GetInventoryValuation();
+        valuationBlocked = ValuationBlocked;
         // 上次选过的账号与后端当前所选不同时，请后端按它读取；后端没有这个账号时仍取默认账号。
         if (InventoryPreference.Account is { } saved && saved != Data.AccountId) Send("inventory.account", saved);
     }
@@ -173,16 +185,16 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
 
     public ICommand ToggleGroupCommand { get; }
 
-    // ---- 资源区：“账户资源”跟随账号下拉；“角色资源”按所选账户下的角色分开，默认当前登录角色。未读取的各组折叠。 ----
-    // 概况的金币、银币、魔族貢品与资源区读同一份 Data.Resources、跟随同一个所选角色；角色资源组不重复列出这三项。
+    // ---- 资源卡（货币的唯一位置）：主货币与“角色资源”按所选账户下的角色分开，默认当前登录角色；“账户资源”跟随账号下拉。未读取的各组折叠。 ----
+    // 主货币（金币、银币、魔族貢品）与其余资源读同一份 Data.Resources、跟随同一个所选角色；角色资源组不重复列出这三项。
     private bool unreadAccountExpanded, unreadCharacterExpanded;
     private string? resourceCharacter;
     private IEnumerable<InventoryResourceRow> AccountRows => (Data.Resources ?? []).Where(row => row.Account);
     private IEnumerable<InventoryResourceRow> CharacterRows => (Data.Resources ?? []).Where(row => !row.Account && !row.Summary && row.CharacterId == ResourceCharacter);
-    /// <summary>概况的三行（金币、银币、魔族貢品），始终三行；所选角色没有读数时为未读取。</summary>
-    public IReadOnlyList<InventoryResourceRow> SummaryResources => InventoryResourceText.Summary(Data.Resources ?? [], ResourceCharacter);
-    /// <summary>概况的角色行：资源区所选角色的名称，是当前登录角色时注明。</summary>
-    public string SummaryCharacter => Data.Characters.FirstOrDefault(c => c.Id == ResourceCharacter) is { } character
+    /// <summary>主货币的三项（金币、银币、魔族貢品），始终三项；所选角色没有读数时为未读取。</summary>
+    public IReadOnlyList<InventoryResourceRow> MainCurrencies => InventoryResourceText.Summary(Data.Resources ?? [], ResourceCharacter);
+    /// <summary>资源卡的角色：所选角色的名称，是当前登录角色时注明。</summary>
+    public string ResourceCharacterLabel => Data.Characters.FirstOrDefault(c => c.Id == ResourceCharacter) is { } character
         ? character.Name + (character.Id == Data.CurrentCharacterId ? UiText.Pick("（当前登录）", "（目前登入）") : string.Empty)
         : UiText.Pick("未读取", "未讀取");
     public bool HasResources => Data.Resources is { Count: > 0 };
@@ -205,7 +217,7 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
         resourceCharacter = value;
         foreach (var name in new[] { nameof(ResourceCharacter), nameof(ResourceCharacters), nameof(CharacterResources), nameof(UnreadCharacterResources),
                      nameof(UnreadCharacterResourcesText), nameof(HasUnreadCharacterResources), nameof(NoCharacterResources),
-                     nameof(SummaryResources), nameof(SummaryCharacter) }) Raise(name);
+                     nameof(MainCurrencies), nameof(ResourceCharacterLabel) }) Raise(name);
     });
     private ICommand? selectCharacter;
     public IReadOnlyList<InventoryResourceRow> CharacterResources => CharacterRows.Where(row => row.Observed).ToList();
@@ -267,7 +279,8 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
     [
         new(InventoryPreference.StorageGroup, UiText.Pick("角色保管箱", "角色保管箱"), !InventoryPreference.HiddenGroups.Contains(InventoryPreference.StorageGroup), ToggleGroupCommand),
         new(InventoryPreference.BackpackGroup, UiText.Pick("背包", "背包"), !InventoryPreference.HiddenGroups.Contains(InventoryPreference.BackpackGroup), ToggleGroupCommand),
-        new(InventoryPreference.SharedGroup, UiText.Pick("公共保管箱", "公共保管箱"), !InventoryPreference.HiddenGroups.Contains(InventoryPreference.SharedGroup), ToggleGroupCommand)
+        new(InventoryPreference.SharedGroup, UiText.Pick("公共保管箱", "公共保管箱"), !InventoryPreference.HiddenGroups.Contains(InventoryPreference.SharedGroup), ToggleGroupCommand),
+        new(InventoryPreference.ValuationGroup, UiText.Pick("估价", "估價"), InventoryPreference.ValuationShown, ToggleGroupCommand)
     ];
 
     /// <summary>搜索词在名称、类别、备注与乐谱的作曲、编曲里查找（不区分大小写）；只在已读取的行里筛，不改变后端数据。</summary>
@@ -283,7 +296,8 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
         get
         {
             var hidden = InventoryPreference.HiddenGroups;
-            var key = string.Join('\u0001', Data.Characters.Select(c => c.Id + "\u0002" + c.Name)) + "|" + string.Join(',', hidden.Order());
+            var key = string.Join('\u0001', Data.Characters.Select(c => c.Id + "\u0002" + c.Name)) + "|" + string.Join(',', hidden.Order())
+                + "|" + InventoryPreference.ValuationShown;
             if (key == columnKey) return columns;
             columnKey = key;
             return columns = BuildColumns(Data.Characters, hidden);
@@ -302,6 +316,71 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
 
     public string Note(InventoryPivotRow row) => notes.Get(Data.AccountId, row.TypeKey);
 
+    // ---- 估价（第三批）：估价开关打开且页面可见时后端才向交易所取价，每 60 秒更新；读不到价格时每格写原因，不显示 0。 ----
+
+    public bool ValuationOn => InventoryPreference.ValuationShown;
+
+    /// <summary>估价入口不可用的原因（桌面没连上后端，或能力 <c>market.prices</c> 不可用，指向“游戏连接器”胶囊）；可用时为空。</summary>
+    public string? ValuationBlocked => MarketAvailability.Of(Backend).Blocked;
+
+    /// <summary>同步状态行下方的一行：估价打开时是取价时刻与单位或读不到的原因，已有合计时接着写已估价项的合计；关闭而入口不可用时写明原因。</summary>
+    public string ValuationLine => ValuationOn
+        ? (valuation.HasStatus ? valuation.Status : UiText.Pick("估价：未读取", "估價：未讀取"))
+          + (valuation.Requested && valuation.Total.Length > 0 ? UiText.Pick(" · 合计 ", " · 合計 ") + valuation.Total : string.Empty)
+        : ValuationBlocked is { Length: > 0 } blocked ? UiText.Pick("估价：", "估價：") + blocked : string.Empty;
+    public bool HasValuationLine => ValuationLine.Length > 0;
+
+    /// <summary>估价合计：已估价项的合计，含无法估价的项时标“下限”。</summary>
+    public string ValuationTotal => valuation.Requested && valuation.Total.Length > 0 ? valuation.Total : UiText.Pick("未读取", "未讀取");
+
+    /// <summary>一行的估价格：乐谱实例与没有名称的行不上交易所（不适用）；其余按名称取估价结果，没有结果时为“未读取”。</summary>
+    public ValuationCell ValuationOf(InventoryPivotRow row) => row.Score is not null || row.RawName is not { Length: > 0 }
+        ? new(UiText.Pick("不适用", "不適用"), true, row.Score is not null ? UiText.Pick("乐谱不上交易所，不估价", "樂譜不上交易所，不估價") : UiText.Pick("没有道具名称，无法按名称取价", "沒有道具名稱，無法按名稱取價"))
+        : valuation.CellFor(row.RawName);
+
+    // 页面显示且估价打开时向后端报告可见处 inventory.valuation（成对按次数计）；页面切走、窗口关闭或估价关闭即停止取价。
+    private bool shownNow;
+
+    protected override void OnShownChanged(bool shown)
+    {
+        shownNow = shown;
+        SyncValuationSurface();
+    }
+
+    private void SyncValuationSurface()
+    {
+        var wanted = shownNow && InventoryPreference.ValuationShown;
+        if (wanted == valuationReported) return;
+        valuationReported = wanted;
+        Backend.SetSurfaceVisible("inventory.valuation", wanted);
+    }
+
+    private void OnValuationPreferenceChanged(object? sender, EventArgs e)
+    {
+        SyncValuationSurface();
+        valuation = Backend.GetInventoryValuation();
+        foreach (var name in new[] { nameof(Groups), nameof(Columns), nameof(Rows), nameof(ValuationOn), nameof(ValuationLine), nameof(HasValuationLine), nameof(ValuationTotal) })
+            Raise(name);
+    }
+
+    // 数据对象没变时，估价结果或估价入口的可用性变了照常重读并通知。
+    protected override bool OtherStateChanged()
+    {
+        var next = Backend.GetInventoryValuation();
+        var blocked = ValuationBlocked;
+        if (ReferenceEquals(next, valuation) && blocked == valuationBlocked) return false;
+        OnDataChanged();
+        return true;
+    }
+
+    protected override void OnDataChanged()
+    {
+        valuation = Backend.GetInventoryValuation();
+        valuationBlocked = ValuationBlocked;
+        toggleGroup.RaiseCanExecuteChanged();
+        Raise(nameof(Rows));
+    }
+
     /// <summary>背包窗口用的模型：同一后端、同一份备注。</summary>
     public InventoryPageModel Companion() => new(Backend, notes);
 
@@ -317,6 +396,10 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
             new() { Id = "total", HeaderKey = "I.ColTotal", Kind = ColumnKind.Number, Width = 96,
                 Value = row => R(row).Total.Text, Dim = row => R(row).Total.Dim }
         };
+        // 估价列：按名称向交易所取最低单价乘以持有数量；开关打开后才有，读不到价格时显示原因文字。
+        if (InventoryPreference.ValuationShown)
+            list.Add(new() { Id = "valuation", HeaderKey = "I.ColValuation", Kind = ColumnKind.Number, Width = 120,
+                Value = row => ValuationOf(R(row)).Text, Dim = row => ValuationOf(R(row)).Dim, ToolTip = row => ValuationOf(R(row)).Tip });
         if (!hidden.Contains(InventoryPreference.SharedGroup))
             list.Add(new() { Id = "shared", HeaderKey = "I.AccountStorage", Kind = ColumnKind.Number, Width = 112,
                 Value = row => R(row).Shared.Text, Dim = row => R(row).Shared.Dim });
@@ -346,6 +429,7 @@ public sealed class InventoryPageModel : BackendPageModel<InventoryPageData>
     {
         notes.Changed -= OnNotesChanged;
         InventoryPreference.Changed -= OnPreferenceChanged;
+        InventoryPreference.ValuationChanged -= OnValuationPreferenceChanged;
         base.Dispose();
     }
 

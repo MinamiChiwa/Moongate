@@ -308,7 +308,7 @@ public sealed class StateEventHub(SqliteStore? store, string epoch, TimeProvider
             storageOwner.ValueKind == JsonValueKind.String && storageOwner.GetString() == session.ClientId) &&
         (type is not ("room.session.changed" or "room.score-draft.changed" or "desktop.surface.changed") ||
             payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("owner", out var subject) && subject.ValueKind == JsonValueKind.String && subject.GetString() == session.ClientId) &&
-        (type is not ("operation.changed" or "performance.state.changed" or "music.playback-history.changed" or "music.import.committed" or "color.run.changed" or "room.import.committed" or "color.import.committed" or "room.preferences.changed" or "color.preferences.changed" or "combat.summary.changed" or "combat.effects.changed" or "combat.encounter.closed" or "combat.observation.degraded" or "combat.live.changed") || session.Owner ||
+        (type is not ("operation.changed" or "performance.state.changed" or "music.playback-history.changed" or "music.import.committed" or "color.run.changed" or "room.import.committed" or "color.import.committed" or "room.preferences.changed" or "color.preferences.changed" or "combat.summary.changed" or "combat.effects.changed" or "combat.encounter.closed" or "combat.observation.degraded" or "combat.live.changed" or "life.fishing.changed") || session.Owner ||
             payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("owner", out var owner) &&
             owner.ValueKind == JsonValueKind.String && (owner.GetString() == session.ClientId ||
                 type == "operation.changed" && payload.TryGetProperty("kind", out var kind) &&

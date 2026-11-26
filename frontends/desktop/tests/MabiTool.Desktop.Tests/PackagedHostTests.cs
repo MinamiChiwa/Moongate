@@ -39,6 +39,13 @@ public sealed class PackagedHostTests
             Assert.Equal(Path.Combine(components, "dotnet-runtime"), start.Environment["DOTNET_ROOT"]);
             Assert.Equal(new[] { "components" }, Directory.EnumerateFileSystemEntries(root).Select(path => Path.GetFileName(path)));
 
+            // 命令行工具只在包内有该组件文件时固定为包内路径。
+            Assert.DoesNotContain("MABITOOL_GAME_CLI_EXECUTABLE", first.Environment.Keys);
+            var gameCli = Path.Combine(components, "game-cli", "MabinogiMobile_CLI.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(gameCli)!);
+            File.WriteAllBytes(gameCli, []);
+            Assert.Equal(gameCli, PackagedHost.Plan([], toolRoot, desktop)!.Environment["MABITOOL_GAME_CLI_EXECUTABLE"]);
+
             Directory.CreateDirectory(Path.Combine(toolRoot, "bootstrap"));
             File.WriteAllText(Path.Combine(toolRoot, "bootstrap", "data-root.json"), "{}");
             Directory.CreateDirectory(Path.Combine(toolRoot, "runtime"));

@@ -96,6 +96,7 @@ public static class ApiErrors
         new("color.runInactive", 409, false), new("color.interactionConflict", 409, false),
         new("color.candidateUnavailable", 409, false), new("color.retryUnavailable", 409, false),
         new("capture.frameInvalid", 422, false), new("capture.sourceFailed", 503, true),
+        new("capture.regionTooLarge", 422, false), new("capture.regionOutsideDesktop", 409, false),
         new("color.previewTimeout", 503, true), new("color.paletteTimeout", 503, true),
         new("input.bindingChanged", 409, false), new("permission.missing", 403, false),
         new("gameBuild.incompatible", 422, false), new("worker.commandBusy", 409, true),
@@ -115,7 +116,7 @@ public static class ApiErrors
         new("storage.moduleEnabled", 409, false), new("storage.assetInUse", 409, false),
         new("storage.writeQueueFull", 503, true), new("storage.readCapacityExceeded", 503, true),
         new("storage.transactionBudgetExceeded", 503, true),
-        .. UpdateDefinitions(), .. ClientIconReasons.Definitions
+        .. UpdateDefinitions(), .. ClientIconReasons.Definitions, .. GameConnectorErrors.Definitions, .. LifeErrors.Definitions, .. LifeFishingErrors.Definitions
     ]);
 
     private static IEnumerable<ErrorDefinition> UpdateDefinitions()

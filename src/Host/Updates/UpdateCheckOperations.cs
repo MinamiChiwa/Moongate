@@ -11,7 +11,8 @@ namespace MabiTool.Host.Updates;
 /// <summary>检查与用户下载共享队列，只消费本次进程受理的任务；日历调度只发起检查。</summary>
 public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolicyStore policy,
     IUpdateCheckService checker, TimeProvider clock, IUpdateDownloadService? downloader = null,
-    IUpdateInstallService? installer = null, ResourceLeaseCoordinator? leases = null, LocalAuthService? auth = null) : BackgroundService
+    IUpdateInstallService? installer = null, ResourceLeaseCoordinator? leases = null, LocalAuthService? auth = null,
+    UpdateNotesService? notes = null) : BackgroundService
 {
     private readonly SemaphoreSlim admission = new(1, 1);
     private readonly SemaphoreSlim scheduleChanged = new(0, 1);
@@ -233,8 +234,10 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
             var settings = policy.Get();
             var next = policy.Schedule().NextAttemptAt;
             var waiting = settings.Policy.AutomaticChecks && next is { } due ? due - clock.GetUtcNow() : Timeout.InfiniteTimeSpan;
-            // 已到期但活动或维护阻挡时有界重试；未启用检查时只等待策略通知。
-            if (waiting != Timeout.InfiniteTimeSpan && waiting < TimeSpan.FromSeconds(30)) waiting = TimeSpan.FromSeconds(30);
+            // 已到期但被活动、维护或上一项任务阻挡时 30 秒后重试；尚未到期时等到到期时刻（启动后的第一次检查只隔几秒，
+            // 计时器比墙钟早几毫秒醒来也不再多等 30 秒）；未启用检查时只等待策略通知。
+            if (waiting != Timeout.InfiniteTimeSpan)
+                waiting = waiting <= TimeSpan.Zero ? TimeSpan.FromSeconds(30) : TimeSpan.FromMilliseconds(Math.Max(waiting.TotalMilliseconds, 50));
             using var wake = CancellationTokenSource.CreateLinkedTokenSource(token);
             var timer = Task.Delay(waiting, clock, wake.Token);
             var changed = scheduleChanged.WaitAsync(wake.Token);
@@ -246,7 +249,8 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
     }
 
     /// <summary>
-    /// 本机比对与下载大小在检查之外单独运行：启动时与每次检查成功后各做一次，在游戏资源或房间准备活动期间暂停也不阻塞检查与下载队列。
+    /// 更新说明的预取与本机比对、下载大小在检查之外单独运行：启动时与每次检查成功后各做一次，不阻塞检查与下载队列
+    /// （本机比对在游戏资源或房间准备活动期间暂停）。
     /// </summary>
     private async Task RunEstimatesAsync(CancellationToken token)
     {
@@ -255,11 +259,17 @@ public sealed class UpdateCheckOperations(OperationStore operations, UpdatePolic
             while (true)
             {
                 await estimateRequested.WaitAsync(token);
-                try { await checker.EstimateAsync(token); }
-                catch (Exception error) when (error is not OperationCanceledException) { }
+                // 更新说明读网络、本机比对读本机文件：两者互不等待，各自失败只影响自己。
+                await Task.WhenAll(Quietly(() => notes?.PrefetchAsync(token) ?? Task.CompletedTask), Quietly(() => checker.EstimateAsync(token)));
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    private static async Task Quietly(Func<Task> work)
+    {
+        try { await work(); }
+        catch (Exception error) when (error is not OperationCanceledException) { }
     }
 
     private void SignalEstimate()

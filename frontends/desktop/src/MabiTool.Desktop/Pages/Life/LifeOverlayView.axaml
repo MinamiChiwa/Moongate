@@ -1,0 +1,214 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:life="using:MabiTool.Desktop.Pages.Life"
+             xmlns:controls="using:MabiTool.Desktop.Controls"
+             x:Class="MabiTool.Desktop.Pages.Life.LifeOverlayView"
+             x:DataType="life:LifeOverlayData">
+  <!--
+    生活浮窗元件：Mode=facilities 为“加工设施”（各设施一行：名称、槽位圆点、当前剩余与全部完成还需、领取；点空槽在外框内打开配方菜单），
+    Mode=queue 为“生活队列”（状态、暂停原因、当前与下一项、暂停/继续/停止当前）。颜色取浮窗配色资源；
+    操作区（按钮、菜单、确认）标 overlayactions，元件上锁时整块隐藏，视图随之关闭菜单与确认，鼠标穿透恢复。
+  -->
+  <UserControl.Styles>
+    <Style Selector="Button.slot">
+      <Setter Property="Width" Value="18" />
+      <Setter Property="Height" Value="18" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0,0,4,0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <ContentPresenter Background="Transparent" Content="{TemplateBinding Content}" />
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Ellipse.dot">
+      <Setter Property="Width" Value="15" />
+      <Setter Property="Height" Value="15" />
+      <Setter Property="StrokeThickness" Value="1.5" />
+      <Setter Property="Fill" Value="Transparent" />
+      <Setter Property="Stroke" Value="{DynamicResource OverlayMutedBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.done">
+      <Setter Property="Fill" Value="{DynamicResource OverlayReadyBrush}" />
+      <Setter Property="Stroke" Value="{DynamicResource OverlayReadyBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.working">
+      <Setter Property="Fill" Value="{DynamicResource OverlayAccentBrush}" />
+      <Setter Property="Stroke" Value="{DynamicResource OverlayAccentBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.scheduled">
+      <Setter Property="Stroke" Value="{DynamicResource OverlayAccentBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.empty">
+      <Setter Property="StrokeDashArray" Value="2,2" />
+    </Style>
+    <Style Selector="TextBlock.glyph">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource OverlayMutedBrush}" />
+    </Style>
+    <Style Selector="TextBlock.dim">
+      <Setter Property="Foreground" Value="{DynamicResource OverlayMutedBrush}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.warn">
+      <Setter Property="Foreground" Value="{DynamicResource OverlayWaitingBrush}" />
+    </Style>
+    <Style Selector="TextBlock.live">
+      <Setter Property="Foreground" Value="{DynamicResource OverlayReadyBrush}" />
+    </Style>
+    <Style Selector="Border.sheet">
+      <Setter Property="Background" Value="{DynamicResource OverlaySolidBrush}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="6" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+    <!-- 加工设施 -->
+    <DockPanel x:Name="FacilitiesView" IsVisible="False">
+      <TextBlock DockPanel.Dock="Top" FontWeight="Bold" Margin="0,0,0,4" TextTrimming="CharacterEllipsis" Text="{Binding FacilitiesTitle}" />
+      <TextBlock DockPanel.Dock="Top" Classes="dim warn" TextWrapping="Wrap" Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
+      <Panel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding ShowList}">
+          <StackPanel>
+            <TextBlock Classes="dim" TextWrapping="Wrap" Text="{Binding NoFacilitiesText}" IsVisible="{Binding NoFacilities}" />
+            <ItemsControl x:Name="OverlayFacilityList" ItemsSource="{Binding Facilities}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="life:LifeOverlayFacility">
+                  <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="0,0,0,5">
+                    <DockPanel>
+                      <TextBlock DockPanel.Dock="Right" Classes="dim" Margin="6,0,0,0" Text="{Binding Subtitle}" />
+                      <TextBlock TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                    </DockPanel>
+                    <Panel Grid.Column="1" Grid.RowSpan="2" Classes="overlayactions" VerticalAlignment="Center">
+                      <Button Classes="overlaybutton" Margin="6,0,0,0" MinHeight="24" Padding="8,2" FontSize="12"
+                              Content="{Binding $parent[UserControl].((life:LifeOverlayData)DataContext).CollectText}"
+                              Command="{Binding CollectCommand}" IsEnabled="{Binding CollectEnabled}" ToolTip.Tip="{Binding CollectTip}" ToolTip.ShowOnDisabled="True" />
+                    </Panel>
+                    <ItemsControl Grid.Row="1" Margin="0,2,0,0" ItemsSource="{Binding Dots}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="life:LifeSlotDot">
+                          <Button Classes="slot" Command="{Binding Command}" IsEnabled="{Binding Clickable}" ToolTip.Tip="{Binding Tip}">
+                            <Panel>
+                              <Ellipse Classes="dot" Classes.done="{Binding IsDone}" Classes.working="{Binding IsWorking}"
+                                       Classes.scheduled="{Binding IsScheduled}" Classes.empty="{Binding IsEmpty}" />
+                              <TextBlock Classes="glyph" Text="{Binding Glyph}" />
+                            </Panel>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+        <!--
+          配方菜单：在外框内覆盖设施列表，尺寸取元件外框，不随过滤结果变化；顶部搜索框按配方名与材料名过滤，打开时聚焦。
+          上锁时随操作区隐藏并关闭。
+        -->
+        <Panel x:Name="MenuArea" Classes="overlayactions">
+          <Border x:Name="OverlayMenu" Classes="sheet" IsVisible="{Binding MenuOpen}">
+            <DockPanel>
+              <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                <Button x:Name="OverlayMenuBack" DockPanel.Dock="Right" Classes="overlaybutton" MinHeight="24" Padding="8,2" FontSize="12"
+                        Content="{Binding BackText}" Command="{Binding CloseMenuCommand}" />
+                <TextBlock FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding MenuTitle}" />
+              </DockPanel>
+              <TextBox x:Name="OverlayMenuSearch" DockPanel.Dock="Top" Margin="0,0,0,4" MinHeight="24" Padding="6,2" FontSize="12"
+                       Text="{Binding MenuSearch}" PlaceholderText="{Binding MenuSearchHint}" AutomationProperties.Name="{Binding MenuSearchHint}" />
+              <TextBlock DockPanel.Dock="Top" Classes="dim" TextWrapping="Wrap" Text="{Binding MenuEmptyText}" IsVisible="{Binding MenuHasEmpty}" />
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="OverlayMenuList" ItemsSource="{Binding Menu}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="life:LifePickRow">
+                      <DockPanel Margin="0,0,0,4">
+                        <Button DockPanel.Dock="Right" Classes="overlaybutton" MinHeight="24" Padding="8,2" FontSize="12" Margin="6,0,0,0"
+                                Content="{Binding $parent[UserControl].((life:LifeOverlayData)DataContext).AddText}" Command="{Binding AddCommand}"
+                                IsEnabled="{Binding CanAdd}" />
+                        <StackPanel>
+                          <TextBlock TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                          <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding Status}" />
+                        </StackPanel>
+                      </DockPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </DockPanel>
+          </Border>
+        </Panel>
+        <Panel x:Name="FacilitiesConfirmArea" Classes="overlayactions">
+          <Border Classes="sheet" IsVisible="{Binding ConfirmOpen}">
+            <StackPanel Spacing="4">
+              <ItemsControl ItemsSource="{Binding ConfirmLines}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String"><TextBlock FontSize="12" TextWrapping="Wrap" Text="{Binding}" /></DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                <Button Classes="overlaybutton" MinHeight="24" Padding="8,2" FontSize="12" Content="{Binding CancelText}" Command="{Binding CancelCommand}" />
+                <Button Classes="overlaybutton start" MinHeight="24" Padding="8,2" FontSize="12" Content="{Binding ConfirmText}" Command="{Binding ConfirmCommand}" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </Panel>
+      </Panel>
+    </DockPanel>
+
+    <!-- 生活队列 -->
+    <DockPanel x:Name="QueueView" IsVisible="False">
+      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+        <TextBlock DockPanel.Dock="Right" FontWeight="Bold" Margin="8,0,0,0" Classes.warn="{Binding QueueWarn}" Classes.live="{Binding QueueLive}" Text="{Binding QueueState}" />
+        <TextBlock FontWeight="Bold" TextTrimming="CharacterEllipsis" Text="{Binding QueueTitle}" />
+      </DockPanel>
+      <Panel DockPanel.Dock="Bottom" Classes="overlayactions">
+        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+          <Button x:Name="OverlayLifePause" Classes="overlaybutton" Content="{Binding PauseText}" Command="{Binding PauseCommand}" IsEnabled="{Binding CanPause}"
+                  IsVisible="{Binding !ShowContinue}" />
+          <Button x:Name="OverlayLifeContinue" Classes="overlaybutton start" Content="{Binding ContinueText}" Command="{Binding ContinueCommand}"
+                  IsEnabled="{Binding CanContinue}" IsVisible="{Binding ShowContinue}" />
+          <Button x:Name="OverlayLifeStop" Classes="overlaybutton stop" Content="{Binding StopText}" Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}" />
+        </StackPanel>
+      </Panel>
+      <Panel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Spacing="3">
+            <TextBlock Classes="dim warn" TextWrapping="Wrap" Text="{Binding PauseReason}" IsVisible="{Binding HasPauseReason}" />
+            <TextBlock TextWrapping="Wrap" Text="{Binding CurrentText}" />
+            <controls:MeterBar Value="{Binding CurrentProgress}" Fill="{DynamicResource OverlayBarFillBrush}" Track="{DynamicResource OverlayBarTrackBrush}"
+                               IsVisible="{Binding HasCurrentProgress}" />
+            <TextBlock Classes="dim" TextTrimming="CharacterEllipsis" Text="{Binding NextText}" IsVisible="{Binding HasNext}" />
+            <TextBlock Classes="dim warn" TextWrapping="Wrap" Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
+          </StackPanel>
+        </ScrollViewer>
+        <Panel x:Name="QueueConfirmArea" Classes="overlayactions">
+          <Border Classes="sheet" IsVisible="{Binding ConfirmOpen}">
+            <StackPanel Spacing="4">
+              <ItemsControl ItemsSource="{Binding ConfirmLines}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String"><TextBlock FontSize="12" TextWrapping="Wrap" Text="{Binding}" /></DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                <Button Classes="overlaybutton" MinHeight="24" Padding="8,2" FontSize="12" Content="{Binding CancelText}" Command="{Binding CancelCommand}" />
+                <Button x:Name="OverlayLifeConfirm" Classes="overlaybutton start" MinHeight="24" Padding="8,2" FontSize="12" Content="{Binding ConfirmText}"
+                        Command="{Binding ConfirmCommand}" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </Panel>
+      </Panel>
+    </DockPanel>
+  </Panel>
+</UserControl>
